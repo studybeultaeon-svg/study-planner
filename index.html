@@ -748,6 +748,16 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
   .saved-btn { padding: 8px 0; font-size: 12px; }
 }
 
+
+  /* ── 새 요소 모바일 대응 ── */
+  .next-days-btn { font-size: 11px; padding: 4px 8px; min-height: 32px; }
+  .cal-link-task-btn { font-size: 13px; padding: 12px 14px; min-height: 44px; }
+  .cal-link-select-wrap { gap: 6px; }
+  .modal-link-section { padding: 12px; }
+  .modal-section-toggle { padding: 12px; min-height: 44px; font-size: 13px; }
+  .cal-link-row input[type="number"] { font-size: 16px; width: 90px; }
+  .cal-link-btn { min-height: 44px; padding: 10px 16px; font-size: 14px; }
+
 /* ── 태블릿 (768px ~ 1024px) ── */
 @media (min-width: 769px) and (max-width: 1024px) {
   .cal-wrap { padding: 14px; }
@@ -1528,19 +1538,44 @@ function renderModalTaskList(key) {
     nextDaysBtn.textContent=task.nextDays!=null?`+${task.nextDays}일`:'⏱';
     nextDaysBtn.addEventListener('click',e=>{
       e.stopPropagation();
-      const val=prompt('다음 회독까지 며칠 뒤?\n(0=당일, 비워두면 기본값 사용)', task.nextDays!=null?task.nextDays:'');
-      if(val===null) return;
-      if(val.trim()===''){
-        delete calTasks[key][taskIdx].nextDays;
-        nextDaysBtn.textContent='⏱';
-      } else {
-        const n=parseInt(val);
-        if(!isNaN(n)&&n>=0){
-          calTasks[key][taskIdx].nextDays=n;
-          nextDaysBtn.textContent=`+${n}일`;
+      // 이미 인라인 입력 중이면 무시
+      if (nextDaysBtn._editing) return;
+      nextDaysBtn._editing = true;
+      const orig = nextDaysBtn.textContent;
+      nextDaysBtn.innerHTML = '';
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.min = '0';
+      inp.value = task.nextDays != null ? task.nextDays : '';
+      inp.placeholder = '일수';
+      inp.style.cssText = 'width:60px;font-size:13px;padding:2px 4px;border-radius:5px;border:1px solid var(--accent);background:var(--bg);color:var(--text);';
+      const ok = document.createElement('button');
+      ok.textContent = '✓';
+      ok.style.cssText = 'margin-left:4px;font-size:11px;padding:2px 6px;border-radius:5px;border:none;background:var(--accent);color:#000;cursor:pointer;';
+      nextDaysBtn.appendChild(inp);
+      nextDaysBtn.appendChild(ok);
+      inp.focus();
+      const commit = () => {
+        nextDaysBtn._editing = false;
+        const v = inp.value.trim();
+        if (v === '') {
+          delete calTasks[key][taskIdx].nextDays;
+          nextDaysBtn.textContent = '⏱';
+        } else {
+          const n = parseInt(v);
+          if (!isNaN(n) && n >= 0) {
+            calTasks[key][taskIdx].nextDays = n;
+            nextDaysBtn.textContent = `+${n}일`;
+          } else {
+            nextDaysBtn.textContent = orig;
+          }
         }
-      }
-      calSaveData();
+        calSaveData();
+      };
+      ok.addEventListener('click', e => { e.stopPropagation(); commit(); });
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') commit();
+        if (e.key === 'Escape') { nextDaysBtn._editing=false; nextDaysBtn.textContent=orig; }
+      });
     });
     item.appendChild(nextDaysBtn);
 
