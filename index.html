@@ -153,8 +153,10 @@ body {
 }
 .task-chip.gray-task   { background: #2a2a3a; color: #aaaaaa; border-color: #555; }
 .task-chip.red-task    { background: #3d1a1a; color: #f87171; border-color: #f87171; }
+.task-chip.orange-task { background: #3d2510; color: #fb923c; border-color: #fb923c; }
 .task-chip.yellow-task { background: #3d3200; color: #fbbf24; border-color: #fbbf24; }
 .task-chip.green-task  { background: #1a3d2a; color: #34d399; border-color: #34d399; }
+.task-chip.blue-task   { background: #1a2a3d; color: #60a5fa; border-color: #60a5fa; }
 .task-chip.status-O::before { content: 'O '; font-weight: 900; color: #34d399; }
 .task-chip.status-X::before { content: 'X '; font-weight: 900; color: #f87171; }
 
@@ -171,6 +173,32 @@ body {
 .cal-modal-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
 .cal-modal-date  { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
 
+.modal-section-toggle {
+  width: 100%; margin-top: 10px; padding: 8px;
+  background: none; border: 1px dashed var(--border);
+  color: var(--muted); font-size: 12px; border-radius: 8px;
+  cursor: pointer; text-align: center;
+}
+.modal-section-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.modal-link-section {
+  margin-top: 8px; padding: 10px 12px;
+  background: rgba(255,255,255,.02);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.cal-link-select-wrap {
+  display: flex; flex-direction: column; gap: 5px; width: 100%;
+}
+.cal-link-task-btn {
+  width: 100%; text-align: left; padding: 8px 12px;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); font-size: 13px;
+  cursor: pointer;
+}
+.cal-link-task-btn:hover { border-color: var(--accent); color: var(--accent); }
+.cal-link-task-btn.selected {
+  border-color: var(--accent); background: rgba(79,142,247,.12);
+  color: var(--accent); font-weight: 600;
+}
 .drag-hint { font-size: 11px; color: var(--muted); margin-bottom: 9px; }
 .task-name-edit {
   flex: 1; background: var(--surface); border: 1px solid var(--accent);
@@ -191,8 +219,10 @@ body {
 .color-dot.active { border-color: white; transform: scale(1.15); }
 .color-dot.c-gray   { background: #888; }
 .color-dot.c-red    { background: #f87171; }
+.color-dot.c-orange { background: #fb923c; }
 .color-dot.c-yellow { background: #fbbf24; }
 .color-dot.c-green  { background: #34d399; }
+.color-dot.c-blue   { background: #60a5fa; }
 
 .task-list-modal { margin-bottom: 12px; }
 .task-item-modal {
@@ -211,7 +241,16 @@ body {
 .task-name-modal.red-text    { color: #f87171; }
 .task-name-modal.yellow-text { color: #fbbf24; }
 .task-name-modal.green-text  { color: #34d399; }
+.task-name-modal.blue-text   { color: #60a5fa; }
+.task-name-modal.orange-text { color: #fb923c; }
 
+.next-days-btn {
+  font-size: 10px; padding: 2px 6px; border-radius: 5px;
+  border: 1px solid var(--border); background: none;
+  color: var(--muted); cursor: pointer; white-space: nowrap;
+  flex-shrink: 0;
+}
+.next-days-btn:hover { border-color: var(--accent); color: var(--accent); }
 .task-status-badge { font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 700; }
 .badge-O    { background: rgba(52,211,153,.15); color: #34d399; }
 .badge-X    { background: rgba(248,113,113,.15); color: #f87171; }
@@ -550,6 +589,33 @@ body {
 .calc-dragging { opacity: 0.4; }
 .calc-drag-over-top    { border-top: 2px solid var(--accent) !important; }
 .calc-drag-over-bottom { border-bottom: 2px solid var(--accent) !important; }
+.cal-link-section {
+  border-top: 1px solid var(--border);
+  padding: 10px 11px 11px;
+  background: rgba(255,255,255,.01);
+}
+.cal-link-title {
+  font-size: 11px; color: var(--muted); margin-bottom: 7px; font-weight: 600;
+}
+.cal-link-row {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+}
+.cal-link-row input[type="number"] {
+  width: 80px; padding: 7px 8px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--text); font-size: 13px;
+}
+.cal-link-row input[type="date"] {
+  flex: 1; min-width: 120px; padding: 7px 8px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--text); font-size: 13px;
+}
+.cal-link-btn {
+  padding: 7px 14px; border-radius: 7px; border: none;
+  background: var(--accent); color: #000; font-size: 13px;
+  font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.cal-link-btn:hover { opacity: .85; }
 .fb-instructions {
   background: var(--card); border: 1px solid var(--border); border-radius: 9px;
   padding: 14px 16px; margin-bottom: 14px; font-size: 12px; color: var(--muted); line-height: 1.9;
@@ -758,9 +824,11 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 
   <div class="legend-bar">
     <span class="legend-title">회독 안내:</span>
-    <div class="legend-item"><div class="legend-dot" style="background:#f87171;"></div><span style="color:#f87171;">빨간색 : 1회독</span></div>
-    <div class="legend-item"><div class="legend-dot" style="background:#fbbf24;"></div><span style="color:#fbbf24;">노란색 : 2회독</span></div>
-    <div class="legend-item"><div class="legend-dot" style="background:#34d399;"></div><span style="color:#34d399;">초록색 : 3회독</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f87171;"></div><span style="color:#f87171;">빨강 : 1회독</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fb923c;"></div><span style="color:#fb923c;">주황 : 2회독</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fbbf24;"></div><span style="color:#fbbf24;">노랑 : 3회독</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:#34d399;"></div><span style="color:#34d399;">초록 : 4회독</span></div>
+    <div class="legend-item"><div class="legend-dot" style="background:#60a5fa;"></div><span style="color:#60a5fa;">파랑 : 5회독</span></div>
   </div>
 
   <div class="calendar-header">
@@ -798,6 +866,19 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
     </div>
     <div class="drag-hint">⠿ 드래그로 순서 변경 &nbsp;·&nbsp; ✏️ 이름 수정 &nbsp;·&nbsp; 뱃지 클릭으로 회독 수 변경</div>
     <div class="task-list-modal" id="modalTaskList"></div>
+    <div class="modal-link-section" id="modalLinkSection" style="display:none;">
+      <div class="cal-link-title">📊 할당량 연동 추가</div>
+      <div id="modalLinkSelectWrap" class="cal-link-select-wrap">
+        <!-- JS로 버튼 목록 렌더링 -->
+      </div>
+      <div class="cal-link-row" style="margin-top:6px;">
+        <input type="number" class="cal-link-from" id="modalLinkFrom" placeholder="시작 번호" min="1" />
+        <span style="color:var(--muted);">~</span>
+        <input type="number" class="cal-link-to" id="modalLinkTo" placeholder="끝 번호" min="1" />
+        <button class="cal-link-btn" onclick="addLinkedTasksFromModal()">추가</button>
+      </div>
+    </div>
+    <button class="modal-section-toggle" onclick="toggleModalLinkSection()">📊 할당량 연동 추가 ▾</button>
   </div>
 </div>
 
@@ -908,7 +989,7 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
    전역 유틸
 ══════════════════════════════════════════════════════ */
 const MONTHS_KO = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
-const COLOR_ORDER = { green:0, yellow:1, red:2 };
+const COLOR_ORDER = { blue:0, green:1, yellow:2, orange:3, red:4 };
 
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -1134,10 +1215,10 @@ function parseKey(key) {
   return { year:parseInt(p[0]), month:parseInt(p[1])-1, day:parseInt(p[2]) };
 }
 function getColorClass(c) {
-  return ({red:'red-task',yellow:'yellow-task',green:'green-task'})[c]||'red-task';
+  return ({red:'red-task',orange:'orange-task',yellow:'yellow-task',green:'green-task',blue:'blue-task'})[c]||'red-task';
 }
 function getTextClass(c) {
-  return ({red:'red-text',yellow:'yellow-text',green:'green-text'})[c]||'red-text';
+  return ({red:'red-text',orange:'orange-text',yellow:'yellow-text',green:'green-text',blue:'blue-text'})[c]||'red-text';
 }
 function getDisplayIndices(key) {
   // 배열 자체의 순서를 그대로 반환 (드래그로 순서 변경 시 배열 직접 수정)
@@ -1157,6 +1238,43 @@ function addTaskToDate(key, name, color, status) {
   sortTasksByDefault(key);  // 추가 즉시 정렬
   calSaveData();
 }
+// 연동 업무 완료 시 계산기 할당량 차감
+function deductCalcQty(calcTaskName, amount) {
+  const data = loadCalcFromStorage();
+  if (!data.tasks) return;
+  const task = data.tasks.find(t => t.name === calcTaskName);
+  if (!task) return;
+  const cur = parseFloat(task.qty) || 0;
+  task.qty = Math.max(0, cur - amount);
+  saveCalcToLocalStorage(data);
+  pushCalcToFirebase(data);
+  // 카드 input도 업데이트
+  document.querySelectorAll('.task-card').forEach(card => {
+    const nameInput = card.querySelector('input[type="text"]');
+    if (nameInput && nameInput.value.trim() === calcTaskName) {
+      const qtyInput = card.querySelectorAll('input')[1];
+      if (qtyInput) qtyInput.value = task.qty;
+    }
+  });
+}
+
+// 연동 업무 미완료 취소 시 복구
+function restoreCalcQty(calcTaskName, amount) {
+  const data = loadCalcFromStorage();
+  if (!data.tasks) return;
+  const task = data.tasks.find(t => t.name === calcTaskName);
+  if (!task) return;
+  task.qty = (parseFloat(task.qty) || 0) + amount;
+  saveCalcToLocalStorage(data);
+  pushCalcToFirebase(data);
+  document.querySelectorAll('.task-card').forEach(card => {
+    const nameInput = card.querySelector('input[type="text"]');
+    if (nameInput && nameInput.value.trim() === calcTaskName) {
+      const qtyInput = card.querySelectorAll('input')[1];
+      if (qtyInput) qtyInput.value = task.qty;
+    }
+  });
+}
 function markTaskStatus(dkv, idx, status) {
   if (!calTasks[dkv]?.[idx]) return;
   const task = calTasks[dkv][idx];
@@ -1172,17 +1290,21 @@ function markTaskStatus(dkv, idx, status) {
       sortTasksByDefault(nk);
     }
   } else if (status === 'O') {
-    const schedules = { red:['yellow',3], yellow:['green',7] };
+    const schedules = { red:['orange',1], orange:['yellow',3], yellow:['green',7], green:['blue',21] };
     const sc = schedules[task.color];
     if (sc) {
-      const nxt = new Date(p.year,p.month,p.day+sc[1]);
+      // 사용자 지정 일수가 있으면 우선 사용
+      const days = (task.nextDays != null && task.nextDays >= 0) ? task.nextDays : sc[1];
+      const nxt = new Date(p.year,p.month,p.day+days);
       const nKey = calDateKey(nxt.getFullYear(),nxt.getMonth(),nxt.getDate());
       if (!calTasks[nKey]) calTasks[nKey] = [];
       if (!calTasks[nKey].some(t => t.name===task.name && t.color===sc[0])) {
-        calTasks[nKey].push({ name:task.name, color:sc[0], status:null });
+        calTasks[nKey].push({ name:task.name, color:sc[0], status:null, nextDays: task.nextDays });
         sortTasksByDefault(nKey);
       }
     }
+    // 연동 업무 완료 시 차감
+    if (task.linkedCalc) deductCalcQty(task.linkedCalc, 1);
   }
   calSaveData();
 }
@@ -1256,6 +1378,11 @@ function openDayModal(key,y,m,d) {
   renderModalTaskList(key); renderModalActions(key);
   document.getElementById('dayModal').classList.add('active');
   document.body.style.overflow = 'hidden';
+  // 연동 섹션 초기화
+  const linkSec = document.getElementById('modalLinkSection');
+  if (linkSec) linkSec.style.display = 'none';
+  const linkBtn = document.querySelector('.modal-section-toggle');
+  if (linkBtn) linkBtn.textContent = '📊 할당량 연동 추가 ▾';
   // 모달 내부 스크롤 영역에서 touchmove 전파 차단 (스와이프 오감지 방지)
   const calModal = document.querySelector('.cal-modal');
   calModal._stopProp = e => {
@@ -1309,9 +1436,11 @@ function renderModalTaskList(key) {
       editRow.className='color-picker-row';
       editRow.innerHTML=`<span>회독:</span>`;
       const colors=[
-        {c:'green',label:'3회독(초록)'},
-        {c:'yellow',label:'2회독(노랑)'},
-        {c:'red',label:'1회독(빨강)'}
+        {c:'blue',  label:'5회독(파랑)'},
+        {c:'green', label:'4회독(초록)'},
+        {c:'yellow',label:'3회독(노랑)'},
+        {c:'orange',label:'2회독(주황)'},
+        {c:'red',   label:'1회독(빨강)'}
       ];
       colors.forEach(({c,label}) => {
         const dot=document.createElement('div');
@@ -1392,6 +1521,29 @@ function renderModalTaskList(key) {
     });
     item.appendChild(editNameBtn);
 
+    // 다음 회독 일수 설정 버튼
+    const nextDaysBtn=document.createElement('button');
+    nextDaysBtn.className='next-days-btn';
+    nextDaysBtn.title='다음 회독까지 며칠 뒤 (클릭하여 변경)';
+    nextDaysBtn.textContent=task.nextDays!=null?`+${task.nextDays}일`:'⏱';
+    nextDaysBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const val=prompt('다음 회독까지 며칠 뒤?\n(0=당일, 비워두면 기본값 사용)', task.nextDays!=null?task.nextDays:'');
+      if(val===null) return;
+      if(val.trim()===''){
+        delete calTasks[key][taskIdx].nextDays;
+        nextDaysBtn.textContent='⏱';
+      } else {
+        const n=parseInt(val);
+        if(!isNaN(n)&&n>=0){
+          calTasks[key][taskIdx].nextDays=n;
+          nextDaysBtn.textContent=`+${n}일`;
+        }
+      }
+      calSaveData();
+    });
+    item.appendChild(nextDaysBtn);
+
     // 뱃지 — 클릭 시 색상 편집 토글
     const badge=document.createElement('div');
     badge.className='task-status-badge '+(task.status==='O'?'badge-O':task.status==='X'?'badge-X':'badge-none');
@@ -1407,7 +1559,7 @@ function renderModalTaskList(key) {
 
     // 선택
     item.addEventListener('click', e => {
-      if (e.target===handle || e.target===badge) return;
+      if (e.target===handle || e.target===badge || e.target===nextDaysBtn) return;
       selectedTaskIndex=taskIdx;
       if (editingTaskIndex!==taskIdx) editingTaskIndex=null;
       renderModalTaskList(key); renderModalActions(key);
@@ -1473,6 +1625,10 @@ function undoMarkStatus(dkv, idx, prevStatus) {
       calTasks[nk] = calTasks[nk].filter(t => !(t.name===task.name && t.color===task.color && !t.status));
       if (!calTasks[nk].length) delete calTasks[nk];
     }
+  }
+  // 연동 업무 완료 취소 시 복구
+  if (prevStatus === 'O' && task.linkedCalc) {
+    restoreCalcQty(task.linkedCalc, 1);
   }
   task.status = null;
   calSaveData();
@@ -1634,7 +1790,8 @@ function addCalcTask(name='',qty='',unit='',dday='',start='',modifiedAt='') {
         <label>목표 D-Day</label>
         <input type="date" value="${esc(dday)}" onchange="autoSaveDraft()" />
       </div>
-    </div>`;
+    </div>
+`;
   list.appendChild(card);
   if (modifiedAt) {
     const modEl = card.querySelector('.task-modified-at');
@@ -2170,6 +2327,124 @@ document.addEventListener('touchend', e => {
   touchDragSrc = null; touchDragCtx = null;
 });
 
+
+
+/* ══ 계산기-캘린더 연동 ══ */
+function addCalcTasksToCalendar(btn) {
+  const card = btn.closest('.task-card');
+  const nameEl = card.querySelector('input[type="text"]');
+  const fromEl = card.querySelector('.cal-link-from');
+  const toEl   = card.querySelector('.cal-link-to');
+  const dateEl = card.querySelector('.cal-link-date');
+
+  const baseName = nameEl.value.trim();
+  const from = parseInt(fromEl.value);
+  const to   = parseInt(toEl.value);
+  const dateStr = dateEl.value;
+
+  if (!baseName) { showToast('업무 이름을 먼저 입력해주세요'); return; }
+  if (!dateStr)  { showToast('날짜를 선택해주세요'); return; }
+  if (isNaN(from) || isNaN(to) || from > to) { showToast('올바른 범위를 입력해주세요'); return; }
+
+  const d = new Date(dateStr);
+  const key = calDateKey(d.getFullYear(), d.getMonth(), d.getDate());
+  if (!calTasks[key]) calTasks[key] = [];
+
+  for (let i = from; i <= to; i++) {
+    const taskName = `${baseName} ${i}`;
+    if (!calTasks[key].some(t => t.name === taskName)) {
+      calTasks[key].push({ name: taskName, color: 'red', status: null, linkedCalc: baseName });
+    }
+  }
+  sortTasksByDefault(key);
+  calSaveData(); renderCalendar();
+  showToast(`${baseName} ${from}~${to} → ${d.getMonth()+1}/${d.getDate()}에 추가됐습니다`);
+  fromEl.value=''; toEl.value='';
+}
+
+
+
+
+/* ══ 캘린더 모달 할당량 연동 ══ */
+function toggleModalLinkSection() {
+  const sec = document.getElementById('modalLinkSection');
+  const btn = document.querySelector('.modal-section-toggle');
+  if (sec.style.display === 'none') {
+    sec.style.display = 'block';
+    btn.textContent = '📊 할당량 연동 추가 ▴';
+    _modalSelectedCalcTask = '';
+    updateModalLinkSelect();
+  } else {
+    sec.style.display = 'none';
+    btn.textContent = '📊 할당량 연동 추가 ▾';
+  }
+}
+
+let _modalSelectedCalcTask = '';
+
+function updateModalLinkSelect() {
+  const wrap = document.getElementById('modalLinkSelectWrap');
+  if (!wrap) return;
+
+  function render(tasks) {
+    wrap.innerHTML = '';
+    if (!tasks || !tasks.length) {
+      wrap.innerHTML = '<div style="color:var(--muted);font-size:12px;">계산기에 입력된 업무가 없습니다</div>';
+      return;
+    }
+    tasks.forEach(t => {
+      if (!t.name) return;
+      const btn = document.createElement('button');
+      btn.className = 'cal-link-task-btn' + (_modalSelectedCalcTask === t.name ? ' selected' : '');
+      btn.textContent = `${t.name} (잔여 ${t.qty}${t.unit||''})`;
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        _modalSelectedCalcTask = t.name;
+        updateModalLinkSelect();
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  const local = loadCalcFromStorage();
+  render(local.tasks);
+
+  if (db && FB_USER) {
+    db.ref(`users/${FB_USER}/calculator/tasks`).once('value').then(snap => {
+      const remote = snap.val();
+      if (remote && remote.length) {
+        local.tasks = remote;
+        saveCalcToLocalStorage(local);
+        render(remote);
+      }
+    }).catch(() => {});
+  }
+}
+
+function addLinkedTasksFromModal() {
+  if (!selectedDate) return;
+  const fromEl = document.getElementById('modalLinkFrom');
+  const toEl   = document.getElementById('modalLinkTo');
+  const baseName = _modalSelectedCalcTask;
+  const from = parseInt(fromEl.value);
+  const to   = parseInt(toEl.value);
+  if (!baseName) { showToast('업무를 선택해주세요'); return; }
+  if (isNaN(from)||isNaN(to)||from>to) { showToast('올바른 범위를 입력해주세요'); return; }
+  const key = selectedDate;
+  if (!calTasks[key]) calTasks[key] = [];
+  let added = 0;
+  for (let i = from; i <= to; i++) {
+    const taskName = `${baseName} ${i}`;
+    if (!calTasks[key].some(t => t.name === taskName)) {
+      calTasks[key].push({ name: taskName, color: 'red', status: null, linkedCalc: baseName });
+      added++;
+    }
+  }
+  sortTasksByDefault(key);
+  calSaveData(); renderModalTaskList(key); renderCalendar();
+  showToast(`${baseName} ${from}~${to} (${added}개) 추가됐습니다`);
+  fromEl.value=''; toEl.value='';
+}
 
 /* ══ INIT ══ */
 renderCalendar();
