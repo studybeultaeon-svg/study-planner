@@ -1972,7 +1972,7 @@ function calcIntQuota(qty, weekdays, weekends) {
     }
     return best;
   }
-  const candidates = [2.0, 1.9, 1.8, 1.7, 1.6, 1.5].map(tryRatio).filter(Boolean);
+  const candidates = [1.5].map(tryRatio).filter(Boolean);
   return candidates.reduce((a, b) => Math.abs(a.sum - qty) <= Math.abs(b.sum - qty) ? a : b);
 }
 function showCalcError(msg) {
