@@ -1967,19 +1967,12 @@ function calcIntQuota(qty, weekdays, weekends) {
     for (let wdTry = Math.max(0, Math.floor(raw) - 2); wdTry <= Math.ceil(raw) + 2; wdTry++) {
       const weTry = Math.round(wdTry * ratio);
       const s = wdTry * weekdays + weTry * weekends;
-      if (s < qty) continue; // 마감 초과 방지: 합계가 qty 미만이면 제외
-      const err = s - qty;   // 초과분만 오차로 계산
+      const err = Math.abs(s - qty);
       if (err < bestErr) { bestErr = err; best = { wd: wdTry, we: weTry, sum: s, ratio }; }
-    }
-    // 모든 후보가 qty 미만인 극단적 경우 → 올림 강제
-    if (!best) {
-      const wdCeil = Math.ceil(raw);
-      const weCeil = Math.round(wdCeil * ratio);
-      best = { wd: wdCeil, we: weCeil, sum: wdCeil * weekdays + weCeil * weekends, ratio };
     }
     return best;
   }
-  const candidates = [1.5].map(tryRatio).filter(Boolean);
+  const candidates = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5].map(tryRatio).filter(Boolean);
   return candidates.reduce((a, b) => Math.abs(a.sum - qty) <= Math.abs(b.sum - qty) ? a : b);
 }
 function showCalcError(msg) {
@@ -2073,8 +2066,8 @@ function calculate() {
         : `<br><span style="color:var(--muted);font-size:11px;">이 페이스면 <span style="color:var(--text);">${finishStr}</span> 완료${finishVsDday}</span>`;
       ratioSection=`
         <div class="stats-grid">
-          <div class="stat-card hl-green"><div class="label">🗓 평일 하루</div><div class="value">${fmt(q.wd)}</div><div class="unit-label">${unit} / 일 · ${weekdays}일</div></div>
-          <div class="stat-card hl-yellow"><div class="label">🌅 주말 하루</div><div class="value">${fmt(q.we)}</div><div class="unit-label">${unit} / 일 · ${weekends}일</div></div>
+          <div class="stat-card hl-green"><div class="label">🗓 평일 하루</div><div class="value">${fmt(q.wd)}<span style="font-size:12px;color:var(--muted);font-weight:400;"> (${fmtDec(qty/(weekdays+q.ratio*weekends))})</span></div><div class="unit-label">${unit} / 일 · ${weekdays}일</div></div>
+          <div class="stat-card hl-yellow"><div class="label">🌅 주말 하루</div><div class="value">${fmt(q.we)}<span style="font-size:12px;color:var(--muted);font-weight:400;"> (${fmtDec(qty/(weekdays+q.ratio*weekends)*q.ratio)})</span></div><div class="unit-label">${unit} / 일 · ${weekends}일</div></div>
         </div>
         <div class="ratio-explain">평일:주말 = <span>1:${q.ratio}</span> 자동 선택 · 합계 <span>${fmt(q.wd)}×${weekdays} + ${fmt(q.we)}×${weekends} = ${fmt(actualSum)}${unit}</span>${diffNote}</div>`;
     }
@@ -2089,7 +2082,7 @@ function calculate() {
         <div class="stat-card"><div class="label">🎉 주말</div><div class="value">${weekends}</div><div class="unit-label">일</div></div>
       </div>
       <div class="stats-grid" style="grid-template-columns:1fr 1fr;">
-        <div class="stat-card hl-purple"><div class="label">⚡ 전체 하루 평균</div><div class="value">${fmt(Math.ceil(avgPerDay))}<span style="font-size:13px;color:var(--muted);font-weight:400;"> (${fmtDec(avgPerDay)})</span></div><div class="unit-label">${unit} / 일 · ${startedLabel}</div></div>
+        <div class="stat-card hl-purple"><div class="label">⚡ 전체 하루 평균</div><div class="value">${fmt(Math.round(avgPerDay))}<span style="font-size:13px;color:var(--muted);font-weight:400;"> (${fmtDec(avgPerDay)})</span></div><div class="unit-label">${unit} / 일 · ${startedLabel}</div></div>
       </div>
       ${ratioSection}
       <div style="margin-top:4px;">
