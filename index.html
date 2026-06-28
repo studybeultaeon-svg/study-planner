@@ -1967,8 +1967,15 @@ function calcIntQuota(qty, weekdays, weekends) {
     for (let wdTry = Math.max(0, Math.floor(raw) - 2); wdTry <= Math.ceil(raw) + 2; wdTry++) {
       const weTry = Math.round(wdTry * ratio);
       const s = wdTry * weekdays + weTry * weekends;
-      const err = Math.abs(s - qty);
+      if (s < qty) continue; // 마감 초과 방지: 합계가 qty 미만이면 제외
+      const err = s - qty;   // 초과분만 오차로 계산
       if (err < bestErr) { bestErr = err; best = { wd: wdTry, we: weTry, sum: s, ratio }; }
+    }
+    // 모든 후보가 qty 미만인 극단적 경우 → 올림 강제
+    if (!best) {
+      const wdCeil = Math.ceil(raw);
+      const weCeil = Math.round(wdCeil * ratio);
+      best = { wd: wdCeil, we: weCeil, sum: wdCeil * weekdays + weCeil * weekends, ratio };
     }
     return best;
   }
