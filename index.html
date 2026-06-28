@@ -2028,7 +2028,7 @@ function calculate() {
     const {weekdays,weekends}=countWeekdays(startDate,dday);
     const {weekdays:remWD, weekends:remWE}=countWeekdays(today,dday);
     const avgPerDay=qty/totalDays;
-    const remAvgPerDay=qty/remainDays;
+
     const denom=weekdays+2*weekends;
     const ddayNum=remainDays-1;
     const ddayLabel=ddayNum===0?'D-Day':`D-${ddayNum}`;
@@ -2089,8 +2089,7 @@ function calculate() {
         <div class="stat-card"><div class="label">🎉 주말</div><div class="value">${weekends}</div><div class="unit-label">일</div></div>
       </div>
       <div class="stats-grid" style="grid-template-columns:1fr 1fr;">
-        <div class="stat-card hl-purple"><div class="label">⚡ 전체 하루 평균</div><div class="value">${fmtDec(avgPerDay)}</div><div class="unit-label">${unit} / 일 · ${startedLabel}</div></div>
-        <div class="stat-card hl-blue" style="border-color:rgba(167,139,250,.4);background:rgba(167,139,250,.07);"><div class="label">🔥 오늘부터 하루 평균</div><div class="value" style="color:var(--accent2);">${fmtDec(remAvgPerDay)}</div><div class="unit-label">${unit} / 일 · 남은 ${remainDays}일</div></div>
+        <div class="stat-card hl-purple"><div class="label">⚡ 전체 하루 평균</div><div class="value">${fmt(Math.ceil(avgPerDay))}<span style="font-size:13px;color:var(--muted);font-weight:400;"> (${fmtDec(avgPerDay)})</span></div><div class="unit-label">${unit} / 일 · ${startedLabel}</div></div>
       </div>
       ${ratioSection}
       <div style="margin-top:4px;">
