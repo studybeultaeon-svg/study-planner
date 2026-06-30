@@ -1100,6 +1100,7 @@ function switchAppTab(name, btn) {
 let firebaseApp = null;
 let db = null;
 let FB_USER = 'default';
+let _suppressCalSync = false; // 캘린더: 내가 push한 것은 리스너에서 무시
 let fbListeners = {};
 
 const FB_CONFIG_KEY = 'studyPlanner_fbConfig';
@@ -1190,6 +1191,7 @@ function subscribeCalendarData() {
   if (!db) return;
   const ref = db.ref(`users/${FB_USER}/calendar`);
   const listener = ref.on('value', snap => {
+    if (_suppressCalSync) return; // 내가 방금 push한 데이터는 무시
     const data = snap.val();
     if (data) {
       const newTasks = data.tasks || {};
@@ -1207,8 +1209,11 @@ function subscribeCalendarData() {
 function pushCalendarToFirebase() {
   if (!db) return;
   setSyncStatus('syncing', '저장 중...');
-  db.ref(`users/${FB_USER}/calendar`).set({ tasks: calTasks }).then(() => setSyncStatus('syncing', '동기화됨'))
-    .catch(() => setSyncStatus('error', '저장 실패'));
+  _suppressCalSync = true;
+  db.ref(`users/${FB_USER}/calendar`).set({ tasks: calTasks })
+    .then(() => setSyncStatus('syncing', '동기화됨'))
+    .catch(() => setSyncStatus('error', '저장 실패'))
+    .finally(() => { setTimeout(() => { _suppressCalSync = false; }, 1200); });
 }
 
 /* ── 계산기 Firebase 동기화 ── */
