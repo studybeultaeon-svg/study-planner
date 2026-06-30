@@ -1096,20 +1096,43 @@ function switchAppTab(name, btn) {
 
 /* ══════════════════════════════════════════════════════
    FIREBASE 동기화
+
+   설계 원칙:
+   - 모든 동기화 단위(캘린더 / 계산기 드래프트 / 계산기 저장목록)는
+     자신만의 로컬 타임스탬프를 localStorage에 영속시킨다.
+   - 원격 스냅샷은 그 타임스탬프가 로컬보다 "엄격히 최신"일 때만 반영한다.
+     → push가 아직 서버에 반영되기 전에 새로고침해도, 방금 작성한
+       로컬 데이터가 구버전 원격 데이터에 의해 롤백되지 않는다.
+   - 로컬 변경 → 디바운스 후 1회 push (입력마다 매번 네트워크 요청 X).
+   - 연결이 끊겼다 다시 붙어도 리스너는 한 번만 attach 한다.
+   - 모든 읽기/쓰기 실패는 화면(toast + 상태 라벨)과 콘솔에 그대로 노출한다.
 ══════════════════════════════════════════════════════ */
 let firebaseApp = null;
 let db = null;
 let FB_USER = 'default';
-let _suppressCalSync = false; // 캘린더: 내가 push한 것은 리스너에서 무시
-let fbListeners = {};
+let fbConnRef = null;
+let fbCalRef = null, fbCalcRef = null;
+let fbCalListenerAttached = false;
+let fbCalcListenerAttached = false;
 
-const FB_CONFIG_KEY = 'studyPlanner_fbConfig';
+const FB_CONFIG_KEY   = 'studyPlanner_fbConfig';
+const CAL_TS_KEY       = 'studyCalendarTasks_ts';
+const CALC_PUSH_DEBOUNCE_MS = 500;
+
+let _calPushTimer  = null;
+let _calcPushTimer = null;
 
 function getSyncStatus() { return document.getElementById('sync-status'); }
 function setSyncStatus(state, label) {
   const el = getSyncStatus();
   el.className = state;
   document.getElementById('sync-label').textContent = label;
+}
+function fbReportError(prefix, err) {
+  const msg = (err && (err.code || err.message)) || String(err);
+  console.error('[Firebase] ' + prefix, err);
+  setSyncStatus('error', prefix + ': ' + msg);
+  showToast('Firebase 오류 (' + msg + ') — Realtime Database 규칙(Rules)을 확인하세요');
 }
 
 function openFbModal() {
@@ -1135,15 +1158,25 @@ function saveFirebaseConfig() {
   initFirebase();
 }
 
-function disconnectFirebase() {
+function teardownFirebase() {
   if (db) {
-    Object.values(fbListeners).forEach(off => off && off());
-    fbListeners = {};
-    db = null;
+    if (fbConnRef) { fbConnRef.off(); }
+    if (fbCalRef)  { fbCalRef.off(); }
+    if (fbCalcRef) { fbCalcRef.off(); }
   }
-  if (firebaseApp) { try { firebaseApp.delete(); } catch {} firebaseApp = null; }
+  if (firebaseApp) { try { firebaseApp.delete(); } catch {} }
+  firebaseApp = null; db = null;
+  fbConnRef = null; fbCalRef = null; fbCalcRef = null;
+  fbCalListenerAttached = false;
+  fbCalcListenerAttached = false;
+  clearTimeout(_calPushTimer); clearTimeout(_calcPushTimer);
+}
+
+function disconnectFirebase() {
+  teardownFirebase();
   saveFbConfig({});
   document.getElementById('fbConfigBtn').classList.remove('connected');
+  document.getElementById('fbConfigBtn').textContent = '🔗 동기화 설정';
   setSyncStatus('offline', 'Firebase 미연결');
   closeFbModal();
   showToast('연결이 해제되었습니다. 로컬 데이터로 작동합니다.');
@@ -1153,134 +1186,129 @@ function initFirebase() {
   const cfg = loadFbConfig();
   if (!cfg.url) return;
   FB_USER = cfg.user || 'default';
+  teardownFirebase();
 
   try {
-    // 기존 앱 정리
-    if (firebaseApp) { try { firebaseApp.delete(); } catch {} }
-    Object.values(fbListeners).forEach(off => off && off()); fbListeners = {};
-
     firebaseApp = firebase.initializeApp({ databaseURL: cfg.url }, 'studyPlanner_' + Date.now());
     db = firebase.database(firebaseApp);
 
     setSyncStatus('syncing', '연결 중...');
 
-    // 연결 상태 감지
-    const connRef = db.ref('.info/connected');
-    connRef.on('value', snap => {
+    fbConnRef = db.ref('.info/connected');
+    fbConnRef.on('value', snap => {
       if (snap.val() === true) {
         setSyncStatus('syncing', '동기화됨');
         document.getElementById('fbConfigBtn').classList.add('connected');
         document.getElementById('fbConfigBtn').textContent = '✅ 동기화 중';
-        // 데이터 구독
-        subscribeCalendarData();
-        subscribeCalcData();
+        // 리스너는 최초 연결 시 한 번만 붙인다 (재연결 시 중복 attach 방지)
+        if (!fbCalListenerAttached)  { fbCalListenerAttached  = true; subscribeCalendarData(); }
+        if (!fbCalcListenerAttached) { fbCalcListenerAttached = true; subscribeCalcData(); }
       } else {
         setSyncStatus('offline', '오프라인 (로컬 저장됨)');
       }
-    });
+    }, err => fbReportError('연결 상태 확인 실패', err));
 
   } catch(e) {
-    setSyncStatus('error', '연결 오류');
+    setSyncStatus('error', '연결 오류: ' + e.message);
     showToast('Firebase 연결 실패: ' + e.message);
   }
 }
 
 /* ── 캘린더 Firebase 동기화 ── */
-let _fbCalendarCb = null;
+function getLocalCalTs() { return parseInt(localStorage.getItem(CAL_TS_KEY) || '0', 10); }
+function setLocalCalTs(ts) { localStorage.setItem(CAL_TS_KEY, String(ts)); }
+
 function subscribeCalendarData() {
   if (!db) return;
-  const ref = db.ref(`users/${FB_USER}/calendar`);
-  const listener = ref.on('value', snap => {
-    if (_suppressCalSync) return; // 내가 방금 push한 데이터는 무시
+  fbCalRef = db.ref(`users/${FB_USER}/calendar`);
+  fbCalRef.on('value', snap => {
     const data = snap.val();
-    if (data) {
-      const newTasks = data.tasks || {};
-      if (JSON.stringify(newTasks) !== JSON.stringify(calTasks)) {
-        calTasks = newTasks;
-        renderCalendar();
-      }
-    }
-  }, err => {
-    console.error('[Firebase] 캘린더 읽기 실패:', err);
-    setSyncStatus('error', '동기화 오류: ' + (err.code || err.message || ''));
-    showToast('Firebase 읽기 실패 (' + (err.code || err.message) + ') — 콘솔에서 DB 규칙을 확인하세요');
-  });
-  fbListeners.calendar = () => ref.off('value', listener);
+    if (!data) return;
+    const remoteTs = data._ts || 0;
+    if (remoteTs <= getLocalCalTs()) return; // 원격이 로컬보다 최신이 아니면 무시 (롤백 방지)
+    const newTasks = data.tasks || {};
+    if (JSON.stringify(newTasks) === JSON.stringify(calTasks)) { setLocalCalTs(remoteTs); return; }
+    calTasks = newTasks;
+    setLocalCalTs(remoteTs);
+    localStorage.setItem('studyCalendarTasks', JSON.stringify(calTasks));
+    renderCalendar();
+  }, err => fbReportError('캘린더 동기화 오류', err));
 }
 
 function pushCalendarToFirebase() {
   if (!db) return;
-  setSyncStatus('syncing', '저장 중...');
-  _suppressCalSync = true;
-  db.ref(`users/${FB_USER}/calendar`).set({ tasks: calTasks })
-    .then(() => setSyncStatus('syncing', '동기화됨'))
-    .catch(err => {
-      console.error('[Firebase] 캘린더 저장 실패:', err);
-      setSyncStatus('error', '저장 실패: ' + (err.code || err.message || ''));
-      showToast('Firebase 저장 실패 (' + (err.code || err.message) + ') — 콘솔에서 DB 규칙을 확인하세요');
-    })
-    .finally(() => { setTimeout(() => { _suppressCalSync = false; }, 1200); });
+  const ts = Date.now();
+  setLocalCalTs(ts); // 즉시 기록 — 디바운스 도중 원격 스냅샷이 와도 로컬을 더 최신으로 간주
+  clearTimeout(_calPushTimer);
+  _calPushTimer = setTimeout(() => {
+    setSyncStatus('syncing', '저장 중...');
+    db.ref(`users/${FB_USER}/calendar`).set({ tasks: calTasks, _ts: ts })
+      .then(() => setSyncStatus('syncing', '동기화됨'))
+      .catch(err => fbReportError('캘린더 저장 실패', err));
+  }, CALC_PUSH_DEBOUNCE_MS);
 }
 
 /* ── 계산기 Firebase 동기화 ── */
 function subscribeCalcData() {
   if (!db) return;
-  const ref = db.ref(`users/${FB_USER}/calculator`);
-  const listener = ref.on('value', snap => {
+  fbCalcRef = db.ref(`users/${FB_USER}/calculator`);
+  fbCalcRef.on('value', snap => {
     const remote = snap.val();
     if (!remote) return;
     const local = loadCalcFromStorage();
+    let touched = false;
 
-    // 저장됨 목록 동기화
-    if (JSON.stringify(remote.saved) !== JSON.stringify(local.saved)) {
+    // 저장됨 목록 — savedTs가 로컬보다 최신일 때만 반영
+    const remoteSavedTs = remote.savedTs || 0;
+    if (remoteSavedTs > (local.savedTs || 0)) {
       local.saved = remote.saved || [];
-      saveCalcToLocalStorage(local);
+      local.savedTs = remoteSavedTs;
+      touched = true;
       renderSavedPanel();
     }
 
-    // 드래프트 동기화 — 내가 push한 것은 무시, 로컬과 다를 때만 반영
-    if (!_suppressCalcSync) {
-      const local2 = loadCalcFromStorage();
-      const maxTs = arr => (arr||[]).reduce((m,t)=>Math.max(m, t.modifiedAtTs||0), 0);
-      const remoteIsNewer = maxTs(remote.tasks) > maxTs(local2.tasks);
-      if (remote.tasks && remoteIsNewer && JSON.stringify(remote.tasks) !== JSON.stringify(local2.tasks || [])) {
-        local2.tasks = remote.tasks;
-        saveCalcToLocalStorage(local2);
-        // 포커스된 input이 있으면 재렌더 보류 — 다음 blur 시 반영
-        const focused = document.activeElement;
-        const inTaskCard = focused && focused.closest && focused.closest('.task-card');
-        if (!inTaskCard) {
-          document.getElementById('task-list').innerHTML = '';
-          calcTaskCount = 0;
-          remote.tasks.forEach(t => addCalcTask(
-        t.name, t.qty, t.unit, t.dday, t.start||'',
-        t.modifiedAt||'', t.weekdayGoal||'', t.weekendGoal||'',
-        t.progress||''
-      ));
+    // 드래프트 업무 — tasksTs가 로컬보다 최신일 때만 반영
+    const remoteTasksTs = remote.tasksTs || 0;
+    if (remoteTasksTs > (local.tasksTs || 0)) {
+      local.tasks = remote.tasks || [];
+      local.tasksTs = remoteTasksTs;
+      touched = true;
+      // 포커스된 입력칸이 있으면 재렌더 보류 — blur 후 다음 동기화 때 반영
+      const focused = document.activeElement;
+      const inTaskCard = focused && focused.closest && focused.closest('.task-card');
+      if (!inTaskCard) {
+        document.getElementById('task-list').innerHTML = '';
+        calcTaskCount = 0;
+        if (local.tasks.length) {
+          local.tasks.forEach(t => addCalcTask(
+            t.name, t.qty, t.unit, t.dday, t.start||'',
+            t.modifiedAt||'', t.weekdayGoal||'', t.weekendGoal||'',
+            t.progress||''
+          ));
+        } else {
+          addCalcTask();
         }
       }
     }
-  }, err => {
-    console.error('[Firebase] 계산기 읽기 실패:', err);
-    setSyncStatus('error', '동기화 오류: ' + (err.code || err.message || ''));
-    showToast('Firebase 읽기 실패 (' + (err.code || err.message) + ') — 콘솔에서 DB 규칙을 확인하세요');
-  });
-  fbListeners.calculator = () => ref.off('value', listener);
+
+    if (touched) saveCalcToLocalStorage(local);
+  }, err => fbReportError('계산기 동기화 오류', err));
 }
 
 function pushCalcToFirebase(data) {
   if (!db) return;
-  _suppressCalcSync = true;
-  db.ref(`users/${FB_USER}/calculator`).set({
-    saved: data.saved || [],
-    tasks: data.tasks || []
-  }).catch(err => {
-    console.error('[Firebase] 계산기 저장 실패:', err);
-    setSyncStatus('error', '저장 실패: ' + (err.code || err.message || ''));
-    showToast('Firebase 저장 실패 (' + (err.code || err.message) + ') — 콘솔에서 DB 규칙을 확인하세요');
-  }).finally(() => {
-    setTimeout(() => { _suppressCalcSync = false; }, 1500);
-  });
+  clearTimeout(_calcPushTimer);
+  _calcPushTimer = setTimeout(() => {
+    setSyncStatus('syncing', '저장 중...');
+    db.ref(`users/${FB_USER}/calculator`).set({
+      saved: data.saved || [],
+      savedTs: data.savedTs || 0,
+      tasks: data.tasks || [],
+      tasksTs: data.tasksTs || 0
+    })
+      .then(() => setSyncStatus('syncing', '동기화됨'))
+      .catch(err => fbReportError('계산기 저장 실패', err));
+  }, CALC_PUSH_DEBOUNCE_MS);
 }
 
 /* ══════════════════════════════════════════════════════
@@ -1337,6 +1365,7 @@ function deductCalcQty(calcTaskName, amount) {
   if (!task) return;
   task.progress = (parseFloat(task.progress) || 0) + amount;
   task.modifiedAtTs = Date.now();
+  data.tasksTs = Date.now();
   saveCalcToLocalStorage(data);
   pushCalcToFirebase(data);
   // 카드 진척도 input 업데이트 (index 3)
@@ -1357,6 +1386,7 @@ function restoreCalcQty(calcTaskName, amount) {
   if (!task) return;
   task.progress = Math.max(0, (parseFloat(task.progress) || 0) - amount);
   task.modifiedAtTs = Date.now();
+  data.tasksTs = Date.now();
   saveCalcToLocalStorage(data);
   pushCalcToFirebase(data);
   document.querySelectorAll('.task-card').forEach(card => {
@@ -1854,15 +1884,19 @@ document.getElementById('nextMonthBtn').addEventListener('click',()=>{
    할당량 계산기 로직
 ══════════════════════════════════════════════════════ */
 const CALC_STORAGE_KEY = 'task_quota_v1';
-let _suppressCalcSync = false; // 내가 push한 것은 리스너에서 무시
 let calcTaskCount = 0;
 
 function loadCalcFromStorage() {
-  try { const r=localStorage.getItem(CALC_STORAGE_KEY); return r?JSON.parse(r):{tasks:[],saved:[]}; }
-  catch { return {tasks:[],saved:[]}; }
+  try { const r=localStorage.getItem(CALC_STORAGE_KEY); return r?JSON.parse(r):{tasks:[],saved:[],tasksTs:0,savedTs:0}; }
+  catch { return {tasks:[],saved:[],tasksTs:0,savedTs:0}; }
 }
 function saveCalcToLocalStorage(data) { try { localStorage.setItem(CALC_STORAGE_KEY,JSON.stringify(data)); } catch {} }
-function saveCalcData(data) { saveCalcToLocalStorage(data); pushCalcToFirebase(data); }
+// 저장됨 목록(saved)을 변경할 때 사용 — savedTs를 갱신하고 push한다
+function saveCalcData(data) {
+  data.savedTs = Date.now();
+  saveCalcToLocalStorage(data);
+  pushCalcToFirebase(data);
+}
 
 function switchCalcTab(name, btn) {
   document.querySelectorAll('.sidebar-tab').forEach(t=>t.classList.remove('active'));
@@ -1979,7 +2013,9 @@ function autoSaveDraft() {
     const modEl = card.querySelector('.task-modified-at');
     if (modEl) modEl.textContent = modifiedAt ? '수정 ' + modifiedAt : '';
   });
-  const data = loadCalcFromStorage(); data.tasks = tasks;
+  const data = loadCalcFromStorage();
+  data.tasks = tasks;
+  data.tasksTs = Date.now(); // 즉시 기록 — 디바운스 도중 원격 스냅샷이 와도 로컬을 더 최신으로 간주
   saveCalcToLocalStorage(data);
   pushCalcToFirebase(data);
   refreshTaskDragIdx();
