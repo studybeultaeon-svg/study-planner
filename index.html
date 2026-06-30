@@ -450,7 +450,12 @@ body {
 /* 결과 영역 */
 .calc-content {
   flex: 1; overflow-y: auto; padding: 22px 26px;
-  display: flex; flex-direction: column; gap: 14px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px; align-content: start;
+}
+.calc-content > .empty-state,
+.calc-content > #calc-result-topbar {
+  grid-column: 1 / -1;
 }
 .calc-content::-webkit-scrollbar { width: 5px; }
 .calc-content::-webkit-scrollbar-track { background: transparent; }
