@@ -2160,17 +2160,17 @@ function calculate() {
     const remaining = Math.max(0, qty - progress);
     const progressPct = qty > 0 ? Math.round(progress / qty * 100) : 0;
 
-    // 현재 페이스 시뮬레이션
-    const finishDate = simulateFinish(remaining, today, dday, weekdayGoal, weekendGoal, holidays);
+    // 현재 페이스 시뮬레이션 (시작 날짜 기준)
+    const finishDate = simulateFinish(remaining, startDate, dday, weekdayGoal, weekendGoal, holidays);
     const finishDiff = finishDate ? Math.round((finishDate - dday) / 86400000) : null;
 
-    // 마감일까지 필요 페이스 역산
-    const req = calcRequiredPace(remaining, today, dday, weekdayGoal, weekendGoal, holidays);
+    // 마감일까지 필요 페이스 역산 (시작 날짜 기준)
+    const req = calcRequiredPace(remaining, startDate, dday, weekdayGoal, weekendGoal, holidays);
 
-    // 기간 통계
-    const { weekdays, weekends, holidayCount } = countDaysInRange(today, dday, holidays);
-    const totalDays = Math.round((dday - today) / 86400000) + 1;
-    const ddayNum = totalDays - 1;
+    // 기간 통계 (시작 날짜 기준)
+    const { weekdays, weekends, holidayCount } = countDaysInRange(startDate, dday, holidays);
+    const totalDays = Math.round((dday - startDate) / 86400000) + 1;
+    const ddayNum = Math.round((dday - today) / 86400000);
     const ddayLabel = ddayNum === 0 ? 'D-Day' : `D-${ddayNum}`;
 
     const fmtDate = d => d ? d.toLocaleDateString('ko-KR',{month:'long',day:'numeric'}) : '10년 이상';
