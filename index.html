@@ -810,6 +810,22 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 .progress-bar-wrap { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
 .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); border-radius: 4px; transition: width .4s; }
 .progress-label { font-size: 12px; color: var(--muted); }
+.pace-compare-wrap {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  margin: 12px 0;
+}
+.pace-mini-grid {
+  display: flex; gap: 14px; margin-top: 4px;
+}
+.pace-mini {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.pace-mini-label {
+  font-size: 11px; color: var(--muted);
+}
+.pace-mini-value {
+  font-size: 16px; font-weight: 700; color: var(--text);
+}
 .pace-section { background: var(--surface); border-radius: 10px; padding: 12px 14px; margin: 10px 0; border: 1px solid var(--border); }
 .pace-section.pace-warn { border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.04); }
 .pace-section.pace-ok  { border-color: rgba(52,211,153,.3);  background: rgba(52,211,153,.04); }
@@ -819,18 +835,18 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 .badge-early   { color: var(--green);  font-weight: 700; }
 .badge-late    { color: var(--red);    font-weight: 700; }
 .val-orig { font-size: 11px; color: var(--muted); font-weight: 400; }
-.scenario-section { background: var(--surface); border-radius: 10px; padding: 12px 14px; margin: 10px 0; border: 1px solid var(--border); }
-.scenario-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
-.scenario-table th { color: var(--muted); font-weight: 600; padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border); }
-.scenario-table td { padding: 5px 6px; border-bottom: 1px solid rgba(255,255,255,.04); }
-.sc-cur td { color: var(--accent); font-weight: 600; background: rgba(79,142,247,.06); }
-.sc-up td  { color: var(--green); }
-.sc-down td { color: var(--muted); }
-.week-plan-section { background: var(--surface); border-radius: 10px; padding: 12px 14px; margin: 10px 0; border: 1px solid var(--border); }
-.week-plan-title { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px; }
-.week-plan-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.week-plan-table th { color: var(--muted); font-weight: 600; padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border); }
-.week-plan-table td { padding: 5px 6px; border-bottom: 1px solid rgba(255,255,255,.04); }
+
+
+
+
+
+
+
+
+
+
+
+
 .field-row {
   display: grid; grid-template-columns: 1fr 1fr; gap: 7px;
   grid-column: span 2;
@@ -839,10 +855,7 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 
 /* 모바일 */
 @media (max-width: 768px) {
-  .scenario-table { font-size: 11px; }
-  .scenario-table th, .scenario-table td { padding: 4px; }
-  .week-plan-table { font-size: 11px; }
-  .holiday-date-input { font-size: 16px; }
+  .pace-compare-wrap { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -1900,6 +1913,11 @@ function addCalcTask(name='',qty='',unit='',dday='',start='',modifiedAt='',weekd
 
 
 function removeCalcTask(btn) { btn.closest('.task-card').remove(); autoSaveDraft(); }
+function updateCalcPreview(input) {
+  const card = input.closest('.task-card');
+  const preview = card.querySelector('.task-name-preview');
+  if (preview) preview.textContent = input.value || '업무 이름 입력';
+}
 function refreshTaskDragIdx() {
   document.querySelectorAll('#task-list .task-card').forEach((c,i) => {
     c.dataset.dragIdx = i;
@@ -2150,54 +2168,12 @@ function calculate() {
     const ddayNum = totalDays - 1;
     const ddayLabel = ddayNum === 0 ? 'D-Day' : `D-${ddayNum}`;
 
-    // 시나리오: 평일 목표 ±10
-    const sc1wd = Math.max(1, weekdayGoal - 10);
-    const sc1we = Math.max(1, weekendGoal - 10);
-    const sc2wd = weekdayGoal + 10;
-    const sc2we = weekendGoal + 10;
-    const sc1finish = simulateFinish(remaining, today, dday, sc1wd, sc1we, holidays);
-    const sc2finish = simulateFinish(remaining, today, dday, sc2wd, sc2we, holidays);
-
     const fmtDate = d => d ? d.toLocaleDateString('ko-KR',{month:'long',day:'numeric'}) : '10년 이상';
     const diffLabel = diff => diff === null ? '' : diff === 0 ? '<span class="badge-on-time">딱 마감일 ✓</span>' :
       diff < 0 ? `<span class="badge-early">마감 ${Math.abs(diff)}일 전 ✅</span>` :
       `<span class="badge-late">마감 ${diff}일 초과 ⚠️</span>`;
 
-    // 주차별 계획
-    let weekPlan = '';
-    if (remaining > 0) {
-      const rows = [];
-      let acc = 0; let weekNum = 1;
-      const simD = new Date(today);
-      const holiSet = new Set(holidays);
-      while (acc < remaining && weekNum <= 52) {
-        let weekTotal = 0;
-        const weekStart = new Date(simD);
-        for (let d = 0; d < 7 && acc + weekTotal < remaining; d++) {
-          const key = simD.toISOString().slice(0,10);
-          if (!holiSet.has(key)) {
-            const dow = simD.getDay();
-            weekTotal += (dow === 0 || dow === 6) ? weekendGoal : weekdayGoal;
-          }
-          simD.setDate(simD.getDate() + 1);
-        }
-        const weekEnd = new Date(simD); weekEnd.setDate(weekEnd.getDate()-1);
-        const actualTotal = Math.min(weekTotal, remaining - acc);
-        rows.push(`<tr><td>${weekNum}주차</td><td>${weekStart.getMonth()+1}/${weekStart.getDate()} ~ ${weekEnd.getMonth()+1}/${weekEnd.getDate()}</td><td>${fmt(actualTotal)}${unit}</td><td>${fmt(Math.min(acc+weekTotal,remaining))}/${fmt(qty)}${unit}</td></tr>`);
-        acc += weekTotal; weekNum++;
-        if (simD > dday && acc < remaining) { rows.push(`<tr><td colspan="4" style="color:var(--red);text-align:center;">⚠️ 마감일 초과</td></tr>`); break; }
-      }
-      weekPlan = `
-        <div class="week-plan-section">
-          <div class="week-plan-title">📅 주차별 계획</div>
-          <table class="week-plan-table">
-            <thead><tr><th>주차</th><th>기간</th><th>목표량</th><th>누적</th></tr></thead>
-            <tbody>${rows.join('')}</tbody>
-          </table>
-        </div>`;
-    }
-
-    const block = document.createElement('div');
+const block = document.createElement('div');
     block.className = 'result-block'; block.style.animationDelay = (i*.06)+'s';
     block.innerHTML = `
       <div class="result-block-header">
@@ -2205,56 +2181,39 @@ function calculate() {
         <div class="dday-badge">📅 ${ddayLabel}</div>
       </div>
 
-      <!-- 진척도 -->
       <div class="progress-section">
         <div class="progress-bar-wrap">
           <div class="progress-bar-fill" style="width:${progressPct}%"></div>
         </div>
-        <div class="progress-label">${fmt(progress)} / ${fmt(qty)}${unit} 완료 (${progressPct}%) · 남은 양 <strong>${fmt(remaining)}${unit}</strong></div>
+        <div class="progress-label">${fmt(progress)} / ${fmt(qty)}${unit} 완료 · <strong>${progressPct}%</strong> · 남은 양 <strong>${fmt(remaining)}${unit}</strong></div>
       </div>
 
-      <!-- 기간 통계 -->
       <div class="stats-grid cols-4">
         <div class="stat-card hl-blue"><div class="label">📦 총 할당량</div><div class="value">${fmt(qty)}</div><div class="unit-label">${unit}</div></div>
         <div class="stat-card"><div class="label">📆 남은 기간</div><div class="value">${totalDays}</div><div class="unit-label">일</div></div>
         <div class="stat-card"><div class="label">💼 평일</div><div class="value">${weekdays}</div><div class="unit-label">일</div></div>
-        <div class="stat-card"><div class="label">🎉 주말</div><div class="value">${weekends}</div><div class="unit-label">일${holidayCount?` (휴일 ${holidayCount}일 제외)`:''}</div></div>
+        <div class="stat-card"><div class="label">🎉 주말</div><div class="value">${weekends}</div><div class="unit-label">일</div></div>
       </div>
 
-      <!-- 현재 페이스 -->
-      <div class="pace-section">
-        <div class="pace-title">⚡ 현재 페이스</div>
-        <div class="stats-grid">
-          <div class="stat-card hl-green"><div class="label">🗓 평일 하루</div><div class="value">${fmt(weekdayGoal)}<span class="val-orig"> (목표)</span></div><div class="unit-label">${unit} / 일</div></div>
-          <div class="stat-card hl-yellow"><div class="label">🌅 주말 하루</div><div class="value">${fmt(weekendGoal)}<span class="val-orig"> (목표)</span></div><div class="unit-label">${unit} / 일</div></div>
+      <div class="pace-compare-wrap">
+        <div class="pace-section">
+          <div class="pace-title">⚡ 현재 페이스</div>
+          <div class="pace-mini-grid">
+            <div class="pace-mini"><span class="pace-mini-label">평일</span><span class="pace-mini-value">${fmt(weekdayGoal)}${unit}</span></div>
+            <div class="pace-mini"><span class="pace-mini-label">주말</span><span class="pace-mini-value">${fmt(weekendGoal)}${unit}</span></div>
+          </div>
+          <div class="finish-label">완료 예상: <strong>${fmtDate(finishDate)}</strong> ${diffLabel(finishDiff)}</div>
         </div>
-        <div class="finish-label">완료 예상일: <strong>${fmtDate(finishDate)}</strong> ${diffLabel(finishDiff)}</div>
-      </div>
 
-      <!-- 필요 페이스 (역산) -->
-      <div class="pace-section ${req.wd <= weekdayGoal ? 'pace-ok' : 'pace-warn'}">
-        <div class="pace-title">🎯 마감일 맞추려면</div>
-        <div class="stats-grid">
-          <div class="stat-card hl-green"><div class="label">🗓 평일 하루</div><div class="value">${fmt(req.wd)}<span class="val-orig"> (${fmtDec(req.wdRaw)})</span></div><div class="unit-label">${unit} / 일</div></div>
-          <div class="stat-card hl-yellow"><div class="label">🌅 주말 하루</div><div class="value">${fmt(req.we)}<span class="val-orig"> (${fmtDec(req.weRaw)})</span></div><div class="unit-label">${unit} / 일</div></div>
+        <div class="pace-section ${req.wd <= weekdayGoal ? 'pace-ok' : 'pace-warn'}">
+          <div class="pace-title">🎯 마감일 맞추려면</div>
+          <div class="pace-mini-grid">
+            <div class="pace-mini"><span class="pace-mini-label">평일</span><span class="pace-mini-value">${fmt(req.wd)}${unit}<span class="val-orig"> (${fmtDec(req.wdRaw)})</span></span></div>
+            <div class="pace-mini"><span class="pace-mini-label">주말</span><span class="pace-mini-value">${fmt(req.we)}${unit}<span class="val-orig"> (${fmtDec(req.weRaw)})</span></span></div>
+          </div>
+          <div class="finish-label">${req.wd <= weekdayGoal && req.we <= weekendGoal ? '<span class="badge-early">현재 페이스로 충분 ✅</span>' : '<span class="badge-late">페이스 증가 필요 ⚠️</span>'}</div>
         </div>
-        <div class="finish-label">${req.wd <= weekdayGoal && req.we <= weekendGoal ? '<span class="badge-early">현재 페이스로 충분합니다 ✅</span>' : '<span class="badge-late">페이스 증가 필요 ⚠️</span>'}</div>
       </div>
-
-      <!-- 시나리오 비교 -->
-      <div class="scenario-section">
-        <div class="pace-title">📊 페이스 시나리오 비교</div>
-        <table class="scenario-table">
-          <thead><tr><th>시나리오</th><th>평일</th><th>주말</th><th>완료 예상일</th><th>마감 대비</th></tr></thead>
-          <tbody>
-            <tr class="sc-down"><td>▼ -10${unit}</td><td>${fmt(sc1wd)}</td><td>${fmt(sc1we)}</td><td>${fmtDate(sc1finish)}</td><td>${sc1finish?diffLabel(Math.round((sc1finish-dday)/86400000)):'-'}</td></tr>
-            <tr class="sc-cur"><td>현재</td><td>${fmt(weekdayGoal)}</td><td>${fmt(weekendGoal)}</td><td>${fmtDate(finishDate)}</td><td>${diffLabel(finishDiff)}</td></tr>
-            <tr class="sc-up"><td>▲ +10${unit}</td><td>${fmt(sc2wd)}</td><td>${fmt(sc2we)}</td><td>${fmtDate(sc2finish)}</td><td>${sc2finish?diffLabel(Math.round((sc2finish-dday)/86400000)):'-'}</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      ${weekPlan}
 
       <div style="margin-top:10px;">
         <button class="save-result-btn" style="width:100%;justify-content:center;"
