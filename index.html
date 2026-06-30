@@ -1024,11 +1024,13 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
     <div class="fb-instructions">
       <strong>설정 방법</strong><br>
       1. Firebase Console → 프로젝트 생성<br>
-      2. <strong>빌드 → Realtime Database</strong> 메뉴에서 DB 생성<br>
-      3. <strong>규칙(Rules)</strong> 탭에서 아래 규칙으로 변경 후 게시:<br>
-      <code>{ "rules": { ".read": true, ".write": true } }</code><br>
-      4. <strong>데이터(Data)</strong> 탭 상단 URL 복사 (예: <code>https://xxx.firebaseio.com</code>)<br>
-      5. 아래 필드에 URL을 붙여넣고 저장
+      2. <strong>빌드 → Authentication → Sign-in method</strong>에서 <strong>익명(Anonymous)</strong> 로그인 활성화<br>
+      3. <strong>빌드 → Realtime Database</strong> 메뉴에서 DB 생성<br>
+      4. <strong>규칙(Rules)</strong> 탭에서 아래 규칙으로 변경 후 게시 (인증된 사용자만 읽기/쓰기 가능):<br>
+      <code>{ "rules": { ".read": "auth != null", ".write": "auth != null" } }</code><br>
+      5. <strong>데이터(Data)</strong> 탭 상단 URL 복사 (예: <code>https://xxx.firebaseio.com</code>)<br>
+      6. 아래 필드에 URL을 붙여넣고 저장<br>
+      <span style="color:var(--red);">⚠️ 익명 로그인을 활성화하지 않으면 동기화가 실패합니다.</span>
     </div>
 
     <div class="fb-field">
@@ -1051,6 +1053,7 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 
 <script>
 /* ══════════════════════════════════════════════════════
@@ -1190,23 +1193,31 @@ function initFirebase() {
 
   try {
     firebaseApp = firebase.initializeApp({ databaseURL: cfg.url }, 'studyPlanner_' + Date.now());
-    db = firebase.database(firebaseApp);
+    setSyncStatus('syncing', '인증 중...');
 
-    setSyncStatus('syncing', '연결 중...');
+    // 익명 인증 — 보안 규칙을 "auth != null"로 걸어두면 무작위 스캔 봇의
+    // 무단 읽기/쓰기를 막을 수 있다. (DB Rules에서 Anonymous 로그인을
+    // 활성화해야 동작함 — Authentication → Sign-in method → 익명)
+    firebase.auth(firebaseApp).signInAnonymously().then(() => {
+      db = firebase.database(firebaseApp);
+      setSyncStatus('syncing', '연결 중...');
 
-    fbConnRef = db.ref('.info/connected');
-    fbConnRef.on('value', snap => {
-      if (snap.val() === true) {
-        setSyncStatus('syncing', '동기화됨');
-        document.getElementById('fbConfigBtn').classList.add('connected');
-        document.getElementById('fbConfigBtn').textContent = '✅ 동기화 중';
-        // 리스너는 최초 연결 시 한 번만 붙인다 (재연결 시 중복 attach 방지)
-        if (!fbCalListenerAttached)  { fbCalListenerAttached  = true; subscribeCalendarData(); }
-        if (!fbCalcListenerAttached) { fbCalcListenerAttached = true; subscribeCalcData(); }
-      } else {
-        setSyncStatus('offline', '오프라인 (로컬 저장됨)');
-      }
-    }, err => fbReportError('연결 상태 확인 실패', err));
+      fbConnRef = db.ref('.info/connected');
+      fbConnRef.on('value', snap => {
+        if (snap.val() === true) {
+          setSyncStatus('syncing', '동기화됨');
+          document.getElementById('fbConfigBtn').classList.add('connected');
+          document.getElementById('fbConfigBtn').textContent = '✅ 동기화 중';
+          // 리스너는 최초 연결 시 한 번만 붙인다 (재연결 시 중복 attach 방지)
+          if (!fbCalListenerAttached)  { fbCalListenerAttached  = true; subscribeCalendarData(); }
+          if (!fbCalcListenerAttached) { fbCalcListenerAttached = true; subscribeCalcData(); }
+        } else {
+          setSyncStatus('offline', '오프라인 (로컬 저장됨)');
+        }
+      }, err => fbReportError('연결 상태 확인 실패', err));
+    }).catch(err => {
+      fbReportError('익명 인증 실패 (Firebase 콘솔에서 Authentication → Sign-in method → 익명 활성화 필요)', err);
+    });
 
   } catch(e) {
     setSyncStatus('error', '연결 오류: ' + e.message);
