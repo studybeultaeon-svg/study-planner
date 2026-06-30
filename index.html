@@ -1029,13 +1029,22 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
       4. <strong>규칙(Rules)</strong> 탭에서 아래 규칙으로 변경 후 게시 (인증된 사용자만 읽기/쓰기 가능):<br>
       <code>{ "rules": { ".read": "auth != null", ".write": "auth != null" } }</code><br>
       5. <strong>데이터(Data)</strong> 탭 상단 URL 복사 (예: <code>https://xxx.firebaseio.com</code>)<br>
-      6. 아래 필드에 URL을 붙여넣고 저장<br>
-      <span style="color:var(--red);">⚠️ 익명 로그인을 활성화하지 않으면 동기화가 실패합니다.</span>
+      6. 앱이 없다면 <strong>프로젝트 설정(톱니바퀴) → 일반 → 내 앱</strong>에서 <strong>&lt;/&gt; (웹)</strong> 아이콘을 눌러 웹 앱을 먼저 등록<br>
+      7. 등록 시 나오는 <code>firebaseConfig</code> 코드에서 <strong>apiKey</strong> 값을 복사 (appId 아님 — 아래 참고)<br>
+      8. 아래 필드에 URL과 API Key를 붙여넣고 저장<br>
+      <span style="color:var(--red);">⚠️ 익명 로그인을 활성화하지 않으면 동기화가 실패합니다.</span><br><br>
+      <strong>apiKey vs appId 헷갈릴 때:</strong><br>
+      <code>apiKey: "AIzaSy..."</code> ← 이 값을 사용 (Web API Key)<br>
+      <code>appId: "1:123...:web:abc"</code> ← 이건 사용 안 함
     </div>
 
     <div class="fb-field">
       <label>Realtime Database URL</label>
       <input type="text" id="fbUrlInput" placeholder="https://your-project-default-rtdb.firebaseio.com" />
+    </div>
+    <div class="fb-field">
+      <label>Web API Key — 프로젝트 설정 → 일반 → 내 앱 → SDK 설정에서 확인</label>
+      <input type="text" id="fbApiKeyInput" placeholder="예: AIzaSy..." />
     </div>
     <div class="fb-field">
       <label>사용자 ID (선택) — 여러 기기 간 개인 데이터 분리</label>
@@ -1141,6 +1150,7 @@ function fbReportError(prefix, err) {
 function openFbModal() {
   const cfg = loadFbConfig();
   document.getElementById('fbUrlInput').value = cfg.url || '';
+  document.getElementById('fbApiKeyInput').value = cfg.apiKey || '';
   document.getElementById('fbUserInput').value = cfg.user || '';
   document.getElementById('fbDisconnectBtn').style.display = cfg.url ? 'block' : 'none';
   document.getElementById('fbModalOverlay').classList.add('show');
@@ -1154,9 +1164,11 @@ function saveFbConfig(cfg) { localStorage.setItem(FB_CONFIG_KEY, JSON.stringify(
 
 function saveFirebaseConfig() {
   const url = document.getElementById('fbUrlInput').value.trim().replace(/\/$/, '');
+  const apiKey = document.getElementById('fbApiKeyInput').value.trim();
   const user = (document.getElementById('fbUserInput').value.trim().replace(/[^a-zA-Z0-9\-_]/g, '') || 'default');
   if (!url) { alert('Database URL을 입력해 주세요.'); return; }
-  saveFbConfig({ url, user });
+  if (!apiKey) { alert('Web API Key를 입력해 주세요. (익명 인증에 필요합니다)'); return; }
+  saveFbConfig({ url, apiKey, user });
   closeFbModal();
   initFirebase();
 }
@@ -1188,11 +1200,16 @@ function disconnectFirebase() {
 function initFirebase() {
   const cfg = loadFbConfig();
   if (!cfg.url) return;
+  if (!cfg.apiKey) {
+    setSyncStatus('error', 'API Key 없음');
+    showToast('Web API Key가 설정되지 않았습니다. 동기화 설정에서 입력해 주세요.');
+    return;
+  }
   FB_USER = cfg.user || 'default';
   teardownFirebase();
 
   try {
-    firebaseApp = firebase.initializeApp({ databaseURL: cfg.url }, 'studyPlanner_' + Date.now());
+    firebaseApp = firebase.initializeApp({ databaseURL: cfg.url, apiKey: cfg.apiKey }, 'studyPlanner_' + Date.now());
     setSyncStatus('syncing', '인증 중...');
 
     // 익명 인증 — 보안 규칙을 "auth != null"로 걸어두면 무작위 스캔 봇의
