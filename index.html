@@ -1201,7 +1201,9 @@ function subscribeCalendarData() {
       }
     }
   }, err => {
-    setSyncStatus('error', '동기화 오류');
+    console.error('[Firebase] 캘린더 읽기 실패:', err);
+    setSyncStatus('error', '동기화 오류: ' + (err.code || err.message || ''));
+    showToast('Firebase 읽기 실패 (' + (err.code || err.message) + ') — 콘솔에서 DB 규칙을 확인하세요');
   });
   fbListeners.calendar = () => ref.off('value', listener);
 }
@@ -1212,7 +1214,11 @@ function pushCalendarToFirebase() {
   _suppressCalSync = true;
   db.ref(`users/${FB_USER}/calendar`).set({ tasks: calTasks })
     .then(() => setSyncStatus('syncing', '동기화됨'))
-    .catch(() => setSyncStatus('error', '저장 실패'))
+    .catch(err => {
+      console.error('[Firebase] 캘린더 저장 실패:', err);
+      setSyncStatus('error', '저장 실패: ' + (err.code || err.message || ''));
+      showToast('Firebase 저장 실패 (' + (err.code || err.message) + ') — 콘솔에서 DB 규칙을 확인하세요');
+    })
     .finally(() => { setTimeout(() => { _suppressCalSync = false; }, 1200); });
 }
 
@@ -1255,7 +1261,9 @@ function subscribeCalcData() {
       }
     }
   }, err => {
-    setSyncStatus('error', '동기화 오류');
+    console.error('[Firebase] 계산기 읽기 실패:', err);
+    setSyncStatus('error', '동기화 오류: ' + (err.code || err.message || ''));
+    showToast('Firebase 읽기 실패 (' + (err.code || err.message) + ') — 콘솔에서 DB 규칙을 확인하세요');
   });
   fbListeners.calculator = () => ref.off('value', listener);
 }
@@ -1266,6 +1274,10 @@ function pushCalcToFirebase(data) {
   db.ref(`users/${FB_USER}/calculator`).set({
     saved: data.saved || [],
     tasks: data.tasks || []
+  }).catch(err => {
+    console.error('[Firebase] 계산기 저장 실패:', err);
+    setSyncStatus('error', '저장 실패: ' + (err.code || err.message || ''));
+    showToast('Firebase 저장 실패 (' + (err.code || err.message) + ') — 콘솔에서 DB 규칙을 확인하세요');
   }).finally(() => {
     setTimeout(() => { _suppressCalcSync = false; }, 1500);
   });
