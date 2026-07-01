@@ -1251,15 +1251,23 @@ function subscribeCalendarData() {
   fbCalRef = db.ref(`users/${FB_USER}/calendar`);
   fbCalRef.on('value', snap => {
     const data = snap.val();
-    if (!data) return;
-    const remoteTs = data._ts || 0;
-    if (remoteTs <= getLocalCalTs()) return; // 원격이 로컬보다 최신이 아니면 무시 (롤백 방지)
-    const newTasks = data.tasks || {};
-    if (JSON.stringify(newTasks) === JSON.stringify(calTasks)) { setLocalCalTs(remoteTs); return; }
-    calTasks = newTasks;
-    setLocalCalTs(remoteTs);
-    localStorage.setItem('studyCalendarTasks', JSON.stringify(calTasks));
-    renderCalendar();
+    const remoteTs = (data && data._ts) || 0;
+    const localTs = getLocalCalTs();
+
+    if (remoteTs > localTs) {
+      // 원격이 최신 → 로컬에 반영
+      const newTasks = (data && data.tasks) || {};
+      if (JSON.stringify(newTasks) !== JSON.stringify(calTasks)) {
+        calTasks = newTasks;
+        localStorage.setItem('studyCalendarTasks', JSON.stringify(calTasks));
+        renderCalendar();
+      }
+      setLocalCalTs(remoteTs);
+    } else if (localTs > remoteTs) {
+      // 로컬이 최신 (또는 Firebase가 비어 있음) → Firebase로 push
+      pushCalendarToFirebase();
+    }
+    // remoteTs === localTs: 자기 echo — no-op
   }, err => fbReportError('캘린더 동기화 오류', err));
 }
 
@@ -1282,12 +1290,11 @@ function subscribeCalcData() {
   fbCalcRef = db.ref(`users/${FB_USER}/calculator`);
   fbCalcRef.on('value', snap => {
     const remote = snap.val();
-    if (!remote) return;
     const local = loadCalcFromStorage();
     let touched = false;
 
     // 저장됨 목록 — savedTs가 로컬보다 최신일 때만 반영
-    const remoteSavedTs = remote.savedTs || 0;
+    const remoteSavedTs = (remote && remote.savedTs) || 0;
     if (remoteSavedTs > (local.savedTs || 0)) {
       local.saved = remote.saved || [];
       local.savedTs = remoteSavedTs;
@@ -1296,7 +1303,7 @@ function subscribeCalcData() {
     }
 
     // 드래프트 업무 — tasksTs가 로컬보다 최신일 때만 반영
-    const remoteTasksTs = remote.tasksTs || 0;
+    const remoteTasksTs = (remote && remote.tasksTs) || 0;
     if (remoteTasksTs > (local.tasksTs || 0)) {
       local.tasks = remote.tasks || [];
       local.tasksTs = remoteTasksTs;
@@ -1320,6 +1327,13 @@ function subscribeCalcData() {
     }
 
     if (touched) saveCalcToLocalStorage(local);
+
+    // 로컬이 최신이거나 Firebase가 비어 있으면 push (첫 연결 시 누락 방지)
+    if (!remote ||
+        (local.savedTs || 0) > remoteSavedTs ||
+        (local.tasksTs || 0) > remoteTasksTs) {
+      pushCalcToFirebase(local);
+    }
   }, err => fbReportError('계산기 동기화 오류', err));
 }
 
