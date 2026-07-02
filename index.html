@@ -1089,17 +1089,12 @@ document.getElementById('confirm-ok').onclick = () => { closeConfirm(); _confirm
 /* ══ 탭 전환 ══ */
 function switchAppTab(name, btn) {
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => {
+    v.classList.remove('active');
+    v.style.display = ''; // 인라인 스타일 초기화 → CSS 클래스(display:none)가 적용되도록
+  });
   btn.classList.add('active');
-  const viewEl = document.getElementById('view-' + name);
-  viewEl.classList.add('active');
-  // 모바일에서 계산기 뷰는 block 스크롤
-  if (window.innerWidth <= 768 && name === 'calculator') {
-    viewEl.style.display = 'block';
-    viewEl.style.overflowY = 'auto';
-  } else if (window.innerWidth <= 768) {
-    viewEl.style.display = 'flex';
-  }
+  document.getElementById('view-' + name).classList.add('active');
 }
 
 /* ══════════════════════════════════════════════════════
