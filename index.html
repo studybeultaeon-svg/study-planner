@@ -1987,8 +1987,17 @@ document.getElementById('confirmDateBtn').addEventListener('click',()=>{
   const {mode,fromKey}=datePickMode;
   const task=(calTasks[fromKey]||[])[selectedTaskIndex];
   if (!task) return;
-  if (mode==='copy') addTaskToDate(targetKey,task.name,task.color,null);
-  else if (mode==='move') {
+  if (mode==='copy') {
+    if (!calTasks[targetKey]) calTasks[targetKey] = [];
+    calTasks[targetKey].push({
+      name: task.name, color: task.color, status: null,
+      ...(task.nextDays != null ? { nextDays: task.nextDays } : {}),
+      ...(task.linkedCalc ? { linkedCalc: task.linkedCalc } : {}),
+      ...(task.progressStep != null ? { progressStep: task.progressStep } : {}),
+    });
+    sortTasksByDefault(targetKey);
+    calSaveData();
+  } else if (mode==='move') {
     addTaskToDate(targetKey,task.name,task.color,task.status);
     calTasks[fromKey].splice(selectedTaskIndex,1);
     if (!calTasks[fromKey].length) delete calTasks[fromKey];
