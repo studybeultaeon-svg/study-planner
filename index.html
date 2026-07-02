@@ -1459,7 +1459,7 @@ function markTaskStatus(dkv, idx, status) {
         sortTasksByDefault(nKey);
       }
     }
-    if (task.linkedCalc) {
+    if (task.linkedCalc && task.color === 'red') {
       deductCalcQty(task.linkedCalc, getLinkedProgressAmount(task));
     }
   }
@@ -1901,7 +1901,7 @@ function undoMarkStatus(dkv, idx, prevStatus) {
       if (!calTasks[nk].length) delete calTasks[nk];
     }
   }
-  if (prevStatus === 'O' && task.linkedCalc) {
+  if (prevStatus === 'O' && task.linkedCalc && task.color === 'red') {
     restoreCalcQty(task.linkedCalc, getLinkedProgressAmount(task));
   }
   task.status = null;
