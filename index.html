@@ -1656,19 +1656,21 @@ function renderModalTaskList(key) {
     const inlineMeta=document.createElement('div');
     inlineMeta.style.cssText='display:flex;align-items:center;gap:4px;flex-shrink:0;';
 
-    const stepInput=document.createElement('input');
-    stepInput.type='number'; stepInput.min='0'; stepInput.step='1';
-    stepInput.value = task.progressStep != null && task.progressStep !== '' ? task.progressStep : '1';
-    stepInput.title='완료 시 진척도 증가량';
-    stepInput.style.cssText='width:70px;padding:2px 4px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;';
-    stepInput.addEventListener('click', e => e.stopPropagation());
-    stepInput.addEventListener('change', e => {
-      e.stopPropagation();
-      const v = parseFloat(stepInput.value);
-      calTasks[key][taskIdx].progressStep = Number.isNaN(v) ? '' : String(v);
-      calSaveData();
-    });
-    inlineMeta.appendChild(stepInput);
+    if (task.color === 'red') {
+      const stepInput=document.createElement('input');
+      stepInput.type='number'; stepInput.min='0'; stepInput.step='1';
+      stepInput.value = task.progressStep != null && task.progressStep !== '' ? task.progressStep : '1';
+      stepInput.title='완료 시 진척도 증가량 (1회독만 적용)';
+      stepInput.style.cssText='width:70px;padding:2px 4px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;';
+      stepInput.addEventListener('click', e => e.stopPropagation());
+      stepInput.addEventListener('change', e => {
+        e.stopPropagation();
+        const v = parseFloat(stepInput.value);
+        calTasks[key][taskIdx].progressStep = Number.isNaN(v) ? '' : String(v);
+        calSaveData();
+      });
+      inlineMeta.appendChild(stepInput);
+    }
     item.appendChild(inlineMeta);
 
     // 수정 버튼
