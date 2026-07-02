@@ -466,17 +466,26 @@ body {
 
 /* 리사이즈 구분선 */
 .calc-divider {
-  width: 5px; flex-shrink: 0; cursor: col-resize;
+  width: 6px; flex-shrink: 0; cursor: col-resize;
   background: var(--border); transition: background 0.15s;
   position: relative;
+}
+/* 클릭 영역을 양옆으로 넓힘 */
+.calc-divider::before {
+  content: ''; position: absolute; top: 0; left: -8px; right: -8px; bottom: 0;
 }
 .calc-divider::after {
   content: ''; position: absolute; top: 50%; left: 50%;
   transform: translate(-50%, -50%);
-  width: 3px; height: 32px; border-radius: 2px;
-  background: var(--muted); opacity: 0.5;
+  width: 4px; height: 36px; border-radius: 3px;
+  background: var(--muted); opacity: 0.6;
 }
-.calc-divider:hover, .calc-divider.active { background: var(--accent); }
+.calc-divider:hover, .calc-divider.active {
+  background: var(--accent);
+}
+.calc-divider:hover::after, .calc-divider.active::after {
+  background: white; opacity: 0.9;
+}
 @media (max-width: 768px) { .calc-divider { display: none; } }
 
 /* 결과 영역 */
@@ -2959,9 +2968,11 @@ document.addEventListener('touchend', e => {
 (function() {
   const divider = document.getElementById('calcDivider');
   if (!divider) return;
-  // 이전 세션의 ResizeObserver가 박은 inline style 제거
+  // 이전 잔여 inline style 초기화
   const content = document.querySelector('.calc-content');
   if (content) content.style.gridTemplateColumns = '';
+  const sidebarEl = document.querySelector('.calc-sidebar');
+  if (sidebarEl) { sidebarEl.style.width = ''; sidebarEl.style.flexShrink = ''; }
   let active = false;
   function startResize() { active = true; divider.classList.add('active'); document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; }
   function stopResize()  { active = false; divider.classList.remove('active'); document.body.style.cursor = ''; document.body.style.userSelect = ''; }
