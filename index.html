@@ -466,32 +466,23 @@ body {
 
 /* 리사이즈 구분선 */
 .calc-divider {
-  width: 6px; flex-shrink: 0; cursor: col-resize;
-  background: var(--border); transition: background 0.15s;
-  position: relative;
-}
-/* 클릭 영역을 양옆으로 넓힘 */
-.calc-divider::before {
-  content: ''; position: absolute; top: 0; left: -8px; right: -8px; bottom: 0;
+  width: 12px; flex-shrink: 0; cursor: col-resize;
+  background: transparent; position: relative;
+  display: flex; align-items: center; justify-content: center;
 }
 .calc-divider::after {
-  content: ''; position: absolute; top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  width: 4px; height: 36px; border-radius: 3px;
-  background: var(--muted); opacity: 0.6;
-}
-.calc-divider:hover, .calc-divider.active {
-  background: var(--accent);
+  content: ''; width: 4px; height: 40px; border-radius: 3px;
+  background: var(--border); transition: background 0.15s, opacity 0.15s;
 }
 .calc-divider:hover::after, .calc-divider.active::after {
-  background: white; opacity: 0.9;
+  background: var(--accent); opacity: 1;
 }
 @media (max-width: 768px) { .calc-divider { display: none; } }
 
 /* 결과 영역 */
 .calc-content {
-  flex: 1; overflow-y: auto; padding: 22px 26px;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  flex: 1; min-width: 0; overflow-y: auto; padding: 22px 26px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 14px; align-content: start;
 }
 .calc-content > .empty-state,
@@ -2968,29 +2959,41 @@ document.addEventListener('touchend', e => {
 (function() {
   const divider = document.getElementById('calcDivider');
   if (!divider) return;
-  // 이전 잔여 inline style 초기화
-  const content = document.querySelector('.calc-content');
-  if (content) content.style.gridTemplateColumns = '';
-  const sidebarEl = document.querySelector('.calc-sidebar');
-  if (sidebarEl) { sidebarEl.style.width = ''; sidebarEl.style.flexShrink = ''; }
-  let active = false;
-  function startResize() { active = true; divider.classList.add('active'); document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; }
-  function stopResize()  { active = false; divider.classList.remove('active'); document.body.style.cursor = ''; document.body.style.userSelect = ''; }
-  function doResize(clientX) {
-    if (!active) return;
-    const layout = document.querySelector('.calc-layout');
-    const r = layout.getBoundingClientRect();
-    const ratio = Math.max(0.18, Math.min(0.72, (clientX - r.left) / r.width));
-    const sidebar = document.querySelector('.calc-sidebar');
-    sidebar.style.width = (ratio * 100) + '%';
-    sidebar.style.flexShrink = '0';
+  const sidebar = document.querySelector('.calc-sidebar');
+  const layout  = document.querySelector('.calc-layout');
+  if (!sidebar || !layout) return;
+
+  let dragging = false, startX = 0, startW = 0;
+
+  function begin(clientX) {
+    dragging = true;
+    startX = clientX;
+    startW = sidebar.offsetWidth;
+    divider.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
   }
-  divider.addEventListener('mousedown', e => { e.preventDefault(); startResize(); });
-  document.addEventListener('mousemove', e => doResize(e.clientX));
-  document.addEventListener('mouseup', stopResize);
-  divider.addEventListener('touchstart', e => { e.preventDefault(); startResize(); }, { passive: false });
-  document.addEventListener('touchmove', e => { if (active) { e.preventDefault(); doResize(e.touches[0].clientX); } }, { passive: false });
-  document.addEventListener('touchend', stopResize);
+  function move(clientX) {
+    if (!dragging) return;
+    const layoutW = layout.offsetWidth;
+    const minW = 180, maxW = Math.floor(layoutW * 0.72);
+    const newW = Math.min(maxW, Math.max(minW, startW + (clientX - startX)));
+    sidebar.style.width = newW + 'px';
+  }
+  function end() {
+    if (!dragging) return;
+    dragging = false;
+    divider.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }
+
+  divider.addEventListener('mousedown', e => { e.preventDefault(); begin(e.clientX); });
+  document.addEventListener('mousemove', e => move(e.clientX));
+  document.addEventListener('mouseup', end);
+  divider.addEventListener('touchstart', e => { e.preventDefault(); begin(e.touches[0].clientX); }, { passive: false });
+  document.addEventListener('touchmove', e => { if (dragging) { e.preventDefault(); move(e.touches[0].clientX); } }, { passive: false });
+  document.addEventListener('touchend', end);
 })();
 
 // 데스크탑 드래그: 컨테이너 자체에 dragover → 빈 공간에서도 자동 스크롤
