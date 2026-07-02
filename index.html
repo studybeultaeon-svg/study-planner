@@ -2778,11 +2778,11 @@ function _asStep() {
 }
 function updateDragScroll(clientY, scrollEl) {
   if (!scrollEl) { stopDragScroll(); return; }
-  // 뷰포트 기준으로 상하 100px 안에 들어오면 스크롤 (컨테이너 위치와 무관)
-  const edge = 100, vH = window.innerHeight;
+  const rect = scrollEl.getBoundingClientRect();
+  const edge = 80;
   let spd = 0;
-  if (clientY < edge) spd = -Math.ceil(((edge - clientY) / edge) * 12);
-  else if (clientY > vH - edge) spd = Math.ceil(((clientY - (vH - edge)) / edge) * 12);
+  if (clientY < rect.top + edge) spd = -Math.ceil(((rect.top + edge - clientY) / edge) * 12);
+  else if (clientY > rect.bottom - edge) spd = Math.ceil(((clientY - (rect.bottom - edge)) / edge) * 12);
   _asEl = scrollEl; _asSpd = spd;
   if (spd !== 0 && !_asRAF) _asRAF = requestAnimationFrame(_asStep);
   else if (spd === 0 && _asRAF) { cancelAnimationFrame(_asRAF); _asRAF = null; }
@@ -2971,13 +2971,12 @@ document.addEventListener('touchend', e => {
     sidebar.style.width = (ratio * 100) + '%';
     sidebar.style.flexShrink = '0';
     // 콘텐츠 너비에 맞게 카드 컬럼 최적화
-    const contentW = r.width * (1 - ratio) - 5;
-    const padding = 52; // calc-content padding 양쪽
-    const available = contentW - padding;
-    const cols = Math.max(1, Math.floor(available / 320));
-    const minCard = Math.max(180, Math.floor(available / cols));
-    document.querySelector('.calc-content').style.gridTemplateColumns =
-      `repeat(auto-fill, minmax(${minCard}px, 1fr))`;
+    const content = document.querySelector('.calc-content');
+    if (!content) return;
+    // 실제 남은 너비는 레이아웃에서 사이드바+구분선 빼기
+    const availableW = r.width * (1 - ratio) - 5 - 52; // 52 = padding 26*2
+    const minCard = availableW >= 600 ? 280 : availableW >= 360 ? Math.floor(availableW / 2) : availableW;
+    content.style.gridTemplateColumns = `repeat(auto-fill, minmax(${Math.max(180, minCard)}px, 1fr))`;
   }
   divider.addEventListener('mousedown', e => { e.preventDefault(); startResize(); });
   document.addEventListener('mousemove', e => doResize(e.clientX));
