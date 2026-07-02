@@ -482,7 +482,7 @@ body {
 /* 결과 영역 */
 .calc-content {
   flex: 1; overflow-y: auto; padding: 22px 26px;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 14px; align-content: start;
 }
 .calc-content > .empty-state,
@@ -2977,17 +2977,6 @@ document.addEventListener('touchend', e => {
   divider.addEventListener('touchstart', e => { e.preventDefault(); startResize(); }, { passive: false });
   document.addEventListener('touchmove', e => { if (active) { e.preventDefault(); doResize(e.touches[0].clientX); } }, { passive: false });
   document.addEventListener('touchend', stopResize);
-
-  // 결과 영역 너비 변화를 감지해서 카드 그리드 자동 최적화
-  const content = document.querySelector('.calc-content');
-  if (content && window.ResizeObserver) {
-    new ResizeObserver(entries => {
-      const w = entries[0].contentRect.width;
-      const cols = Math.max(1, Math.floor(w / 300));
-      const minCard = Math.max(180, Math.floor(w / cols));
-      content.style.gridTemplateColumns = `repeat(auto-fit, minmax(${minCard}px, 1fr))`;
-    }).observe(content);
-  }
 })();
 
 // 데스크탑 드래그: 컨테이너 자체에 dragover → 빈 공간에서도 자동 스크롤
