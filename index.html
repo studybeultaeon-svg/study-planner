@@ -426,6 +426,22 @@ body {
 }
 .btn-clear-all:hover { background: rgba(248,113,113,.15); }
 .saved-empty { font-size: 13px; color: var(--muted); text-align: center; padding: 28px 0; line-height: 1.8; }
+.saved-panel-footer { display:flex; flex-direction:column; gap:6px; }
+.btn-new-folder { font-family:inherit; font-size:12px; font-weight:600; padding:8px; border-radius:8px; border:1px solid rgba(79,142,247,.3); background:rgba(79,142,247,.08); color:var(--accent); cursor:pointer; width:100%; }
+.btn-new-folder:hover { background:rgba(79,142,247,.18); }
+.folder-header { display:flex; align-items:center; gap:5px; padding:5px 4px 3px; cursor:pointer; user-select:none; border-bottom:1px solid var(--border); margin-bottom:2px; margin-top:4px; }
+.folder-header-name { flex:1; font-size:12px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.folder-toggle { font-size:10px; color:var(--muted); flex-shrink:0; }
+.folder-actions { display:flex; gap:3px; flex-shrink:0; }
+.folder-action-btn { background:none; border:none; font-size:11px; color:var(--muted); cursor:pointer; padding:1px 5px; border-radius:4px; font-family:inherit; }
+.folder-action-btn:hover { background:var(--border); color:var(--text); }
+.folder-items { padding-left:10px; display:flex; flex-direction:column; gap:6px; padding-top:4px; padding-bottom:2px; }
+.saved-item-move-btn { background:none; border:1px solid var(--border); border-radius:4px; font-size:11px; padding:1px 5px; color:var(--muted); cursor:pointer; font-family:inherit; flex-shrink:0; }
+.saved-item-move-btn:hover { background:var(--border); }
+.folder-popover { position:fixed; z-index:9999; background:var(--card); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.3); padding:4px 0; min-width:130px; }
+.folder-popover-item { padding:8px 14px; font-size:13px; cursor:pointer; color:var(--text); }
+.folder-popover-item:hover { background:var(--border); }
+.folder-popover-item.active { color:var(--accent); font-weight:600; }
 .saved-item {
   background: var(--card); border: 1px solid var(--border);
   border-radius: 9px; padding: 10px 12px;
@@ -981,6 +997,7 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
       <div class="tab-panel" id="tab-saved">
         <div class="saved-panel-body" id="saved-list"></div>
         <div class="saved-panel-footer">
+          <button class="btn-new-folder" onclick="promptCreateFolder()">📁 새 폴더</button>
           <button class="btn-clear-all" onclick="confirmClearAll()">전체 삭제</button>
         </div>
       </div>
@@ -1781,11 +1798,13 @@ function renderModalTaskList(key) {
       item.classList.remove('dragging');
       item.setAttribute('draggable','false');
       clearCalHighlight();
+      stopDragScroll();
       calDragSrc = null; calDragKey = null;
     });
     item.addEventListener('dragover', e => {
       if (!calDragSrc || calDragSrc === item) return;
       e.preventDefault();
+      updateDragScroll(e.clientY, document.querySelector('.cal-modal'));
       clearCalHighlight();
       const r = item.getBoundingClientRect();
       if (e.clientY < r.top + r.height/2) item.classList.add('calc-drag-over-top');
@@ -2178,56 +2197,159 @@ function loadDraft() {
   if (data.tasks&&data.tasks.length) data.tasks.forEach(t=>addCalcTask(t.name,t.qty,t.unit,t.dday,t.start||'',t.modifiedAt||'',t.weekdayGoal||'',t.weekendGoal||'',t.progress||''));
   else addCalcTask();
 }
+const _folderCollapsed = {};
+
 function renderSavedPanel() {
-  const data=loadCalcFromStorage();
-  const list=document.getElementById('saved-list');
-  const btn=document.getElementById('saved-tab-btn');
-  list.innerHTML='';
-  if (!data.saved||!data.saved.length) {
-    list.innerHTML='<div class="saved-empty">저장된 업무가 없습니다<br><small>계산 후 결과를 저장해 보세요</small></div>';
-    btn.textContent='💾 저장됨'; return;
+  const data = loadCalcFromStorage();
+  const list = document.getElementById('saved-list');
+  const btn  = document.getElementById('saved-tab-btn');
+  list.innerHTML = '';
+  const saved = data.saved || [];
+  const folders = data.savedFolders || [];
+  if (!saved.length) {
+    list.innerHTML = '<div class="saved-empty">저장된 업무가 없습니다<br><small>계산 후 결과를 저장해 보세요</small></div>';
+    btn.textContent = '💾 저장됨'; return;
   }
-  btn.textContent=`💾 저장됨 (${data.saved.length})`;
-  data.saved.forEach((item,idx)=>{
-    const el=document.createElement('div');
-    el.className='saved-item'; el.style.animationDelay=(idx*.03)+'s'; el.dataset.dragIdx=idx; el.setAttribute('draggable','true');
-    el.style.display='flex'; el.style.alignItems='flex-start'; el.style.gap='8px';
-    el.innerHTML=`
+  btn.textContent = `💾 저장됨 (${saved.length})`;
+
+  function makeSavedItemEl(item, idx) {
+    const el = document.createElement('div');
+    el.className = 'saved-item'; el.dataset.dragIdx = idx; el.setAttribute('draggable','true');
+    el.style.cssText = 'display:flex;align-items:flex-start;gap:8px;';
+    el._dragCtx = 'saved';
+    const curFolder = item.folder || null;
+    el.innerHTML = `
       <span class="calc-drag-handle" style="margin-top:2px;" title="드래그하여 순서 변경">⠿</span>
       <div style="flex:1;min-width:0;">
         <div class="saved-item-name">${esc(item.name)}</div>
         <div class="saved-item-meta">${item.qty}${esc(item.unit)} · ${item.start?esc(item.start)+' 시작 · ':''}${esc(item.dday)} 마감 · 평일 ${item.weekdayGoal||'?'}/${item.weekendGoal||'?'} 주말 · 저장 ${esc(item.savedAt)}${item.modifiedAt&&item.modifiedAt!==item.savedAt?' · 수정 '+esc(item.modifiedAt):''}</div>
         <div class="saved-item-actions">
           <button class="saved-btn load" onclick="loadSavedItem(${idx})">✚ 불러오기</button>
-          <button class="saved-btn del"  onclick="deleteSavedItem(${idx})">삭제</button>
+          <button class="saved-item-move-btn" title="폴더 이동">📁 ${curFolder ? esc(curFolder) : '미분류'}</button>
+          <button class="saved-btn del" onclick="deleteSavedItem(${idx})">삭제</button>
         </div>
       </div>`;
-    el._dragCtx = 'saved';
-    list.appendChild(el);
+    const moveBtn = el.querySelector('.saved-item-move-btn');
+    moveBtn.addEventListener('click', e => { e.stopPropagation(); showFolderPopover(moveBtn, idx, folders, curFolder); });
     const sh = el.querySelector('.calc-drag-handle');
     if (sh) {
-      sh.addEventListener('mousedown', e => onHandleMouseDown(e, 'saved'));
-      sh.addEventListener('mouseup',   e => onHandleMouseUp(e));
+      sh.addEventListener('mousedown', ev => onHandleMouseDown(ev, 'saved'));
+      sh.addEventListener('mouseup',   ev => onHandleMouseUp(ev));
+    }
+    return el;
+  }
+
+  // 폴더별 그룹핑
+  const unfoldered = saved.map((item,i)=>({item,i})).filter(({item})=>!item.folder);
+  const folderGroups = folders.map(f => ({
+    name: f,
+    items: saved.map((item,i)=>({item,i})).filter(({item})=>item.folder===f)
+  }));
+
+  // 미분류 먼저
+  if (unfoldered.length) {
+    unfoldered.forEach(({item,i}) => list.appendChild(makeSavedItemEl(item, i)));
+  }
+
+  // 각 폴더
+  folderGroups.forEach(({name, items}) => {
+    const collapsed = !!_folderCollapsed[name];
+    const hdr = document.createElement('div');
+    hdr.className = 'folder-header';
+    hdr.innerHTML = `
+      <span class="folder-toggle">${collapsed ? '▶' : '▼'}</span>
+      <span class="folder-header-name">📁 ${esc(name)} (${items.length})</span>
+      <div class="folder-actions">
+        <button class="folder-action-btn" title="이름 변경" onclick="renameSavedFolder('${esc(name)}')">✏️</button>
+        <button class="folder-action-btn" title="폴더 삭제" onclick="deleteSavedFolder('${esc(name)}')">✕</button>
+      </div>`;
+    hdr.addEventListener('click', e => {
+      if (e.target.closest('.folder-action-btn')) return;
+      _folderCollapsed[name] = !_folderCollapsed[name];
+      renderSavedPanel();
+    });
+    list.appendChild(hdr);
+    if (!collapsed) {
+      const wrap = document.createElement('div');
+      wrap.className = 'folder-items';
+      items.forEach(({item,i}) => wrap.appendChild(makeSavedItemEl(item, i)));
+      list.appendChild(wrap);
     }
   });
 }
+
+function showFolderPopover(anchor, itemIdx, folders, curFolder) {
+  document.querySelectorAll('.folder-popover').forEach(p => p.remove());
+  const pop = document.createElement('div');
+  pop.className = 'folder-popover';
+  const options = [{ label:'미분류', value:null }, ...folders.map(f=>({label:f, value:f}))];
+  options.forEach(({label, value}) => {
+    const d = document.createElement('div');
+    d.className = 'folder-popover-item' + (curFolder === value ? ' active' : '');
+    d.textContent = value ? `📁 ${label}` : `— ${label}`;
+    d.addEventListener('click', () => {
+      const data = loadCalcFromStorage();
+      if (data.saved[itemIdx]) data.saved[itemIdx].folder = value;
+      saveCalcData(data); pop.remove(); renderSavedPanel();
+    });
+    pop.appendChild(d);
+  });
+  document.body.appendChild(pop);
+  const r = anchor.getBoundingClientRect();
+  pop.style.top  = Math.min(r.bottom + 4, window.innerHeight - pop.offsetHeight - 8) + 'px';
+  pop.style.left = Math.min(r.left, window.innerWidth - pop.offsetWidth - 8) + 'px';
+  setTimeout(() => document.addEventListener('click', () => pop.remove(), { once: true }), 0);
+}
+
+function promptCreateFolder() {
+  const name = prompt('새 폴더 이름을 입력하세요');
+  if (!name || !name.trim()) return;
+  const n = name.trim();
+  const data = loadCalcFromStorage();
+  if (!data.savedFolders) data.savedFolders = [];
+  if (data.savedFolders.includes(n)) { showToast('이미 같은 이름의 폴더가 있습니다'); return; }
+  data.savedFolders.push(n);
+  saveCalcData(data); renderSavedPanel(); showToast(`"${n}" 폴더 생성됨`);
+}
+function renameSavedFolder(oldName) {
+  const newName = prompt('새 폴더 이름', oldName);
+  if (!newName || !newName.trim() || newName.trim() === oldName) return;
+  const n = newName.trim();
+  const data = loadCalcFromStorage();
+  if (!data.savedFolders) return;
+  if (data.savedFolders.includes(n)) { showToast('이미 같은 이름의 폴더가 있습니다'); return; }
+  data.savedFolders = data.savedFolders.map(f => f === oldName ? n : f);
+  (data.saved||[]).forEach(item => { if (item.folder === oldName) item.folder = n; });
+  if (_folderCollapsed[oldName] !== undefined) { _folderCollapsed[n] = _folderCollapsed[oldName]; delete _folderCollapsed[oldName]; }
+  saveCalcData(data); renderSavedPanel();
+}
+function deleteSavedFolder(name) {
+  openConfirm('폴더 삭제', `"${name}" 폴더를 삭제할까요? 폴더 안 항목은 미분류로 이동됩니다.`, () => {
+    const data = loadCalcFromStorage();
+    data.savedFolders = (data.savedFolders||[]).filter(f => f !== name);
+    (data.saved||[]).forEach(item => { if (item.folder === name) item.folder = null; });
+    delete _folderCollapsed[name];
+    saveCalcData(data); renderSavedPanel(); showToast('폴더가 삭제됐습니다');
+  });
+}
+
 function loadSavedItem(idx) {
-  const data=loadCalcFromStorage();
-  const item=data.saved[idx]; if(!item) return;
+  const data = loadCalcFromStorage();
+  const item = data.saved[idx]; if (!item) return;
   addCalcTask(item.name,item.qty,item.unit,item.dday,item.start||'','',item.weekdayGoal||'',item.weekendGoal||'',item.progress||''); autoSaveDraft();
   showToast(`"${item.name}" 업무 입력에 추가됐습니다`);
 }
 function deleteSavedItem(idx) {
-  const data=loadCalcFromStorage();
-  const name=data.saved[idx]?.name||'업무';
+  const data = loadCalcFromStorage();
+  const name = data.saved[idx]?.name||'업무';
   openConfirm('저장 항목 삭제',`"${name}"을 삭제할까요?`,()=>{
-    const d=loadCalcFromStorage(); d.saved.splice(idx,1); saveCalcData(d);
+    const d = loadCalcFromStorage(); d.saved.splice(idx,1); saveCalcData(d);
     renderSavedPanel(); showToast('삭제되었습니다');
   });
 }
 function confirmClearAll() {
   openConfirm('전체 삭제','저장된 업무를 모두 삭제할까요?',()=>{
-    const d=loadCalcFromStorage(); d.saved=[]; saveCalcData(d); renderSavedPanel(); showToast('전체 삭제되었습니다');
+    const d = loadCalcFromStorage(); d.saved=[]; saveCalcData(d); renderSavedPanel(); showToast('전체 삭제되었습니다');
   });
 }
 function countWeekdays(start, end) {
@@ -2537,6 +2659,28 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
+/* ══ 드래그 자동 스크롤 ══ */
+let _asRAF = null, _asEl = null, _asSpd = 0;
+function _asStep() {
+  if (!_asEl || _asSpd === 0) { _asRAF = null; return; }
+  _asEl.scrollTop += _asSpd;
+  _asRAF = requestAnimationFrame(_asStep);
+}
+function updateDragScroll(clientY, scrollEl) {
+  if (!scrollEl) { stopDragScroll(); return; }
+  const r = scrollEl.getBoundingClientRect(), edge = 80;
+  let spd = 0;
+  if (clientY < r.top + edge) spd = -Math.ceil(((r.top + edge - clientY) / edge) * 10);
+  else if (clientY > r.bottom - edge) spd = Math.ceil(((clientY - (r.bottom - edge)) / edge) * 10);
+  _asEl = scrollEl; _asSpd = spd;
+  if (spd !== 0 && !_asRAF) _asRAF = requestAnimationFrame(_asStep);
+  else if (spd === 0 && _asRAF) { cancelAnimationFrame(_asRAF); _asRAF = null; }
+}
+function stopDragScroll() {
+  _asSpd = 0; _asEl = null;
+  if (_asRAF) { cancelAnimationFrame(_asRAF); _asRAF = null; }
+}
+
 /* ══ 계산기 드래그 정렬 유틸 ══
    - PC: 핸들(⠿) mousedown → dragstart
    - 모바일: 핸들 touchstart → touchmove/end
@@ -2592,12 +2736,17 @@ document.addEventListener('dragend', e => {
   document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el => {
     el.classList.remove('calc-drag-over-top','calc-drag-over-bottom');
   });
+  stopDragScroll();
 });
 document.addEventListener('dragover', e => {
   const target = e.target.closest('[data-drag-idx]');
   if (!target || !pcDragSrc || target === pcDragSrc) return;
   if (target._dragCtx !== pcDragCtx) return;
   e.preventDefault();
+  const scrollEl = pcDragCtx === 'task'
+    ? document.querySelector('.input-panel-body')
+    : document.querySelector('.saved-panel-body');
+  updateDragScroll(e.clientY, scrollEl);
   document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el => {
     el.classList.remove('calc-drag-over-top','calc-drag-over-bottom');
   });
@@ -2648,6 +2797,7 @@ document.addEventListener('touchmove', e => {
       calTouchGhost.style.left = (touch.clientX - calTouchGhost.offsetWidth/2) + 'px';
       calTouchGhost.style.top  = (touch.clientY - 40) + 'px';
     }
+    updateDragScroll(touch.clientY, document.querySelector('.cal-modal'));
     clearCalHighlight();
     const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.task-item-modal');
     if (target && target !== calTouchSrc) {
@@ -2663,6 +2813,10 @@ document.addEventListener('touchmove', e => {
     touchGhost.style.left = (touch.clientX - touchGhost.offsetWidth / 2) + 'px';
     touchGhost.style.top  = (touch.clientY - 40) + 'px';
   }
+  const scrollEl = touchDragCtx === 'task'
+    ? document.querySelector('.input-panel-body')
+    : document.querySelector('.saved-panel-body');
+  updateDragScroll(touch.clientY, scrollEl);
   // 하이라이트
   document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el => {
     el.classList.remove('calc-drag-over-top','calc-drag-over-bottom');
@@ -2681,6 +2835,7 @@ document.addEventListener('touchend', e => {
     if (calTouchGhost) { calTouchGhost.remove(); calTouchGhost = null; }
     calTouchSrc.classList.remove('dragging');
     clearCalHighlight();
+    stopDragScroll();
     const touch = e.changedTouches[0];
     const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.task-item-modal');
     if (target && target !== calTouchSrc) {
@@ -2691,6 +2846,7 @@ document.addEventListener('touchend', e => {
   }
   if (!touchDragSrc) return;
   if (touchGhost) { touchGhost.remove(); touchGhost = null; }
+  stopDragScroll();
   touchDragSrc.classList.remove('calc-dragging');
   document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el => {
     el.classList.remove('calc-drag-over-top','calc-drag-over-bottom');
