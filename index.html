@@ -430,13 +430,13 @@ body {
 .saved-panel-footer { display:flex; flex-direction:column; gap:6px; }
 .btn-new-folder { font-family:inherit; font-size:12px; font-weight:600; padding:8px; border-radius:8px; border:1px solid rgba(79,142,247,.3); background:rgba(79,142,247,.08); color:var(--accent); cursor:pointer; width:100%; }
 .btn-new-folder:hover { background:rgba(79,142,247,.18); }
-.folder-header { display:flex; align-items:center; gap:5px; padding:5px 4px 3px; cursor:pointer; user-select:none; border-bottom:1px solid var(--border); margin-bottom:2px; margin-top:4px; }
+.folder-header { display:flex; align-items:center; gap:5px; padding:5px 4px 3px; cursor:pointer; user-select:none; border-bottom:1px solid var(--border); margin-bottom:2px; margin-top:4px; grid-column: 1 / -1; }
 .folder-header-name { flex:1; font-size:12px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .folder-toggle { font-size:10px; color:var(--muted); flex-shrink:0; }
 .folder-actions { display:flex; gap:3px; flex-shrink:0; }
 .folder-action-btn { background:none; border:none; font-size:11px; color:var(--muted); cursor:pointer; padding:1px 5px; border-radius:4px; font-family:inherit; }
 .folder-action-btn:hover { background:var(--border); color:var(--text); }
-.folder-items { padding-left:10px; display:flex; flex-direction:column; gap:6px; padding-top:4px; padding-bottom:2px; }
+.folder-items { padding-left:10px; display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap:6px; padding-top:4px; padding-bottom:2px; grid-column: 1 / -1; }
 .saved-item-move-btn { background:none; border:1px solid var(--border); border-radius:4px; font-size:11px; padding:1px 5px; color:var(--muted); cursor:pointer; font-family:inherit; flex-shrink:0; }
 .saved-item-move-btn:hover { background:var(--border); }
 .folder-popover { position:fixed; z-index:9999; background:var(--card); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.3); padding:4px 0; min-width:130px; }
