@@ -27,8 +27,9 @@ body {
   font-family: 'Noto Sans KR', sans-serif;
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   overscroll-behavior: none;
@@ -993,7 +994,7 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 <!-- ═══════════════════════════════════
      할당량 계산기 뷰
 ═══════════════════════════════════ -->
-<div class="view" id="view-calculator" style="overflow-y:auto;-webkit-overflow-scrolling:touch;">
+<div class="view" id="view-calculator">
   <div class="calc-layout">
     <aside class="calc-sidebar">
       <div class="sidebar-tabs">
@@ -2039,6 +2040,11 @@ document.getElementById('closeModalBtn').addEventListener('click',()=>{
 document.getElementById('dayModal').addEventListener('click',e=>{
   if (e.target===document.getElementById('dayModal')) document.getElementById('closeModalBtn').click();
 });
+// 캘린더 모달 컨테이너: 빈 공간 dragover에서도 자동 스크롤
+document.querySelector('.cal-modal')?.addEventListener('dragover', e => {
+  if (!calDragSrc) return;
+  updateDragScroll(e.clientY, e.currentTarget);
+});
 document.getElementById('confirmDateBtn').addEventListener('click',()=>{
   const targetKey=document.getElementById('targetDateInput').value;
   if (!targetKey||!datePickMode) return;
@@ -2772,10 +2778,11 @@ function _asStep() {
 }
 function updateDragScroll(clientY, scrollEl) {
   if (!scrollEl) { stopDragScroll(); return; }
-  const r = scrollEl.getBoundingClientRect(), edge = 80;
+  // 뷰포트 기준으로 상하 100px 안에 들어오면 스크롤 (컨테이너 위치와 무관)
+  const edge = 100, vH = window.innerHeight;
   let spd = 0;
-  if (clientY < r.top + edge) spd = -Math.ceil(((r.top + edge - clientY) / edge) * 10);
-  else if (clientY > r.bottom - edge) spd = Math.ceil(((clientY - (r.bottom - edge)) / edge) * 10);
+  if (clientY < edge) spd = -Math.ceil(((edge - clientY) / edge) * 12);
+  else if (clientY > vH - edge) spd = Math.ceil(((clientY - (vH - edge)) / edge) * 12);
   _asEl = scrollEl; _asSpd = spd;
   if (spd !== 0 && !_asRAF) _asRAF = requestAnimationFrame(_asStep);
   else if (spd === 0 && _asRAF) { cancelAnimationFrame(_asRAF); _asRAF = null; }
@@ -2979,6 +2986,16 @@ document.addEventListener('touchend', e => {
   document.addEventListener('touchmove', e => { if (active) { e.preventDefault(); doResize(e.touches[0].clientX); } }, { passive: false });
   document.addEventListener('touchend', stopResize);
 })();
+
+// 데스크탑 드래그: 컨테이너 자체에 dragover → 빈 공간에서도 자동 스크롤
+document.querySelector('#tab-input')?.addEventListener('dragover', e => {
+  if (!pcDragSrc || pcDragCtx !== 'task') return;
+  updateDragScroll(e.clientY, e.currentTarget);
+});
+document.querySelector('#tab-saved')?.addEventListener('dragover', e => {
+  if (!pcDragSrc || pcDragCtx !== 'saved') return;
+  updateDragScroll(e.clientY, e.currentTarget);
+});
 
 /* ══ INIT ══ */
 renderCalendar();
