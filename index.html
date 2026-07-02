@@ -936,9 +936,7 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
     <div class="task-list-modal" id="modalTaskList"></div>
     <div class="modal-link-section" id="modalLinkSection" style="display:none;">
       <div class="cal-link-title">📊 할당량 연동 추가</div>
-      <div id="modalLinkSelectWrap" class="cal-link-select-wrap">
-        <!-- JS로 버튼 목록 렌더링 -->
-      </div>
+      <div id="modalLinkSelectWrap" class="cal-link-select-wrap"></div>
       <div class="cal-link-row" style="margin-top:6px;">
         <input type="number" class="cal-link-from" id="modalLinkFrom" placeholder="시작 번호" min="1" />
         <span style="color:var(--muted);">~</span>
@@ -975,7 +973,6 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
       <div class="tab-panel active" id="tab-input">
         <div class="input-panel-body" id="task-list"></div>
         <div class="input-panel-footer">
-          <button class="calc-btn calc-btn-add" onclick="addCalcTask()">＋ 업무 추가</button>
           <div class="error-msg" id="error-msg"></div>
           <button class="calc-btn calc-btn-go" onclick="calculate()">📊 계산</button>
           <button class="calc-btn calc-btn-reset" onclick="confirmReset()">↺ 초기화</button>
@@ -1255,7 +1252,8 @@ function subscribeCalendarData() {
     const localTs = getLocalCalTs();
 
     if (remoteTs > localTs) {
-      // 원격이 최신 → 로컬에 반영
+      // 원격이 최신 → 대기 중인 구식 push 취소 후 로컬에 반영
+      clearTimeout(_calPushTimer);
       const newTasks = (data && data.tasks) || {};
       if (JSON.stringify(newTasks) !== JSON.stringify(calTasks)) {
         calTasks = newTasks;
@@ -1381,6 +1379,10 @@ function getColorClass(c) {
 function getTextClass(c) {
   return ({red:'red-text',orange:'orange-text',yellow:'yellow-text',green:'green-text',blue:'blue-text'})[c]||'red-text';
 }
+function getLinkedProgressAmount(task) {
+  const parsed = parseFloat(task?.progressStep);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
 function getDisplayIndices(key) {
   // 배열 자체의 순서를 그대로 반환 (드래그로 순서 변경 시 배열 직접 수정)
   return (calTasks[key] || []).map((_,i) => i);
@@ -1393,13 +1395,12 @@ function sortTasksByDefault(key) {
     return ca !== cb ? ca - cb : _naturalCollator.compare(a.name, b.name);
   });
 }
-function addTaskToDate(key, name, color, status) {
+function addTaskToDate(key, name, color, status, extra = {}) {
   if (!calTasks[key]) calTasks[key] = [];
-  calTasks[key].push({ name, color:color||'red', status:status||null });
+  calTasks[key].push({ name, color:color||'red', status:status||null, ...extra });
   sortTasksByDefault(key);  // 추가 즉시 정렬
   calSaveData();
 }
-// 캘린더 완료 → 진척도 +1
 function deductCalcQty(calcTaskName, amount) {
   const data = loadCalcFromStorage();
   if (!data.tasks) return;
@@ -1410,7 +1411,6 @@ function deductCalcQty(calcTaskName, amount) {
   data.tasksTs = Date.now();
   saveCalcToLocalStorage(data);
   pushCalcToFirebase(data);
-  // 카드 진척도 input 업데이트 (index 3)
   document.querySelectorAll('.task-card').forEach(card => {
     const nameInput = card.querySelector('input[type="text"]');
     if (nameInput && nameInput.value.trim() === calcTaskName) {
@@ -1419,8 +1419,6 @@ function deductCalcQty(calcTaskName, amount) {
     }
   });
 }
-
-// 캘린더 완료 취소 → 진척도 -1
 function restoreCalcQty(calcTaskName, amount) {
   const data = loadCalcFromStorage();
   if (!data.tasks) return;
@@ -1467,8 +1465,9 @@ function markTaskStatus(dkv, idx, status) {
         sortTasksByDefault(nKey);
       }
     }
-    // 연동 업무 완료 시 차감
-    if (task.linkedCalc) deductCalcQty(task.linkedCalc, 1);
+    if (task.linkedCalc) {
+      deductCalcQty(task.linkedCalc, getLinkedProgressAmount(task));
+    }
   }
   calSaveData();
 }
@@ -1517,7 +1516,8 @@ function createDayCell(y,m,d,otherMonth,isToday) {
     chip.className = 'task-chip '+getColorClass(t.color);
     if (t.status==='O') chip.classList.add('status-O');
     if (t.status==='X') chip.classList.add('status-X');
-    chip.textContent = t.name; chip.title = t.name;
+    chip.textContent = t.name;
+    chip.title = t.name;
     cell.appendChild(chip);
   });
   if (dayTasks.length>4) {
@@ -1542,7 +1542,6 @@ function openDayModal(key,y,m,d) {
   renderModalTaskList(key); renderModalActions(key);
   document.getElementById('dayModal').classList.add('active');
   document.body.style.overflow = 'hidden';
-  // 연동 섹션 초기화
   const linkSec = document.getElementById('modalLinkSection');
   if (linkSec) linkSec.style.display = 'none';
   const linkBtn = document.querySelector('.modal-section-toggle');
@@ -1659,6 +1658,24 @@ function renderModalTaskList(key) {
     nameEl.className='task-name-modal '+getTextClass(task.color);
     nameEl.textContent=task.name;
     item.appendChild(nameEl);
+
+    const inlineMeta=document.createElement('div');
+    inlineMeta.style.cssText='display:flex;align-items:center;gap:4px;flex-shrink:0;';
+
+    const stepInput=document.createElement('input');
+    stepInput.type='number'; stepInput.min='0'; stepInput.step='1';
+    stepInput.value = task.progressStep != null && task.progressStep !== '' ? task.progressStep : '1';
+    stepInput.title='완료 시 진척도 증가량';
+    stepInput.style.cssText='width:70px;padding:2px 4px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;';
+    stepInput.addEventListener('click', e => e.stopPropagation());
+    stepInput.addEventListener('change', e => {
+      e.stopPropagation();
+      const v = parseFloat(stepInput.value);
+      calTasks[key][taskIdx].progressStep = Number.isNaN(v) ? '' : String(v);
+      calSaveData();
+    });
+    inlineMeta.appendChild(stepInput);
+    item.appendChild(inlineMeta);
 
     // 수정 버튼
     const editNameBtn=document.createElement('button');
@@ -1789,6 +1806,81 @@ function refresh(key) {
   renderModalTaskList(key); renderModalActions(key); renderCalendar();
 }
 
+function toggleModalLinkSection() {
+  const sec = document.getElementById('modalLinkSection');
+  const btn = document.querySelector('.modal-section-toggle');
+  if (!sec || !btn) return;
+  if (sec.style.display === 'none') {
+    sec.style.display = 'block';
+    btn.textContent = '📊 할당량 연동 추가 ▴';
+    _modalSelectedCalcTask = '';
+    updateModalLinkSelect();
+  } else {
+    sec.style.display = 'none';
+    btn.textContent = '📊 할당량 연동 추가 ▾';
+  }
+}
+
+let _modalSelectedCalcTask = '';
+
+function updateModalLinkSelect() {
+  const wrap = document.getElementById('modalLinkSelectWrap');
+  if (!wrap) return;
+  const local = loadCalcFromStorage();
+  const tasks = (local.tasks || []).filter(Boolean);
+  wrap.innerHTML = '';
+  if (!tasks.length) {
+    wrap.innerHTML = '<div style="color:var(--muted);font-size:12px;">계산기에 입력된 업무가 없습니다</div>';
+    return;
+  }
+  tasks.forEach(t => {
+    if (!t.name) return;
+    const btn = document.createElement('button');
+    btn.className = 'cal-link-task-btn' + (_modalSelectedCalcTask === t.name ? ' selected' : '');
+    btn.textContent = `${t.name} (${t.qty || 0}${t.unit || ''})`;
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      _modalSelectedCalcTask = t.name;
+      updateModalLinkSelect();
+    });
+    wrap.appendChild(btn);
+  });
+}
+
+function addLinkedTasksFromModal() {
+  if (!selectedDate) return;
+  const fromEl = document.getElementById('modalLinkFrom');
+  const toEl = document.getElementById('modalLinkTo');
+  const baseName = _modalSelectedCalcTask;
+  const from = parseInt(fromEl.value, 10);
+  const to = parseInt(toEl.value, 10);
+  if (!baseName) { showToast('업무를 선택해주세요'); return; }
+  if (Number.isNaN(from) || Number.isNaN(to) || from > to || from < 1) {
+    showToast('올바른 범위를 입력해주세요');
+    return;
+  }
+  const calcData = loadCalcFromStorage();
+  const calcTask = (calcData.tasks || []).find(t => t.name === baseName);
+  const unitText = (calcTask?.unit || '').trim();
+  const key = selectedDate;
+  if (!calTasks[key]) calTasks[key] = [];
+  const taskName = `${baseName} ${from}~${to}${unitText ? unitText : ''}`;
+  if (!calTasks[key].some(t => t.name === taskName)) {
+    calTasks[key].push({
+      name: taskName,
+      color: 'red',
+      status: null,
+      linkedCalc: baseName,
+      progressStep: String(Math.max(1, to - from + 1))
+    });
+  }
+  sortTasksByDefault(key);
+  calSaveData(); renderModalTaskList(key); renderCalendar();
+  showToast(`${taskName} 추가됐습니다`);
+  fromEl.value = '';
+  toEl.value = '';
+}
+
 // 완료/미완료 취소 시 생성된 다음 회독 삭제
 function undoMarkStatus(dkv, idx, prevStatus) {
   if (!calTasks[dkv]?.[idx]) return;
@@ -1796,7 +1888,7 @@ function undoMarkStatus(dkv, idx, prevStatus) {
   const p = parseKey(dkv);
   if (prevStatus === 'O') {
     // 완료 취소 → 생성된 다음 회독 삭제
-    const schedules = { red:['yellow',3], yellow:['green',7] };
+    const schedules = { red:['orange',1], orange:['yellow',3], yellow:['green',7], green:['blue',21] };
     const sc = schedules[task.color];
     if (sc) {
       const nxt = new Date(p.year, p.month, p.day + sc[1]);
@@ -1815,9 +1907,8 @@ function undoMarkStatus(dkv, idx, prevStatus) {
       if (!calTasks[nk].length) delete calTasks[nk];
     }
   }
-  // 연동 업무 완료 취소 시 복구
   if (prevStatus === 'O' && task.linkedCalc) {
-    restoreCalcQty(task.linkedCalc, 1);
+    restoreCalcQty(task.linkedCalc, getLinkedProgressAmount(task));
   }
   task.status = null;
   calSaveData();
@@ -2037,12 +2128,20 @@ function autoSaveDraft() {
   const prevTasks = prevData.tasks || [];
   const tasks = [];
   document.querySelectorAll('.task-card').forEach((card, i) => {
-    const inputs = card.querySelectorAll('input[type="text"], input[type="number"], input[type="date"]');
+    const nameInput = card.querySelector('input[data-field="name"]');
+    const qtyInput = card.querySelector('input[data-field="qty"]');
+    const unitInput = card.querySelector('input[data-field="unit"]');
+    const progressInput = card.querySelector('input[data-field="progress"]');
+    const startInput = card.querySelector('input[data-field="start"]');
+    const ddayInput = card.querySelector('input[data-field="dday"]');
+    const weekdayGoalInput = card.querySelector('input[data-field="weekdayGoal"]');
+    const weekendGoalInput = card.querySelector('input[data-field="weekendGoal"]');
+
     const cur = {
-      name: inputs[0]?.value||'', qty: inputs[1]?.value||'',
-      unit: inputs[2]?.value||'', progress: inputs[3]?.value||'',
-      start: inputs[4]?.value||'', dday: inputs[5]?.value||'',
-      weekdayGoal: inputs[6]?.value||'', weekendGoal: inputs[7]?.value||'',
+      name: nameInput?.value || '', qty: qtyInput?.value || '',
+      unit: unitInput?.value || '', progress: progressInput?.value || '',
+      start: startInput?.value || '', dday: ddayInput?.value || '',
+      weekdayGoal: weekdayGoalInput?.value || '', weekendGoal: weekendGoalInput?.value || '',
       holidays: []
     };
     const prev = prevTasks[i];
@@ -2601,123 +2700,6 @@ document.addEventListener('touchend', e => {
 });
 
 
-
-/* ══ 계산기-캘린더 연동 ══ */
-function addCalcTasksToCalendar(btn) {
-  const card = btn.closest('.task-card');
-  const nameEl = card.querySelector('input[type="text"]');
-  const fromEl = card.querySelector('.cal-link-from');
-  const toEl   = card.querySelector('.cal-link-to');
-  const dateEl = card.querySelector('.cal-link-date');
-
-  const baseName = nameEl.value.trim();
-  const from = parseInt(fromEl.value);
-  const to   = parseInt(toEl.value);
-  const dateStr = dateEl.value;
-
-  if (!baseName) { showToast('업무 이름을 먼저 입력해주세요'); return; }
-  if (!dateStr)  { showToast('날짜를 선택해주세요'); return; }
-  if (isNaN(from) || isNaN(to) || from > to) { showToast('올바른 범위를 입력해주세요'); return; }
-
-  const d = new Date(dateStr);
-  const key = calDateKey(d.getFullYear(), d.getMonth(), d.getDate());
-  if (!calTasks[key]) calTasks[key] = [];
-
-  for (let i = from; i <= to; i++) {
-    const taskName = `${baseName} ${i}`;
-    if (!calTasks[key].some(t => t.name === taskName)) {
-      calTasks[key].push({ name: taskName, color: 'red', status: null, linkedCalc: baseName });
-    }
-  }
-  sortTasksByDefault(key);
-  calSaveData(); renderCalendar();
-  showToast(`${baseName} ${from}~${to} → ${d.getMonth()+1}/${d.getDate()}에 추가됐습니다`);
-  fromEl.value=''; toEl.value='';
-}
-
-
-
-
-/* ══ 캘린더 모달 할당량 연동 ══ */
-function toggleModalLinkSection() {
-  const sec = document.getElementById('modalLinkSection');
-  const btn = document.querySelector('.modal-section-toggle');
-  if (sec.style.display === 'none') {
-    sec.style.display = 'block';
-    btn.textContent = '📊 할당량 연동 추가 ▴';
-    _modalSelectedCalcTask = '';
-    updateModalLinkSelect();
-  } else {
-    sec.style.display = 'none';
-    btn.textContent = '📊 할당량 연동 추가 ▾';
-  }
-}
-
-let _modalSelectedCalcTask = '';
-
-function updateModalLinkSelect() {
-  const wrap = document.getElementById('modalLinkSelectWrap');
-  if (!wrap) return;
-
-  function render(tasks) {
-    wrap.innerHTML = '';
-    if (!tasks || !tasks.length) {
-      wrap.innerHTML = '<div style="color:var(--muted);font-size:12px;">계산기에 입력된 업무가 없습니다</div>';
-      return;
-    }
-    tasks.forEach(t => {
-      if (!t.name) return;
-      const btn = document.createElement('button');
-      btn.className = 'cal-link-task-btn' + (_modalSelectedCalcTask === t.name ? ' selected' : '');
-      btn.textContent = `${t.name} (잔여 ${t.qty}${t.unit||''})`;
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        _modalSelectedCalcTask = t.name;
-        updateModalLinkSelect();
-      });
-      wrap.appendChild(btn);
-    });
-  }
-
-  const local = loadCalcFromStorage();
-  render(local.tasks);
-
-  if (db && FB_USER) {
-    db.ref(`users/${FB_USER}/calculator/tasks`).once('value').then(snap => {
-      const remote = snap.val();
-      if (remote && remote.length) {
-        local.tasks = remote;
-        saveCalcToLocalStorage(local);
-        render(remote);
-      }
-    }).catch(() => {});
-  }
-}
-
-function addLinkedTasksFromModal() {
-  if (!selectedDate) return;
-  const fromEl = document.getElementById('modalLinkFrom');
-  const toEl   = document.getElementById('modalLinkTo');
-  const baseName = _modalSelectedCalcTask;
-  const from = parseInt(fromEl.value);
-  const to   = parseInt(toEl.value);
-  if (!baseName) { showToast('업무를 선택해주세요'); return; }
-  if (isNaN(from)||isNaN(to)||from>to) { showToast('올바른 범위를 입력해주세요'); return; }
-  const key = selectedDate;
-  if (!calTasks[key]) calTasks[key] = [];
-  let added = 0;
-  for (let i = from; i <= to; i++) {
-    const taskName = `${baseName} ${i}`;
-    if (!calTasks[key].some(t => t.name === taskName)) {
-      calTasks[key].push({ name: taskName, color: 'red', status: null, linkedCalc: baseName });
-      added++;
-    }
-  }
-  sortTasksByDefault(key);
-  calSaveData(); renderModalTaskList(key); renderCalendar();
-  showToast(`${baseName} ${from}~${to} (${added}개) 추가됐습니다`);
-  fromEl.value=''; toEl.value='';
-}
 
 /* ══ INIT ══ */
 renderCalendar();
