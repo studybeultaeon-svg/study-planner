@@ -2849,8 +2849,8 @@ document.addEventListener('dragover', e => {
   if (target._dragCtx !== pcDragCtx) return;
   e.preventDefault();
   const scrollEl = pcDragCtx === 'task'
-    ? document.querySelector('.input-panel-body')
-    : document.querySelector('.saved-panel-body');
+    ? document.querySelector('#tab-input')
+    : document.querySelector('#tab-saved');
   updateDragScroll(e.clientY, scrollEl);
   document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el => {
     el.classList.remove('calc-drag-over-top','calc-drag-over-bottom');
@@ -2900,8 +2900,8 @@ document.addEventListener('touchstart', e => {
       touchGhost.style.top  = (touch.clientY - 40) + 'px';
     }
     const scrollEl = touchDragCtx === 'task'
-      ? document.querySelector('.input-panel-body')
-      : document.querySelector('.saved-panel-body');
+      ? document.querySelector('#tab-input')
+      : document.querySelector('#tab-saved');
     updateDragScroll(touch.clientY, scrollEl);
     document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el =>
       el.classList.remove('calc-drag-over-top','calc-drag-over-bottom'));
@@ -2963,6 +2963,14 @@ document.addEventListener('touchend', e => {
     const sidebar = document.querySelector('.calc-sidebar');
     sidebar.style.width = (ratio * 100) + '%';
     sidebar.style.flexShrink = '0';
+    // 콘텐츠 너비에 맞게 카드 컬럼 최적화
+    const contentW = r.width * (1 - ratio) - 5;
+    const padding = 52; // calc-content padding 양쪽
+    const available = contentW - padding;
+    const cols = Math.max(1, Math.floor(available / 320));
+    const minCard = Math.max(180, Math.floor(available / cols));
+    document.querySelector('.calc-content').style.gridTemplateColumns =
+      `repeat(auto-fill, minmax(${minCard}px, 1fr))`;
   }
   divider.addEventListener('mousedown', e => { e.preventDefault(); startResize(); });
   document.addEventListener('mousemove', e => doResize(e.clientX));
