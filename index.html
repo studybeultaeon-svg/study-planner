@@ -1442,7 +1442,11 @@ function markTaskStatus(dkv, idx, status) {
     const nk = calDateKey(next.getFullYear(), next.getMonth(), next.getDate());
     if (!calTasks[nk]) calTasks[nk] = [];
     if (!calTasks[nk].some(t => t.name===task.name && t.color===task.color)) {
-      calTasks[nk].push({ name:task.name, color:task.color, status:null });
+      calTasks[nk].push({ name:task.name, color:task.color, status:null,
+        ...(task.linkedCalc ? { linkedCalc: task.linkedCalc } : {}),
+        ...(task.progressStep != null && task.progressStep !== '' ? { progressStep: task.progressStep } : {}),
+        ...(task.nextDays != null ? { nextDays: task.nextDays } : {}),
+      });
       sortTasksByDefault(nk);
     }
   } else if (status === 'O') {
@@ -1993,7 +1997,7 @@ document.getElementById('confirmDateBtn').addEventListener('click',()=>{
       name: task.name, color: task.color, status: null,
       ...(task.nextDays != null ? { nextDays: task.nextDays } : {}),
       ...(task.linkedCalc ? { linkedCalc: task.linkedCalc } : {}),
-      ...(task.progressStep != null ? { progressStep: task.progressStep } : {}),
+      ...(task.color === 'red' ? { progressStep: (task.progressStep != null && task.progressStep !== '') ? task.progressStep : '1' } : {}),
     });
     sortTasksByDefault(targetKey);
     calSaveData();
