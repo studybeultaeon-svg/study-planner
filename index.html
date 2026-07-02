@@ -418,7 +418,7 @@ body {
 }
 
 /* saved panel */
-.saved-panel-body { padding: 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.saved-panel-body { padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px; align-content: start; }
 .saved-panel-footer { padding: 11px 14px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .btn-clear-all {
   font-family: inherit; font-size: 12px; font-weight: 600;
@@ -2289,20 +2289,19 @@ function renderSavedPanel() {
   function makeSavedItemEl(item, idx, depth) {
     const el = document.createElement('div');
     el.className = 'saved-item'; el.dataset.dragIdx = idx; el.setAttribute('draggable','true');
-    el.style.cssText = 'display:flex;align-items:flex-start;gap:8px;';
     el._dragCtx = 'saved';
     const curPath = item.folderPath || [];
     const folderLabel = curPath.length ? curPath[curPath.length-1] : '미분류';
     el.innerHTML = `
-      <span class="calc-drag-handle" style="margin-top:2px;" title="드래그하여 순서 변경">⠿</span>
-      <div style="flex:1;min-width:0;">
-        <div class="saved-item-name">${esc(item.name)}</div>
-        <div class="saved-item-meta">${item.qty}${esc(item.unit)} · ${item.start?esc(item.start)+' 시작 · ':''}${esc(item.dday)} 마감 · 평일 ${item.weekdayGoal||'?'}/${item.weekendGoal||'?'} 주말 · 저장 ${esc(item.savedAt)}${item.modifiedAt&&item.modifiedAt!==item.savedAt?' · 수정 '+esc(item.modifiedAt):''}</div>
-        <div class="saved-item-actions">
-          <button class="saved-btn load" onclick="loadSavedItem(${idx})">✚ 불러오기</button>
-          <button class="saved-item-move-btn" title="폴더 이동">📁 ${esc(folderLabel)}</button>
-          <button class="saved-btn del" onclick="deleteSavedItem(${idx})">삭제</button>
-        </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="calc-drag-handle" title="드래그하여 순서 변경">⠿</span>
+        <div class="saved-item-name" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.name)}</div>
+        <button class="saved-item-move-btn" title="폴더 이동">📁 ${esc(folderLabel)}</button>
+      </div>
+      <div class="saved-item-meta">${item.qty}${esc(item.unit)} · ${item.start?esc(item.start)+' 시작 · ':''}${esc(item.dday)} 마감 · 평일 ${item.weekdayGoal||'?'}/${item.weekendGoal||'?'} 주말 · 저장 ${esc(item.savedAt)}${item.modifiedAt&&item.modifiedAt!==item.savedAt?' · 수정 '+esc(item.modifiedAt):''}</div>
+      <div class="saved-item-actions">
+        <button class="saved-btn load" onclick="loadSavedItem(${idx})">✚ 불러오기</button>
+        <button class="saved-btn del" onclick="deleteSavedItem(${idx})">삭제</button>
       </div>`;
     el.querySelector('.saved-item-move-btn').addEventListener('click', ev => {
       ev.stopPropagation(); showFolderPopover(ev.currentTarget, idx, tree, curPath);
