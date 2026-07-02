@@ -2959,6 +2959,9 @@ document.addEventListener('touchend', e => {
 (function() {
   const divider = document.getElementById('calcDivider');
   if (!divider) return;
+  // 이전 세션의 ResizeObserver가 박은 inline style 제거
+  const content = document.querySelector('.calc-content');
+  if (content) content.style.gridTemplateColumns = '';
   let active = false;
   function startResize() { active = true; divider.classList.add('active'); document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; }
   function stopResize()  { active = false; divider.classList.remove('active'); document.body.style.cursor = ''; document.body.style.userSelect = ''; }
