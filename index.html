@@ -2970,13 +2970,6 @@ document.addEventListener('touchend', e => {
     const sidebar = document.querySelector('.calc-sidebar');
     sidebar.style.width = (ratio * 100) + '%';
     sidebar.style.flexShrink = '0';
-    // 콘텐츠 너비에 맞게 카드 컬럼 최적화
-    const content = document.querySelector('.calc-content');
-    if (!content) return;
-    // 실제 남은 너비는 레이아웃에서 사이드바+구분선 빼기
-    const availableW = r.width * (1 - ratio) - 5 - 52; // 52 = padding 26*2
-    const minCard = availableW >= 600 ? 280 : availableW >= 360 ? Math.floor(availableW / 2) : availableW;
-    content.style.gridTemplateColumns = `repeat(auto-fill, minmax(${Math.max(180, minCard)}px, 1fr))`;
   }
   divider.addEventListener('mousedown', e => { e.preventDefault(); startResize(); });
   document.addEventListener('mousemove', e => doResize(e.clientX));
@@ -2984,6 +2977,17 @@ document.addEventListener('touchend', e => {
   divider.addEventListener('touchstart', e => { e.preventDefault(); startResize(); }, { passive: false });
   document.addEventListener('touchmove', e => { if (active) { e.preventDefault(); doResize(e.touches[0].clientX); } }, { passive: false });
   document.addEventListener('touchend', stopResize);
+
+  // 결과 영역 너비 변화를 감지해서 카드 그리드 자동 최적화
+  const content = document.querySelector('.calc-content');
+  if (content && window.ResizeObserver) {
+    new ResizeObserver(entries => {
+      const w = entries[0].contentRect.width;
+      const cols = Math.max(1, Math.floor(w / 300));
+      const minCard = Math.max(180, Math.floor(w / cols));
+      content.style.gridTemplateColumns = `repeat(auto-fit, minmax(${minCard}px, 1fr))`;
+    }).observe(content);
+  }
 })();
 
 // 데스크탑 드래그: 컨테이너 자체에 dragover → 빈 공간에서도 자동 스크롤
