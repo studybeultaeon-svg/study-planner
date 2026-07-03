@@ -341,7 +341,7 @@ body {
 .sidebar-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .sidebar-tab:hover:not(.active) { color: var(--text); }
 
-.tab-panel { display: none; flex: 1; overflow-y: auto; flex-direction: column; }
+.tab-panel { display: none; flex: 1; min-height: 0; overflow-y: auto; flex-direction: column; }
 .tab-panel.active { display: flex; }
 .tab-panel::-webkit-scrollbar { width: 4px; }
 .tab-panel::-webkit-scrollbar-track { background: transparent; }
@@ -623,6 +623,9 @@ body {
   user-select: none; flex-shrink: 0; touch-action: none;
 }
 .calc-drag-handle:active { cursor: grabbing; }
+@media (max-width: 768px) {
+  .calc-drag-handle { font-size: 22px; padding: 4px 12px; }
+}
 .calc-dragging { opacity: 0.4; }
 .calc-drag-over-top    { border-top: 2px solid var(--accent) !important; }
 .calc-drag-over-bottom { border-bottom: 2px solid var(--accent) !important; }
@@ -1674,36 +1677,50 @@ function renderModalTaskList(key) {
     handle.addEventListener('mouseup', () => {
       item.setAttribute('draggable','false');
     });
+    let _calLongPressTimer = null, _calLpStartX = 0, _calLpStartY = 0;
     handle.addEventListener('touchstart', e => {
       e.stopPropagation();
-      calTouchSrc = item; calTouchKey = key;
-      item.classList.add('dragging');
-      const r = item.getBoundingClientRect();
-      calTouchGhost = item.cloneNode(true);
-      calTouchGhost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;opacity:0.88;
-        width:${r.width}px;left:${r.left}px;top:${r.top}px;margin:0;
-        transform:scale(1.03);background:var(--card);
-        border:1.5px solid var(--accent);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4);`;
-      document.body.appendChild(calTouchGhost);
-      if (_calTouchMoveHandler) document.removeEventListener('touchmove', _calTouchMoveHandler);
-      _calTouchMoveHandler = ev => {
-        ev.preventDefault();
-        const touch = ev.touches[0];
-        if (calTouchGhost) {
-          calTouchGhost.style.left = (touch.clientX - calTouchGhost.offsetWidth/2) + 'px';
-          calTouchGhost.style.top  = (touch.clientY - 40) + 'px';
-        }
-        updateDragScroll(touch.clientY, document.querySelector('.cal-modal'));
-        clearCalHighlight();
-        const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.task-item-modal');
-        if (target && target !== calTouchSrc) {
-          const r2 = target.getBoundingClientRect();
-          if (touch.clientY < r2.top + r2.height/2) target.classList.add('calc-drag-over-top');
-          else target.classList.add('calc-drag-over-bottom');
-        }
-      };
-      document.addEventListener('touchmove', _calTouchMoveHandler, { passive: false });
+      const t0 = e.touches[0];
+      _calLpStartX = t0.clientX; _calLpStartY = t0.clientY;
+      _calLongPressTimer = setTimeout(() => {
+        calTouchSrc = item; calTouchKey = key;
+        item.classList.add('dragging');
+        const r = item.getBoundingClientRect();
+        calTouchGhost = item.cloneNode(true);
+        calTouchGhost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;opacity:0.88;
+          width:${r.width}px;left:${r.left}px;top:${r.top}px;margin:0;
+          transform:scale(1.03);background:var(--card);
+          border:1.5px solid var(--accent);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4);`;
+        document.body.appendChild(calTouchGhost);
+        if (navigator.vibrate) navigator.vibrate(30);
+        if (_calTouchMoveHandler) document.removeEventListener('touchmove', _calTouchMoveHandler);
+        _calTouchMoveHandler = ev => {
+          ev.preventDefault();
+          const touch = ev.touches[0];
+          if (calTouchGhost) {
+            calTouchGhost.style.left = (touch.clientX - calTouchGhost.offsetWidth/2) + 'px';
+            calTouchGhost.style.top  = (touch.clientY - 40) + 'px';
+          }
+          updateDragScroll(touch.clientY, document.querySelector('.cal-modal'));
+          clearCalHighlight();
+          const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.task-item-modal');
+          if (target && target !== calTouchSrc) {
+            const r2 = target.getBoundingClientRect();
+            if (touch.clientY < r2.top + r2.height/2) target.classList.add('calc-drag-over-top');
+            else target.classList.add('calc-drag-over-bottom');
+          }
+        };
+        document.addEventListener('touchmove', _calTouchMoveHandler, { passive: false });
+      }, 200);
     }, { passive: true });
+    handle.addEventListener('touchmove', e => {
+      if (!_calLongPressTimer) return;
+      const t = e.touches[0];
+      if (Math.abs(t.clientX - _calLpStartX) > 6 || Math.abs(t.clientY - _calLpStartY) > 6) {
+        clearTimeout(_calLongPressTimer); _calLongPressTimer = null;
+      }
+    }, { passive: true });
+    handle.addEventListener('touchend', () => { clearTimeout(_calLongPressTimer); _calLongPressTimer = null; }, { passive: true });
     item.appendChild(handle);
 
     // 이름
@@ -2882,14 +2899,11 @@ document.addEventListener('drop', e => {
   }
 });
 
-// ── 모바일 터치 드래그 ──
+// ── 모바일 터치 드래그 (롱프레스 200ms 후 시작) ──
 let touchDragSrc = null, touchDragCtx = null, touchGhost = null, _calcTouchMoveHandler = null;
+let _calcLongPressTimer = null, _calcLongPressItem = null, _calcLongPressStartX = 0, _calcLongPressStartY = 0;
 
-document.addEventListener('touchstart', e => {
-  const handle = e.target.closest('.calc-drag-handle');
-  if (!handle) return;
-  const item = handle.closest('[data-drag-idx]');
-  if (!item) return;
+function _calcStartDrag(item) {
   touchDragSrc = item;
   touchDragCtx = item._dragCtx;
   item.classList.add('calc-dragging');
@@ -2900,31 +2914,60 @@ document.addEventListener('touchstart', e => {
     transform:scale(1.03);background:var(--card);
     border:1.5px solid var(--accent);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4);`;
   document.body.appendChild(touchGhost);
-  if (_calcTouchMoveHandler) document.removeEventListener('touchmove', _calcTouchMoveHandler);
-  _calcTouchMoveHandler = ev => {
-    ev.preventDefault();
-    const touch = ev.touches[0];
-    if (touchGhost) {
-      touchGhost.style.left = (touch.clientX - touchGhost.offsetWidth/2) + 'px';
-      touchGhost.style.top  = (touch.clientY - 40) + 'px';
-    }
-    const scrollEl = touchDragCtx === 'task'
-      ? document.querySelector('#tab-input')
-      : document.querySelector('#tab-saved');
-    updateDragScroll(touch.clientY, scrollEl);
-    document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el =>
-      el.classList.remove('calc-drag-over-top','calc-drag-over-bottom'));
-    const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-drag-idx]');
-    if (target && target !== touchDragSrc && target._dragCtx === touchDragCtx) {
-      const r2 = target.getBoundingClientRect();
-      if (touch.clientY < r2.top + r2.height/2) target.classList.add('calc-drag-over-top');
-      else target.classList.add('calc-drag-over-bottom');
-    }
-  };
-  document.addEventListener('touchmove', _calcTouchMoveHandler, { passive: false });
+  if (navigator.vibrate) navigator.vibrate(30);
+}
+
+document.addEventListener('touchstart', e => {
+  const handle = e.target.closest('.calc-drag-handle');
+  if (!handle) return;
+  const item = handle.closest('[data-drag-idx]');
+  if (!item) return;
+  const t = e.touches[0];
+  _calcLongPressItem = item;
+  _calcLongPressStartX = t.clientX;
+  _calcLongPressStartY = t.clientY;
+  _calcLongPressTimer = setTimeout(() => {
+    if (!_calcLongPressItem) return;
+    _calcStartDrag(_calcLongPressItem);
+    _calcLongPressItem = null;
+    if (_calcTouchMoveHandler) document.removeEventListener('touchmove', _calcTouchMoveHandler);
+    _calcTouchMoveHandler = ev => {
+      ev.preventDefault();
+      const touch = ev.touches[0];
+      if (touchGhost) {
+        touchGhost.style.left = (touch.clientX - touchGhost.offsetWidth/2) + 'px';
+        touchGhost.style.top  = (touch.clientY - 40) + 'px';
+      }
+      const scrollEl = touchDragCtx === 'task'
+        ? document.querySelector('#tab-input')
+        : document.querySelector('#tab-saved');
+      updateDragScroll(touch.clientY, scrollEl);
+      document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el =>
+        el.classList.remove('calc-drag-over-top','calc-drag-over-bottom'));
+      const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-drag-idx]');
+      if (target && target !== touchDragSrc && target._dragCtx === touchDragCtx) {
+        const r2 = target.getBoundingClientRect();
+        if (touch.clientY < r2.top + r2.height/2) target.classList.add('calc-drag-over-top');
+        else target.classList.add('calc-drag-over-bottom');
+      }
+    };
+    document.addEventListener('touchmove', _calcTouchMoveHandler, { passive: false });
+  }, 200);
+}, { passive: true });
+
+// 롱프레스 중 손가락 많이 움직이면 취소 (스크롤 의도)
+document.addEventListener('touchmove', e => {
+  if (!_calcLongPressItem) return;
+  const t = e.touches[0];
+  if (Math.abs(t.clientX - _calcLongPressStartX) > 6 || Math.abs(t.clientY - _calcLongPressStartY) > 6) {
+    clearTimeout(_calcLongPressTimer);
+    _calcLongPressItem = null;
+  }
 }, { passive: true });
 
 document.addEventListener('touchend', e => {
+  // 롱프레스 타이머 항상 취소
+  clearTimeout(_calcLongPressTimer); _calcLongPressItem = null;
   if (calTouchSrc) {
     if (_calTouchMoveHandler) { document.removeEventListener('touchmove', _calTouchMoveHandler); _calTouchMoveHandler = null; }
     if (calTouchGhost) { calTouchGhost.remove(); calTouchGhost = null; }
