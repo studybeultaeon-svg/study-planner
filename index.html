@@ -1323,22 +1323,24 @@ function subscribeCalcData() {
     const local = loadCalcFromStorage();
     let touched = false;
 
-    // 폴더 트리 — savedFolderTreeTs로 독립 동기화 (savedTs와 분리)
-    // 폴더 트리 — savedFolderTreeTs로 독립 동기화
-    // 기존 데이터 fallback: savedFolderTreeTs가 없으면 savedTs를 대신 사용
-    const remoteFolderTreeTs = (remote && (remote.savedFolderTreeTs || remote.savedTs)) || 0;
-    const localFolderTreeTs  = local.savedFolderTreeTs || local.savedTs || 0;
-    const remoteTree = (remote && remote.savedFolderTree) || {};
+    // ── 폴더 트리 (savedTs와 완전 독립) ──
+    const remoteFolderTreeTs = remote?.savedFolderTreeTs || 0;
+    const localFolderTreeTs  = local.savedFolderTreeTs  || 0;
+    const remoteTree = remote?.savedFolderTree || {};
     const remoteHasFolders = Object.keys(remoteTree).length > 0;
-    if (remote && remote.savedFolderTree !== undefined &&
-        (remoteFolderTreeTs > localFolderTreeTs || (!localFolderTreeTs && remoteHasFolders))) {
-      local.savedFolderTree = remoteTree;
-      local.savedFolderTreeTs = remoteFolderTreeTs;
-      touched = true;
+    const localHasFolders  = Object.keys(local.savedFolderTree || {}).length > 0;
+    if (remote !== null) {
+      if (remoteFolderTreeTs > localFolderTreeTs ||
+          // 마이그레이션: 둘 다 ts=0이지만 원격에만 폴더 있을 때
+          (remoteFolderTreeTs === 0 && localFolderTreeTs === 0 && remoteHasFolders && !localHasFolders)) {
+        local.savedFolderTree = remoteTree;
+        local.savedFolderTreeTs = remoteFolderTreeTs || Date.now();
+        touched = true;
+      }
     }
 
-    // 저장됨 목록 — savedTs가 로컬보다 최신일 때만 반영
-    const remoteSavedTs = (remote && remote.savedTs) || 0;
+    // ── 저장됨 목록 ──
+    const remoteSavedTs = remote?.savedTs || 0;
     if (remoteSavedTs > (local.savedTs || 0)) {
       local.saved = remote.saved || [];
       local.savedTs = remoteSavedTs;
@@ -1347,13 +1349,12 @@ function subscribeCalcData() {
 
     if (touched) renderSavedPanel();
 
-    // 드래프트 업무 — tasksTs가 로컬보다 최신일 때만 반영
-    const remoteTasksTs = (remote && remote.tasksTs) || 0;
+    // ── 드래프트 업무 ──
+    const remoteTasksTs = remote?.tasksTs || 0;
     if (remoteTasksTs > (local.tasksTs || 0)) {
       local.tasks = remote.tasks || [];
       local.tasksTs = remoteTasksTs;
       touched = true;
-      // 포커스된 입력칸이 있으면 재렌더 보류 — blur 후 다음 동기화 때 반영
       const focused = document.activeElement;
       const inTaskCard = focused && focused.closest && focused.closest('.task-card');
       if (!inTaskCard) {
@@ -1373,32 +1374,41 @@ function subscribeCalcData() {
 
     if (touched) saveCalcToLocalStorage(local);
 
-    // 로컬이 최신이거나 Firebase가 비어 있으면 push (첫 연결 시 누락 방지)
-    if (!remote ||
-        (local.savedTs || 0) > remoteSavedTs ||
-        (local.tasksTs || 0) > remoteTasksTs ||
-        (local.savedFolderTreeTs || 0) > remoteFolderTreeTs) {
+    // 로컬이 최신이거나 Firebase가 비어 있으면 push
+    if (!remote || (local.savedTs||0) > remoteSavedTs || (local.tasksTs||0) > remoteTasksTs) {
       pushCalcToFirebase(local);
+    }
+    // 폴더 트리는 별도 push (아이템 push와 분리)
+    if (!remote || (local.savedFolderTreeTs||0) > remoteFolderTreeTs) {
+      pushFolderTreeToFirebase(local);
     }
   }, err => fbReportError('계산기 동기화 오류', err));
 }
 
 function pushCalcToFirebase(data) {
+  // 아이템/업무만 push — 폴더 트리는 건드리지 않음 (update 사용)
   if (!db) return;
   clearTimeout(_calcPushTimer);
   _calcPushTimer = setTimeout(() => {
     setSyncStatus('syncing', '저장 중...');
-    db.ref(`users/${FB_USER}/calculator`).set({
+    db.ref(`users/${FB_USER}/calculator`).update({
       saved: data.saved || [],
       savedTs: data.savedTs || 0,
-      savedFolderTree: data.savedFolderTree || {},
-      savedFolderTreeTs: data.savedFolderTreeTs || 0,
       tasks: data.tasks || [],
       tasksTs: data.tasksTs || 0
     })
       .then(() => setSyncStatus('syncing', '동기화됨'))
       .catch(err => fbReportError('계산기 저장 실패', err));
   }, CALC_PUSH_DEBOUNCE_MS);
+}
+
+function pushFolderTreeToFirebase(data) {
+  // 폴더 트리만 별도 push — 아이템과 완전 분리
+  if (!db) return;
+  db.ref(`users/${FB_USER}/calculator`).update({
+    savedFolderTree: data.savedFolderTree || {},
+    savedFolderTreeTs: data.savedFolderTreeTs || 0
+  }).catch(err => fbReportError('폴더 동기화 실패', err));
 }
 
 /* ══════════════════════════════════════════════════════
@@ -1681,7 +1691,7 @@ function renderModalTaskList(key) {
 
     const item=document.createElement('div');
     item.className='task-item-modal'+(selectedTaskIndex===taskIdx?' selected-item':'');
-    item.dataset.taskIdx=taskIdx; item.dataset.displayPos=displayPos;
+    item.dataset.taskIdx=taskIdx; item.dataset.displayPos=displayPos; item.dataset.calKey=key;
     // 드래그 핸들
     const handle=document.createElement('span');
     handle.className='drag-handle'; handle.textContent='⠿';
@@ -1693,39 +1703,6 @@ function renderModalTaskList(key) {
     handle.addEventListener('mouseup', () => {
       item.setAttribute('draggable','false');
     });
-    handle.addEventListener('touchstart', e => {
-      e.stopPropagation();
-      // touch-action:none이 CSS에 있으므로 스크롤 차단됨, 즉시 드래그 시작
-      const t0 = e.touches[0];
-      calTouchSrc = item; calTouchKey = key;
-      item.classList.add('dragging');
-      const r = item.getBoundingClientRect();
-      calTouchGhost = item.cloneNode(true);
-      calTouchGhost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;opacity:0.88;
-        width:${r.width}px;left:${t0.clientX - r.width/2}px;top:${t0.clientY - 40}px;margin:0;
-        transform:scale(1.03);background:var(--card);
-        border:1.5px solid var(--accent);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4);`;
-      document.body.appendChild(calTouchGhost);
-      if (navigator.vibrate) navigator.vibrate(30);
-      if (_calTouchMoveHandler) document.removeEventListener('touchmove', _calTouchMoveHandler);
-      _calTouchMoveHandler = ev => {
-        ev.preventDefault();
-        const touch = ev.touches[0];
-        if (calTouchGhost) {
-          calTouchGhost.style.left = (touch.clientX - calTouchGhost.offsetWidth/2) + 'px';
-          calTouchGhost.style.top  = (touch.clientY - 40) + 'px';
-        }
-        updateDragScroll(touch.clientY, document.querySelector('.cal-modal'));
-        clearCalHighlight();
-        const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.task-item-modal');
-        if (target && target !== calTouchSrc) {
-          const r2 = target.getBoundingClientRect();
-          if (touch.clientY < r2.top + r2.height/2) target.classList.add('calc-drag-over-top');
-          else target.classList.add('calc-drag-over-bottom');
-        }
-      };
-      document.addEventListener('touchmove', _calTouchMoveHandler, { passive: false });
-    }, { passive: true });
     item.appendChild(handle);
 
     // 이름
@@ -2194,7 +2171,6 @@ function addCalcTask(name='',qty='',unit='',dday='',start='',modifiedAt='',weekd
   if (handle) {
     handle.addEventListener('mousedown', e => onHandleMouseDown(e, 'task'));
     handle.addEventListener('mouseup', e => onHandleMouseUp(e));
-    attachCalcTouchDrag(handle, card, 'task');
   }
 }
 
@@ -2335,7 +2311,6 @@ function renderSavedPanel() {
     if (sh) {
       sh.addEventListener('mousedown', ev => onHandleMouseDown(ev, 'saved'));
       sh.addEventListener('mouseup',   ev => onHandleMouseUp(ev));
-      attachCalcTouchDrag(sh, el, 'saved');
     }
     return el;
   }
@@ -2429,7 +2404,7 @@ function promptCreateFolder(parentPath = []) {
   if (parent[n]) { showToast('이미 같은 이름의 폴더가 있습니다'); return; }
   parent[n] = {};
   data.savedFolderTreeTs = Date.now();
-  saveCalcData(data); renderSavedPanel(); showToast(`"${n}" 폴더 생성됨`);
+  saveCalcData(data); pushFolderTreeToFirebase(data); renderSavedPanel(); showToast(`"${n}" 폴더 생성됨`);
 }
 function renameSavedFolder(path) {
   const oldName = path[path.length - 1];
@@ -2451,7 +2426,7 @@ function renameSavedFolder(path) {
   const oldKey = pathKey(path), newKey = pathKey(newPath);
   if (_folderCollapsed[oldKey] !== undefined) { _folderCollapsed[newKey] = _folderCollapsed[oldKey]; delete _folderCollapsed[oldKey]; }
   data.savedFolderTreeTs = Date.now();
-  saveCalcData(data); renderSavedPanel();
+  saveCalcData(data); pushFolderTreeToFirebase(data); renderSavedPanel();
 }
 function deleteSavedFolder(path) {
   const name = path[path.length-1];
@@ -2467,7 +2442,7 @@ function deleteSavedFolder(path) {
     deleteFolderNode(data.savedFolderTree, path);
     delete _folderCollapsed[pathKey(path)];
     data.savedFolderTreeTs = Date.now();
-    saveCalcData(data); renderSavedPanel(); showToast('폴더가 삭제됐습니다');
+    saveCalcData(data); pushFolderTreeToFirebase(data); renderSavedPanel(); showToast('폴더가 삭제됐습니다');
   });
 }
 
@@ -2909,63 +2884,70 @@ document.addEventListener('drop', e => {
   }
 });
 
-// ── 모바일 터치 드래그 (핸들에 직접 부착, 롱프레스 200ms 후 시작) ──
+// ── 모바일 터치 드래그 (Android 최적화: capture+preventDefault) ──
 let touchDragSrc = null, touchDragCtx = null, touchGhost = null, _calcTouchMoveHandler = null;
-let _calcLongPressTimer = null, _calcLongPressItem = null, _calcLongPressStartX = 0, _calcLongPressStartY = 0;
 
-function _calcStartDrag(item) {
-  touchDragSrc = item;
-  touchDragCtx = item._dragCtx;
-  item.classList.add('calc-dragging');
-  const r = item.getBoundingClientRect();
-  touchGhost = item.cloneNode(true);
-  touchGhost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;opacity:0.88;
-    width:${r.width}px;left:${r.left}px;top:${r.top}px;margin:0;
-    transform:scale(1.03);background:var(--card);
-    border:1.5px solid var(--accent);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4);`;
-  document.body.appendChild(touchGhost);
-  if (navigator.vibrate) navigator.vibrate(30);
-}
-
-function attachCalcTouchDrag(handle, item, ctx) {
-  // touch-action:none이 CSS에 있으므로 e.preventDefault() 없이도 스크롤 차단됨
-  // 즉시 드래그 시작 (롱프레스 제거) — iOS에서 passive:true + touch-action:none 조합이 가장 안정적
-  handle.addEventListener('touchstart', e => {
-    const t = e.touches[0];
-    _calcStartDrag(item);
-    // 고스트를 손가락 위치로 즉시 이동
-    if (touchGhost) {
-      touchGhost.style.left = (t.clientX - touchGhost.offsetWidth / 2) + 'px';
-      touchGhost.style.top  = (t.clientY - 40) + 'px';
-    }
+document.addEventListener('touchstart', e => {
+  const calcHandle = e.target.closest('.calc-drag-handle');
+  const calHandle  = e.target.closest('.drag-handle');
+  if (!calcHandle && !calHandle) return;
+  e.preventDefault();
+  const t = e.touches[0];
+  if (calcHandle) {
+    const item = calcHandle.closest('[data-drag-idx]');
+    if (!item) return;
+    touchDragSrc = item; touchDragCtx = item._dragCtx;
+    item.classList.add('calc-dragging');
+    const r = item.getBoundingClientRect();
+    touchGhost = item.cloneNode(true);
+    touchGhost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;opacity:0.88;width:${r.width}px;left:${t.clientX-r.width/2}px;top:${t.clientY-40}px;margin:0;transform:scale(1.03);background:var(--card);border:1.5px solid var(--accent);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4);`;
+    document.body.appendChild(touchGhost);
+    if (navigator.vibrate) navigator.vibrate(30);
     if (_calcTouchMoveHandler) document.removeEventListener('touchmove', _calcTouchMoveHandler);
     _calcTouchMoveHandler = ev => {
       ev.preventDefault();
       const touch = ev.touches[0];
-      if (touchGhost) {
-        touchGhost.style.left = (touch.clientX - touchGhost.offsetWidth / 2) + 'px';
-        touchGhost.style.top  = (touch.clientY - 40) + 'px';
-      }
-      const scrollEl = ctx === 'task'
-        ? document.querySelector('#tab-input')
-        : document.querySelector('#tab-saved');
+      touchGhost.style.left = (touch.clientX - touchGhost.offsetWidth/2) + 'px';
+      touchGhost.style.top  = (touch.clientY - 40) + 'px';
+      const scrollEl = touchDragCtx === 'task' ? document.querySelector('#tab-input') : document.querySelector('#tab-saved');
       updateDragScroll(touch.clientY, scrollEl);
-      document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el =>
-        el.classList.remove('calc-drag-over-top', 'calc-drag-over-bottom'));
-      const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-drag-idx]');
-      if (target && target !== touchDragSrc && target._dragCtx === touchDragCtx) {
-        const r2 = target.getBoundingClientRect();
-        if (touch.clientY < r2.top + r2.height / 2) target.classList.add('calc-drag-over-top');
-        else target.classList.add('calc-drag-over-bottom');
+      document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el => el.classList.remove('calc-drag-over-top','calc-drag-over-bottom'));
+      const tgt = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-drag-idx]');
+      if (tgt && tgt !== touchDragSrc && tgt._dragCtx === touchDragCtx) {
+        const r2 = tgt.getBoundingClientRect();
+        tgt.classList.add(touch.clientY < r2.top+r2.height/2 ? 'calc-drag-over-top' : 'calc-drag-over-bottom');
       }
     };
     document.addEventListener('touchmove', _calcTouchMoveHandler, { passive: false });
-  }, { passive: true });
-}
+  } else {
+    const item = calHandle.closest('.task-item-modal');
+    if (!item) return;
+    calTouchSrc = item; calTouchKey = item.dataset.calKey;
+    item.classList.add('dragging');
+    const r = item.getBoundingClientRect();
+    calTouchGhost = item.cloneNode(true);
+    calTouchGhost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;opacity:0.88;width:${r.width}px;left:${t.clientX-r.width/2}px;top:${t.clientY-40}px;margin:0;transform:scale(1.03);background:var(--card);border:1.5px solid var(--accent);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4);`;
+    document.body.appendChild(calTouchGhost);
+    if (navigator.vibrate) navigator.vibrate(30);
+    if (_calTouchMoveHandler) document.removeEventListener('touchmove', _calTouchMoveHandler);
+    _calTouchMoveHandler = ev => {
+      ev.preventDefault();
+      const touch = ev.touches[0];
+      calTouchGhost.style.left = (touch.clientX - calTouchGhost.offsetWidth/2) + 'px';
+      calTouchGhost.style.top  = (touch.clientY - 40) + 'px';
+      updateDragScroll(touch.clientY, document.querySelector('.cal-modal'));
+      clearCalHighlight();
+      const tgt = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.task-item-modal');
+      if (tgt && tgt !== calTouchSrc) {
+        const r2 = tgt.getBoundingClientRect();
+        tgt.classList.add(touch.clientY < r2.top+r2.height/2 ? 'calc-drag-over-top' : 'calc-drag-over-bottom');
+      }
+    };
+    document.addEventListener('touchmove', _calTouchMoveHandler, { passive: false });
+  }
+}, { passive: false, capture: true });
 
 document.addEventListener('touchend', e => {
-  // 롱프레스 타이머 항상 취소
-  clearTimeout(_calcLongPressTimer); _calcLongPressItem = null;
   if (calTouchSrc) {
     if (_calTouchMoveHandler) { document.removeEventListener('touchmove', _calTouchMoveHandler); _calTouchMoveHandler = null; }
     if (calTouchGhost) { calTouchGhost.remove(); calTouchGhost = null; }
