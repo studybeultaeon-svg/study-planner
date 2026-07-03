@@ -2687,7 +2687,8 @@ function saveOneResult(btn, name, qty, unit, startStr, ddayStr, weekdayGoal, wee
   const existing = idx >= 0 ? data.saved[idx] : null;
   const item = { name, qty, unit, start: startStr, dday: ddayStr,
     weekdayGoal, weekendGoal, progress: progress||0, holidays: holidays||[],
-    savedAt: existing ? existing.savedAt : t, modifiedAt: t };
+    savedAt: existing ? existing.savedAt : t, modifiedAt: t,
+    ...(existing?.folderPath ? { folderPath: existing.folderPath } : {}) };
   if (idx >= 0) data.saved[idx] = item; else data.saved.unshift(item);
   saveCalcData(data); renderSavedPanel();
   btn.textContent = '✅ 저장됨';
