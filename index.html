@@ -2324,7 +2324,7 @@ function renderSavedPanel() {
     for (const name of Object.keys(subtree || {})) {
       const subPath = [...path, name];
       const key = pathKey(subPath);
-      const collapsed = !!_folderCollapsed[key];
+      const collapsed = _folderCollapsed[key] !== false;
       const subItems = allItems.filter(({item}) => {
         const fp = item.folderPath || [];
         return fp.length >= subPath.length && JSON.stringify(fp.slice(0, subPath.length)) === JSON.stringify(subPath);
