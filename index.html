@@ -2338,7 +2338,8 @@ function reorderFolders(parentPath, fromName, toName, insertBefore) {
   order.splice(insertBefore ? newTo : newTo + 1, 0, fromName);
   data.savedFolderOrder[orderKey] = order;
   data.savedFolderTreeTs = Date.now();
-  saveCalcData(data); pushFolderTreeToFirebase(data); renderSavedPanel();
+  saveCalcToLocalStorage(data); pushFolderTreeToFirebase(data);
+  setTimeout(renderSavedPanel, 0);
 }
 
 function loadSavedItem(idx) {
