@@ -1325,6 +1325,7 @@ function subscribeCalcData() {
     if (remoteSavedTs > (local.savedTs || 0)) {
       local.saved = remote.saved || [];
       local.savedTs = remoteSavedTs;
+      if (remote.savedFolderTree !== undefined) local.savedFolderTree = remote.savedFolderTree || {};
       touched = true;
       renderSavedPanel();
     }
@@ -1372,6 +1373,7 @@ function pushCalcToFirebase(data) {
     db.ref(`users/${FB_USER}/calculator`).set({
       saved: data.saved || [],
       savedTs: data.savedTs || 0,
+      savedFolderTree: data.savedFolderTree || {},
       tasks: data.tasks || [],
       tasksTs: data.tasksTs || 0
     })
