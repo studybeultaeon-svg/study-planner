@@ -1325,8 +1325,16 @@ function subscribeCalcData() {
 
     // 폴더 트리 — savedFolderTreeTs로 독립 동기화 (savedTs와 분리)
     const remoteFolderTreeTs = (remote && remote.savedFolderTreeTs) || 0;
-    if (remoteFolderTreeTs > (local.savedFolderTreeTs || 0) && remote.savedFolderTree !== undefined) {
-      local.savedFolderTree = remote.savedFolderTree || {};
+    const localFolderTreeTs  = local.savedFolderTreeTs || 0;
+    const remoteTree = (remote && remote.savedFolderTree) || {};
+    const localTree  = local.savedFolderTree || {};
+    const remoteHasFolders = Object.keys(remoteTree).length > 0;
+    const localHasFolders  = Object.keys(localTree).length > 0;
+    // 타임스탬프가 더 최신이거나, 둘 다 0인데 원격에만 폴더가 있으면 동기화 (기존 데이터 마이그레이션)
+    if (remote && remote.savedFolderTree !== undefined &&
+        (remoteFolderTreeTs > localFolderTreeTs ||
+         (remoteFolderTreeTs === 0 && localFolderTreeTs === 0 && remoteHasFolders && !localHasFolders))) {
+      local.savedFolderTree = remoteTree;
       local.savedFolderTreeTs = remoteFolderTreeTs;
       touched = true;
     }
@@ -2200,6 +2208,7 @@ function addCalcTask(name='',qty='',unit='',dday='',start='',modifiedAt='',weekd
   if (handle) {
     handle.addEventListener('mousedown', e => onHandleMouseDown(e, 'task'));
     handle.addEventListener('mouseup', e => onHandleMouseUp(e));
+    attachCalcTouchDrag(handle, card, 'task');
   }
 }
 
@@ -2340,6 +2349,7 @@ function renderSavedPanel() {
     if (sh) {
       sh.addEventListener('mousedown', ev => onHandleMouseDown(ev, 'saved'));
       sh.addEventListener('mouseup',   ev => onHandleMouseUp(ev));
+      attachCalcTouchDrag(sh, el, 'saved');
     }
     return el;
   }
@@ -2913,7 +2923,7 @@ document.addEventListener('drop', e => {
   }
 });
 
-// ── 모바일 터치 드래그 (롱프레스 200ms 후 시작) ──
+// ── 모바일 터치 드래그 (핸들에 직접 부착, 롱프레스 200ms 후 시작) ──
 let touchDragSrc = null, touchDragCtx = null, touchGhost = null, _calcTouchMoveHandler = null;
 let _calcLongPressTimer = null, _calcLongPressItem = null, _calcLongPressStartX = 0, _calcLongPressStartY = 0;
 
@@ -2931,50 +2941,56 @@ function _calcStartDrag(item) {
   if (navigator.vibrate) navigator.vibrate(30);
 }
 
-document.addEventListener('touchstart', e => {
-  const handle = e.target.closest('.calc-drag-handle');
-  if (!handle) return;
-  const item = handle.closest('[data-drag-idx]');
-  if (!item) return;
-  e.preventDefault(); // 드래그 핸들 터치 시 스크롤 즉시 차단
-  const t = e.touches[0];
-  _calcLongPressItem = item;
-  _calcLongPressStartX = t.clientX;
-  _calcLongPressStartY = t.clientY;
-  _calcLongPressTimer = setTimeout(() => {
+function attachCalcTouchDrag(handle, item, ctx) {
+  handle.addEventListener('touchstart', e => {
+    e.preventDefault(); // 엘리먼트에 직접 붙여야 iOS에서 스크롤 차단됨
+    const t = e.touches[0];
+    _calcLongPressItem = item;
+    _calcLongPressStartX = t.clientX;
+    _calcLongPressStartY = t.clientY;
+    _calcLongPressTimer = setTimeout(() => {
+      if (!_calcLongPressItem) return;
+      _calcStartDrag(_calcLongPressItem);
+      _calcLongPressItem = null;
+      if (_calcTouchMoveHandler) document.removeEventListener('touchmove', _calcTouchMoveHandler);
+      _calcTouchMoveHandler = ev => {
+        ev.preventDefault();
+        const touch = ev.touches[0];
+        if (touchGhost) {
+          touchGhost.style.left = (touch.clientX - touchGhost.offsetWidth/2) + 'px';
+          touchGhost.style.top  = (touch.clientY - 40) + 'px';
+        }
+        const scrollEl = ctx === 'task'
+          ? document.querySelector('#tab-input')
+          : document.querySelector('#tab-saved');
+        updateDragScroll(touch.clientY, scrollEl);
+        document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el =>
+          el.classList.remove('calc-drag-over-top','calc-drag-over-bottom'));
+        const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-drag-idx]');
+        if (target && target !== touchDragSrc && target._dragCtx === touchDragCtx) {
+          const r2 = target.getBoundingClientRect();
+          if (touch.clientY < r2.top + r2.height/2) target.classList.add('calc-drag-over-top');
+          else target.classList.add('calc-drag-over-bottom');
+        }
+      };
+      document.addEventListener('touchmove', _calcTouchMoveHandler, { passive: false });
+    }, 200);
+  }, { passive: false });
+  handle.addEventListener('touchmove', e => {
     if (!_calcLongPressItem) return;
-    _calcStartDrag(_calcLongPressItem);
-    _calcLongPressItem = null;
-    if (_calcTouchMoveHandler) document.removeEventListener('touchmove', _calcTouchMoveHandler);
-    _calcTouchMoveHandler = ev => {
-      ev.preventDefault();
-      const touch = ev.touches[0];
-      if (touchGhost) {
-        touchGhost.style.left = (touch.clientX - touchGhost.offsetWidth/2) + 'px';
-        touchGhost.style.top  = (touch.clientY - 40) + 'px';
-      }
-      const scrollEl = touchDragCtx === 'task'
-        ? document.querySelector('#tab-input')
-        : document.querySelector('#tab-saved');
-      updateDragScroll(touch.clientY, scrollEl);
-      document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el =>
-        el.classList.remove('calc-drag-over-top','calc-drag-over-bottom'));
-      const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-drag-idx]');
-      if (target && target !== touchDragSrc && target._dragCtx === touchDragCtx) {
-        const r2 = target.getBoundingClientRect();
-        if (touch.clientY < r2.top + r2.height/2) target.classList.add('calc-drag-over-top');
-        else target.classList.add('calc-drag-over-bottom');
-      }
-    };
-    document.addEventListener('touchmove', _calcTouchMoveHandler, { passive: false });
-  }, 200);
-}, { passive: false });
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - _calcLongPressStartX) > 10 || Math.abs(t.clientY - _calcLongPressStartY) > 10) {
+      clearTimeout(_calcLongPressTimer);
+      _calcLongPressItem = null;
+    }
+  }, { passive: true });
+}
 
-// 롱프레스 중 손가락 많이 움직이면 취소 (스크롤 의도)
+// 롱프레스 중 손가락 많이 움직이면 취소 (글로벌 보조)
 document.addEventListener('touchmove', e => {
   if (!_calcLongPressItem) return;
   const t = e.touches[0];
-  if (Math.abs(t.clientX - _calcLongPressStartX) > 6 || Math.abs(t.clientY - _calcLongPressStartY) > 6) {
+  if (Math.abs(t.clientX - _calcLongPressStartX) > 10 || Math.abs(t.clientY - _calcLongPressStartY) > 10) {
     clearTimeout(_calcLongPressTimer);
     _calcLongPressItem = null;
   }
