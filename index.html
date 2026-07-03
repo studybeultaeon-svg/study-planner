@@ -1323,15 +1323,23 @@ function subscribeCalcData() {
     const local = loadCalcFromStorage();
     let touched = false;
 
+    // 폴더 트리 — savedFolderTreeTs로 독립 동기화 (savedTs와 분리)
+    const remoteFolderTreeTs = (remote && remote.savedFolderTreeTs) || 0;
+    if (remoteFolderTreeTs > (local.savedFolderTreeTs || 0) && remote.savedFolderTree !== undefined) {
+      local.savedFolderTree = remote.savedFolderTree || {};
+      local.savedFolderTreeTs = remoteFolderTreeTs;
+      touched = true;
+    }
+
     // 저장됨 목록 — savedTs가 로컬보다 최신일 때만 반영
     const remoteSavedTs = (remote && remote.savedTs) || 0;
     if (remoteSavedTs > (local.savedTs || 0)) {
       local.saved = remote.saved || [];
       local.savedTs = remoteSavedTs;
-      if (remote.savedFolderTree !== undefined) local.savedFolderTree = remote.savedFolderTree || {};
       touched = true;
-      renderSavedPanel();
     }
+
+    if (touched) renderSavedPanel();
 
     // 드래프트 업무 — tasksTs가 로컬보다 최신일 때만 반영
     const remoteTasksTs = (remote && remote.tasksTs) || 0;
@@ -1362,7 +1370,8 @@ function subscribeCalcData() {
     // 로컬이 최신이거나 Firebase가 비어 있으면 push (첫 연결 시 누락 방지)
     if (!remote ||
         (local.savedTs || 0) > remoteSavedTs ||
-        (local.tasksTs || 0) > remoteTasksTs) {
+        (local.tasksTs || 0) > remoteTasksTs ||
+        (local.savedFolderTreeTs || 0) > remoteFolderTreeTs) {
       pushCalcToFirebase(local);
     }
   }, err => fbReportError('계산기 동기화 오류', err));
@@ -1377,6 +1386,7 @@ function pushCalcToFirebase(data) {
       saved: data.saved || [],
       savedTs: data.savedTs || 0,
       savedFolderTree: data.savedFolderTree || {},
+      savedFolderTreeTs: data.savedFolderTreeTs || 0,
       tasks: data.tasks || [],
       tasksTs: data.tasksTs || 0
     })
@@ -1680,6 +1690,7 @@ function renderModalTaskList(key) {
     let _calLongPressTimer = null, _calLpStartX = 0, _calLpStartY = 0;
     handle.addEventListener('touchstart', e => {
       e.stopPropagation();
+      e.preventDefault(); // 드래그 핸들 터치 시 스크롤 즉시 차단
       const t0 = e.touches[0];
       _calLpStartX = t0.clientX; _calLpStartY = t0.clientY;
       _calLongPressTimer = setTimeout(() => {
@@ -1712,7 +1723,7 @@ function renderModalTaskList(key) {
         };
         document.addEventListener('touchmove', _calTouchMoveHandler, { passive: false });
       }, 200);
-    }, { passive: true });
+    }, { passive: false });
     handle.addEventListener('touchmove', e => {
       if (!_calLongPressTimer) return;
       const t = e.touches[0];
@@ -2421,6 +2432,7 @@ function promptCreateFolder(parentPath = []) {
   if (!parent) { showToast('상위 폴더를 찾을 수 없습니다'); return; }
   if (parent[n]) { showToast('이미 같은 이름의 폴더가 있습니다'); return; }
   parent[n] = {};
+  data.savedFolderTreeTs = Date.now();
   saveCalcData(data); renderSavedPanel(); showToast(`"${n}" 폴더 생성됨`);
 }
 function renameSavedFolder(path) {
@@ -2442,6 +2454,7 @@ function renameSavedFolder(path) {
   });
   const oldKey = pathKey(path), newKey = pathKey(newPath);
   if (_folderCollapsed[oldKey] !== undefined) { _folderCollapsed[newKey] = _folderCollapsed[oldKey]; delete _folderCollapsed[oldKey]; }
+  data.savedFolderTreeTs = Date.now();
   saveCalcData(data); renderSavedPanel();
 }
 function deleteSavedFolder(path) {
@@ -2457,6 +2470,7 @@ function deleteSavedFolder(path) {
     });
     deleteFolderNode(data.savedFolderTree, path);
     delete _folderCollapsed[pathKey(path)];
+    data.savedFolderTreeTs = Date.now();
     saveCalcData(data); renderSavedPanel(); showToast('폴더가 삭제됐습니다');
   });
 }
@@ -2922,6 +2936,7 @@ document.addEventListener('touchstart', e => {
   if (!handle) return;
   const item = handle.closest('[data-drag-idx]');
   if (!item) return;
+  e.preventDefault(); // 드래그 핸들 터치 시 스크롤 즉시 차단
   const t = e.touches[0];
   _calcLongPressItem = item;
   _calcLongPressStartX = t.clientX;
@@ -2953,7 +2968,7 @@ document.addEventListener('touchstart', e => {
     };
     document.addEventListener('touchmove', _calcTouchMoveHandler, { passive: false });
   }, 200);
-}, { passive: true });
+}, { passive: false });
 
 // 롱프레스 중 손가락 많이 움직이면 취소 (스크롤 의도)
 document.addEventListener('touchmove', e => {
