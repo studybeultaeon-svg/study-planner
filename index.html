@@ -1372,6 +1372,15 @@ function subscribeCalcData() {
       }
     }
 
+    // 폴더 트리가 비어있지만 아이템에 folderPath가 있으면 자동 복구
+    const hasItemsWithPaths = (local.saved || []).some(item => item.folderPath && item.folderPath.length);
+    if (hasItemsWithPaths && !Object.keys(local.savedFolderTree || {}).length) {
+      local.savedFolderTree = rebuildFolderTreeFromItems(local);
+      local.savedFolderTreeTs = Date.now();
+      touched = true;
+      renderSavedPanel();
+    }
+
     if (touched) saveCalcToLocalStorage(local);
 
     // 로컬이 최신이거나 Firebase가 비어 있으면 push
@@ -2272,6 +2281,18 @@ function renameFolderNode(tree, path, newName) {
   delete parent[oldName];
 }
 function pathKey(path) { return path.join('\x00'); }
+
+function rebuildFolderTreeFromItems(data) {
+  // folderPath가 있는 아이템에서 savedFolderTree 재구성
+  const tree = {};
+  (data.saved || []).forEach(item => {
+    const fp = item.folderPath;
+    if (!fp || !fp.length) return;
+    let node = tree;
+    fp.forEach(name => { if (!node[name]) node[name] = {}; node = node[name]; });
+  });
+  return tree;
+}
 
 function renderSavedPanel() {
   const data = loadCalcFromStorage();
