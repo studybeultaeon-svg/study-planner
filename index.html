@@ -33,7 +33,6 @@ body {
   display: flex;
   flex-direction: column;
   overscroll-behavior: none;
-  -webkit-overflow-scrolling: touch;
 }
 
 /* ══ TOPBAR ══ */
@@ -232,7 +231,7 @@ body {
   cursor: pointer; border: 1px solid transparent; transition: border-color .15s;
 }
 .task-item-modal.selected-item { border-color: var(--accent); }
-.drag-handle { color: var(--muted); font-size: 14px; cursor: grab; padding: 0 2px; touch-action: none; user-select: none; }
+.drag-handle { color: var(--muted); font-size: 14px; cursor: grab; padding: 0 2px; user-select: none; }
 .drag-handle:active { cursor: grabbing; }
 .task-item-modal.dragging { opacity: 0.4; }
 .task-item-modal.drag-over { border: 1px dashed var(--accent); }
@@ -431,6 +430,11 @@ body {
 .btn-new-folder { font-family:inherit; font-size:12px; font-weight:600; padding:8px; border-radius:8px; border:1px solid rgba(79,142,247,.3); background:rgba(79,142,247,.08); color:var(--accent); cursor:pointer; width:100%; }
 .btn-new-folder:hover { background:rgba(79,142,247,.18); }
 .folder-header { display:flex; align-items:center; gap:5px; padding:5px 4px 3px; cursor:pointer; user-select:none; border-bottom:1px solid var(--border); margin-bottom:2px; margin-top:4px; grid-column: 1 / -1; }
+.folder-drag-handle { color:var(--muted); font-size:14px; cursor:grab; padding:0 2px; user-select:none; flex-shrink:0; }
+.folder-drag-handle:active { cursor:grabbing; }
+.folder-dragging { opacity:0.4; }
+.folder-drag-over-top { border-top:2px solid var(--accent) !important; }
+.folder-drag-over-bottom { border-bottom:2px solid var(--accent) !important; }
 .folder-header-name { flex:1; font-size:12px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .folder-toggle { font-size:10px; color:var(--muted); flex-shrink:0; }
 .folder-actions { display:flex; gap:3px; flex-shrink:0; }
@@ -477,7 +481,6 @@ body {
 .calc-divider:hover::after, .calc-divider.active::after {
   background: var(--accent); opacity: 1;
 }
-@media (max-width: 768px) { .calc-divider { display: none; } }
 
 /* 결과 영역 */
 .calc-content {
@@ -620,12 +623,9 @@ body {
 .calc-drag-handle {
   cursor: grab; color: var(--muted); font-size: 18px;
   padding: 0 8px; display: flex; align-items: center;
-  user-select: none; flex-shrink: 0; touch-action: none;
+  user-select: none; flex-shrink: 0;
 }
 .calc-drag-handle:active { cursor: grabbing; }
-@media (max-width: 768px) {
-  .calc-drag-handle { font-size: 22px; padding: 4px 12px; }
-}
 .calc-dragging { opacity: 0.4; }
 .calc-drag-over-top    { border-top: 2px solid var(--accent) !important; }
 .calc-drag-over-bottom { border-bottom: 2px solid var(--accent) !important; }
@@ -672,177 +672,6 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 .sidebar-tab, .fb-config-btn, .sort-btn, .saved-btn,
 .add-task-submit { min-height: 44px; }
 
-/* 스크롤바 숨김 (모바일) */
-@media (max-width: 768px) {
-  * { -webkit-tap-highlight-color: transparent; }
-
-  /* ── 토스트 하단 올리기 (모바일 홈 인디케이터 대응) ── */
-  #toast { bottom: 80px; }
-
-  /* ── TOPBAR ── */
-  .topbar { padding: 0 14px; height: 50px; }
-  .topbar-logo { font-size: 14px; }
-  #sync-label { display: none; }
-  .fb-config-btn { font-size: 10px; padding: 5px 8px; }
-
-  /* ── APP TABS ── */
-  .app-tab { font-size: 12px; padding: 11px 0; }
-
-  /* ── 캘린더 ── */
-  .cal-wrap { padding: 10px 8px; }
-
-  .legend-bar {
-    gap: 8px; padding: 8px 12px; margin-bottom: 8px;
-    overflow-x: auto; flex-wrap: nowrap;
-    -webkit-overflow-scrolling: touch;
-  }
-  .legend-item { flex-shrink: 0; font-size: 11px; }
-  .legend-title { flex-shrink: 0; font-size: 11px; }
-
-  .calendar-header { padding: 10px 12px; margin-bottom: 8px; }
-  .month-title { font-size: 15px; }
-  .nav-btn { padding: 6px 10px; font-size: 13px; }
-
-  .weekday-label { font-size: 11px; }
-
-  .calendar-grid { gap: 2px; }
-  .day-cell { min-height: 62px; padding: 4px; border-radius: 6px; }
-  .day-num { font-size: 11px; width: 20px; height: 20px; margin-bottom: 2px; }
-  .task-chip { font-size: 9px; padding: 1px 3px; margin-bottom: 1px; }
-
-  /* ── 캘린더 모달 → 바텀 시트 ── */
-  .cal-modal-overlay { align-items: flex-end; }
-  .cal-modal {
-    width: 100%; max-width: 100%;
-    border-radius: 20px 20px 0 0;
-    max-height: 85vh;
-    padding: 20px 18px 34px;
-  }
-  .cal-modal::before {
-    content: ''; display: block; width: 40px; height: 4px;
-    background: var(--border); border-radius: 2px;
-    margin: 0 auto 16px;
-  }
-  .add-task-input { font-size: 16px; /* iOS 줌 방지 */ padding: 10px 12px; }
-  .add-task-submit { padding: 10px 14px; }
-  .modal-btn { padding: 11px 8px; font-size: 11px; min-width: 60px; }
-
-  /* ── 날짜 선택 모달 → 바텀 시트 ── */
-  .date-pick-overlay { align-items: flex-end; }
-  .date-pick-inner {
-    width: 100%; border-radius: 20px 20px 0 0;
-    padding: 20px 18px 34px;
-  }
-  .date-pick-inner input[type="date"] { font-size: 16px; }
-
-  /* ── 계산기: 사이드바 → 상하 스택 ── */
-  .calc-layout { flex-direction: column; overflow: visible; }
-
-  .calc-sidebar {
-    width: 100%; border-right: none;
-    border-bottom: 1px solid var(--border);
-    max-height: 55vh; overflow: hidden;
-  }
-  .tab-panel { overflow-y: auto; }
-
-  .calc-content {
-    flex: none; padding: 14px;
-    min-height: 40vh; overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .results-grid { grid-template-columns: 1fr; }
-  .stats-grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
-  .stat-card .value { font-size: 16px; }
-
-  .input-panel-body { padding: 10px; gap: 6px; }
-  .task-card-body { grid-template-columns: 1fr 1fr; }
-  .field input { font-size: 16px; /* iOS 줌 방지 */ padding: 9px 10px; }
-
-  /* ── Firebase 모달 → 바텀 시트 ── */
-  .fb-modal-overlay { align-items: flex-end; }
-  .fb-modal {
-    width: 100%; max-width: 100%;
-    border-radius: 20px 20px 0 0;
-    padding: 22px 18px 40px;
-  }
-  .fb-field input { font-size: 16px; }
-
-  /* ── Confirm 모달 ── */
-  .confirm-overlay { align-items: flex-end; }
-  .confirm-box {
-    width: 100%; max-width: 100%;
-    border-radius: 20px 20px 0 0;
-    padding: 22px 18px 40px;
-  }
-  .confirm-btns { justify-content: stretch; }
-  .confirm-btns button { flex: 1; padding: 12px; }
-
-  /* ── 태스크 아이템 (캘린더 모달) ── */
-  .task-item-modal { padding: 10px 10px; }
-  .task-name-modal { font-size: 13px; }
-  .task-status-badge { font-size: 10px; padding: 3px 8px; }
-  .drag-hint { font-size: 10px; }
-
-  /* ── 저장된 항목 ── */
-  .saved-btn { padding: 8px 0; font-size: 12px; }
-}
-
-
-  /* ── 새 요소 모바일 대응 ── */
-  .next-days-btn { font-size: 11px; padding: 4px 8px; min-height: 32px; }
-  .cal-link-task-btn { font-size: 13px; padding: 12px 14px; min-height: 44px; }
-  .cal-link-select-wrap { gap: 6px; }
-  .modal-link-section { padding: 12px; }
-  .modal-section-toggle { padding: 12px; min-height: 44px; font-size: 13px; }
-  .cal-link-row input[type="number"] { font-size: 16px; width: 90px; }
-  .cal-link-btn { min-height: 44px; padding: 10px 16px; font-size: 14px; }
-
-/* ── 태블릿 (768px ~ 1024px) ── */
-@media (min-width: 769px) and (max-width: 1024px) {
-  .cal-wrap { padding: 14px; }
-  .day-cell { min-height: 76px; }
-  .task-chip { font-size: 10px; }
-
-  .calc-sidebar { width: 300px; }
-  .results-grid { grid-template-columns: 1fr; }
-  .stats-grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
-}
-
-/* ── 아주 작은 화면 (≤360px) ── */
-@media (max-width: 360px) {
-  .day-cell { min-height: 52px; padding: 3px; }
-  .task-chip { display: none; }
-  .day-cell::after {
-    content: attr(data-count);
-    font-size: 9px; color: var(--muted);
-    display: block; text-align: center;
-  }
-  .month-title { font-size: 14px; }
-}
-
-/* 계산기 모바일 스크롤 보완 */
-@media (max-width: 768px) {
-  #view-calculator.active {
-    overflow-y: auto;
-    display: block !important;
-  }
-  .calc-layout {
-    min-height: unset;
-  }
-  .calc-sidebar {
-    max-height: 56vh;
-    display: flex;
-    flex-direction: column;
-  }
-  .calc-content {
-    overflow-y: visible;
-    min-height: unset;
-    padding-bottom: 80px;
-  }
-  /* 바텀 네비게이션 공간 확보 */
-  .cal-wrap { padding-bottom: 24px; }
-}
 
 /* ══ 새 계산기 결과 스타일 ══ */
 .progress-section { margin: 12px 0; }
@@ -892,10 +721,6 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 }
 .field-row .field { min-width: 0; }
 
-/* 모바일 */
-@media (max-width: 768px) {
-  .pace-compare-wrap { grid-template-columns: 1fr; }
-}
 </style>
 </head>
 <body>
@@ -1335,6 +1160,7 @@ function subscribeCalcData() {
           (remoteFolderTreeTs === 0 && localFolderTreeTs === 0 && remoteHasFolders && !localHasFolders)) {
         local.savedFolderTree = remoteTree;
         local.savedFolderTreeTs = remoteFolderTreeTs || Date.now();
+        if (remote.savedFolderOrder) local.savedFolderOrder = remote.savedFolderOrder;
         touched = true;
       }
     }
@@ -1412,11 +1238,12 @@ function pushCalcToFirebase(data) {
 }
 
 function pushFolderTreeToFirebase(data) {
-  // 폴더 트리만 별도 push — 아이템과 완전 분리
+  // 폴더 트리 + 순서만 별도 push — 아이템과 완전 분리
   if (!db) return;
   db.ref(`users/${FB_USER}/calculator`).update({
     savedFolderTree: data.savedFolderTree || {},
-    savedFolderTreeTs: data.savedFolderTreeTs || 0
+    savedFolderTreeTs: data.savedFolderTreeTs || 0,
+    savedFolderOrder: data.savedFolderOrder || {}
   }).catch(err => fbReportError('폴더 동기화 실패', err));
 }
 
@@ -1619,18 +1446,11 @@ function openDayModal(key,y,m,d) {
   if (linkSec) linkSec.style.display = 'none';
   const linkBtn = document.querySelector('.modal-section-toggle');
   if (linkBtn) linkBtn.textContent = '📊 할당량 연동 추가 ▾';
-  // 모달 내부 스크롤 영역에서 touchmove 전파 차단 (스와이프 오감지 방지)
-  const calModal = document.querySelector('.cal-modal');
-  calModal._stopProp = e => {
-    if (calModal.scrollTop > 0) e.stopPropagation();
-  };
-  calModal.addEventListener('touchmove', calModal._stopProp, { passive: true });
 }
 
 // 캘린더 모달 드래그 완료 처리
 // 캘린더 모달 드래그 — 계산기와 동일한 방식 (핸들 mousedown → draggable)
 let calDragSrc = null, calDragKey = null;
-let calTouchSrc = null, calTouchKey = null, calTouchGhost = null, _calTouchMoveHandler = null;
 
 function calReorder(key, srcEl, targetEl, clientY) {
   const r = targetEl.getBoundingClientRect();
@@ -2044,7 +1864,6 @@ document.getElementById('closeModalBtn').addEventListener('click',()=>{
   document.getElementById('dayModal').classList.remove('active');
   document.body.style.overflow = '';
   const calModal = document.querySelector('.cal-modal');
-  if (calModal._stopProp) calModal.removeEventListener('touchmove', calModal._stopProp);
   selectedDate=null; selectedTaskIndex=null; renderCalendar();
 });
 document.getElementById('dayModal').addEventListener('click',e=>{
@@ -2340,8 +2159,19 @@ function renderSavedPanel() {
     // 이 경로에 있는 아이템
     const here = allItems.filter(({item}) => JSON.stringify(item.folderPath||[]) === JSON.stringify(path));
     here.forEach(({item, i}) => container.appendChild(makeSavedItemEl(item, i, depth)));
-    // 하위 폴더
-    for (const name of Object.keys(subtree || {})) {
+    // 하위 폴더 — savedFolderOrder로 정렬
+    const orderKey = JSON.stringify(path);
+    const savedOrder = (data.savedFolderOrder || {})[orderKey];
+    const allNames = Object.keys(subtree || {});
+    let sortedNames;
+    if (savedOrder && savedOrder.length) {
+      const existing = savedOrder.filter(n => allNames.includes(n));
+      const added = allNames.filter(n => !existing.includes(n));
+      sortedNames = [...existing, ...added];
+    } else {
+      sortedNames = allNames;
+    }
+    sortedNames.forEach((name, folderIdx) => {
       const subPath = [...path, name];
       const key = pathKey(subPath);
       const collapsed = _folderCollapsed[key] !== false;
@@ -2351,8 +2181,11 @@ function renderSavedPanel() {
       });
       const hdr = document.createElement('div');
       hdr.className = 'folder-header';
+      hdr.dataset.folderName = name;
+      hdr.dataset.folderParentKey = orderKey;
       hdr.style.paddingLeft = (depth * 14 + 4) + 'px';
       hdr.innerHTML = `
+        <span class="folder-drag-handle" title="드래그하여 순서 변경">⠿</span>
         <span class="folder-toggle">${collapsed ? '▶' : '▼'}</span>
         <span class="folder-header-name">📁 ${esc(name)} (${subItems.length})</span>
         <div class="folder-actions">
@@ -2365,10 +2198,14 @@ function renderSavedPanel() {
       btnRen.addEventListener('click', e => { e.stopPropagation(); renameSavedFolder(subPath); });
       btnDel.addEventListener('click', e => { e.stopPropagation(); deleteSavedFolder(subPath); });
       hdr.addEventListener('click', e => {
-        if (e.target.closest('.folder-action-btn')) return;
+        if (e.target.closest('.folder-action-btn') || e.target.closest('.folder-drag-handle')) return;
         _folderCollapsed[key] = !_folderCollapsed[key];
         renderSavedPanel();
       });
+      // 핸들 mousedown → draggable 활성화 (calc 카드 패턴과 동일)
+      const fdHandle = hdr.querySelector('.folder-drag-handle');
+      fdHandle.addEventListener('mousedown', () => { hdr.setAttribute('draggable', 'true'); });
+      fdHandle.addEventListener('mouseup',   () => { hdr.setAttribute('draggable', 'false'); });
       container.appendChild(hdr);
       if (!collapsed) {
         const wrap = document.createElement('div');
@@ -2376,7 +2213,7 @@ function renderSavedPanel() {
         renderTree(subtree[name] || {}, subPath, wrap, depth + 1);
         container.appendChild(wrap);
       }
-    }
+    });
   }
 
   renderTree(tree, [], list, 0);
@@ -2446,6 +2283,17 @@ function renameSavedFolder(path) {
   });
   const oldKey = pathKey(path), newKey = pathKey(newPath);
   if (_folderCollapsed[oldKey] !== undefined) { _folderCollapsed[newKey] = _folderCollapsed[oldKey]; delete _folderCollapsed[oldKey]; }
+  // savedFolderOrder에서 폴더명 갱신
+  const parentOrderKey = JSON.stringify(path.slice(0,-1));
+  if (data.savedFolderOrder?.[parentOrderKey]) {
+    const idx = data.savedFolderOrder[parentOrderKey].indexOf(oldName);
+    if (idx !== -1) data.savedFolderOrder[parentOrderKey][idx] = n;
+  }
+  // 하위 순서 키도 이전
+  if (data.savedFolderOrder) {
+    const oldSubKey = JSON.stringify(path), newSubKey = JSON.stringify(newPath);
+    if (data.savedFolderOrder[oldSubKey]) { data.savedFolderOrder[newSubKey] = data.savedFolderOrder[oldSubKey]; delete data.savedFolderOrder[oldSubKey]; }
+  }
   data.savedFolderTreeTs = Date.now();
   saveCalcData(data); pushFolderTreeToFirebase(data); renderSavedPanel();
 }
@@ -2462,9 +2310,35 @@ function deleteSavedFolder(path) {
     });
     deleteFolderNode(data.savedFolderTree, path);
     delete _folderCollapsed[pathKey(path)];
+    // savedFolderOrder에서 제거
+    const parentOrderKey = JSON.stringify(path.slice(0,-1));
+    if (data.savedFolderOrder?.[parentOrderKey]) {
+      data.savedFolderOrder[parentOrderKey] = data.savedFolderOrder[parentOrderKey].filter(n => n !== name);
+    }
+    delete (data.savedFolderOrder || {})[JSON.stringify(path)];
     data.savedFolderTreeTs = Date.now();
     saveCalcData(data); pushFolderTreeToFirebase(data); renderSavedPanel(); showToast('폴더가 삭제됐습니다');
   });
+}
+
+function reorderFolders(parentPath, fromName, toName, insertBefore) {
+  const data = loadCalcFromStorage();
+  if (!data.savedFolderOrder) data.savedFolderOrder = {};
+  const orderKey = JSON.stringify(parentPath);
+  const subtree = parentPath.length ? getFolderNode(data.savedFolderTree, parentPath) : data.savedFolderTree;
+  const allNames = Object.keys(subtree || {});
+  const current = (data.savedFolderOrder[orderKey] || []).filter(n => allNames.includes(n));
+  const missing = allNames.filter(n => !current.includes(n));
+  const order = [...current, ...missing];
+  const fromIdx = order.indexOf(fromName);
+  const toIdx = order.indexOf(toName);
+  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+  order.splice(fromIdx, 1);
+  const newTo = order.indexOf(toName);
+  order.splice(insertBefore ? newTo : newTo + 1, 0, fromName);
+  data.savedFolderOrder[orderKey] = order;
+  data.savedFolderTreeTs = Date.now();
+  saveCalcData(data); pushFolderTreeToFirebase(data); renderSavedPanel();
 }
 
 function loadSavedItem(idx) {
@@ -2730,68 +2604,6 @@ function confirmReset() {
 }
 
 
-/* ── 바텀시트 스와이프 닫기 (개선) ── */
-function addSwipeClose(overlayId, closeFn) {
-  const overlay = document.getElementById(overlayId);
-  if (!overlay) return;
-  const modal = overlay.querySelector(':scope > div');
-  if (!modal) return;
-
-  let startX = 0, startY = 0, startScrollTop = 0;
-  let tracking = false, locked = false, dir = null;
-
-  // 핸들 바 (말줄임표 부분) — 모달 상단 16px 영역만 스와이프 허용
-  modal.addEventListener('touchstart', e => {
-    const t = e.touches[0];
-    startX = t.clientX; startY = t.clientY;
-    startScrollTop = modal.scrollTop;
-    tracking = true; locked = false; dir = null;
-    modal.style.transition = 'none';
-  }, { passive: true });
-
-  modal.addEventListener('touchmove', e => {
-    if (!tracking) return;
-    const t = e.touches[0];
-    const dx = Math.abs(t.clientX - startX);
-    const dy = t.clientY - startY;
-
-    // 방향 확정 (처음 4px 이동 시)
-    if (!dir && (Math.abs(dy) > 4 || dx > 4)) {
-      dir = (Math.abs(dy) > dx) ? 'vertical' : 'horizontal';
-    }
-    if (dir !== 'vertical') return;
-
-    // 아래로 스와이프 + 모달이 최상단 스크롤 상태일 때만 드래그
-    const atTop = modal.scrollTop <= 0;
-    if (dy > 0 && atTop) {
-      if (!locked) { locked = true; }
-      // passive false로 등록하지 않으면 preventDefault 불가 — 여기선 변환만
-      modal.style.transform = `translateY(${Math.max(0, dy)}px)`;
-    }
-  }, { passive: true });
-
-  modal.addEventListener('touchend', e => {
-    if (!tracking) return;
-    tracking = false;
-    modal.style.transition = 'transform .25s ease';
-    const dy = e.changedTouches[0].clientY - startY;
-    const atTop = startScrollTop <= 0;
-    if (dy > 100 && atTop && dir === 'vertical') {
-      modal.style.transform = '';
-      closeFn();
-    } else {
-      modal.style.transform = '';
-    }
-    dir = null; locked = false;
-  });
-}
-// 각 모달에 스와이프 닫기 등록 (DOM 로드 후)
-document.addEventListener('DOMContentLoaded', () => {
-  addSwipeClose('dayModal', () => document.getElementById('closeModalBtn').click());
-  addSwipeClose('datePickModal', () => document.getElementById('cancelDateBtn').click());
-  addSwipeClose('confirmOverlay', closeConfirm);
-  addSwipeClose('fbModalOverlay', closeFbModal);
-});
 
 
 /* ══ 드래그 자동 스크롤 ══ */
@@ -2817,11 +2629,7 @@ function stopDragScroll() {
   if (_asRAF) { cancelAnimationFrame(_asRAF); _asRAF = null; }
 }
 
-/* ══ 계산기 드래그 정렬 유틸 ══
-   - PC: 핸들(⠿) mousedown → dragstart
-   - 모바일: 핸들 touchstart → touchmove/end
-   - draggable 속성은 핸들에만 설정, 카드 전체에는 X
-═══════════════════════════════════════════════ */
+/* ══ 드래그 정렬 ══ 핸들(⠿) mousedown → draggable=true → dragstart ══ */
 
 // ── 공통: 두 항목 위치 교환 후 저장 ──
 function reorderTaskCards(srcEl, targetEl, insertBefore) {
@@ -2846,7 +2654,7 @@ function reorderSavedItems(srcIdx, targetIdx, insertBefore) {
 }
 
 // ── PC 드래그 ──
-let pcDragSrc = null, pcDragCtx = null; // ctx: 'task' | 'saved'
+let pcDragSrc = null, pcDragCtx = null; // ctx: 'task' | 'saved' | 'folder'
 
 function onHandleMouseDown(e, ctx) {
   const item = e.currentTarget.closest('[data-drag-idx]');
@@ -2861,6 +2669,18 @@ function onHandleMouseUp(e) {
 
 document.addEventListener('dragstart', e => {
   if (e.target.closest('.task-item-modal')) return; // 캘린더 드래그는 통과
+
+  // 폴더 헤더 드래그
+  const folderHdr = e.target.closest('.folder-header');
+  if (folderHdr && folderHdr.getAttribute('draggable') === 'true') {
+    pcDragSrc = folderHdr;
+    pcDragCtx = 'folder';
+    setTimeout(() => folderHdr.classList.add('folder-dragging'), 0);
+    e.dataTransfer.effectAllowed = 'move';
+    return;
+  }
+
+  // 카드 드래그
   const item = e.target.closest('[data-drag-idx]');
   if (!item || item.getAttribute('draggable') !== 'true') { e.preventDefault(); return; }
   pcDragSrc = item;
@@ -2868,16 +2688,41 @@ document.addEventListener('dragstart', e => {
   setTimeout(() => item.classList.add('calc-dragging'), 0);
   e.dataTransfer.effectAllowed = 'move';
 });
+
 document.addEventListener('dragend', e => {
-  if (pcDragSrc) { pcDragSrc.classList.remove('calc-dragging'); pcDragSrc.setAttribute('draggable','false'); pcDragSrc = null; }
-  document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el => {
-    el.classList.remove('calc-drag-over-top','calc-drag-over-bottom');
+  if (pcDragSrc) {
+    if (pcDragCtx === 'folder') {
+      pcDragSrc.classList.remove('folder-dragging');
+    } else {
+      pcDragSrc.classList.remove('calc-dragging');
+    }
+    pcDragSrc.setAttribute('draggable', 'false');
+    pcDragSrc = null;
+  }
+  document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom,.folder-drag-over-top,.folder-drag-over-bottom').forEach(el => {
+    el.classList.remove('calc-drag-over-top','calc-drag-over-bottom','folder-drag-over-top','folder-drag-over-bottom');
   });
   stopDragScroll();
 });
+
 document.addEventListener('dragover', e => {
+  if (!pcDragSrc) return;
+
+  if (pcDragCtx === 'folder') {
+    const target = e.target.closest('.folder-header');
+    if (!target || target === pcDragSrc) return;
+    if (target.dataset.folderParentKey !== pcDragSrc.dataset.folderParentKey) return;
+    e.preventDefault();
+    updateDragScroll(e.clientY, document.querySelector('#tab-saved'));
+    document.querySelectorAll('.folder-drag-over-top,.folder-drag-over-bottom').forEach(el =>
+      el.classList.remove('folder-drag-over-top','folder-drag-over-bottom'));
+    const r = target.getBoundingClientRect();
+    target.classList.add(e.clientY < r.top + r.height / 2 ? 'folder-drag-over-top' : 'folder-drag-over-bottom');
+    return;
+  }
+
   const target = e.target.closest('[data-drag-idx]');
-  if (!target || !pcDragSrc || target === pcDragSrc) return;
+  if (!target || target === pcDragSrc) return;
   if (target._dragCtx !== pcDragCtx) return;
   e.preventDefault();
   const scrollEl = pcDragCtx === 'task'
@@ -2891,9 +2736,24 @@ document.addEventListener('dragover', e => {
   if (e.clientY < r.top + r.height / 2) target.classList.add('calc-drag-over-top');
   else target.classList.add('calc-drag-over-bottom');
 });
+
 document.addEventListener('drop', e => {
+  if (!pcDragSrc) return;
+
+  if (pcDragCtx === 'folder') {
+    const target = e.target.closest('.folder-header');
+    if (!target || target === pcDragSrc) return;
+    if (target.dataset.folderParentKey !== pcDragSrc.dataset.folderParentKey) return;
+    e.preventDefault();
+    const r = target.getBoundingClientRect();
+    const insertBefore = e.clientY < r.top + r.height / 2;
+    const parentPath = JSON.parse(pcDragSrc.dataset.folderParentKey);
+    reorderFolders(parentPath, pcDragSrc.dataset.folderName, target.dataset.folderName, insertBefore);
+    return;
+  }
+
   const target = e.target.closest('[data-drag-idx]');
-  if (!target || !pcDragSrc || target === pcDragSrc) return;
+  if (!target || target === pcDragSrc) return;
   if (target._dragCtx !== pcDragCtx) return;
   e.preventDefault();
   const r = target.getBoundingClientRect();
@@ -2905,99 +2765,6 @@ document.addEventListener('drop', e => {
   }
 });
 
-// ── 모바일 터치 드래그 (Android 최적화: capture+preventDefault) ──
-let touchDragSrc = null, touchDragCtx = null, touchGhost = null, _calcTouchMoveHandler = null;
-
-document.addEventListener('touchstart', e => {
-  const calcHandle = e.target.closest('.calc-drag-handle');
-  const calHandle  = e.target.closest('.drag-handle');
-  if (!calcHandle && !calHandle) return;
-  e.preventDefault();
-  const t = e.touches[0];
-  if (calcHandle) {
-    const item = calcHandle.closest('[data-drag-idx]');
-    if (!item) return;
-    touchDragSrc = item; touchDragCtx = item._dragCtx;
-    item.classList.add('calc-dragging');
-    const r = item.getBoundingClientRect();
-    touchGhost = item.cloneNode(true);
-    touchGhost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;opacity:0.88;width:${r.width}px;left:${t.clientX-r.width/2}px;top:${t.clientY-40}px;margin:0;transform:scale(1.03);background:var(--card);border:1.5px solid var(--accent);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4);`;
-    document.body.appendChild(touchGhost);
-    if (navigator.vibrate) navigator.vibrate(30);
-    if (_calcTouchMoveHandler) document.removeEventListener('touchmove', _calcTouchMoveHandler);
-    _calcTouchMoveHandler = ev => {
-      ev.preventDefault();
-      const touch = ev.touches[0];
-      touchGhost.style.left = (touch.clientX - touchGhost.offsetWidth/2) + 'px';
-      touchGhost.style.top  = (touch.clientY - 40) + 'px';
-      const scrollEl = touchDragCtx === 'task' ? document.querySelector('#tab-input') : document.querySelector('#tab-saved');
-      updateDragScroll(touch.clientY, scrollEl);
-      document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el => el.classList.remove('calc-drag-over-top','calc-drag-over-bottom'));
-      const tgt = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-drag-idx]');
-      if (tgt && tgt !== touchDragSrc && tgt._dragCtx === touchDragCtx) {
-        const r2 = tgt.getBoundingClientRect();
-        tgt.classList.add(touch.clientY < r2.top+r2.height/2 ? 'calc-drag-over-top' : 'calc-drag-over-bottom');
-      }
-    };
-    document.addEventListener('touchmove', _calcTouchMoveHandler, { passive: false });
-  } else {
-    const item = calHandle.closest('.task-item-modal');
-    if (!item) return;
-    calTouchSrc = item; calTouchKey = item.dataset.calKey;
-    item.classList.add('dragging');
-    const r = item.getBoundingClientRect();
-    calTouchGhost = item.cloneNode(true);
-    calTouchGhost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;opacity:0.88;width:${r.width}px;left:${t.clientX-r.width/2}px;top:${t.clientY-40}px;margin:0;transform:scale(1.03);background:var(--card);border:1.5px solid var(--accent);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4);`;
-    document.body.appendChild(calTouchGhost);
-    if (navigator.vibrate) navigator.vibrate(30);
-    if (_calTouchMoveHandler) document.removeEventListener('touchmove', _calTouchMoveHandler);
-    _calTouchMoveHandler = ev => {
-      ev.preventDefault();
-      const touch = ev.touches[0];
-      calTouchGhost.style.left = (touch.clientX - calTouchGhost.offsetWidth/2) + 'px';
-      calTouchGhost.style.top  = (touch.clientY - 40) + 'px';
-      updateDragScroll(touch.clientY, document.querySelector('.cal-modal'));
-      clearCalHighlight();
-      const tgt = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.task-item-modal');
-      if (tgt && tgt !== calTouchSrc) {
-        const r2 = tgt.getBoundingClientRect();
-        tgt.classList.add(touch.clientY < r2.top+r2.height/2 ? 'calc-drag-over-top' : 'calc-drag-over-bottom');
-      }
-    };
-    document.addEventListener('touchmove', _calTouchMoveHandler, { passive: false });
-  }
-}, { passive: false, capture: true });
-
-document.addEventListener('touchend', e => {
-  if (calTouchSrc) {
-    if (_calTouchMoveHandler) { document.removeEventListener('touchmove', _calTouchMoveHandler); _calTouchMoveHandler = null; }
-    if (calTouchGhost) { calTouchGhost.remove(); calTouchGhost = null; }
-    calTouchSrc.classList.remove('dragging');
-    clearCalHighlight();
-    stopDragScroll();
-    const touch = e.changedTouches[0];
-    const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.task-item-modal');
-    if (target && target !== calTouchSrc) calReorder(calTouchKey, calTouchSrc, target, touch.clientY);
-    calTouchSrc = null; calTouchKey = null;
-    return;
-  }
-  if (!touchDragSrc) return;
-  if (_calcTouchMoveHandler) { document.removeEventListener('touchmove', _calcTouchMoveHandler); _calcTouchMoveHandler = null; }
-  if (touchGhost) { touchGhost.remove(); touchGhost = null; }
-  stopDragScroll();
-  touchDragSrc.classList.remove('calc-dragging');
-  document.querySelectorAll('.calc-drag-over-top,.calc-drag-over-bottom').forEach(el =>
-    el.classList.remove('calc-drag-over-top','calc-drag-over-bottom'));
-  const touch = e.changedTouches[0];
-  const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-drag-idx]');
-  if (target && target !== touchDragSrc && target._dragCtx === touchDragCtx) {
-    const r = target.getBoundingClientRect();
-    const insertBefore = touch.clientY < r.top + r.height/2;
-    if (touchDragCtx === 'task') reorderTaskCards(touchDragSrc, target, insertBefore);
-    else reorderSavedItems(parseInt(touchDragSrc.dataset.dragIdx), parseInt(target.dataset.dragIdx), insertBefore);
-  }
-  touchDragSrc = null; touchDragCtx = null;
-});
 
 
 
@@ -3037,9 +2804,6 @@ document.addEventListener('touchend', e => {
   divider.addEventListener('mousedown', e => { e.preventDefault(); begin(e.clientX); });
   document.addEventListener('mousemove', e => move(e.clientX));
   document.addEventListener('mouseup', end);
-  divider.addEventListener('touchstart', e => { e.preventDefault(); begin(e.touches[0].clientX); }, { passive: false });
-  document.addEventListener('touchmove', e => { if (dragging) { e.preventDefault(); move(e.touches[0].clientX); } }, { passive: false });
-  document.addEventListener('touchend', end);
 })();
 
 // 데스크탑 드래그: 컨테이너 자체에 dragover → 빈 공간에서도 자동 스크롤
