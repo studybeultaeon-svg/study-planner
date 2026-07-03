@@ -1173,8 +1173,6 @@ function subscribeCalcData() {
       touched = true;
     }
 
-    if (touched) renderSavedPanel();
-
     // ── 드래프트 업무 ──
     const remoteTasksTs = remote?.tasksTs || 0;
     if (remoteTasksTs > (local.tasksTs || 0)) {
@@ -1204,10 +1202,11 @@ function subscribeCalcData() {
       local.savedFolderTree = rebuildFolderTreeFromItems(local);
       local.savedFolderTreeTs = Date.now();
       touched = true;
-      renderSavedPanel();
     }
 
+    // 먼저 저장 후 렌더 — 렌더는 localStorage를 읽으므로 순서가 중요
     if (touched) saveCalcToLocalStorage(local);
+    if (touched) renderSavedPanel();
 
     // 로컬이 최신이거나 Firebase가 비어 있으면 push
     if (!remote || (local.savedTs||0) > remoteSavedTs || (local.tasksTs||0) > remoteTasksTs) {
