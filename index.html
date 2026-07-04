@@ -1148,7 +1148,12 @@ function subscribeCalcData() {
         const remOrdTs = remote?.savedFolderOrderTs || 0;
         const locOrdTs = local.savedFolderOrderTs || 0;
         if (remote.savedFolderOrder && remOrdTs >= locOrdTs) {
-          local.savedFolderOrder = remote.savedFolderOrder;
+          const normalized = {};
+          Object.keys(remote.savedFolderOrder).forEach(k => {
+            const v = remote.savedFolderOrder[k];
+            normalized[k] = Array.isArray(v) ? v : Object.values(v || {});
+          });
+          local.savedFolderOrder = normalized;
           if (remote.savedFolderOrderTs) local.savedFolderOrderTs = remote.savedFolderOrderTs;
         }
         touched = true;
@@ -1156,10 +1161,21 @@ function subscribeCalcData() {
       // 폴더 순서는 트리와 독립적으로 동기화
       const remoteFolderOrderTs = remote?.savedFolderOrderTs || 0;
       const localFolderOrderTs  = local.savedFolderOrderTs  || 0;
-      if (remoteFolderOrderTs > localFolderOrderTs && remote.savedFolderOrder) {
-        local.savedFolderOrder = remote.savedFolderOrder;
-        local.savedFolderOrderTs = remoteFolderOrderTs;
-        touched = true;
+      if (remote.savedFolderOrder) {
+        // Firebase가 배열을 객체로 변환할 수 있으므로 정규화
+        const remoteOrder = {};
+        Object.keys(remote.savedFolderOrder).forEach(k => {
+          const v = remote.savedFolderOrder[k];
+          remoteOrder[k] = Array.isArray(v) ? v : Object.values(v || {});
+        });
+        if (remoteFolderOrderTs > localFolderOrderTs ||
+            // ts가 둘 다 0이지만 원격에 순서 데이터가 있을 때 (구 데이터 마이그레이션)
+            (remoteFolderOrderTs === 0 && localFolderOrderTs === 0 &&
+             JSON.stringify(remoteOrder) !== JSON.stringify(local.savedFolderOrder || {}))) {
+          local.savedFolderOrder = remoteOrder;
+          local.savedFolderOrderTs = remoteFolderOrderTs;
+          touched = true;
+        }
       }
     }
 
@@ -1210,9 +1226,10 @@ function subscribeCalcData() {
     if (!remote || (local.savedTs||0) > remoteSavedTs || (local.tasksTs||0) > remoteTasksTs) {
       pushCalcToFirebase(local);
     }
-    // 폴더 트리 + 순서는 별도 push (아이템 push와 분리)
+    // 폴더 트리 + 순서는 별도 push — setTimeout으로 분리해 리스너 중첩 호출 방지
     if (!remote || (local.savedFolderTreeTs||0) > remoteFolderTreeTs || (local.savedFolderOrderTs||0) > (remote?.savedFolderOrderTs||0)) {
-      pushFolderTreeToFirebase(local);
+      const _snap = local;
+      setTimeout(() => pushFolderTreeToFirebase(_snap), 0);
     }
   }, err => fbReportError('계산기 동기화 오류', err));
 }
@@ -1853,7 +1870,18 @@ const CALC_STORAGE_KEY = 'task_quota_v1';
 let calcTaskCount = 0;
 
 function loadCalcFromStorage() {
-  try { const r=localStorage.getItem(CALC_STORAGE_KEY); return r?JSON.parse(r):{tasks:[],saved:[],tasksTs:0,savedTs:0}; }
+  try {
+    const r = localStorage.getItem(CALC_STORAGE_KEY);
+    const d = r ? JSON.parse(r) : {tasks:[],saved:[],tasksTs:0,savedTs:0};
+    // Firebase가 배열을 객체로 변환할 수 있으므로 savedFolderOrder 값을 항상 배열로 정규화
+    if (d.savedFolderOrder && typeof d.savedFolderOrder === 'object') {
+      Object.keys(d.savedFolderOrder).forEach(k => {
+        const v = d.savedFolderOrder[k];
+        if (v && !Array.isArray(v)) d.savedFolderOrder[k] = Object.values(v);
+      });
+    }
+    return d;
+  }
   catch { return {tasks:[],saved:[],tasksTs:0,savedTs:0}; }
 }
 function saveCalcToLocalStorage(data) { try { localStorage.setItem(CALC_STORAGE_KEY,JSON.stringify(data)); } catch {} }
@@ -2036,8 +2064,8 @@ function rebuildFolderTreeFromItems(data) {
   return tree;
 }
 
-function renderSavedPanel() {
-  const data = loadCalcFromStorage();
+function renderSavedPanel(dataOverride) {
+  const data = dataOverride || loadCalcFromStorage();
   const list = document.getElementById('saved-list');
   const btn  = document.getElementById('saved-tab-btn');
   list.innerHTML = '';
@@ -2286,7 +2314,7 @@ function moveFolder(parentPath, name, dir) {
   data.savedFolderOrder[orderKey] = order;
   data.savedFolderOrderTs = Date.now();
   saveCalcToLocalStorage(data);
-  renderSavedPanel();
+  renderSavedPanel(data);
   setTimeout(() => pushFolderTreeToFirebase(loadCalcFromStorage()), 0);
 }
 
