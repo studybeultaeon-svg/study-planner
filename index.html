@@ -2257,6 +2257,7 @@ function renameSavedFolder(path) {
     if (data.savedFolderOrder[oldSubKey]) { data.savedFolderOrder[newSubKey] = data.savedFolderOrder[oldSubKey]; delete data.savedFolderOrder[oldSubKey]; }
   }
   data.savedFolderTreeTs = Date.now();
+  data.savedFolderOrderTs = Date.now();
   saveCalcData(data); pushFolderTreeToFirebase(data); renderSavedPanel();
 }
 function deleteSavedFolder(path) {
@@ -2279,6 +2280,7 @@ function deleteSavedFolder(path) {
     }
     delete (data.savedFolderOrder || {})[pathToOrderKey(path)];
     data.savedFolderTreeTs = Date.now();
+    data.savedFolderOrderTs = Date.now();
     saveCalcData(data); pushFolderTreeToFirebase(data); renderSavedPanel(); showToast('폴더가 삭제됐습니다');
   });
 }
