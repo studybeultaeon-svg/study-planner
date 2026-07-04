@@ -1870,16 +1870,27 @@ document.getElementById('nextMonthBtn').addEventListener('click',()=>{
 const CALC_STORAGE_KEY = 'task_quota_v1';
 let calcTaskCount = 0;
 
+// Firebase 키에 [ ] 문자 사용 불가 — 안전한 키로 변환
+function pathToOrderKey(path) {
+  return path.length === 0 ? '__root__' : path.join('|');
+}
+
 function loadCalcFromStorage() {
   try {
     const r = localStorage.getItem(CALC_STORAGE_KEY);
     const d = r ? JSON.parse(r) : {tasks:[],saved:[],tasksTs:0,savedTs:0};
-    // Firebase가 배열을 객체로 변환할 수 있으므로 savedFolderOrder 값을 항상 배열로 정규화
+    // savedFolderOrder 정규화: 값을 배열로 변환 + 구 키(JSON.stringify 포맷) → 새 키로 마이그레이션
     if (d.savedFolderOrder && typeof d.savedFolderOrder === 'object') {
+      const migrated = {};
       Object.keys(d.savedFolderOrder).forEach(k => {
+        let newKey = k;
+        if (k.startsWith('[')) {
+          try { const p = JSON.parse(k); if (Array.isArray(p)) newKey = pathToOrderKey(p); } catch {}
+        }
         const v = d.savedFolderOrder[k];
-        if (v && !Array.isArray(v)) d.savedFolderOrder[k] = Object.values(v);
+        migrated[newKey] = Array.isArray(v) ? v : Object.values(v || {});
       });
+      d.savedFolderOrder = migrated;
     }
     return d;
   }
@@ -2111,7 +2122,7 @@ function renderSavedPanel(dataOverride) {
     const here = allItems.filter(({item}) => JSON.stringify(item.folderPath||[]) === JSON.stringify(path));
     here.forEach(({item, i}) => container.appendChild(makeSavedItemEl(item, i, depth)));
     // 하위 폴더 — savedFolderOrder로 정렬
-    const orderKey = JSON.stringify(path);
+    const orderKey = pathToOrderKey(path);
     const savedOrder = (data.savedFolderOrder || {})[orderKey];
     const allNames = Object.keys(subtree || {});
     let sortedNames;
@@ -2235,14 +2246,14 @@ function renameSavedFolder(path) {
   const oldKey = pathKey(path), newKey = pathKey(newPath);
   if (_folderCollapsed[oldKey] !== undefined) { _folderCollapsed[newKey] = _folderCollapsed[oldKey]; delete _folderCollapsed[oldKey]; }
   // savedFolderOrder에서 폴더명 갱신
-  const parentOrderKey = JSON.stringify(path.slice(0,-1));
+  const parentOrderKey = pathToOrderKey(path.slice(0,-1));
   if (data.savedFolderOrder?.[parentOrderKey]) {
     const idx = data.savedFolderOrder[parentOrderKey].indexOf(oldName);
     if (idx !== -1) data.savedFolderOrder[parentOrderKey][idx] = n;
   }
   // 하위 순서 키도 이전
   if (data.savedFolderOrder) {
-    const oldSubKey = JSON.stringify(path), newSubKey = JSON.stringify(newPath);
+    const oldSubKey = pathToOrderKey(path), newSubKey = pathToOrderKey(newPath);
     if (data.savedFolderOrder[oldSubKey]) { data.savedFolderOrder[newSubKey] = data.savedFolderOrder[oldSubKey]; delete data.savedFolderOrder[oldSubKey]; }
   }
   data.savedFolderTreeTs = Date.now();
@@ -2262,11 +2273,11 @@ function deleteSavedFolder(path) {
     deleteFolderNode(data.savedFolderTree, path);
     delete _folderCollapsed[pathKey(path)];
     // savedFolderOrder에서 제거
-    const parentOrderKey = JSON.stringify(path.slice(0,-1));
+    const parentOrderKey = pathToOrderKey(path.slice(0,-1));
     if (data.savedFolderOrder?.[parentOrderKey]) {
       data.savedFolderOrder[parentOrderKey] = data.savedFolderOrder[parentOrderKey].filter(n => n !== name);
     }
-    delete (data.savedFolderOrder || {})[JSON.stringify(path)];
+    delete (data.savedFolderOrder || {})[pathToOrderKey(path)];
     data.savedFolderTreeTs = Date.now();
     saveCalcData(data); pushFolderTreeToFirebase(data); renderSavedPanel(); showToast('폴더가 삭제됐습니다');
   });
@@ -2302,7 +2313,7 @@ function moveSavedItem(idx, dir) {
 function moveFolder(parentPath, name, dir) {
   const data = loadCalcFromStorage();
   if (!data.savedFolderOrder) data.savedFolderOrder = {};
-  const orderKey = JSON.stringify(parentPath);
+  const orderKey = pathToOrderKey(parentPath);
   const subtree = parentPath.length ? getFolderNode(data.savedFolderTree, parentPath) : data.savedFolderTree;
   const allNames = Object.keys(subtree || {});
   const current = (data.savedFolderOrder[orderKey] || []).filter(n => allNames.includes(n));
