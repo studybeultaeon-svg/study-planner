@@ -2038,11 +2038,12 @@ function renderSavedPanel() {
   list.innerHTML = '';
   const saved = data.saved || [];
   const tree  = data.savedFolderTree || {};
-  if (!saved.length) {
+  const hasFolders = Object.keys(tree).length > 0;
+  if (!saved.length && !hasFolders) {
     list.innerHTML = '<div class="saved-empty">저장된 업무가 없습니다<br><small>계산 후 결과를 저장해 보세요</small></div>';
     btn.textContent = '💾 저장됨'; return;
   }
-  btn.textContent = `💾 저장됨 (${saved.length})`;
+  btn.textContent = saved.length ? `💾 저장됨 (${saved.length})` : '💾 저장됨';
   const allItems = saved.map((item, i) => ({ item, i }));
 
   function makeSavedItemEl(item, idx, depth) {
