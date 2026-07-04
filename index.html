@@ -1144,8 +1144,13 @@ function subscribeCalcData() {
           (remoteFolderTreeTs === 0 && localFolderTreeTs === 0 && remoteHasFolders && !localHasFolders)) {
         local.savedFolderTree = remoteTree;
         local.savedFolderTreeTs = remoteFolderTreeTs || Date.now();
-        if (remote.savedFolderOrder) local.savedFolderOrder = remote.savedFolderOrder;
-        if (remote.savedFolderOrderTs) local.savedFolderOrderTs = remote.savedFolderOrderTs;
+        // 순서는 타임스탬프 비교 후 더 최신인 경우에만 덮어씀
+        const remOrdTs = remote?.savedFolderOrderTs || 0;
+        const locOrdTs = local.savedFolderOrderTs || 0;
+        if (remote.savedFolderOrder && remOrdTs >= locOrdTs) {
+          local.savedFolderOrder = remote.savedFolderOrder;
+          if (remote.savedFolderOrderTs) local.savedFolderOrderTs = remote.savedFolderOrderTs;
+        }
         touched = true;
       }
       // 폴더 순서는 트리와 독립적으로 동기화
