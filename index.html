@@ -1168,10 +1168,11 @@ function subscribeCalcData() {
           const v = remote.savedFolderOrder[k];
           remoteOrder[k] = Array.isArray(v) ? v : Object.values(v || {});
         });
+        const localOrderStr  = JSON.stringify(local.savedFolderOrder || {});
+        const remoteOrderStr = JSON.stringify(remoteOrder);
         if (remoteFolderOrderTs > localFolderOrderTs ||
-            // ts가 둘 다 0이지만 원격에 순서 데이터가 있을 때 (구 데이터 마이그레이션)
-            (remoteFolderOrderTs === 0 && localFolderOrderTs === 0 &&
-             JSON.stringify(remoteOrder) !== JSON.stringify(local.savedFolderOrder || {}))) {
+            // ts가 같아도 실제 순서가 다르면 원격을 적용 (동시 수정 또는 구 데이터 마이그레이션)
+            (remoteFolderOrderTs >= localFolderOrderTs && remoteOrderStr !== localOrderStr)) {
           local.savedFolderOrder = remoteOrder;
           local.savedFolderOrderTs = remoteFolderOrderTs;
           touched = true;
@@ -1218,9 +1219,9 @@ function subscribeCalcData() {
       touched = true;
     }
 
-    // 먼저 저장 후 렌더 — 렌더는 localStorage를 읽으므로 순서가 중요
+    // 먼저 저장 후 렌더 — local을 직접 전달해 localStorage 재읽기 없이 렌더
     if (touched) saveCalcToLocalStorage(local);
-    if (touched) renderSavedPanel();
+    if (touched) renderSavedPanel(local);
 
     // 로컬이 최신이거나 Firebase가 비어 있으면 push
     if (!remote || (local.savedTs||0) > remoteSavedTs || (local.tasksTs||0) > remoteTasksTs) {
