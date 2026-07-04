@@ -1161,6 +1161,15 @@ function subscribeCalcData() {
         local.savedFolderTree = remoteTree;
         local.savedFolderTreeTs = remoteFolderTreeTs || Date.now();
         if (remote.savedFolderOrder) local.savedFolderOrder = remote.savedFolderOrder;
+        if (remote.savedFolderOrderTs) local.savedFolderOrderTs = remote.savedFolderOrderTs;
+        touched = true;
+      }
+      // 폴더 순서는 트리와 독립적으로 동기화
+      const remoteFolderOrderTs = remote?.savedFolderOrderTs || 0;
+      const localFolderOrderTs  = local.savedFolderOrderTs  || 0;
+      if (remoteFolderOrderTs > localFolderOrderTs && remote.savedFolderOrder) {
+        local.savedFolderOrder = remote.savedFolderOrder;
+        local.savedFolderOrderTs = remoteFolderOrderTs;
         touched = true;
       }
     }
@@ -1212,8 +1221,8 @@ function subscribeCalcData() {
     if (!remote || (local.savedTs||0) > remoteSavedTs || (local.tasksTs||0) > remoteTasksTs) {
       pushCalcToFirebase(local);
     }
-    // 폴더 트리는 별도 push (아이템 push와 분리)
-    if (!remote || (local.savedFolderTreeTs||0) > remoteFolderTreeTs) {
+    // 폴더 트리 + 순서는 별도 push (아이템 push와 분리)
+    if (!remote || (local.savedFolderTreeTs||0) > remoteFolderTreeTs || (local.savedFolderOrderTs||0) > (remote?.savedFolderOrderTs||0)) {
       pushFolderTreeToFirebase(local);
     }
   }, err => fbReportError('계산기 동기화 오류', err));
@@ -1242,7 +1251,8 @@ function pushFolderTreeToFirebase(data) {
   db.ref(`users/${FB_USER}/calculator`).update({
     savedFolderTree: data.savedFolderTree || {},
     savedFolderTreeTs: data.savedFolderTreeTs || 0,
-    savedFolderOrder: data.savedFolderOrder || {}
+    savedFolderOrder: data.savedFolderOrder || {},
+    savedFolderOrderTs: data.savedFolderOrderTs || 0
   }).catch(err => fbReportError('폴더 동기화 실패', err));
 }
 
@@ -2336,9 +2346,9 @@ function reorderFolders(parentPath, fromName, toName, insertBefore) {
   const newTo = order.indexOf(toName);
   order.splice(insertBefore ? newTo : newTo + 1, 0, fromName);
   data.savedFolderOrder[orderKey] = order;
-  data.savedFolderTreeTs = Date.now();
+  data.savedFolderOrderTs = Date.now();
   saveCalcToLocalStorage(data); pushFolderTreeToFirebase(data);
-  setTimeout(renderSavedPanel, 0);
+  _folderReordered = true;
 }
 
 function loadSavedItem(idx) {
@@ -2655,6 +2665,7 @@ function reorderSavedItems(srcIdx, targetIdx, insertBefore) {
 
 // ── PC 드래그 ──
 let pcDragSrc = null, pcDragCtx = null; // ctx: 'task' | 'saved' | 'folder'
+let _folderReordered = false;
 
 function onHandleMouseDown(e, ctx) {
   const item = e.currentTarget.closest('[data-drag-idx]');
@@ -2703,6 +2714,7 @@ document.addEventListener('dragend', e => {
     el.classList.remove('calc-drag-over-top','calc-drag-over-bottom','folder-drag-over-top','folder-drag-over-bottom');
   });
   stopDragScroll();
+  if (_folderReordered) { _folderReordered = false; renderSavedPanel(); }
 });
 
 document.addEventListener('dragover', e => {
