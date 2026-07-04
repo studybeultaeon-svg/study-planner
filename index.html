@@ -2285,7 +2285,9 @@ function moveFolder(parentPath, name, dir) {
   [order[idx], order[newIdx]] = [order[newIdx], order[idx]];
   data.savedFolderOrder[orderKey] = order;
   data.savedFolderOrderTs = Date.now();
-  saveCalcToLocalStorage(data); pushFolderTreeToFirebase(data); renderSavedPanel();
+  saveCalcToLocalStorage(data);
+  renderSavedPanel();
+  setTimeout(() => pushFolderTreeToFirebase(loadCalcFromStorage()), 0);
 }
 
 function loadSavedItem(idx) {
