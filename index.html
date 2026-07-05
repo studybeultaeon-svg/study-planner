@@ -1285,10 +1285,10 @@ function parseKey(key) {
   return { year:parseInt(p[0]), month:parseInt(p[1])-1, day:parseInt(p[2]) };
 }
 function getColorClass(c) {
-  return ({red:'red-task',yellow:'yellow-task',green:'green-task'})[c]||'red-task';
+  return ({red:'red-task',orange:'orange-task',yellow:'yellow-task',green:'green-task'})[c]||'red-task';
 }
 function getTextClass(c) {
-  return ({red:'red-text',yellow:'yellow-text',green:'green-text'})[c]||'red-text';
+  return ({red:'red-text',orange:'orange-text',yellow:'yellow-text',green:'green-text'})[c]||'red-text';
 }
 function getLinkedProgressAmount(task) {
   const parsed = parseFloat(task?.progressStep);
