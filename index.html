@@ -1353,20 +1353,7 @@ function markTaskStatus(dkv, idx, status) {
   const task = calTasks[dkv][idx];
   task.status = status;
   const p = parseKey(dkv);
-  if (status === 'X') {
-    // 미완료 → 다음날에 동일 업무 추가
-    const next = new Date(p.year, p.month, p.day + 1);
-    const nk = calDateKey(next.getFullYear(), next.getMonth(), next.getDate());
-    if (!calTasks[nk]) calTasks[nk] = [];
-    if (!calTasks[nk].some(t => t.name===task.name && t.color===task.color)) {
-      calTasks[nk].push({ name:task.name, color:task.color, status:null,
-        ...(task.linkedCalc ? { linkedCalc: task.linkedCalc } : {}),
-        ...(task.progressStep != null && task.progressStep !== '' ? { progressStep: task.progressStep } : {}),
-        ...(task.nextDays != null ? { nextDays: task.nextDays } : {}),
-      });
-      sortTasksByDefault(nk);
-    }
-  } else if (status === 'O') {
+  if (status === 'O') {
     const schedules = { red:['orange',1], orange:['yellow',3], yellow:['green',7] };
     const sc = schedules[task.color];
     if (sc) {
@@ -1738,14 +1725,6 @@ function undoMarkStatus(dkv, idx, prevStatus) {
         calTasks[nKey] = calTasks[nKey].filter(t => !(t.name===task.name && t.color===sc[0] && !t.status));
         if (!calTasks[nKey].length) delete calTasks[nKey];
       }
-    }
-  } else if (prevStatus === 'X') {
-    // 미완료 취소 → 다음날 생성된 항목 삭제
-    const next = new Date(p.year, p.month, p.day + 1);
-    const nk = calDateKey(next.getFullYear(), next.getMonth(), next.getDate());
-    if (calTasks[nk]) {
-      calTasks[nk] = calTasks[nk].filter(t => !(t.name===task.name && t.color===task.color && !t.status));
-      if (!calTasks[nk].length) delete calTasks[nk];
     }
   }
   if (prevStatus === 'O' && task.linkedCalc && task.color === 'red') {
