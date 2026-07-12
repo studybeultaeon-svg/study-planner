@@ -739,7 +739,6 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
     <div class="legend-item"><div class="legend-dot" style="background:#f87171;"></div><span style="color:#f87171;">빨강 : 2회독</span></div>
     <div class="legend-item"><div class="legend-dot" style="background:#fbbf24;"></div><span style="color:#fbbf24;">노랑 : 3회독</span></div>
     <div class="legend-item"><div class="legend-dot" style="background:#34d399;"></div><span style="color:#34d399;">초록 : 4회독</span></div>
-    <button class="nav-btn" onclick="generateTodayRoutine()" style="margin-left:auto;font-size:12px;padding:4px 10px;">🎲 오늘 루틴 생성</button>
   </div>
 
   <div class="calendar-header">
@@ -1373,26 +1372,6 @@ function markTaskStatus(dkv, idx, status) {
     }
   }
   calSaveData();
-}
-
-function generateTodayRoutine() {
-  const tasks = (loadCalcFromStorage().tasks || []).filter(t => t.name && t.name.trim());
-  if (!tasks.length) { showToast('업무 입력칸에 업무가 없습니다'); return; }
-  const today = new Date();
-  const key = calDateKey(today.getFullYear(), today.getMonth(), today.getDate());
-  // 랜덤 셔플
-  const shuffled = [...tasks].sort(() => Math.random() - 0.5);
-  let added = 0;
-  shuffled.forEach(t => {
-    if (!(calTasks[key] || []).some(c => c.name === t.name.trim())) {
-      addTaskToDate(key, t.name.trim(), 'red', null);
-      added++;
-    }
-  });
-  calSaveData();
-  renderCalendar();
-  if (added > 0) showToast(`오늘 루틴 ${added}개 추가됨`);
-  else showToast('이미 모든 업무가 오늘에 있습니다');
 }
 
 function renderCalendar() {
