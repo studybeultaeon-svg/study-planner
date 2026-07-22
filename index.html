@@ -683,6 +683,25 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 .pace-section.pace-warn { border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.04); }
 .pace-section.pace-ok  { border-color: rgba(52,211,153,.3);  background: rgba(52,211,153,.04); }
 .pace-title { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px; }
+/* ══ 시간표 뷰 ══ */
+.timetable-wrap { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.timetable-header { padding: 16px 20px 10px; flex-shrink: 0; display: flex; align-items: baseline; gap: 10px; border-bottom: 1px solid var(--border); }
+.timetable-title { font-size: 15px; font-weight: 700; }
+.timetable-sub { font-size: 12px; color: var(--muted); }
+.timetable-container { flex: 1; overflow: auto; padding: 16px 20px; }
+.tt-table { width: 100%; border-collapse: collapse; min-width: 560px; }
+.tt-table th { font-size: 12px; font-weight: 700; padding: 8px 10px; text-align: center; border-bottom: 2px solid var(--border); color: var(--muted); position: sticky; top: 0; background: var(--bg); z-index: 2; }
+.tt-table th.tt-day-sun { color: #f87171; }
+.tt-table th.tt-day-sat { color: #60a5fa; }
+.tt-table th.tt-name-col { text-align: left; min-width: 120px; }
+.tt-table td { padding: 9px 10px; font-size: 13px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tt-table td.tt-name { font-weight: 600; color: var(--text); }
+.tt-table td.tt-val { text-align: center; color: var(--text); font-weight: 500; }
+.tt-table td.tt-zero { text-align: center; color: var(--muted); }
+.tt-table td.tt-total { text-align: center; font-weight: 700; color: var(--accent); }
+.tt-table tr.tt-total-row td { border-top: 2px solid var(--border); font-size: 12px; color: var(--muted); padding-top: 10px; }
+.tt-table tr.tt-total-row td.tt-total { color: var(--accent); font-size: 13px; }
+.tt-table tr:hover td { background: rgba(255,255,255,.03); }
 /* 새 결과 카드 */
 .result-info-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
 .result-info-row strong { color: var(--text); }
@@ -748,6 +767,7 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 <div class="app-tabs">
   <button class="app-tab active" onclick="switchAppTab('calendar', this)">📅 공부 캘린더</button>
   <button class="app-tab" onclick="switchAppTab('calculator', this)">📊 할당량 계산기</button>
+  <button class="app-tab" onclick="switchAppTab('timetable', this)">🗓️ 시간표</button>
 </div>
 
 <!-- ═══════════════════════════════════
@@ -862,6 +882,24 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
   </div>
 </div>
 
+<!-- ═══════════════════════════════════
+     시간표 뷰
+═══════════════════════════════════ -->
+<div class="view" id="view-timetable">
+  <div class="timetable-wrap">
+    <div class="timetable-header">
+      <h2 class="timetable-title">📋 주간 시간표</h2>
+      <span class="timetable-sub">할당량 계산기 업무 입력 기준</span>
+    </div>
+    <div class="timetable-container" id="timetable-container">
+      <div class="empty-state" style="padding:60px 0;">
+        <div class="icon">🗓️</div>
+        <p>할당량 계산기에서 업무를 입력하면<br>시간표가 자동으로 생성됩니다</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast"></div>
 
@@ -960,10 +998,57 @@ function switchAppTab(name, btn) {
   document.querySelectorAll('.app-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.view').forEach(v => {
     v.classList.remove('active');
-    v.style.display = ''; // 인라인 스타일 초기화 → CSS 클래스(display:none)가 적용되도록
+    v.style.display = '';
   });
   btn.classList.add('active');
   document.getElementById('view-' + name).classList.add('active');
+  if (name === 'timetable') renderTimetable();
+}
+
+/* ══ 시간표 렌더링 ══ */
+function renderTimetable() {
+  const container = document.getElementById('timetable-container');
+  const data = loadCalcFromStorage();
+  const tasks = (data.tasks || []).map(migrateTask).filter(t => t.name);
+  if (!tasks.length) {
+    container.innerHTML = `<div class="empty-state" style="padding:60px 0;"><div class="icon">🗓️</div><p>할당량 계산기에서 업무를 입력하면<br>시간표가 자동으로 생성됩니다</p></div>`;
+    return;
+  }
+  const DAY_KEYS   = ['mon','tue','wed','thu','fri','sat','sun'];
+  const DAY_LABELS = ['월','화','수','목','금','토','일'];
+  const DAY_CLS    = ['','','','','','tt-day-sat','tt-day-sun'];
+
+  const totals = DAY_KEYS.map(() => 0);
+
+  const rows = tasks.map(t => {
+    const unit = t.unit || '';
+    const cells = DAY_KEYS.map((k, i) => {
+      const v = parseFloat(t[k]) || 0;
+      totals[i] += v;
+      return v > 0
+        ? `<td class="tt-val">${v}${unit}</td>`
+        : `<td class="tt-zero">—</td>`;
+    }).join('');
+    return `<tr><td class="tt-name">${t.name}</td>${cells}</tr>`;
+  }).join('');
+
+  const totalCells = totals.map((v, i) => {
+    const unit = tasks[0]?.unit || '';
+    return v > 0 ? `<td class="tt-total">${v}</td>` : `<td class="tt-zero">—</td>`;
+  }).join('');
+
+  const headers = DAY_LABELS.map((l, i) =>
+    `<th class="${DAY_CLS[i]}">${l}</th>`
+  ).join('');
+
+  container.innerHTML = `
+    <table class="tt-table">
+      <thead><tr><th class="tt-name-col">업무</th>${headers}</tr></thead>
+      <tbody>
+        ${rows}
+        <tr class="tt-total-row"><td class="tt-name" style="color:var(--muted);font-size:12px;">합계</td>${totalCells}</tr>
+      </tbody>
+    </table>`;
 }
 
 /* ══════════════════════════════════════════════════════
@@ -2572,7 +2657,8 @@ function calculate() {
 
       <div style="margin-top:10px;">
         <button class="save-result-btn" style="width:100%;justify-content:center;"
-          onclick="saveOneResult(this,'${esc(name)}',${qty},'${esc(unit)}','${startStr}','${ddayStr}',${JSON.stringify(dayGoalsObj)},${progress},${JSON.stringify(holidays)})">
+          data-save='${JSON.stringify({name,qty,unit,start:startStr,dday:ddayStr,...dayGoalsObj,progress,holidays}).replace(/'/g,"&#39;")}'
+          onclick="saveOneResultFromBtn(this)">
           💾 이 업무 저장
         </button>
       </div>`;
@@ -2587,6 +2673,11 @@ function calculate() {
 }
 
 
+function saveOneResultFromBtn(btn) {
+  const d = JSON.parse(btn.dataset.save);
+  const { name, qty, unit, start, dday, mon, tue, wed, thu, fri, sat, sun, progress, holidays } = d;
+  saveOneResult(btn, name, qty, unit, start, dday, {mon,tue,wed,thu,fri,sat,sun}, progress, holidays);
+}
 function saveOneResult(btn, name, qty, unit, startStr, ddayStr, dayGoalsObj, progress, holidays) {
   const t = nowStr();
   const data = loadCalcFromStorage();
