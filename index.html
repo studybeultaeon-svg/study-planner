@@ -338,13 +338,13 @@ body {
 .sidebar-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .sidebar-tab:hover:not(.active) { color: var(--text); }
 
-.tab-panel { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.tab-panel { display: none; flex: 1; min-height: 0; overflow-y: auto; flex-direction: column; }
 .tab-panel.active { display: flex; }
 .tab-panel::-webkit-scrollbar { width: 4px; }
 .tab-panel::-webkit-scrollbar-track { background: transparent; }
 .tab-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-.input-panel-body { padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; align-content: start; flex: 1; min-height: 0; overflow-y: auto; }
+.input-panel-body { padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; align-content: start; }
 
 .task-card {
   background: var(--card); border: 1px solid var(--border);
@@ -393,6 +393,7 @@ body {
 .input-panel-footer {
   padding: 11px 14px; border-top: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 7px; flex-shrink: 0;
+  position: sticky; bottom: 0; z-index: 10; background: var(--surface);
 }
 .calc-btn {
   font-family: inherit; font-size: 13px; font-weight: 600;
@@ -415,7 +416,7 @@ body {
 }
 
 /* saved panel */
-.saved-panel-body { padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px; align-content: start; flex: 1; min-height: 0; overflow-y: auto; }
+.saved-panel-body { padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px; align-content: start; }
 .saved-panel-footer { padding: 11px 14px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .btn-clear-all {
   font-family: inherit; font-size: 12px; font-weight: 600;
