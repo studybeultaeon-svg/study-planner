@@ -1918,6 +1918,8 @@ function taskArgs(t) {
           m.mon||'',m.tue||'',m.wed||'',m.thu||'',m.fri||'',m.sat||'',m.sun||'',m.progress||''];
 }
 function addCalcTask(name='',qty='',unit='',dday='',start='',modifiedAt='',mon='',tue='',wed='',thu='',fri='',sat='',sun='',progress='') {
+  const todayStr = new Date().toISOString().slice(0,10);
+  if (start && start < todayStr) start = todayStr;
   calcTaskCount++;
   const id = calcTaskCount;
   const list = document.getElementById('task-list');
