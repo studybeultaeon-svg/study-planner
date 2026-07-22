@@ -704,6 +704,12 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
   grid-column: span 2;
 }
 .field-row .field { min-width: 0; }
+.day-goals-wrap { grid-column: span 2; }
+.day-goals-row { display: flex; gap: 5px; margin-top: 4px; }
+.day-goal-item { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; }
+.day-goal-item .day-label { font-size: 11px; color: var(--muted); font-weight: 600; }
+.day-goal-item input { width: 100%; min-width: 0; text-align: center; padding: 4px 2px; font-size: 12px;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); }
 
 </style>
 </head>
@@ -1199,11 +1205,7 @@ function subscribeCalcData() {
         document.getElementById('task-list').innerHTML = '';
         calcTaskCount = 0;
         if (local.tasks.length) {
-          local.tasks.forEach(t => addCalcTask(
-            t.name, t.qty, t.unit, t.dday, t.start||'',
-            t.modifiedAt||'', t.weekdayGoal||'', t.weekendGoal||'',
-            t.progress||''
-          ));
+          local.tasks.forEach(t => addCalcTask(...taskArgs(t)));
         } else {
           addCalcTask();
         }
@@ -1888,7 +1890,18 @@ function switchCalcTab(name, btn) {
   document.getElementById('tab-'+name).classList.add('active');
 }
 
-function addCalcTask(name='',qty='',unit='',dday='',start='',modifiedAt='',weekdayGoal='',weekendGoal='',progress='') {
+// 구 weekdayGoal/weekendGoal → 요일별 필드 마이그레이션
+function migrateTask(t) {
+  if (t.mon !== undefined) return t;
+  const wd = t.weekdayGoal || ''; const we = t.weekendGoal || '';
+  return { ...t, mon:wd, tue:wd, wed:wd, thu:wd, fri:wd, sat:we, sun:we };
+}
+function taskArgs(t) {
+  const m = migrateTask(t);
+  return [m.name,m.qty,m.unit,m.dday,m.start||'',m.modifiedAt||'',
+          m.mon||'',m.tue||'',m.wed||'',m.thu||'',m.fri||'',m.sat||'',m.sun||'',m.progress||''];
+}
+function addCalcTask(name='',qty='',unit='',dday='',start='',modifiedAt='',mon='',tue='',wed='',thu='',fri='',sat='',sun='',progress='') {
   calcTaskCount++;
   const id = calcTaskCount;
   const list = document.getElementById('task-list');
@@ -1931,14 +1944,16 @@ function addCalcTask(name='',qty='',unit='',dday='',start='',modifiedAt='',weekd
           <input type="date" data-field="dday" value="${esc(dday)}" onchange="autoSaveDraft()" />
         </div>
       </div>
-      <div class="field-row">
-        <div class="field">
-          <label>평일 목표</label>
-          <input type="number" data-field="weekdayGoal" placeholder="30" min="0" value="${esc(weekdayGoal)}" oninput="autoSaveDraft()" />
-        </div>
-        <div class="field">
-          <label>주말 목표</label>
-          <input type="number" data-field="weekendGoal" placeholder="50" min="0" value="${esc(weekendGoal)}" oninput="autoSaveDraft()" />
+      <div class="day-goals-wrap">
+        <label style="font-size:12px;color:var(--muted);font-weight:600;">요일별 목표</label>
+        <div class="day-goals-row">
+          <div class="day-goal-item"><span class="day-label">월</span><input type="number" data-field="mon" min="0" value="${esc(mon)}" oninput="autoSaveDraft()" /></div>
+          <div class="day-goal-item"><span class="day-label">화</span><input type="number" data-field="tue" min="0" value="${esc(tue)}" oninput="autoSaveDraft()" /></div>
+          <div class="day-goal-item"><span class="day-label">수</span><input type="number" data-field="wed" min="0" value="${esc(wed)}" oninput="autoSaveDraft()" /></div>
+          <div class="day-goal-item"><span class="day-label">목</span><input type="number" data-field="thu" min="0" value="${esc(thu)}" oninput="autoSaveDraft()" /></div>
+          <div class="day-goal-item"><span class="day-label">금</span><input type="number" data-field="fri" min="0" value="${esc(fri)}" oninput="autoSaveDraft()" /></div>
+          <div class="day-goal-item"><span class="day-label">토</span><input type="number" data-field="sat" min="0" value="${esc(sat)}" oninput="autoSaveDraft()" /></div>
+          <div class="day-goal-item"><span class="day-label">일</span><input type="number" data-field="sun" min="0" value="${esc(sun)}" oninput="autoSaveDraft()" /></div>
         </div>
       </div>
     </div>`;
@@ -1967,26 +1982,17 @@ function autoSaveDraft() {
   const prevTasks = prevData.tasks || [];
   const tasks = [];
   document.querySelectorAll('.task-card').forEach((card, i) => {
-    const nameInput = card.querySelector('input[data-field="name"]');
-    const qtyInput = card.querySelector('input[data-field="qty"]');
-    const unitInput = card.querySelector('input[data-field="unit"]');
-    const progressInput = card.querySelector('input[data-field="progress"]');
-    const startInput = card.querySelector('input[data-field="start"]');
-    const ddayInput = card.querySelector('input[data-field="dday"]');
-    const weekdayGoalInput = card.querySelector('input[data-field="weekdayGoal"]');
-    const weekendGoalInput = card.querySelector('input[data-field="weekendGoal"]');
-
+    const gv = f => card.querySelector(`input[data-field="${f}"]`)?.value || '';
     const cur = {
-      name: nameInput?.value || '', qty: qtyInput?.value || '',
-      unit: unitInput?.value || '', progress: progressInput?.value || '',
-      start: startInput?.value || '', dday: ddayInput?.value || '',
-      weekdayGoal: weekdayGoalInput?.value || '', weekendGoal: weekendGoalInput?.value || '',
+      name: gv('name'), qty: gv('qty'), unit: gv('unit'), progress: gv('progress'),
+      start: gv('start'), dday: gv('dday'),
+      mon: gv('mon'), tue: gv('tue'), wed: gv('wed'), thu: gv('thu'),
+      fri: gv('fri'), sat: gv('sat'), sun: gv('sun'),
       holidays: []
     };
     const prev = prevTasks[i];
     const changed = !prev ||
-      ['name','qty','unit','progress','start','dday','weekdayGoal','weekendGoal'].some(k => cur[k] !== (prev[k]||'')) ||
-      false;
+      ['name','qty','unit','progress','start','dday','mon','tue','wed','thu','fri','sat','sun'].some(k => cur[k] !== (prev[k]||''));
     const modifiedAt = changed ? t : (prev?.modifiedAt || '');
     const modifiedAtTs = changed ? Date.now() : (prev?.modifiedAtTs || 0);
     tasks.push({ ...cur, modifiedAt, modifiedAtTs });
@@ -2003,7 +2009,7 @@ function autoSaveDraft() {
 
 function loadDraft() {
   const data=loadCalcFromStorage();
-  if (data.tasks&&data.tasks.length) data.tasks.forEach(t=>addCalcTask(t.name,t.qty,t.unit,t.dday,t.start||'',t.modifiedAt||'',t.weekdayGoal||'',t.weekendGoal||'',t.progress||''));
+  if (data.tasks&&data.tasks.length) data.tasks.forEach(t=>addCalcTask(...taskArgs(t)));
   else addCalcTask();
 }
 const _folderCollapsed = {};
@@ -2080,7 +2086,7 @@ function renderSavedPanel(dataOverride) {
         <div class="saved-item-name" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.name)}</div>
         <button class="saved-item-move-btn" title="폴더 이동">📁 ${esc(folderLabel)}</button>
       </div>
-      <div class="saved-item-meta">${item.qty}${esc(item.unit)} · ${item.start?esc(item.start)+' 시작 · ':''}${esc(item.dday)} 마감 · 평일 ${item.weekdayGoal||'?'}/${item.weekendGoal||'?'} 주말 · 저장 ${esc(item.savedAt)}${item.modifiedAt&&item.modifiedAt!==item.savedAt?' · 수정 '+esc(item.modifiedAt):''}</div>
+      <div class="saved-item-meta">${item.qty}${esc(item.unit)} · ${item.start?esc(item.start)+' 시작 · ':''}${esc(item.dday)} 마감 · ${['mon','tue','wed','thu','fri','sat','sun'].map((k,i)=>['월','화','수','목','금','토','일'][i]+(item[k]||'0')).join(' ')} · 저장 ${esc(item.savedAt)}${item.modifiedAt&&item.modifiedAt!==item.savedAt?' · 수정 '+esc(item.modifiedAt):''}</div>
       <div class="saved-item-actions">
         <button class="saved-btn load" onclick="loadSavedItem(${idx})">✚ 불러오기</button>
         <button class="saved-btn del" onclick="deleteSavedItem(${idx})">삭제</button>
@@ -2312,7 +2318,7 @@ function moveFolder(parentPath, name, dir) {
 function loadSavedItem(idx) {
   const data = loadCalcFromStorage();
   const item = data.saved[idx]; if (!item) return;
-  addCalcTask(item.name,item.qty,item.unit,item.dday,item.start||'','',item.weekdayGoal||'',item.weekendGoal||'',item.progress||''); autoSaveDraft();
+  addCalcTask(...taskArgs({...item, modifiedAt:''})); autoSaveDraft();
   showToast(`"${item.name}" 업무 입력에 추가됐습니다`);
 }
 function deleteSavedItem(idx) {
@@ -2391,8 +2397,9 @@ function countDaysInRange(startDate, endDate, holidays) {
   return { weekdays, weekends, holidayCount };
 }
 
-// 시뮬레이션: startDate부터 매일 pace로 진행 시 remaining 소진 날짜
-function simulateFinish(remaining, startDate, endDate, weekdayGoal, weekendGoal, holidays) {
+// 시뮬레이션: startDate부터 매일 dayGoals[dow]씩 진행 시 remaining 소진 날짜
+// dayGoals: {0:일,1:월,2:화,3:수,4:목,5:금,6:토} (getDay() 인덱스)
+function simulateFinish(remaining, startDate, endDate, dayGoals, holidays) {
   const holidaySet = new Set(holidays || []);
   let acc = 0;
   const sim = new Date(startDate);
@@ -2400,31 +2407,25 @@ function simulateFinish(remaining, startDate, endDate, weekdayGoal, weekendGoal,
   limit.setFullYear(limit.getFullYear() + 10);
   while (sim <= limit) {
     const key = sim.toISOString().slice(0,10);
-    if (!holidaySet.has(key)) {
-      const dow = sim.getDay();
-      acc += (dow === 0 || dow === 6) ? weekendGoal : weekdayGoal;
-    }
+    if (!holidaySet.has(key)) acc += dayGoals[sim.getDay()] || 0;
     if (acc >= remaining) return new Date(sim);
     sim.setDate(sim.getDate() + 1);
   }
   return null;
 }
 
-// 역산: endDate까지 remaining을 끝내려면 평일/주말 각각 얼마?
-// 사용자 비율(weekdayGoal:weekendGoal) 유지하면서 역산
-function calcRequiredPace(remaining, startDate, endDate, weekdayGoal, weekendGoal, holidays) {
-  const { weekdays, weekends } = countDaysInRange(startDate, endDate, holidays);
-  if (weekdays + weekends === 0) return { wd: 0, we: 0 };
-  // 비율 유지
-  const ratio = weekdayGoal > 0 && weekendGoal > 0 ? weekendGoal / weekdayGoal : 1;
-  const denom = weekdays + ratio * weekends;
-  const wdRaw = remaining / denom;
-  // 올림 (마감 초과 방지)
-  let wdReq = Math.ceil(wdRaw);
-  let weReq = Math.ceil(wdReq * ratio);
-  // 검증
-  const total = wdReq * weekdays + weReq * weekends;
-  return { wd: wdReq, we: weReq, total, wdRaw, weRaw: wdRaw * ratio };
+// 역산: endDate까지 remaining을 끝내려면 현재 dayGoals의 몇 배가 필요한지
+function calcRequiredPace(remaining, startDate, endDate, dayGoals, holidays) {
+  const holidaySet = new Set(holidays || []);
+  const dayCounts = {0:0,1:0,2:0,3:0,4:0,5:0,6:0};
+  const cur = new Date(startDate);
+  while (cur <= endDate) {
+    if (!holidaySet.has(cur.toISOString().slice(0,10))) dayCounts[cur.getDay()]++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  const totalCapacity = Object.entries(dayCounts).reduce((s,[d,c]) => s + c * (dayGoals[+d]||0), 0);
+  const multiplier = totalCapacity > 0 ? remaining / totalCapacity : Infinity;
+  return { multiplier, totalCapacity, dayCounts, enough: multiplier <= 1 };
 }
 
 function calculate() {
@@ -2450,14 +2451,20 @@ function calculate() {
     const progress    = parseFloat(gf('progress')) || 0;
     const startStr    = gf('start');
     const ddayStr     = gf('dday');
-    const weekdayGoal = parseFloat(gf('weekdayGoal')) || 0;
-    const weekendGoal = parseFloat(gf('weekendGoal')) || 0;
-    const holidays    = [];
+    // 요일별 목표 (getDay() 인덱스: 0=일,1=월,...,6=토)
+    const dayGoals = {
+      1: parseFloat(gf('mon'))||0, 2: parseFloat(gf('tue'))||0,
+      3: parseFloat(gf('wed'))||0, 4: parseFloat(gf('thu'))||0,
+      5: parseFloat(gf('fri'))||0, 6: parseFloat(gf('sat'))||0,
+      0: parseFloat(gf('sun'))||0
+    };
+    const dayGoalsObj = { mon:gf('mon'), tue:gf('tue'), wed:gf('wed'), thu:gf('thu'), fri:gf('fri'), sat:gf('sat'), sun:gf('sun') };
+    const holidays = [];
 
     if (!name)    { showCalcError(`${i+1}번 업무: 이름을 입력해주세요`); hasError=true; return; }
     if (qty <= 0) { showCalcError(`"${name}": 총 할당량을 입력해주세요`); hasError=true; return; }
     if (!ddayStr) { showCalcError(`"${name}": 마감 날짜를 입력해주세요`); hasError=true; return; }
-    if (weekdayGoal <= 0 && weekendGoal <= 0) { showCalcError(`"${name}": 평일 또는 주말 목표량을 입력해주세요`); hasError=true; return; }
+    if (Object.values(dayGoals).every(v => v <= 0)) { showCalcError(`"${name}": 최소 하나의 요일 목표를 입력해주세요`); hasError=true; return; }
 
     const dday = new Date(ddayStr); dday.setHours(0,0,0,0);
     let startDate = startStr ? new Date(startStr) : new Date(today);
@@ -2467,14 +2474,10 @@ function calculate() {
     const remaining = Math.max(0, qty - progress);
     const progressPct = qty > 0 ? Math.round(progress / qty * 100) : 0;
 
-    // 현재 페이스 시뮬레이션 (시작 날짜 기준)
-    const finishDate = simulateFinish(remaining, startDate, dday, weekdayGoal, weekendGoal, holidays);
+    const finishDate = simulateFinish(remaining, startDate, dday, dayGoals, holidays);
     const finishDiff = finishDate ? Math.round((finishDate - dday) / 86400000) : null;
+    const req = calcRequiredPace(remaining, startDate, dday, dayGoals, holidays);
 
-    // 마감일까지 필요 페이스 역산 (시작 날짜 기준)
-    const req = calcRequiredPace(remaining, startDate, dday, weekdayGoal, weekendGoal, holidays);
-
-    // 기간 통계 (시작 날짜 기준)
     const { weekdays, weekends, holidayCount } = countDaysInRange(startDate, dday, holidays);
     const totalDays = Math.round((dday - startDate) / 86400000) + 1;
     const ddayNum = Math.round((dday - today) / 86400000);
@@ -2485,51 +2488,45 @@ function calculate() {
       diff < 0 ? `<span class="badge-early">마감 ${Math.abs(diff)}일 전 ✅</span>` :
       `<span class="badge-late">마감 ${diff}일 초과 ⚠️</span>`;
 
-const block = document.createElement('div');
+    const DAY_LABELS = ['일','월','화','수','목','금','토'];
+    const dayRow = (goals, multiplier=1) =>
+      [1,2,3,4,5,6,0].map(d => {
+        const v = Math.ceil((goals[d]||0) * multiplier);
+        return `<div class="pace-mini"><span class="pace-mini-label">${DAY_LABELS[d]}</span><span class="pace-mini-value">${v>0?fmt(v)+unit:'—'}</span></div>`;
+      }).join('');
+
+    const block = document.createElement('div');
     block.className = 'result-block'; block.style.animationDelay = (i*.06)+'s';
     block.innerHTML = `
       <div class="result-block-header">
         <div class="task-title">${esc(name)}</div>
         <div class="dday-badge">📅 ${ddayLabel}</div>
       </div>
-
       <div class="progress-section">
-        <div class="progress-bar-wrap">
-          <div class="progress-bar-fill" style="width:${progressPct}%"></div>
-        </div>
+        <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${progressPct}%"></div></div>
         <div class="progress-label">${fmt(progress)} / ${fmt(qty)}${unit} 완료 · <strong>${progressPct}%</strong> · 남은 양 <strong>${fmt(remaining)}${unit}</strong></div>
       </div>
-
       <div class="stats-grid cols-4">
         <div class="stat-card hl-blue"><div class="label">📦 총 할당량</div><div class="value">${fmt(qty)}</div><div class="unit-label">${unit}</div></div>
         <div class="stat-card"><div class="label">📆 남은 기간</div><div class="value">${totalDays}</div><div class="unit-label">일</div></div>
         <div class="stat-card"><div class="label">💼 평일</div><div class="value">${weekdays}</div><div class="unit-label">일</div></div>
         <div class="stat-card"><div class="label">🎉 주말</div><div class="value">${weekends}</div><div class="unit-label">일</div></div>
       </div>
-
       <div class="pace-compare-wrap">
         <div class="pace-section">
           <div class="pace-title">⚡ 현재 페이스</div>
-          <div class="pace-mini-grid">
-            <div class="pace-mini"><span class="pace-mini-label">평일</span><span class="pace-mini-value">${fmt(weekdayGoal)}${unit}</span></div>
-            <div class="pace-mini"><span class="pace-mini-label">주말</span><span class="pace-mini-value">${fmt(weekendGoal)}${unit}</span></div>
-          </div>
+          <div class="pace-mini-grid">${dayRow(dayGoals)}</div>
           <div class="finish-label">완료 예상: <strong>${fmtDate(finishDate)}</strong> ${diffLabel(finishDiff)}</div>
         </div>
-
-        <div class="pace-section ${req.wd <= weekdayGoal ? 'pace-ok' : 'pace-warn'}">
+        <div class="pace-section ${req.enough ? 'pace-ok' : 'pace-warn'}">
           <div class="pace-title">🎯 마감일 맞추려면</div>
-          <div class="pace-mini-grid">
-            <div class="pace-mini"><span class="pace-mini-label">평일</span><span class="pace-mini-value">${fmt(req.wd)}${unit}<span class="val-orig"> (${fmtDec(req.wdRaw)})</span></span></div>
-            <div class="pace-mini"><span class="pace-mini-label">주말</span><span class="pace-mini-value">${fmt(req.we)}${unit}<span class="val-orig"> (${fmtDec(req.weRaw)})</span></span></div>
-          </div>
-          <div class="finish-label">${req.wd <= weekdayGoal && req.we <= weekendGoal ? '<span class="badge-early">현재 페이스로 충분 ✅</span>' : '<span class="badge-late">페이스 증가 필요 ⚠️</span>'}</div>
+          <div class="pace-mini-grid">${req.enough ? dayRow(dayGoals) : dayRow(dayGoals, req.multiplier)}</div>
+          <div class="finish-label">${req.enough ? '<span class="badge-early">현재 페이스로 충분 ✅</span>' : `<span class="badge-late">약 ${fmtDec(req.multiplier)}배 증가 필요 ⚠️</span>`}</div>
         </div>
       </div>
-
       <div style="margin-top:10px;">
         <button class="save-result-btn" style="width:100%;justify-content:center;"
-          onclick="saveOneResult(this, '${esc(name)}', ${qty}, '${esc(unit)}', '${startStr}', '${ddayStr}', ${weekdayGoal}, ${weekendGoal}, ${progress}, ${JSON.stringify(holidays)})">
+          onclick="saveOneResult(this,'${esc(name)}',${qty},'${esc(unit)}','${startStr}','${ddayStr}',${JSON.stringify(dayGoalsObj)},${progress},${JSON.stringify(holidays)})">
           💾 이 업무 저장
         </button>
       </div>`;
@@ -2537,21 +2534,21 @@ const block = document.createElement('div');
 
     const ts = new Date();
     const savedAt = `${ts.getMonth()+1}/${ts.getDate()} ${String(ts.getHours()).padStart(2,'0')}:${String(ts.getMinutes()).padStart(2,'0')}`;
-    newSaved.push({ name, qty, unit, start: startStr, dday: ddayStr, weekdayGoal, weekendGoal, progress, holidays, savedAt });
+    newSaved.push({ name, qty, unit, start: startStr, dday: ddayStr, ...dayGoalsObj, progress, holidays, savedAt });
   });
 
   if (hasError) { grid.innerHTML = ''; return; }
 }
 
 
-function saveOneResult(btn, name, qty, unit, startStr, ddayStr, weekdayGoal, weekendGoal, progress, holidays) {
+function saveOneResult(btn, name, qty, unit, startStr, ddayStr, dayGoalsObj, progress, holidays) {
   const t = nowStr();
   const data = loadCalcFromStorage();
   if (!data.saved) data.saved = [];
   const idx = data.saved.findIndex(s => s.name === name);
   const existing = idx >= 0 ? data.saved[idx] : null;
   const item = { name, qty, unit, start: startStr, dday: ddayStr,
-    weekdayGoal, weekendGoal, progress: progress||0, holidays: holidays||[],
+    ...(dayGoalsObj||{}), progress: progress||0, holidays: holidays||[],
     savedAt: existing ? existing.savedAt : t, modifiedAt: t,
     ...(existing?.folderPath ? { folderPath: existing.folderPath } : {}) };
   if (idx >= 0) data.saved[idx] = item; else data.saved.unshift(item);
