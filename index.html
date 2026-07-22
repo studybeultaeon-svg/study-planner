@@ -415,7 +415,7 @@ body {
 }
 
 /* saved panel */
-.saved-panel-body { padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px; align-content: start; }
+.saved-panel-body { padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px; align-content: start; flex: 1; min-height: 0; overflow-y: auto; }
 .saved-panel-footer { padding: 11px 14px; border-top: 1px solid var(--border); flex-shrink: 0; }
 .btn-clear-all {
   font-family: inherit; font-size: 12px; font-weight: 600;
