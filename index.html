@@ -663,7 +663,7 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); border-radius: 4px; transition: width .4s; }
 .progress-label { font-size: 12px; color: var(--muted); }
 .pace-compare-wrap {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  display: flex; flex-direction: column; gap: 0;
   margin: 12px 0;
 }
 .pace-mini-grid {
@@ -682,6 +682,22 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 .pace-section.pace-warn { border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.04); }
 .pace-section.pace-ok  { border-color: rgba(52,211,153,.3);  background: rgba(52,211,153,.04); }
 .pace-title { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px; }
+/* 새 결과 카드 */
+.result-info-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+.result-info-row strong { color: var(--text); }
+.pace-table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+.pace-table th, .pace-table td { text-align: center; padding: 5px 4px; font-size: 13px; }
+.pace-table thead th { font-size: 11px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+.pace-table .row-label { text-align: left; font-size: 11px; color: var(--muted); font-weight: 600; white-space: nowrap; padding-right: 6px; }
+.pace-table .cur-val { color: var(--text); font-weight: 600; }
+.pace-table .req-val { color: #f87171; font-weight: 700; }
+.pace-table .req-row td { background: rgba(248,113,113,.06); }
+.pace-table .dash { color: var(--muted); }
+.result-verdict { border-radius: 8px; padding: 10px 14px; margin-top: 8px; font-size: 13px; line-height: 1.5; }
+.result-verdict.ok  { background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.3); }
+.result-verdict.warn { background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.3); }
+.result-verdict .verdict-title { font-weight: 700; margin-bottom: 2px; }
+.result-verdict .verdict-sub { color: var(--muted); font-size: 12px; }
 .finish-label { font-size: 12px; color: var(--muted); margin-top: 8px; }
 .badge-on-time { color: var(--accent); font-weight: 700; }
 .badge-early   { color: var(--green);  font-weight: 700; }
@@ -2488,12 +2504,38 @@ function calculate() {
       diff < 0 ? `<span class="badge-early">마감 ${Math.abs(diff)}일 전 ✅</span>` :
       `<span class="badge-late">마감 ${diff}일 초과 ⚠️</span>`;
 
+    const DAY_KEYS  = [1,2,3,4,5,6,0];
     const DAY_LABELS = ['일','월','화','수','목','금','토'];
-    const dayRow = (goals, multiplier=1) =>
-      [1,2,3,4,5,6,0].map(d => {
-        const v = Math.ceil((goals[d]||0) * multiplier);
-        return `<div class="pace-mini"><span class="pace-mini-label">${DAY_LABELS[d]}</span><span class="pace-mini-value">${v>0?fmt(v)+unit:'—'}</span></div>`;
+
+    // 요일별 필요 페이스 (부족할 때만 사용)
+    const reqGoals = {};
+    DAY_KEYS.forEach(d => { reqGoals[d] = Math.ceil((dayGoals[d]||0) * req.multiplier); });
+
+    // 페이스 테이블 행 생성
+    const makePaceTable = () => {
+      const headers = DAY_KEYS.map(d => `<th>${DAY_LABELS[d]}</th>`).join('');
+      const curCells = DAY_KEYS.map(d => {
+        const v = dayGoals[d]||0;
+        return `<td class="${v>0?'cur-val':'dash'}">${v>0?fmt(v)+unit:'—'}</td>`;
       }).join('');
+      const reqCells = DAY_KEYS.map(d => {
+        const v = reqGoals[d]||0;
+        return `<td class="${v>0?'req-val':'dash'}">${v>0?fmt(v)+unit:'—'}</td>`;
+      }).join('');
+      return `
+        <table class="pace-table">
+          <thead><tr><th></th>${headers}</tr></thead>
+          <tbody>
+            <tr><td class="row-label">현재</td>${curCells}</tr>
+            ${!req.enough ? `<tr class="req-row"><td class="row-label">필요 ⚠️</td>${reqCells}</tr>` : ''}
+          </tbody>
+        </table>`;
+    };
+
+    const startLabel = startStr || today.toISOString().slice(0,10);
+    const fmtDate = d => d ? d.toLocaleDateString('ko-KR',{month:'long',day:'numeric'}) : '10년 이상';
+    const diffLabel = diff => diff === null ? '' : diff === 0 ? '(딱 마감일)' :
+      diff < 0 ? `(마감 ${Math.abs(diff)}일 전 ✅)` : `(마감 ${diff}일 초과 ⚠️)`;
 
     const block = document.createElement('div');
     block.className = 'result-block'; block.style.animationDelay = (i*.06)+'s';
@@ -2502,28 +2544,32 @@ function calculate() {
         <div class="task-title">${esc(name)}</div>
         <div class="dday-badge">📅 ${ddayLabel}</div>
       </div>
+
       <div class="progress-section">
         <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${progressPct}%"></div></div>
-        <div class="progress-label">${fmt(progress)} / ${fmt(qty)}${unit} 완료 · <strong>${progressPct}%</strong> · 남은 양 <strong>${fmt(remaining)}${unit}</strong></div>
+        <div class="progress-label">완료 <strong>${fmt(progress)}${unit}</strong> / 총 <strong>${fmt(qty)}${unit}</strong> · <strong>${progressPct}%</strong> · 남은 양 <strong>${fmt(remaining)}${unit}</strong></div>
       </div>
-      <div class="stats-grid cols-4">
-        <div class="stat-card hl-blue"><div class="label">📦 총 할당량</div><div class="value">${fmt(qty)}</div><div class="unit-label">${unit}</div></div>
-        <div class="stat-card"><div class="label">📆 남은 기간</div><div class="value">${totalDays}</div><div class="unit-label">일</div></div>
-        <div class="stat-card"><div class="label">💼 평일</div><div class="value">${weekdays}</div><div class="unit-label">일</div></div>
-        <div class="stat-card"><div class="label">🎉 주말</div><div class="value">${weekends}</div><div class="unit-label">일</div></div>
+
+      <div class="result-info-row">
+        📆 계산 기간: <strong>${startLabel} ~ ${ddayStr}</strong> (${totalDays}일)
       </div>
+
       <div class="pace-compare-wrap">
         <div class="pace-section">
-          <div class="pace-title">⚡ 현재 페이스</div>
-          <div class="pace-mini-grid">${dayRow(dayGoals)}</div>
-          <div class="finish-label">완료 예상: <strong>${fmtDate(finishDate)}</strong> ${diffLabel(finishDiff)}</div>
-        </div>
-        <div class="pace-section ${req.enough ? 'pace-ok' : 'pace-warn'}">
-          <div class="pace-title">🎯 마감일 맞추려면</div>
-          <div class="pace-mini-grid">${req.enough ? dayRow(dayGoals) : dayRow(dayGoals, req.multiplier)}</div>
-          <div class="finish-label">${req.enough ? '<span class="badge-early">현재 페이스로 충분 ✅</span>' : `<span class="badge-late">약 ${fmtDec(req.multiplier)}배 증가 필요 ⚠️</span>`}</div>
+          <div class="pace-title">요일별 페이스${!req.enough ? ' — 필요 페이스 함께 표시' : ''}</div>
+          ${makePaceTable()}
         </div>
       </div>
+
+      <div class="result-verdict ${req.enough ? 'ok' : 'warn'}">
+        ${req.enough
+          ? `<div class="verdict-title">✅ 현재 페이스로 충분합니다</div>
+             <div class="verdict-sub">기간 내 총 ${fmt(req.totalCapacity)}${unit} 소화 가능 · 완료 예상 <strong>${fmtDate(finishDate)}</strong> ${diffLabel(finishDiff)}</div>`
+          : `<div class="verdict-title">⚠️ 페이스가 부족합니다 (약 ${fmtDec(req.multiplier)}배 증가 필요)</div>
+             <div class="verdict-sub">기간 내 ${fmt(req.totalCapacity)}${unit} 소화 가능 / 남은 양 ${fmt(remaining)}${unit} · 현재 페이스 완료 예상 <strong>${fmtDate(finishDate)}</strong> ${diffLabel(finishDiff)}</div>`
+        }
+      </div>
+
       <div style="margin-top:10px;">
         <button class="save-result-btn" style="width:100%;justify-content:center;"
           onclick="saveOneResult(this,'${esc(name)}',${qty},'${esc(unit)}','${startStr}','${ddayStr}',${JSON.stringify(dayGoalsObj)},${progress},${JSON.stringify(holidays)})">
