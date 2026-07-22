@@ -2533,9 +2533,6 @@ function calculate() {
     };
 
     const startLabel = startStr || today.toISOString().slice(0,10);
-    const fmtDate = d => d ? d.toLocaleDateString('ko-KR',{month:'long',day:'numeric'}) : '10년 이상';
-    const diffLabel = diff => diff === null ? '' : diff === 0 ? '(딱 마감일)' :
-      diff < 0 ? `(마감 ${Math.abs(diff)}일 전 ✅)` : `(마감 ${diff}일 초과 ⚠️)`;
 
     const block = document.createElement('div');
     block.className = 'result-block'; block.style.animationDelay = (i*.06)+'s';
