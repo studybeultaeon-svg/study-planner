@@ -1006,55 +1006,53 @@ function renderTimetable() {
   const data = loadCalcFromStorage();
   const allTasks = (data.tasks || []).map(migrateTask).filter(t => t.name);
 
-  // 이번 주 월~일 날짜 계산
+  // 이번 주 일~토 날짜 계산 (디바이스 기준 일요일 시작)
   const today = new Date(); today.setHours(0,0,0,0);
   const todayStr = today.toISOString().slice(0,10);
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const sunday = new Date(today);
+  sunday.setDate(today.getDate() - today.getDay());
   const weekDates = Array.from({length:7}, (_, i) => {
-    const d = new Date(monday); d.setDate(monday.getDate() + i); return d;
-  });
+    const d = new Date(sunday); d.setDate(sunday.getDate() + i); return d;
+  }); // [일, 월, 화, 수, 목, 금, 토]
   const weekStrs = weekDates.map(d => d.toISOString().slice(0,10));
+  const weekStart = weekDates[0];
+  const weekEnd   = weekDates[6];
 
-  // JS getDay() → DAY_KEYS 인덱스: 1(월)→0 ... 6(토)→5, 0(일)→6
-  const DAY_KEYS  = ['mon','tue','wed','thu','fri','sat','sun'];
-  const DAY_LABELS = ['월','화','수','목','금','토','일'];
-  const DAY_CLS   = ['','','','','','tt-day-sat','tt-day-sun'];
-  const dayKeyIdx = [6,0,1,2,3,4,5]; // getDay() → DAY_KEYS index
+  // getDay() 0~6 → DAY_KEYS key (일~토 순서 그대로)
+  const DAY_KEYS_BY_DAY = ['sun','mon','tue','wed','thu','fri','sat'];
+  const DAY_LABELS = ['일','월','화','수','목','금','토'];
+  const DAY_CLS    = ['tt-day-sun','','','','','','tt-day-sat'];
 
-  // 오늘이 진행 기간(start~dday) 안에 있는 업무만 표시
+  // 이번 주에 하루라도 기간이 겹치는 업무 포함
   const tasks = allTasks.filter(t => {
     if (!t.dday) return false;
-    const dday = new Date(t.dday); dday.setHours(0,0,0,0);
+    const dday  = new Date(t.dday);  dday.setHours(0,0,0,0);
     const start = t.start ? new Date(t.start) : new Date(today); start.setHours(0,0,0,0);
-    return start <= today && today <= dday;
+    return start <= weekEnd && dday >= weekStart;
   });
 
   if (!tasks.length) {
-    const msg = allTasks.length ? '오늘 진행 중인 업무가 없습니다' : '할당량 계산기에서 업무를 입력하면<br>시간표가 자동으로 생성됩니다';
+    const msg = allTasks.length ? '이번 주 진행 예정인 업무가 없습니다' : '할당량 계산기에서 업무를 입력하면<br>시간표가 자동으로 생성됩니다';
     container.innerHTML = `<div class="empty-state" style="padding:60px 0;"><div class="icon">🗓️</div><p>${msg}</p></div>`;
     return;
   }
 
-  const totals = Array(7).fill(0);
-
   const rows = tasks.map(t => {
-    const unit = t.unit || '';
+    const unit  = t.unit || '';
     const dday  = new Date(t.dday);  dday.setHours(0,0,0,0);
     const start = t.start ? new Date(t.start) : new Date(today); start.setHours(0,0,0,0);
     const cells = weekDates.map((wd, i) => {
-      if (wd < start || wd > dday) return `<td class="tt-zero">—</td>`;
-      const k = DAY_KEYS[dayKeyIdx[wd.getDay()]];
+      const isToday = weekStrs[i] === todayStr;
+      const cls = isToday ? ' tt-today-cell' : '';
+      if (wd < start || wd > dday) return `<td class="tt-zero${cls}"></td>`;
+      const k = DAY_KEYS_BY_DAY[wd.getDay()];
       const v = parseFloat(t[k]) || 0;
-      totals[i] += v;
-      return v > 0 ? `<td class="tt-val">${v}${unit}</td>` : `<td class="tt-zero">—</td>`;
+      return v > 0
+        ? `<td class="tt-val${cls}">${v}${unit}</td>`
+        : `<td class="tt-zero${cls}">—</td>`;
     }).join('');
     return `<tr><td class="tt-name">${esc(t.name)}</td>${cells}</tr>`;
   }).join('');
-
-  const totalCells = totals.map(v =>
-    v > 0 ? `<td class="tt-total">${v}</td>` : `<td class="tt-zero">—</td>`
-  ).join('');
 
   const headers = weekDates.map((wd, i) => {
     const isToday = weekStrs[i] === todayStr;
@@ -1065,10 +1063,7 @@ function renderTimetable() {
   container.innerHTML = `
     <table class="tt-table">
       <thead><tr><th class="tt-name-col">업무</th>${headers}</tr></thead>
-      <tbody>
-        ${rows}
-        <tr class="tt-total-row"><td class="tt-name" style="color:var(--muted);font-size:12px;">합계</td>${totalCells}</tr>
-      </tbody>
+      <tbody>${rows}</tbody>
     </table>`;
 }
 
