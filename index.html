@@ -2331,7 +2331,12 @@ function addCalcTask(name='',qty='',unit='',dday='',start='',modifiedAt='',mon='
 }
 
 
-function removeCalcTask(btn) { btn.closest('.task-card').remove(); autoSaveDraft(); }
+function removeCalcTask(btn) {
+  const card = btn.closest('.task-card');
+  const name = card.querySelector('input[data-field="name"]')?.value?.trim() || '이 업무';
+  if (!confirm(`"${name}"을(를) 삭제하시겠습니까?`)) return;
+  card.remove(); autoSaveDraft();
+}
 
 function toggleTaskCard(header) {
   const card = header.closest('.task-card');
@@ -2553,8 +2558,17 @@ function renderSavedPanel(dataOverride) {
       btnDel.addEventListener('click', e => { e.stopPropagation(); deleteSavedFolder(subPath); });
       hdr.addEventListener('click', e => {
         if (e.target.closest('.folder-action-btn') || e.target.closest('.order-btn')) return;
-        _folderCollapsed[key] = !_folderCollapsed[key];
-        renderSavedPanel();
+        const nowCollapsed = !(_folderCollapsed[key] === false);
+        _folderCollapsed[key] = nowCollapsed;
+        const toggleEl = hdr.querySelector('.folder-toggle');
+        if (toggleEl) toggleEl.textContent = nowCollapsed ? '▶' : '▼';
+        const wrap = hdr.nextElementSibling;
+        if (wrap && wrap.classList.contains('folder-items')) {
+          wrap.style.display = nowCollapsed ? 'none' : '';
+        } else if (!nowCollapsed) {
+          // wrap이 없으면 (처음 펼치는 경우) 전체 재렌더
+          renderSavedPanel();
+        }
       });
       container.appendChild(hdr);
       if (!collapsed) {
@@ -2840,7 +2854,7 @@ function calculate() {
   grid.innerHTML = '';
   const topbar = document.createElement('div');
   topbar.id = 'calc-result-topbar';
-  topbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:0 0 14px;border-bottom:1px solid var(--border);margin-bottom:16px;';
+  topbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:0 0 14px;border-bottom:1px solid var(--border);margin-bottom:16px;';
   topbar.innerHTML = `<h2>📋 계산 결과</h2><div style="display:flex;gap:6px;flex-wrap:wrap;"><button onclick="saveAllResults()" style="font-size:11px;padding:4px 10px;border:1px solid rgba(79,142,247,.4);border-radius:6px;background:rgba(79,142,247,.1);color:var(--accent);cursor:pointer;font-weight:600;">💾 모두 저장</button><button onclick="expandAllResults()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 펴기</button><button onclick="collapseAllResults()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 접기</button></div>`;
   grid.appendChild(topbar);
 
