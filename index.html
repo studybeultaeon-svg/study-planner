@@ -269,7 +269,10 @@ body {
   flex-shrink: 0;
 }
 .next-days-btn:hover { border-color: var(--accent); color: var(--accent); }
-.step-input-modal { width:46px; padding:2px 4px; font-size:12px; text-align:center; }
+.step-input-modal { width:40px; padding:2px 0; font-size:12px; text-align:center; }
+.step-input-modal::-webkit-outer-spin-button,
+.step-input-modal::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+.step-input-modal { -moz-appearance:textfield; }
 .task-status-badge { font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 700; }
 .badge-O    { background: rgba(52,211,153,.15); color: #34d399; }
 .badge-X    { background: rgba(248,113,113,.15); color: #f87171; }
@@ -849,7 +852,7 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 
   /* 모바일 전용 캘린더 모달 크기 축소 */
   .order-btn { font-size: 9px; padding: 1px 4px; }
-  .task-item-modal { align-items: flex-start; gap: 5px; padding: 7px 8px; }
+  .task-item-modal { align-items: center; gap: 5px; padding: 7px 8px; }
   .task-name-modal {
     font-size: 4px; white-space: normal; word-break: break-word;
     overflow: visible; text-overflow: unset; line-height: 1.4;
