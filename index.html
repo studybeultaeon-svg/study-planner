@@ -1143,10 +1143,12 @@ function switchAppTab(name, btn) {
 /* ══ 시간표 렌더링 ══ */
 let timetableCurrentDate = new Date();
 
-// 해당 날짜 캘린더 업무가 하나 이상이고 전부 O인지 확인
+// 해당 날짜 캘린더 업무 중 상태가 설정된 것들이 모두 O인지 확인 (null/미설정 제외)
 function isCalDayDone(dateStr) {
   const tasks = calTasks[dateStr];
-  return tasks && tasks.length > 0 && tasks.every(t => t.status === 'O');
+  if (!tasks || !tasks.length) return false;
+  const settled = tasks.filter(t => t.status !== null);
+  return settled.length > 0 && settled.every(t => t.status === 'O');
 }
 
 function moveTimetableDay(delta) {
@@ -2333,13 +2335,6 @@ function toggleTaskCard(header) {
   const body = card.querySelector('.task-card-body');
   const collapsed = body.classList.toggle('mob-collapsed');
   card.classList.toggle('expanded', !collapsed);
-  // 결과 카드 동기화
-  const id = card.dataset.id;
-  const rb = document.querySelector(`.result-block[data-id="${id}"]`);
-  if (rb) {
-    rb.querySelector('.result-block-body').classList.toggle('mob-collapsed', collapsed);
-    rb.classList.toggle('expanded', !collapsed);
-  }
 }
 
 function toggleResultBlock(header) {
@@ -2347,13 +2342,6 @@ function toggleResultBlock(header) {
   const body = block.querySelector('.result-block-body');
   const collapsed = body.classList.toggle('mob-collapsed');
   block.classList.toggle('expanded', !collapsed);
-  // 업무 카드 동기화
-  const id = block.dataset.id;
-  const tc = document.querySelector(`.task-card[data-id="${id}"]`);
-  if (tc) {
-    tc.querySelector('.task-card-body').classList.toggle('mob-collapsed', collapsed);
-    tc.classList.toggle('expanded', !collapsed);
-  }
 }
 
 function collapseAllCalc() {
@@ -2847,7 +2835,7 @@ function calculate() {
   const topbar = document.createElement('div');
   topbar.id = 'calc-result-topbar';
   topbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:0 0 14px;border-bottom:1px solid var(--border);margin-bottom:16px;';
-  topbar.innerHTML = `<h2>📋 계산 결과</h2><div style="display:flex;gap:6px;"><button onclick="expandAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 펴기</button><button onclick="collapseAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 접기</button></div>`;
+  topbar.innerHTML = `<h2>📋 계산 결과</h2><div style="display:flex;gap:6px;flex-wrap:wrap;"><button onclick="saveAllResults()" style="font-size:11px;padding:4px 10px;border:1px solid rgba(79,142,247,.4);border-radius:6px;background:rgba(79,142,247,.1);color:var(--accent);cursor:pointer;font-weight:600;">💾 모두 저장</button><button onclick="expandAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 펴기</button><button onclick="collapseAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 접기</button></div>`;
   grid.appendChild(topbar);
 
   const today = new Date(); today.setHours(0,0,0,0);
@@ -2932,6 +2920,9 @@ function calculate() {
     const block = document.createElement('div');
     block.className = 'result-block'; block.style.animationDelay = (i*.06)+'s';
     block.dataset.id = card.dataset.id;
+    const cardBody = card.querySelector('.task-card-body');
+    const isCardCollapsed = cardBody && cardBody.classList.contains('mob-collapsed');
+    if (!isCardCollapsed) block.classList.add('expanded');
     block.innerHTML = `
       <div class="result-block-header" onclick="toggleResultBlock(this)">
         <div class="task-title">${esc(name)}</div>
@@ -2941,7 +2932,7 @@ function calculate() {
         </div>
       </div>
 
-      <div class="result-block-body mob-collapsed">
+      <div class="result-block-body${isCardCollapsed ? ' mob-collapsed' : ''}">
         <div class="progress-section">
           <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${progressPct}%"></div></div>
           <div class="progress-label">완료 <strong>${fmt(progress)}${unit}</strong> / 총 <strong>${fmt(qty)}${unit}</strong> · <strong>${progressPct}%</strong> · 남은 양 <strong>${fmt(remaining)}${unit}</strong></div>
@@ -2990,6 +2981,10 @@ function calculate() {
   }
 }
 
+
+function saveAllResults() {
+  document.querySelectorAll('.save-result-btn').forEach(btn => saveOneResultFromBtn(btn));
+}
 
 function saveOneResultFromBtn(btn) {
   const d = JSON.parse(btn.dataset.save);
