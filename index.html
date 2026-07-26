@@ -378,6 +378,15 @@ body {
   display: flex; align-items: center; justify-content: center; transition: all .15s;
 }
 .task-card-del:hover { background: rgba(248,113,113,.15); color: var(--red); }
+/* 접기/펴기 — 항상 동작 (모바일/데스크탑 공통) */
+.task-card-header { cursor: pointer; user-select: none; }
+.task-card-body.mob-collapsed { display: none; }
+.task-card-toggle { margin-left: auto; font-size: 11px; color: var(--muted); transition: transform .2s; display: inline-block; }
+.task-card.expanded .task-card-toggle { transform: rotate(180deg); }
+.result-block-header { cursor: pointer; user-select: none; }
+.result-block-body.mob-collapsed { display: none; }
+.result-block-toggle { margin-left: 8px; font-size: 11px; color: var(--muted); transition: transform .2s; display: inline-block; flex-shrink: 0; }
+.result-block.expanded .result-block-toggle { transform: rotate(180deg); }
 .task-card-body {
   padding: 11px; display: grid; grid-template-columns: 1fr 1fr; gap: 7px;
 }
@@ -811,23 +820,8 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
   .results-grid { grid-template-columns: 1fr; }
   .result-block { padding: 14px; }
 
-  /* 업무 카드 접힘 */
-  .task-card-header { cursor: pointer; user-select: none; }
-  .task-card-body.mob-collapsed { display: none; }
-  .task-card-toggle {
-    margin-left: auto; font-size: 11px; color: var(--muted);
-    transition: transform .2s; display: inline-block;
-  }
-  .task-card.expanded .task-card-toggle { transform: rotate(180deg); }
-
-  /* 결과 카드 접힘 */
-  .result-block-header { cursor: pointer; user-select: none; }
-  .result-block-body.mob-collapsed { display: none; }
-  .result-block-toggle {
-    margin-left: 8px; font-size: 11px; color: var(--muted);
-    transition: transform .2s; display: inline-block; flex-shrink: 0;
-  }
-  .result-block.expanded .result-block-toggle { transform: rotate(180deg); }
+  /* 모바일 버튼 크기 */
+  .order-btn { padding: 4px 10px; font-size: 13px; min-width: 36px; min-height: 32px; }
 
   /* 저장 패널 */
   .saved-panel-body { grid-template-columns: 1fr; }
@@ -991,6 +985,7 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
         <button class="sidebar-tab" onclick="switchCalcTab('saved', this)" id="saved-tab-btn">💾 저장됨</button>
       </div>
       <div class="tab-panel active" id="tab-input">
+        <div style="display:flex;gap:6px;padding:8px 14px 0;"><button onclick="expandAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;flex:1;">모두 펴기</button><button onclick="collapseAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;flex:1;">모두 접기</button></div>
         <div class="input-panel-body" id="task-list"></div>
         <div class="input-panel-footer">
           <div class="error-msg" id="error-msg"></div>
@@ -1165,7 +1160,8 @@ function renderTimetable() {
   const allTasks = (data.tasks || []).map(migrateTask).filter(t => t.name);
 
   const today = new Date(); today.setHours(0,0,0,0);
-  const todayStr = today.toISOString().slice(0,10);
+  const localStr = d => calDateKey(d.getFullYear(), d.getMonth(), d.getDate());
+  const todayStr = localStr(today);
   const DAY_KEYS_BY_DAY = ['sun','mon','tue','wed','thu','fri','sat'];
   const DAY_LABELS_KO   = ['일','월','화','수','목','금','토'];
 
@@ -1178,7 +1174,7 @@ function renderTimetable() {
     sub.style.display = 'none';
 
     const cur = new Date(timetableCurrentDate); cur.setHours(0,0,0,0);
-    const curStr = cur.toISOString().slice(0,10);
+    const curStr = localStr(cur);
     const isToday = curStr === todayStr;
     const dayLabel = DAY_LABELS_KO[cur.getDay()];
     const dateLabel = `${cur.getMonth()+1}월 ${cur.getDate()}일 (${dayLabel})${isToday ? ' · 오늘' : ''}`;
@@ -1231,7 +1227,7 @@ function renderTimetable() {
     const weekDates = Array.from({length:7}, (_, i) => {
       const d = new Date(sunday); d.setDate(sunday.getDate() + i); return d;
     });
-    const weekStrs  = weekDates.map(d => d.toISOString().slice(0,10));
+    const weekStrs  = weekDates.map(d => localStr(d));
     const weekStart = weekDates[0];
     const weekEnd   = weekDates[6];
     const DAY_CLS   = ['tt-day-sun','','','','','','tt-day-sat'];
@@ -2281,7 +2277,7 @@ function addCalcTask(name='',qty='',unit='',dday='',start='',modifiedAt='',mon='
       <span class="task-card-toggle">▼</span>
     </div>
     <div class="task-modified-at"></div>
-    <div class="task-card-body${isMobile() ? ' mob-collapsed' : ''}">
+    <div class="task-card-body mob-collapsed">
       <div class="field full">
         <label>업무 이름</label>
         <input type="text" data-field="name" placeholder="예: 수학 문제집" value="${esc(name)}"
@@ -2333,19 +2329,53 @@ function addCalcTask(name='',qty='',unit='',dday='',start='',modifiedAt='',mon='
 function removeCalcTask(btn) { btn.closest('.task-card').remove(); autoSaveDraft(); }
 
 function toggleTaskCard(header) {
-  if (!isMobile()) return;
   const card = header.closest('.task-card');
   const body = card.querySelector('.task-card-body');
   const collapsed = body.classList.toggle('mob-collapsed');
   card.classList.toggle('expanded', !collapsed);
+  // 결과 카드 동기화
+  const id = card.dataset.id;
+  const rb = document.querySelector(`.result-block[data-id="${id}"]`);
+  if (rb) {
+    rb.querySelector('.result-block-body').classList.toggle('mob-collapsed', collapsed);
+    rb.classList.toggle('expanded', !collapsed);
+  }
 }
 
 function toggleResultBlock(header) {
-  if (!isMobile()) return;
   const block = header.closest('.result-block');
   const body = block.querySelector('.result-block-body');
   const collapsed = body.classList.toggle('mob-collapsed');
   block.classList.toggle('expanded', !collapsed);
+  // 업무 카드 동기화
+  const id = block.dataset.id;
+  const tc = document.querySelector(`.task-card[data-id="${id}"]`);
+  if (tc) {
+    tc.querySelector('.task-card-body').classList.toggle('mob-collapsed', collapsed);
+    tc.classList.toggle('expanded', !collapsed);
+  }
+}
+
+function collapseAllCalc() {
+  document.querySelectorAll('.task-card').forEach(card => {
+    card.querySelector('.task-card-body').classList.add('mob-collapsed');
+    card.classList.remove('expanded');
+  });
+  document.querySelectorAll('.result-block').forEach(block => {
+    block.querySelector('.result-block-body').classList.add('mob-collapsed');
+    block.classList.remove('expanded');
+  });
+}
+
+function expandAllCalc() {
+  document.querySelectorAll('.task-card').forEach(card => {
+    card.querySelector('.task-card-body').classList.remove('mob-collapsed');
+    card.classList.add('expanded');
+  });
+  document.querySelectorAll('.result-block').forEach(block => {
+    block.querySelector('.result-block-body').classList.remove('mob-collapsed');
+    block.classList.add('expanded');
+  });
 }
 function updateCalcPreview(input) {
   const card = input.closest('.task-card');
@@ -2817,7 +2847,7 @@ function calculate() {
   const topbar = document.createElement('div');
   topbar.id = 'calc-result-topbar';
   topbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:0 0 14px;border-bottom:1px solid var(--border);margin-bottom:16px;';
-  topbar.innerHTML = `<h2>📋 계산 결과</h2>`;
+  topbar.innerHTML = `<h2>📋 계산 결과</h2><div style="display:flex;gap:6px;"><button onclick="expandAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 펴기</button><button onclick="collapseAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 접기</button></div>`;
   grid.appendChild(topbar);
 
   const today = new Date(); today.setHours(0,0,0,0);
@@ -2901,7 +2931,7 @@ function calculate() {
 
     const block = document.createElement('div');
     block.className = 'result-block'; block.style.animationDelay = (i*.06)+'s';
-    const mobCollapsed = isMobile() ? ' mob-collapsed' : '';
+    block.dataset.id = card.dataset.id;
     block.innerHTML = `
       <div class="result-block-header" onclick="toggleResultBlock(this)">
         <div class="task-title">${esc(name)}</div>
@@ -2911,7 +2941,7 @@ function calculate() {
         </div>
       </div>
 
-      <div class="result-block-body${mobCollapsed}">
+      <div class="result-block-body mob-collapsed">
         <div class="progress-section">
           <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${progressPct}%"></div></div>
           <div class="progress-label">완료 <strong>${fmt(progress)}${unit}</strong> / 총 <strong>${fmt(qty)}${unit}</strong> · <strong>${progressPct}%</strong> · 남은 양 <strong>${fmt(remaining)}${unit}</strong></div>
