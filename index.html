@@ -985,7 +985,7 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
         <button class="sidebar-tab" onclick="switchCalcTab('saved', this)" id="saved-tab-btn">💾 저장됨</button>
       </div>
       <div class="tab-panel active" id="tab-input">
-        <div style="display:flex;gap:6px;padding:8px 14px 0;"><button onclick="expandAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;flex:1;">모두 펴기</button><button onclick="collapseAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;flex:1;">모두 접기</button></div>
+        <div style="display:flex;gap:6px;padding:8px 14px 0;"><button onclick="expandAllTasks()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;flex:1;">모두 펴기</button><button onclick="collapseAllTasks()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;flex:1;">모두 접기</button></div>
         <div class="input-panel-body" id="task-list"></div>
         <div class="input-panel-footer">
           <div class="error-msg" id="error-msg"></div>
@@ -1143,12 +1143,15 @@ function switchAppTab(name, btn) {
 /* ══ 시간표 렌더링 ══ */
 let timetableCurrentDate = new Date();
 
-// 해당 날짜 캘린더 업무 중 상태가 설정된 것들이 모두 O인지 확인 (null/미설정 제외)
-function isCalDayDone(dateStr) {
-  const tasks = calTasks[dateStr];
-  if (!tasks || !tasks.length) return false;
-  const settled = tasks.filter(t => t.status !== null);
-  return settled.length > 0 && settled.every(t => t.status === 'O');
+// 해당 날짜에서 계산기 업무(calcTaskName)에 연결된 캘린더 일정들의
+// O 처리된 progressStep 합계가 dayQuota 이상이면 달성
+function isCalTaskLinkedDone(dateStr, calcTaskName, dayQuota) {
+  if (!dayQuota || dayQuota <= 0) return false;
+  const tasks = calTasks[dateStr] || [];
+  const done = tasks.filter(t => t.linkedCalc === calcTaskName && t.status === 'O');
+  if (!done.length) return false;
+  const total = done.reduce((s, t) => s + (parseFloat(t.progressStep) || 0), 0);
+  return total >= dayQuota;
 }
 
 function moveTimetableDay(delta) {
@@ -1196,10 +1199,10 @@ function renderTimetable() {
       return;
     }
 
-    const done = isCalDayDone(curStr);
     const items = tasks.map(t => {
       const unit = t.unit || '';
       const v = parseFloat(t[dayKey]) || 0;
+      const done = isCalTaskLinkedDone(curStr, t.name, v);
       let valHtml;
       if (v > 0) {
         if (done) {
@@ -1253,12 +1256,12 @@ function renderTimetable() {
       const start = t.start ? new Date(t.start) : new Date(today); start.setHours(0,0,0,0);
       const cells = weekDates.map((wd, i) => {
         const isToday = weekStrs[i] === todayStr;
-        const done = isCalDayDone(weekStrs[i]);
         const cls = isToday ? ' tt-today-cell' : '';
         if (wd < start || wd > dday) return `<td class="tt-zero${cls}"></td>`;
         const k = DAY_KEYS_BY_DAY[wd.getDay()];
         const v = parseFloat(t[k]) || 0;
         if (!v) return `<td class="tt-zero${cls}">—</td>`;
+        const done = isCalTaskLinkedDone(weekStrs[i], t.name, v);
         if (done) return `<td class="tt-val tt-done${cls}">${v}${unit} ✅</td>`;
         if (isToday) return `<td class="tt-val tt-today-val${cls}">${v}${unit}</td>`;
         return `<td class="tt-val${cls}">${v}${unit}</td>`;
@@ -2344,22 +2347,25 @@ function toggleResultBlock(header) {
   block.classList.toggle('expanded', !collapsed);
 }
 
-function collapseAllCalc() {
+function collapseAllTasks() {
   document.querySelectorAll('.task-card').forEach(card => {
     card.querySelector('.task-card-body').classList.add('mob-collapsed');
     card.classList.remove('expanded');
   });
+}
+function expandAllTasks() {
+  document.querySelectorAll('.task-card').forEach(card => {
+    card.querySelector('.task-card-body').classList.remove('mob-collapsed');
+    card.classList.add('expanded');
+  });
+}
+function collapseAllResults() {
   document.querySelectorAll('.result-block').forEach(block => {
     block.querySelector('.result-block-body').classList.add('mob-collapsed');
     block.classList.remove('expanded');
   });
 }
-
-function expandAllCalc() {
-  document.querySelectorAll('.task-card').forEach(card => {
-    card.querySelector('.task-card-body').classList.remove('mob-collapsed');
-    card.classList.add('expanded');
-  });
+function expandAllResults() {
   document.querySelectorAll('.result-block').forEach(block => {
     block.querySelector('.result-block-body').classList.remove('mob-collapsed');
     block.classList.add('expanded');
@@ -2835,7 +2841,7 @@ function calculate() {
   const topbar = document.createElement('div');
   topbar.id = 'calc-result-topbar';
   topbar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:0 0 14px;border-bottom:1px solid var(--border);margin-bottom:16px;';
-  topbar.innerHTML = `<h2>📋 계산 결과</h2><div style="display:flex;gap:6px;flex-wrap:wrap;"><button onclick="saveAllResults()" style="font-size:11px;padding:4px 10px;border:1px solid rgba(79,142,247,.4);border-radius:6px;background:rgba(79,142,247,.1);color:var(--accent);cursor:pointer;font-weight:600;">💾 모두 저장</button><button onclick="expandAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 펴기</button><button onclick="collapseAllCalc()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 접기</button></div>`;
+  topbar.innerHTML = `<h2>📋 계산 결과</h2><div style="display:flex;gap:6px;flex-wrap:wrap;"><button onclick="saveAllResults()" style="font-size:11px;padding:4px 10px;border:1px solid rgba(79,142,247,.4);border-radius:6px;background:rgba(79,142,247,.1);color:var(--accent);cursor:pointer;font-weight:600;">💾 모두 저장</button><button onclick="expandAllResults()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 펴기</button><button onclick="collapseAllResults()" style="font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;">모두 접기</button></div>`;
   grid.appendChild(topbar);
 
   const today = new Date(); today.setHours(0,0,0,0);
