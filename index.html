@@ -195,9 +195,9 @@ body {
 }
 
 .modal-section-toggle {
-  margin-top: 8px; padding: 0; background: none; border: none;
-  color: var(--muted); font-size: 11px; cursor: pointer;
-  text-align: left; font-family: inherit; display: flex; align-items: center; gap: 4px;
+  margin-top: 4px; padding: 0; background: none; border: none;
+  color: var(--muted); font-size: 9px; cursor: pointer;
+  text-align: left; font-family: inherit; display: flex; align-items: center; gap: 3px;
 }
 .modal-section-toggle:hover { color: var(--accent); }
 .modal-link-section {
@@ -254,7 +254,7 @@ body {
 .order-btn { background:none; border:1px solid var(--border); border-radius:4px; color:var(--muted); cursor:pointer; font-size:9px; padding:1px 4px; line-height:1.3; flex-shrink:0; }
 .order-btn:hover { background:var(--surface); color:var(--text); }
 
-.task-name-modal { flex: 1; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-name-modal { flex: 1; font-size: 11px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-name-modal.gray-text   { color: #aaaaaa; }
 .task-name-modal.red-text    { color: #ffffff; }
 .task-name-modal.yellow-text { color: #fbbf24; }
@@ -263,7 +263,7 @@ body {
 .task-name-modal.orange-text { color: #f87171; }
 
 .next-days-btn {
-  font-size: 10px; padding: 2px 6px; border-radius: 5px;
+  font-size: 9px; padding: 1px 4px; border-radius: 4px;
   border: 1px solid var(--border); background: none;
   color: var(--muted); cursor: pointer; white-space: nowrap;
   flex-shrink: 0;
@@ -1917,7 +1917,7 @@ function renderModalTaskList(key) {
       stepInput.type='number'; stepInput.min='0'; stepInput.step='1';
       stepInput.value = task.progressStep != null && task.progressStep !== '' ? task.progressStep : '1';
       stepInput.title='완료 시 진척도 증가량 (1회독만 적용)';
-      stepInput.style.cssText='width:70px;padding:2px 4px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;';
+      stepInput.style.cssText='width:32px;padding:1px 2px;border-radius:4px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:10px;text-align:center;';
       stepInput.addEventListener('click', e => e.stopPropagation());
       stepInput.addEventListener('input', e => {
         e.stopPropagation();
