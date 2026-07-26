@@ -688,8 +688,8 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 .timetable-header { padding: 16px 20px 10px; flex-shrink: 0; display: flex; align-items: baseline; gap: 10px; border-bottom: 1px solid var(--border); }
 .timetable-title { font-size: 15px; font-weight: 700; }
 .timetable-sub { font-size: 12px; color: var(--muted); }
-.timetable-container { flex: 1; overflow: auto; padding: 16px 20px; }
-.tt-table { width: 100%; border-collapse: collapse; min-width: 560px; }
+.timetable-container { flex: 1; overflow: auto; padding: 16px 20px; -webkit-overflow-scrolling: touch; }
+.tt-table { width: max-content; min-width: 100%; border-collapse: collapse; }
 .tt-table th { font-size: 12px; font-weight: 700; padding: 8px 10px; text-align: center; border-bottom: 2px solid var(--border); color: var(--muted); position: sticky; top: 0; background: var(--bg); z-index: 2; }
 .tt-table th.tt-day-sun { color: #f87171; }
 .tt-table th.tt-day-sat { color: #60a5fa; }
@@ -704,6 +704,51 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 .tt-table tr.tt-total-row td { border-top: 2px solid var(--border); font-size: 12px; color: var(--muted); padding-top: 10px; }
 .tt-table tr.tt-total-row td.tt-total { color: var(--accent); font-size: 13px; }
 .tt-table tr:hover td { background: rgba(255,255,255,.03); }
+
+/* ══════════════════════════════
+   모바일 반응형 (≤640px)
+══════════════════════════════ */
+@media (max-width: 640px) {
+  /* 상단바 */
+  .topbar { padding: 0 12px; height: 48px; }
+  .topbar-logo { font-size: 13px; }
+  #sync-status { display: none; }
+  .fb-config-btn { font-size: 11px; padding: 5px 8px; }
+
+  /* 앱 탭 */
+  .app-tab { font-size: 11px; padding: 10px 0; letter-spacing: 0; }
+
+  /* 캘린더 */
+  .cal-wrap { padding: 10px 8px; }
+  .cal-grid-header span { font-size: 11px; }
+  .cal-cell { min-height: 60px; }
+  .task-chip { font-size: 9px; padding: 1px 4px; }
+
+  /* 계산기 - 세로 스택 */
+  .calc-layout { flex-direction: column; }
+  .calc-sidebar { width: 100%; height: auto; max-height: 50vh; flex-shrink: 0; border-right: none; border-bottom: 1px solid var(--border); }
+  .calc-divider { display: none; }
+  .calc-content { padding: 14px 12px; }
+  .task-card-body { grid-template-columns: 1fr; }
+  .day-goals-row { flex-wrap: wrap; }
+  .day-goal-item { min-width: calc(100% / 7 - 4px); }
+  .results-grid { grid-template-columns: 1fr; }
+
+  /* 시간표 */
+  .timetable-header { padding: 12px 14px 8px; flex-wrap: wrap; gap: 4px; }
+  .timetable-container { padding: 10px 12px; }
+  .tt-table th { font-size: 11px; padding: 6px 8px; }
+  .tt-table td { font-size: 12px; padding: 7px 8px; }
+  .tt-table th.tt-name-col { min-width: 80px; }
+
+  /* 저장 패널 */
+  .saved-panel-body { grid-template-columns: 1fr; }
+  .input-panel-body { grid-template-columns: 1fr; }
+
+  /* 모달 */
+  .cal-modal { padding: 16px; }
+}
+
 /* 새 결과 카드 */
 .result-info-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
 .result-info-row strong { color: var(--text); }
