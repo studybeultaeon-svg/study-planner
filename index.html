@@ -1275,9 +1275,11 @@ function renderTimetable() {
       return;
     }
 
+    let dayTotal = 0;
     const items = tasks.map(t => {
       const unit = t.unit || '';
       const v = parseFloat(t[dayKey]) || 0;
+      dayTotal += v;
       const done = isCalTaskLinkedDone(curStr, t.name, v);
       let valHtml;
       if (v > 0) {
@@ -1296,7 +1298,11 @@ function renderTimetable() {
         ${valHtml}
       </div>`;
     }).join('');
-    container.innerHTML = `<div class="tt-day-list">${items}</div>`;
+    const totalItem = `<div class="tt-day-list-item" style="border-top:2px solid var(--border);margin-top:4px;padding-top:10px;">
+        <span class="tt-task-name">합계</span>
+        <span class="tt-task-val">${fmt(dayTotal)}</span>
+      </div>`;
+    container.innerHTML = `<div class="tt-day-list">${items}${totalItem}</div>`;
 
   } else {
     // ── 주단위 뷰 (데스크탑) ──
