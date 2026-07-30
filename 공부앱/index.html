@@ -1326,10 +1326,12 @@ function renderTimetable() {
       return;
     }
 
+    const dayTotals = weekDates.map(() => 0);
     const rows = tasks.map(t => {
       const unit  = t.unit || '';
       const dday  = new Date(t.dday);  dday.setHours(0,0,0,0);
       const start = t.start ? new Date(t.start) : new Date(today); start.setHours(0,0,0,0);
+      let rowTotal = 0;
       const cells = weekDates.map((wd, i) => {
         const isToday = weekStrs[i] === todayStr;
         const cls = isToday ? ' tt-today-cell' : '';
@@ -1337,12 +1339,14 @@ function renderTimetable() {
         const k = DAY_KEYS_BY_DAY[wd.getDay()];
         const v = parseFloat(t[k]) || 0;
         if (!v) return `<td class="tt-zero${cls}">—</td>`;
+        rowTotal += v;
+        dayTotals[i] += v;
         const done = isCalTaskLinkedDone(weekStrs[i], t.name, v);
         if (done) return `<td class="tt-val tt-done${cls}">${v}${unit} ✅</td>`;
         if (isToday) return `<td class="tt-val tt-today-val${cls}">${v}${unit}</td>`;
         return `<td class="tt-val${cls}">${v}${unit}</td>`;
       }).join('');
-      return `<tr><td class="tt-name">${esc(t.name)}</td>${cells}</tr>`;
+      return `<tr><td class="tt-name">${esc(t.name)}</td>${cells}<td class="tt-total">${fmt(rowTotal)}${unit}</td></tr>`;
     }).join('');
 
     const headers = weekDates.map((wd, i) => {
@@ -1351,10 +1355,13 @@ function renderTimetable() {
       return `<th class="${DAY_CLS[i]}${isToday?' tt-today':''}">${DAY_LABELS_KO[i]}<br>${dateLabel}</th>`;
     }).join('');
 
+    const totalCells = dayTotals.map(v => `<td class="tt-total">${fmt(v)}</td>`).join('');
+    const totalRow = `<tr class="tt-total-row"><td class="tt-name">합계</td>${totalCells}<td class="tt-total">${fmt(dayTotals.reduce((a,b)=>a+b,0))}</td></tr>`;
+
     container.innerHTML = `
       <table class="tt-table">
-        <thead><tr><th class="tt-name-col">업무</th>${headers}</tr></thead>
-        <tbody>${rows}</tbody>
+        <thead><tr><th class="tt-name-col">업무</th>${headers}<th>합계</th></tr></thead>
+        <tbody>${rows}${totalRow}</tbody>
       </table>`;
   }
 }
