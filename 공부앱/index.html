@@ -1641,17 +1641,20 @@ function timerStop() {
   renderTimer();
 }
 
-// 뽀모도로 공부↔휴식 수동 전환 — 시간이 다 돼도 자동으로 넘어가지 않고
-// 사용자가 이 버튼을 눌러야 페이즈가 바뀐다(시작/정지 버튼과는 별개 동작).
+// 뽀모도로 공부↔휴식 수동 전환.
+// - 공부 → 휴식: 공부 시간을 다 채워야만(남은시간 0) 전환 버튼이 활성화된다.
+// - 휴식 → 공부: 언제든 사용자가 원하면 즉시 전환 가능(강제 전환 전에도 자유롭게 복귀 허용).
 function timerSwitchPhase() {
   if (!timerRun || timerRun.mode !== 'pomodoro') return;
   const now = Date.now();
   if (timerRun.phase === 'study') {
+    if (now < timerRun.phaseEndAt) return; // 공부 시간을 다 채우기 전엔 전환 불가
     const elapsedSec = (now - timerRun.phaseStartedAt) / 1000;
     addStudyLogEntry(timerRun.taskName, elapsedSec);
     timerRun.phase = 'break';
     timerRun.phaseStartedAt = now;
     timerRun.phaseEndAt = now + pomoSettings.breakMin * 60000;
+    timerRun.breakExtraUsed = false;
     pushPomodoroStatus(true, timerRun.phaseEndAt);
     showToast('☕ 휴식 모드로 전환했습니다');
   } else {
@@ -1666,8 +1669,41 @@ function timerSwitchPhase() {
   renderTimer();
 }
 
+// 휴식 제한 시간이 딱 됐을 때 한 번만 쓸 수 있는 "5분만 더" — 추가 시간까지
+// 다 끝나면 timerForceSwitchToStudy()가 자동으로 공부 모드로 되돌린다.
+function timerExtendBreak() {
+  if (!timerRun || timerRun.mode !== 'pomodoro' || timerRun.phase !== 'break') return;
+  if (timerRun.breakExtraUsed) return;
+  timerRun.breakExtraUsed = true;
+  timerRun.phaseEndAt = Date.now() + 5 * 60000;
+  pushPomodoroStatus(true, timerRun.phaseEndAt);
+  saveTimerRunState();
+  showToast('⏰ 5분만 더 휴식합니다');
+  renderTimer();
+}
+
+// "5분만 더"까지 다 써버린 휴식이 끝났을 때 강제로 공부 모드로 전환.
+function timerForceSwitchToStudy() {
+  if (!timerRun || timerRun.mode !== 'pomodoro' || timerRun.phase !== 'break') return;
+  const now = Date.now();
+  timerRun.phase = 'study';
+  timerRun.phaseStartedAt = now;
+  timerRun.phaseEndAt = now + pomoSettings.studyMin * 60000;
+  timerRun.cycleCount = (timerRun.cycleCount || 1) + 1;
+  timerRun.breakExtraUsed = false;
+  pushPomodoroStatus(false, 0);
+  saveTimerRunState();
+  showToast('⏰ 휴식 시간이 끝나 공부 모드로 자동 전환되었습니다');
+  renderTimer();
+}
+
 function timerGlobalTick() {
   if (!timerRun) return;
+  if (timerRun.mode === 'pomodoro' && timerRun.phase === 'break' && timerRun.breakExtraUsed
+      && Date.now() >= timerRun.phaseEndAt) {
+    timerForceSwitchToStudy();
+    return;
+  }
   const view = document.getElementById('view-timer');
   if (view && view.classList.contains('active')) updateTimerDisplay();
 }
@@ -1679,8 +1715,13 @@ function updateTimerDisplay() {
   let sec;
   if (timerRun.mode === 'pomodoro') {
     sec = Math.max(0, Math.round((timerRun.phaseEndAt - Date.now()) / 1000));
+    const timeUp = sec <= 0;
     const notice = document.getElementById('timerTimeUpNotice');
-    if (notice) notice.style.display = sec <= 0 ? 'block' : 'none';
+    if (notice) notice.style.display = timeUp ? 'block' : 'none';
+    const switchBtn = document.getElementById('timerSwitchBtn');
+    if (switchBtn && timerRun.phase === 'study') switchBtn.style.display = timeUp ? '' : 'none';
+    const extendBtn = document.getElementById('timerExtendBtn');
+    if (extendBtn) extendBtn.style.display = (timeUp && !timerRun.breakExtraUsed) ? '' : 'none';
   } else {
     sec = Math.round((Date.now() - timerRun.phaseStartedAt) / 1000);
   }
@@ -1719,7 +1760,7 @@ function renderTimer() {
       displaySec = Math.max(0, Math.round((timerRun.phaseEndAt - Date.now()) / 1000));
       const isBreak = timerRun.phase === 'break';
       phaseHtml = `<div class="pomo-phase-badge ${isBreak?'break':'study'}"><span class="dot"></span>${isBreak?'휴식 중':'공부 중'} · ${timerRun.cycleCount || 1}번째 사이클</div>
-          <div class="pomo-timeup-notice" id="timerTimeUpNotice" style="display:${displaySec<=0?'block':'none'}">⏰ 시간이 다 됐어요 — 아래 전환 버튼을 눌러주세요</div>`;
+          <div class="pomo-timeup-notice" id="timerTimeUpNotice" style="display:${displaySec<=0?'block':'none'}">⏰ 시간이 다 됐어요 — ${isBreak ? (timerRun.breakExtraUsed ? '곧 공부 모드로 자동 전환됩니다' : '아래에서 5분만 더 쉬거나 공부 모드로 전환하세요') : '아래 전환 버튼을 눌러주세요'}</div>`;
     } else {
       displaySec = Math.round((Date.now() - timerRun.phaseStartedAt) / 1000);
     }
@@ -1749,7 +1790,10 @@ function renderTimer() {
               ? `<button class="calc-btn calc-btn-reset" onclick="timerStop()">■ 정지</button>`
               : `<button class="calc-btn calc-btn-go" onclick="timerStart()">▶ 시작</button>`}
             ${running && timerRun.mode === 'pomodoro'
-              ? `<button class="calc-btn calc-btn-switch" onclick="timerSwitchPhase()">🔁 ${timerRun.phase==='study'?'휴식으로 전환':'공부로 전환'}</button>`
+              ? `<button class="calc-btn calc-btn-switch" id="timerSwitchBtn" style="display:${timerRun.phase==='study' && displaySec>0 ? 'none' : ''}" onclick="timerSwitchPhase()">🔁 ${timerRun.phase==='study'?'휴식으로 전환':'공부로 전환'}</button>`
+              : ''}
+            ${running && timerRun.mode === 'pomodoro' && timerRun.phase === 'break'
+              ? `<button class="calc-btn calc-btn-switch" id="timerExtendBtn" style="display:${displaySec<=0 && !timerRun.breakExtraUsed ? '' : 'none'}" onclick="timerExtendBreak()">⏰ 5분만 더</button>`
               : ''}
           </div>
         ` : `<div class="empty-state" style="padding:30px 0;"><div class="icon">⏱️</div><p>캘린더에 오늘 일정을 추가하면<br>타이머를 사용할 수 있습니다</p></div>`}
