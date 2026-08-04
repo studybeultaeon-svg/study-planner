@@ -3175,7 +3175,7 @@ function renderSavedPanel(dataOverride) {
       btnDel.addEventListener('click', e => { e.stopPropagation(); deleteSavedFolder(subPath); });
       hdr.addEventListener('click', e => {
         if (e.target.closest('.folder-action-btn') || e.target.closest('.order-btn')) return;
-        const nowCollapsed = !(_folderCollapsed[key] === false);
+        const nowCollapsed = (_folderCollapsed[key] === false);
         _folderCollapsed[key] = nowCollapsed;
         const toggleEl = hdr.querySelector('.folder-toggle');
         if (toggleEl) toggleEl.textContent = nowCollapsed ? '▶' : '▼';
