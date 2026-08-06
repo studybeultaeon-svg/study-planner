@@ -95,9 +95,37 @@ body {
    캘린더 뷰
 ══════════════════════════════ */
 .cal-wrap { flex: 1; padding: 16px; max-width: 960px; width: 100%; margin: 0 auto; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; }
-.cal-wrap::-webkit-scrollbar { width: 5px; }
-.cal-wrap::-webkit-scrollbar-track { background: transparent; }
-.cal-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* 스크롤 가능한 영역 전부(캘린더/탭패널/계산기결과/시간표/타이머/모달) 공통 스크롤바 디자인 —
+   각자 따로 정의하면 폭·반경이 조금씩 어긋나기 쉬워서(예전엔 tab-panel만 4px/2px로 달랐음)
+   한 곳에서만 정의하고 여기에 셀렉터를 추가하는 방식으로 통일한다. */
+.cal-wrap::-webkit-scrollbar,
+.tab-panel::-webkit-scrollbar,
+.calc-content::-webkit-scrollbar,
+.timetable-container::-webkit-scrollbar,
+.timer-wrap::-webkit-scrollbar,
+.cal-modal-body::-webkit-scrollbar,
+.fb-modal::-webkit-scrollbar {
+  width: 5px; height: 5px;
+}
+.cal-wrap::-webkit-scrollbar-track,
+.tab-panel::-webkit-scrollbar-track,
+.calc-content::-webkit-scrollbar-track,
+.timetable-container::-webkit-scrollbar-track,
+.timer-wrap::-webkit-scrollbar-track,
+.cal-modal-body::-webkit-scrollbar-track,
+.fb-modal::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cal-wrap::-webkit-scrollbar-thumb,
+.tab-panel::-webkit-scrollbar-thumb,
+.calc-content::-webkit-scrollbar-thumb,
+.timetable-container::-webkit-scrollbar-thumb,
+.timer-wrap::-webkit-scrollbar-thumb,
+.cal-modal-body::-webkit-scrollbar-thumb,
+.fb-modal::-webkit-scrollbar-thumb {
+  background: var(--border); border-radius: 3px;
+}
 
 .legend-bar {
   display: flex; gap: 16px; align-items: center;
@@ -359,9 +387,6 @@ body {
 
 .tab-panel { display: none; flex: 1; min-height: 0; overflow-y: auto; flex-direction: column; }
 .tab-panel.active { display: flex; }
-.tab-panel::-webkit-scrollbar { width: 4px; }
-.tab-panel::-webkit-scrollbar-track { background: transparent; }
-.tab-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 .input-panel-body { padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; align-content: start; }
 
@@ -514,9 +539,6 @@ body {
 .calc-content > #calc-result-topbar {
   grid-column: 1 / -1;
 }
-.calc-content::-webkit-scrollbar { width: 5px; }
-.calc-content::-webkit-scrollbar-track { background: transparent; }
-.calc-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 .empty-state {
   flex: 1; display: flex; flex-direction: column;
@@ -720,9 +742,6 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 .timetable-title { font-size: 15px; font-weight: 700; }
 .timetable-sub { font-size: 12px; color: var(--muted); }
 .timetable-container { flex: 1; overflow: auto; padding: 16px 20px; -webkit-overflow-scrolling: touch; }
-.timetable-container::-webkit-scrollbar { width: 5px; height: 5px; }
-.timetable-container::-webkit-scrollbar-track { background: transparent; }
-.timetable-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 .tt-table { width: max-content; min-width: 100%; border-collapse: collapse; }
 .tt-table th { font-size: 12px; font-weight: 700; padding: 8px 10px; text-align: center; border-bottom: 2px solid var(--border); color: var(--muted); position: sticky; top: 0; background: var(--bg); z-index: 2; }
 .tt-table th.tt-day-sun { color: #f87171; }
@@ -741,8 +760,17 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 .tt-table tr.tt-total-row td.tt-total { color: var(--accent); font-size: 13px; }
 .tt-table tr:hover td { background: rgba(255,255,255,.03); }
 
-/* ══ 타이머 뷰 (공부 타이머 + 뽀모도로) ══ */
-.timer-wrap { flex: 1; overflow-y: auto; padding: 16px 20px; max-width: 640px; width: 100%; margin: 0 auto; -webkit-overflow-scrolling: touch; }
+/* ══ 타이머 뷰 (공부 타이머 + 뽀모도로) ══
+   #timerContainer는 renderTimer()가 innerHTML을 매번 새로 쓰는 대상이라 .view와 .timer-wrap
+   사이에 낀 "그냥 div"인데, 여기 flex:1+min-height:0을 주지 않으면 .timer-wrap의 flex:1/
+   overflow-y:auto가 부모가 flex 컨테이너가 아니라서 아무 효과가 없어(스크롤이 안 걸림) —
+   캘린더 뷰(.cal-wrap)는 이런 중간 래퍼 없이 .view 바로 아래라 문제가 없었다. */
+#timerContainer { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.timer-wrap {
+  flex: 1; overflow-y: auto; padding: 16px 20px; max-width: 640px; width: 100%; margin: 0 auto;
+  -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; min-height: 0;
+}
+.timer-col { display: flex; flex-direction: column; min-width: 0; }
 .timer-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 14px; }
 .timer-section-title { font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 12px; letter-spacing: .02em; }
 .timer-task-select {
@@ -786,6 +814,39 @@ button, .nav-btn, .app-tab, .modal-btn, .calc-btn,
 }
 .calc-btn-switch { background: rgba(79,142,247,.12); color: var(--accent); border: 1px solid rgba(79,142,247,.35); }
 .calc-btn-switch:hover { background: rgba(79,142,247,.2); }
+.lock-app-input-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.lock-app-input {
+  flex: 1; min-width: 0; background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-family: inherit; font-size: 13px; padding: 9px 12px; outline: none; transition: border-color .15s;
+}
+.lock-app-input:focus { border-color: var(--accent); }
+.lock-app-input::placeholder { color: var(--muted); }
+.lock-app-add-btn {
+  flex-shrink: 0; width: 44px; border-radius: 8px; border: none;
+  background: var(--accent); color: #fff; font-family: inherit; font-size: 18px; font-weight: 600; line-height: 1;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s;
+}
+.lock-app-add-btn:hover { background: #6ba3f9; }
+.lock-app-remove-btn {
+  flex-shrink: 0; width: 32px; border-radius: 8px; border: none;
+  background: transparent; color: var(--muted); font-family: inherit; font-size: 14px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .15s;
+}
+.lock-app-remove-btn:hover { color: var(--red); background: rgba(248,113,113,.12); }
+
+/* ══════════════════════════════
+   타이머 뷰 데스크탑 레이아웃 (≥900px)
+   좁은 화면에서 쓰던 세로 스택(모바일 폭 640px 고정)을 넓은 화면에서도 그대로 쓰면
+   화면 가운데 좁은 기둥 하나만 떠 있는 것처럼 보여서, 이 너비부터는 타이머를 왼쪽에
+   고정(sticky)하고 기록/허용 목록을 오른쪽 열로 배치하는 2단 레이아웃으로 바꾼다.
+══════════════════════════════ */
+@media (min-width: 900px) {
+  .timer-wrap { max-width: 1120px; flex-direction: row; align-items: flex-start; gap: 24px; padding: 28px 32px; }
+  .timer-col-main { flex: 0 0 400px; position: sticky; top: 0; }
+  .timer-col-side { flex: 1; min-width: 0; gap: 14px; }
+  .timer-display { font-size: 64px; }
+  .timer-section { padding: 24px 26px; }
+}
 
 /* ══════════════════════════════
    모바일 반응형 (≤640px)
@@ -1548,6 +1609,9 @@ function renderStats() {
 ══════════════════════════════════════════════════════ */
 const TIMER_RUNSTATE_KEY = 'studyTimerRunState_v1';
 const POMO_SETTINGS_KEY  = 'studyPomodoroSettings_v1';
+const STUDY_LOCK_APPS_KEY    = 'studyLockAllowedDesktopApps_v1';
+const STUDY_LOCK_SITES_KEY   = 'studyLockAllowedSites_v1';
+const STUDY_LOCK_CONFIG_TS_KEY = 'studyLockConfig_ts';
 
 let studyLog = {};
 try { studyLog = JSON.parse(localStorage.getItem('studyTimerLog_v1') || '{}'); }
@@ -1556,6 +1620,17 @@ catch (e) { console.error('[localStorage] 공부기록 읽기 실패', e); study
 let pomoSettings = { enabled: false, studyMin: 25, breakMin: 5 };
 try { pomoSettings = { ...pomoSettings, ...JSON.parse(localStorage.getItem(POMO_SETTINGS_KEY) || '{}') }; }
 catch (e) { /* 손상 시 기본값 유지 */ }
+
+// 공부 타이머가 "공부" 페이즈로 진행 중일 때(휴식 중엔 아님) 관리앱(phone-lock 데스크탑/안드로이드)이
+// 전체화면 잠금을 걸고, 여기 등록된 실행파일명/사이트만 예외적으로 열 수 있게 허용하는 목록.
+// 실행파일명은 데스크탑 전용(안드로이드는 자체 설치 앱 목록에서 고름), 사이트는 두 플랫폼이 공유한다.
+let studyLockApps = [];
+try { studyLockApps = JSON.parse(localStorage.getItem(STUDY_LOCK_APPS_KEY) || '[]'); }
+catch (e) { studyLockApps = []; }
+
+let studyLockSites = [];
+try { studyLockSites = JSON.parse(localStorage.getItem(STUDY_LOCK_SITES_KEY) || '[]'); }
+catch (e) { studyLockSites = []; }
 
 // timerRun: null(정지) 또는
 // { taskName, mode:'plain'|'pomodoro', phase:'study'|'break', phaseStartedAt, phaseEndAt(pomodoro만), cycleCount }
@@ -1580,6 +1655,59 @@ function savePomoSettings() {
   catch (e) { console.error('[localStorage] 뽀모도로 설정 저장 실패', e); }
 }
 
+function getLocalStudyLockConfigTs() { return parseInt(localStorage.getItem(STUDY_LOCK_CONFIG_TS_KEY) || '0', 10); }
+function setLocalStudyLockConfigTs(ts) { localStorage.setItem(STUDY_LOCK_CONFIG_TS_KEY, String(ts)); }
+function saveStudyLockAppsLocal() {
+  try { localStorage.setItem(STUDY_LOCK_APPS_KEY, JSON.stringify(studyLockApps)); }
+  catch (e) { console.error('[localStorage] 허용 프로그램 목록 저장 실패', e); }
+}
+function saveStudyLockSitesLocal() {
+  try { localStorage.setItem(STUDY_LOCK_SITES_KEY, JSON.stringify(studyLockSites)); }
+  catch (e) { console.error('[localStorage] 허용 사이트 목록 저장 실패', e); }
+}
+
+function timerAddLockApp() {
+  const input = document.getElementById('timerLockAppInput');
+  if (!input) return;
+  const name = input.value.trim();
+  if (!name) return;
+  if (studyLockApps.some(a => a.toLowerCase() === name.toLowerCase())) { showToast('이미 등록된 프로그램입니다'); return; }
+  studyLockApps.push(name);
+  input.value = '';
+  setLocalStudyLockConfigTs(Date.now());
+  saveStudyLockAppsLocal();
+  pushStudyLockConfig();
+  renderTimer();
+}
+function timerRemoveLockApp(idx) {
+  studyLockApps.splice(idx, 1);
+  setLocalStudyLockConfigTs(Date.now());
+  saveStudyLockAppsLocal();
+  pushStudyLockConfig();
+  renderTimer();
+}
+
+function timerAddLockSite() {
+  const input = document.getElementById('timerLockSiteInput');
+  if (!input) return;
+  const domain = input.value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  if (!domain) return;
+  if (studyLockSites.includes(domain)) { showToast('이미 등록된 사이트입니다'); return; }
+  studyLockSites.push(domain);
+  input.value = '';
+  setLocalStudyLockConfigTs(Date.now());
+  saveStudyLockSitesLocal();
+  pushStudyLockConfig();
+  renderTimer();
+}
+function timerRemoveLockSite(idx) {
+  studyLockSites.splice(idx, 1);
+  setLocalStudyLockConfigTs(Date.now());
+  saveStudyLockSitesLocal();
+  pushStudyLockConfig();
+  renderTimer();
+}
+
 function addStudyLogEntry(taskName, seconds) {
   if (!taskName || seconds <= 0) return;
   const now = new Date();
@@ -1594,8 +1722,7 @@ function addStudyLogEntry(taskName, seconds) {
 function formatTimerDuration(totalSeconds) {
   const s = Math.max(0, Math.round(totalSeconds));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
-  return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
 }
 
 function timerToggleMode() {
@@ -1621,10 +1748,10 @@ function timerStart() {
       phaseStartedAt: now, phaseEndAt: now + pomoSettings.studyMin * 60000,
       cycleCount: 1
     };
-    pushPomodoroStatus(false, 0);
   } else {
     timerRun = { taskName, mode: 'plain', phase: 'study', phaseStartedAt: now };
   }
+  pushPomodoroStatus(false, 0, true);
   saveTimerRunState();
   renderTimer();
 }
@@ -1635,7 +1762,7 @@ function timerStop() {
     const elapsedSec = (Date.now() - timerRun.phaseStartedAt) / 1000;
     addStudyLogEntry(timerRun.taskName, elapsedSec);
   }
-  if (timerRun.mode === 'pomodoro') pushPomodoroStatus(false, 0);
+  pushPomodoroStatus(false, 0, false);
   timerRun = null;
   saveTimerRunState();
   renderTimer();
@@ -1655,14 +1782,14 @@ function timerSwitchPhase() {
     timerRun.phaseStartedAt = now;
     timerRun.phaseEndAt = now + pomoSettings.breakMin * 60000;
     timerRun.breakExtraUsed = false;
-    pushPomodoroStatus(true, timerRun.phaseEndAt);
+    pushPomodoroStatus(true, timerRun.phaseEndAt, false);
     showToast('☕ 휴식 모드로 전환했습니다');
   } else {
     timerRun.phase = 'study';
     timerRun.phaseStartedAt = now;
     timerRun.phaseEndAt = now + pomoSettings.studyMin * 60000;
     timerRun.cycleCount = (timerRun.cycleCount || 1) + 1;
-    pushPomodoroStatus(false, 0);
+    pushPomodoroStatus(false, 0, true);
     showToast('📚 공부 모드로 전환했습니다');
   }
   saveTimerRunState();
@@ -1676,7 +1803,7 @@ function timerExtendBreak() {
   if (timerRun.breakExtraUsed) return;
   timerRun.breakExtraUsed = true;
   timerRun.phaseEndAt = Date.now() + 5 * 60000;
-  pushPomodoroStatus(true, timerRun.phaseEndAt);
+  pushPomodoroStatus(true, timerRun.phaseEndAt, false);
   saveTimerRunState();
   showToast('⏰ 5분만 더 휴식합니다');
   renderTimer();
@@ -1691,7 +1818,7 @@ function timerForceSwitchToStudy() {
   timerRun.phaseEndAt = now + pomoSettings.studyMin * 60000;
   timerRun.cycleCount = (timerRun.cycleCount || 1) + 1;
   timerRun.breakExtraUsed = false;
-  pushPomodoroStatus(false, 0);
+  pushPomodoroStatus(false, 0, true);
   saveTimerRunState();
   showToast('⏰ 휴식 시간이 끝나 공부 모드로 자동 전환되었습니다');
   renderTimer();
@@ -1768,6 +1895,7 @@ function renderTimer() {
 
   container.innerHTML = `
     <div class="timer-wrap">
+      <div class="timer-col timer-col-main">
       <div class="timer-section">
         <div class="timer-section-title">⏱️ 공부 타이머</div>
         ${tasks.length ? `
@@ -1798,7 +1926,9 @@ function renderTimer() {
           </div>
         ` : `<div class="empty-state" style="padding:30px 0;"><div class="icon">⏱️</div><p>캘린더에 오늘 일정을 추가하면<br>타이머를 사용할 수 있습니다</p></div>`}
       </div>
+      </div>
 
+      <div class="timer-col timer-col-side">
       <div class="timer-section">
         <div class="timer-section-title">📊 오늘의 공부 기록</div>
         ${logRows ? `
@@ -1806,6 +1936,41 @@ function renderTimer() {
             ${logRows}
             <div class="study-log-row total"><span class="name">합계</span><span class="dur">${formatTimerDuration(totalSec)}</span></div>
           </div>` : `<div class="empty-state" style="padding:24px 0;"><div class="icon">📖</div><p>아직 오늘 기록된 공부 시간이 없습니다</p></div>`}
+      </div>
+
+      <div class="timer-section">
+        <div class="timer-section-title">🔒 공부 중 허용 프로그램</div>
+        <p style="font-size:12px;color:var(--muted);margin:-6px 0 12px;">공부 페이즈가 진행 중일 때만(휴식 중엔 아님) 데스크탑·스마트폰이 잠기고, 여기 등록한 프로그램만 열 수 있습니다.</p>
+        <div class="lock-app-input-row">
+          <input type="text" class="lock-app-input" id="timerLockAppInput" placeholder="예: chrome.exe" onkeydown="if(event.key==='Enter')timerAddLockApp()">
+          <button class="lock-app-add-btn" onclick="timerAddLockApp()" aria-label="추가">+</button>
+        </div>
+        ${studyLockApps.length ? `
+          <div class="study-log-list">
+            ${studyLockApps.map((name, idx) => `
+              <div class="study-log-row">
+                <span class="name">${esc(name)}</span>
+                <button class="lock-app-remove-btn" onclick="timerRemoveLockApp(${idx})" aria-label="삭제">✕</button>
+              </div>`).join('')}
+          </div>` : `<div class="empty-state" style="padding:16px 0;"><p>등록된 허용 프로그램이 없습니다</p></div>`}
+      </div>
+
+      <div class="timer-section">
+        <div class="timer-section-title">🌐 공부 중 허용 사이트</div>
+        <p style="font-size:12px;color:var(--muted);margin:-6px 0 12px;">데스크탑·안드로이드가 공유하는 목록입니다. 공부 페이즈 중엔 브라우저를 열어도 여기 등록한 사이트만 접속할 수 있습니다.</p>
+        <div class="lock-app-input-row">
+          <input type="text" class="lock-app-input" id="timerLockSiteInput" placeholder="예: google.com" onkeydown="if(event.key==='Enter')timerAddLockSite()">
+          <button class="lock-app-add-btn" onclick="timerAddLockSite()" aria-label="추가">+</button>
+        </div>
+        ${studyLockSites.length ? `
+          <div class="study-log-list">
+            ${studyLockSites.map((domain, idx) => `
+              <div class="study-log-row">
+                <span class="name">${esc(domain)}</span>
+                <button class="lock-app-remove-btn" onclick="timerRemoveLockSite(${idx})" aria-label="삭제">✕</button>
+              </div>`).join('')}
+          </div>` : `<div class="empty-state" style="padding:16px 0;"><p>등록된 허용 사이트가 없습니다</p></div>`}
+      </div>
       </div>
     </div>`;
 }
@@ -1885,14 +2050,16 @@ function teardownFirebase() {
     if (fbCalRef)  { fbCalRef.off(); }
     if (fbCalcRef) { fbCalcRef.off(); }
     if (fbStudyLogRef) { fbStudyLogRef.off(); }
+    if (fbStudyLockRef) { fbStudyLockRef.off(); }
   }
   if (firebaseApp) { try { firebaseApp.delete(); } catch {} }
   firebaseApp = null; db = null;
-  fbConnRef = null; fbCalRef = null; fbCalcRef = null; fbStudyLogRef = null;
+  fbConnRef = null; fbCalRef = null; fbCalcRef = null; fbStudyLogRef = null; fbStudyLockRef = null;
   fbCalListenerAttached = false;
   fbCalcListenerAttached = false;
   fbStudyLogListenerAttached = false;
-  clearTimeout(_calPushTimer); clearTimeout(_calcPushTimer); clearTimeout(_studyLogPushTimer);
+  fbStudyLockListenerAttached = false;
+  clearTimeout(_calPushTimer); clearTimeout(_calcPushTimer); clearTimeout(_studyLogPushTimer); clearTimeout(_studyLockPushTimer);
 }
 
 function disconnectFirebase() {
@@ -1937,6 +2104,7 @@ function initFirebase() {
           if (!fbCalListenerAttached)  { fbCalListenerAttached  = true; subscribeCalendarData(); }
           if (!fbCalcListenerAttached) { fbCalcListenerAttached = true; subscribeCalcData(); }
           if (!fbStudyLogListenerAttached) { fbStudyLogListenerAttached = true; subscribeStudyLogData(); }
+          if (!fbStudyLockListenerAttached) { fbStudyLockListenerAttached = true; subscribeStudyLockConfig(); }
         } else {
           setSyncStatus('offline', '오프라인 (로컬 저장됨)');
         }
@@ -2179,13 +2347,62 @@ function pushStudyLogToFirebase() {
 // 지정된 그룹의 잠금을 휴식 시간 동안만 해제하는 데 쓴다. phaseEndAt은
 // "이 시각이 지나면 무효로 간주"하는 안전장치용 — 앱이 갑자기 닫혀도
 // 관리앱 쪽에서 영구 해제 상태로 남지 않도록 하기 위함(2단계에서 사용).
-function pushPomodoroStatus(breakActive, phaseEndAt) {
+// timerActive는 "지금 공부 페이즈가 진행 중인지"를 나타낸다(일반 모드는 항상 공부로 취급,
+// 뽀모도로는 휴식 페이즈에선 false) — 관리앱이 이 값이 true인 동안만 전체화면 공부 잠금
+// (허용 프로그램 목록 제외)을 건다.
+function pushPomodoroStatus(breakActive, phaseEndAt, timerActive) {
   if (!db) return;
   db.ref(`users/${FB_USER}/pomodoro`).set({
     breakActive: !!breakActive,
     phaseEndAt: phaseEndAt || 0,
+    timerActive: !!timerActive,
     _ts: Date.now()
   }).catch(err => fbReportError('뽀모도로 상태 저장 실패', err));
+}
+
+/* ── 공부 잠금 허용 프로그램/사이트 목록 Firebase 동기화 ── */
+let fbStudyLockRef = null;
+let fbStudyLockListenerAttached = false;
+let _studyLockPushTimer = null;
+
+function subscribeStudyLockConfig() {
+  if (!db) return;
+  fbStudyLockRef = db.ref(`users/${FB_USER}/studyLockConfig`);
+  fbStudyLockRef.on('value', snap => {
+    const data = snap.val();
+    const remoteTs = (data && data._ts) || 0;
+    const localTs = getLocalStudyLockConfigTs();
+    if (remoteTs > localTs) {
+      clearTimeout(_studyLockPushTimer);
+      const remoteApps = (data && data.allowedDesktopApps) || [];
+      const remoteSites = (data && data.allowedSites) || [];
+      let changed = false;
+      if (JSON.stringify(remoteApps) !== JSON.stringify(studyLockApps)) {
+        studyLockApps = remoteApps;
+        saveStudyLockAppsLocal();
+        changed = true;
+      }
+      if (JSON.stringify(remoteSites) !== JSON.stringify(studyLockSites)) {
+        studyLockSites = remoteSites;
+        saveStudyLockSitesLocal();
+        changed = true;
+      }
+      if (changed) renderTimer();
+      setLocalStudyLockConfigTs(remoteTs);
+    } else if (localTs > remoteTs) {
+      pushStudyLockConfig();
+    }
+  }, err => fbReportError('공부 잠금 설정 동기화 오류', err));
+}
+
+function pushStudyLockConfig() {
+  if (!db) return;
+  const ts = getLocalStudyLockConfigTs() || Date.now();
+  clearTimeout(_studyLockPushTimer);
+  _studyLockPushTimer = setTimeout(() => {
+    db.ref(`users/${FB_USER}/studyLockConfig`).set({ allowedDesktopApps: studyLockApps, allowedSites: studyLockSites, _ts: ts })
+      .catch(err => fbReportError('공부 잠금 설정 저장 실패', err));
+  }, CALC_PUSH_DEBOUNCE_MS);
 }
 
 /* ══════════════════════════════════════════════════════
