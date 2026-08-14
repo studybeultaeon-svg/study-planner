@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "폰컨트롤 사이트 차단",
+  "version": "1.0.0",
+  "description": "폰컨트롤 데스크탑 앱과 연동해서 그룹에 등록한 사이트를 차단/확인합니다.",
+  "permissions": ["webNavigation", "alarms", "tabs", "storage"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["config.js", "theme.js", "quotes.js", "overlay.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

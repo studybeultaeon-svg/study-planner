@@ -1,0 +1,30 @@
+# Build outputs
+**/build/
+**/bin/
+**/out/
+
+# Gradle
+**/.gradle/
+gradle-app.setting
+
+# IDE
+**/.idea/
+*.iml
+.vscode/
+
+# Local machine-specific config (SDK path etc.)
+**/local.properties
+
+# Android
+**/*.apk
+**/*.aab
+
+# Desktop packaging outputs
+phone-lock-desktop/packaging/*.msi
+phone-lock-desktop/packaging/*.exe
+**/*.ico.bak
+
+# OS/editor cruft
+Thumbs.db
+.DS_Store
+*.log

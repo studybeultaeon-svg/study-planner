@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>잠김</title>
+  <style>
+    /* 실행확인(confirm.html)과 같은 디자인 톤. 데스크탑 설정의 테마 3종을 그대로 따라간다 —
+       CSS 변수는 theme.js가 /theme API로 채운다(2026-08-14). :root 기본값은 앱 기본 테마(라이트+그린). */
+    :root {
+      --bg: #FAFBF6; --panel: #FFFFFF; --text: #20261A; --muted: #6B7566;
+      --border: #D9E2CB; --accent: #8BC34A; --on-accent: #20261A;
+    }
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      text-align: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    p#message { font-size: 16px; color: var(--muted); margin-bottom: 32px; }
+    .buttons { display: flex; gap: 16px; }
+    button {
+      font-size: 16px;
+      padding: 10px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    /* "진행"(장식용, 아무 반응 없음)은 테두리만, "중단"(나가기)은 accent 색으로 채워진 버튼 —
+       앱/데스크탑 프로그램 차단 화면과 동일한 배치. */
+    #yes { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    #no { background: var(--accent); border: none; color: var(--on-accent); }
+  </style>
+</head>
+<body>
+  <h1 id="title"></h1>
+  <p id="message"></p>
+  <div class="buttons">
+    <button id="yes">진행</button>
+    <button id="no">중단</button>
+  </div>
+  <script src="config.js"></script>
+  <script src="theme.js"></script>
+  <script src="quotes.js"></script>
+  <script src="blocked.js"></script>
+</body>
+</html>

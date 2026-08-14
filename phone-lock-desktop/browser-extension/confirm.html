@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>실행 확인</title>
+  <style>
+    /* 모바일/데스크탑 앱 실행확인(ConfirmScreen)과 동일한 디자인 톤. 28차에 다크 팔레트로 통일했다가
+       35차엔 확장만 그대로 남겨뒀었는데, 이번엔 데스크탑 설정의 테마 3종을 그대로 따라가도록
+       CSS 변수화(theme.js가 /theme API로 받아온 값을 여기 채운다, 2026-08-14). :root 기본값은
+       테마 API 응답을 받기 전 잠깐 보일 화면을 위한 것 — 앱 기본 테마(라이트+그린)와 동일. */
+    :root {
+      --bg: #FAFBF6; --panel: #FFFFFF; --text: #20261A; --muted: #6B7566;
+      --border: #D9E2CB; --accent: #8BC34A; --on-accent: #20261A;
+    }
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      text-align: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    h1 { font-size: 30px; line-height: 1.4; max-width: 560px; margin-bottom: 32px; }
+    .buttons { display: flex; gap: 16px; }
+    button {
+      font-size: 16px;
+      padding: 10px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    /* "진행"은 테두리만, "중단"은 accent 색으로 채워진 버튼 — 앱 실행확인과 동일한 배치. */
+    #yes { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    #yes:disabled { border-color: var(--border); color: var(--muted); cursor: not-allowed; }
+    #no { background: var(--accent); border: none; color: var(--on-accent); }
+    #hint { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 16px; display: none; }
+  </style>
+</head>
+<body>
+  <h1 id="title"></h1>
+  <p id="hint"></p>
+  <div class="buttons">
+    <button id="yes"></button>
+    <button id="no">중단</button>
+  </div>
+  <script src="config.js"></script>
+  <script src="theme.js"></script>
+  <script src="quotes.js"></script>
+  <script src="confirm.js"></script>
+</body>
+</html>

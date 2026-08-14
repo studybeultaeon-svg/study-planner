@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.PhoneLock" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.PhoneLock.Overlay" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

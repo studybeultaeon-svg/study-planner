@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">갓생살기종합세트</string>
+    <string name="accessibility_service_description">앱 사용 시간 제한과 실행 확인을 위해 현재 실행 중인 앱을 감지합니다.</string>
+    <string name="device_admin_description">앱을 쉽게 삭제하지 못하도록 보호합니다. 삭제하려면 먼저 이 권한을 해제해야 합니다.</string>
+    <string name="routine_widget_description">오늘의 루틴 체크리스트를 홈 화면에서 바로 확인/체크합니다.</string>
+</resources>

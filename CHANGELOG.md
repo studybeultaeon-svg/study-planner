@@ -1,0 +1,596 @@
+# CHANGELOG
+
+갓생살기종합세트(구 관리앱, phone-lock-android/desktop/browser-extension) 변경 이력. 날짜순 누적 기록, 삭제하지 않음.
+
+---
+
+## 2026-08-14 (56차 세션) — 안드로이드 루틴 알림 지연/누락 수정
+
+사용자 보고 "안드로이드 루틴 알림이 2분 정도 늦게 온다"로 시작 — 원인 하나를 고친 뒤, 추가로 요청받은 "다른 원인도 있는지" 점검에서 별개의 누락 원인을 하나 더 찾아 함께 수정했다.
+
+- **[Fixed] 루틴 알림이 정시보다 늦게(약 2분) 옴**: `RoutineAlarmScheduler.kt`가 52차에 배터리 절약을 위해 일부러 부정확 알람(`AlarmManager.setAndAllowWhileIdle`)을 썼는데, 이게 Doze 모드에서 시스템이 알람 전달을 지연시키는 정상 동작이었다. `setExactAndAllowWhileIdle`로 전환하되, `canScheduleExactAlarms()`로 권한(Android 13+ 기본 거부)을 확인해 없으면 기존 부정확 알람으로 자동 폴백하도록 `scheduleAlarm()` 헬퍼 신설(크래시 방지). `AndroidManifest.xml`에 `SCHEDULE_EXACT_ALARM` 권한 추가, 설정 화면 "권한 / 백그라운드 보호" 섹션에 "정확한 알람" 상태 표시+허용 버튼(`ACTION_REQUEST_SCHEDULE_EXACT_ALARM`) 신규.
+- **[Fixed] 다른 기기에서 만들거나 수정한 루틴은 알림이 아예 예약 안 됨**: `MainActivity.onCreate`가 앱 실행 시마다 `RoutineAlarmScheduler.rescheduleAll()`로 알림을 재예약하지만 이 함수는 로컬 Room DB만 본다 — Firebase 최신 데이터를 끌어오는 `syncRoutinesFromFirebase()`는 사용자가 "루틴" 탭 화면에 직접 들어갈 때만(`RoutineScreen.kt`의 `LaunchedEffect(Unit)`) 호출됐다. 즉 데스크탑 등 다른 기기에서 루틴을 추가/수정한 뒤 이 폰에서 "루틴" 탭을 한 번도 안 열면, 로컬 DB가 여전히 옛 상태라 그 루틴의 알림이 처음부터 예약조차 안 됐다. `MainActivity.onCreate`에서 `rescheduleAll()` 전에 `syncRoutinesFromFirebase()`를 먼저 호출하도록 수정 — 이제 "루틴" 탭을 안 열어도 앱만 켜면 최신 루틴이 반영되고 알림이 예약된다. 앱을 아예 안 켜는 경우까지 커버하는 백그라운드 주기적 동기화는 배터리/복잡도 트레이드오프 때문에 이번 범위에서 제외(사용자 확인).
+- **검증**: `assembleDebug --offline` BUILD SUCCESSFUL 확인(수정 2건 각각 별도 빌드) 후 안드로이드 APK 두 위치(AndroidBuilds + OneDrive 원본) 갱신. **실기기 미검증** — 정확한 알람 권한을 실제로 허용한 뒤 알림이 정시에 오는지, 데스크탑에서 루틴을 추가하고 폰 앱만 켰을 때(루틴 탭 안 열고) 그 루틴 알림이 실제로 오는지 확인 필요.
+
+---
+
+## 2026-08-14 (55차 세션) — 스누즈 중 그룹 설정 변경 자유화 + 스케줄/한도/실행확인 우선순위 정렬
+
+독립된 두 요청을 순서대로 처리했다.
+
+- **스누즈 진행 중엔 그룹 설정 변경이 회유 절차 없이 자유롭게 가능하도록 수정**: `LockEvaluator.detectWeakeningEdit()`가 스누즈 상태를 전혀 고려하지 않아서, 스누즈로 이미 모든 제한이 풀린 도중에도 그룹 편집 화면에서 설정을 약화시키면 여전히 회유 멘트 20개를 통과해야 했다. `isCurrentlyRestricting()`/`evaluate()`가 이미 쓰던 `!isForceEnabled(group) && isSnoozed(group)` 예외 패턴을 `detectWeakeningEdit()` 맨 앞에도 추가(기간 지정 자동 강화가 걸려있으면 예외는 적용 안 됨, 39~41차 우선순위 유지) — 양 플랫폼 `LockEvaluator.kt` 동일 적용.
+- **스케줄 => 일일 한도 => 실행 확인 우선순위 정렬**: 겹치는 관리 종류가 있을 때 기존엔 "실행 확인 필요 여부"를 스케줄/한도 잠금보다 먼저 판정해서, 스케줄 시간대나 한도 초과로 이미 막혀야 할 순간에도 확인창이 먼저 뜰 수 있었다. 안드로이드 `AppMonitorAccessibilityService.kt`(앱 판정 `tickInternal`, 사이트 판정 `checkSitesInternal`)와 데스크탑 `EnforcementService.kt`(`decide`)/`SiteEnforcement.kt`(`check`/`tick`) 총 4곳 모두 `evaluator.evaluate()`(스케줄/한도) 판정을 `evaluator.isConfirmActiveNow()`(실행확인) 판정보다 앞으로 재배치. 스케줄과 한도 사이의 순서는 `LockEvaluator.evaluate()`가 이미 스케줄을 먼저 검사하므로 손댈 필요 없었음.
+- **검증**: 양 플랫폼 컴파일(`assembleDebug --offline`/`createDistributable`) BUILD SUCCESSFUL 확인 후 안드로이드 APK 두 위치 갱신 + 데스크탑 표준 배포 절차(watchdog 비활성화→종료→robocopy FAILED 0 확인→재실행→watchdog 재활성화)로 재배포 완료. **두 변경 모두 실기기 미검증** — 스누즈 걸고 설정 변경이 즉시 되는지, 세 관리 종류가 겹칠 때 확인창 대신 차단화면이 뜨는지 확인 필요.
+
+---
+
+## 2026-08-14 (54차 세션) — 데스크탑 루틴 아이콘 동기화(사실은 로컬 영속화) 버그 수정
+
+사용자가 "데스크탑은 어째서 루틴 아이콘이 동기화가 안되는가"로 시작 — 조사 후 실제로는 Firebase 동기화는 정상이고 데스크탑 로컬 저장(`data.json`)이 icon을 저장 못 하는 문제였음을 확인, 이어서 사용자가 재현("추가 직후엔 잘 보이는데 앱을 껐다 켜면 사라짐")으로 근본 원인(LWW 타임스탬프 동일값 트랩)까지 정확히 특정.
+
+- **[Fixed] 데스크탑: 재시작하면 루틴 아이콘이 전부 사라짐(사실상 icon/notifyEnabled/startDate/endDate 4개 필드 전부)**: 52차에 `Routine`에 추가된 이 4개 필드가 Firebase 동기화 경로(`Repository.kt`의 `routinesToJsonArrays`/`routinesFromJsonArrays`)엔 정상 반영됐지만, 앱 자신의 로컬 영속화 파일인 `JsonStore.kt`의 루틴 save()/parse()엔 빠져 있었다(36차 `pomodoroModeEnabled`와 동일한 유형의 실수). `JsonStore.kt`에 4개 필드 모두 추가해 수정.
+- **원인 심화 확인 — 단순 필드 누락이 아니라 LWW 타임스탬프가 "우연히 일치"해서 자동 복구도 안 되는 상태였음**: `pushRoutinesToFirebase()`는 push 시점에 로컬 `routinesTs`도 원격과 같은 값으로 갱신한다. 로컬 파일 저장은 icon 없이 저장되지만 타임스탬프는 원격과 정확히 같은 값이 되어, 재시작 후 `syncRoutinesFromFirebase()`의 LWW 비교(`result.ts > data.routinesTs`/`data.routinesTs > result.ts`)가 둘 다 거짓이 되어(같은 값이라 어느 쪽도 "더 최신"이 아님) 영구히 재동기화가 안 일어나는 구조였다. Firebase REST API로 원격 26개 루틴의 icon이 전부 멀쩡함(`_ts`도 로컬과 정확히 동일)을 직접 확인해 원인 확정.
+- **복구**: 이미 icon이 빠진 채로 저장된 이번 기기의 로컬 `data.json`은 코드 수정만으론 스스로 복구되지 않으므로(위 트랩), 앱 종료 후 `routinesTs`를 0으로 강제 리셋 — 재실행 후 "루틴" 탭 진입 시 `syncRoutinesFromFirebase()`가 "원격이 더 최신"으로 판단해 Firebase의 정상 데이터를 다시 받아오도록 유도. 사용자가 icon 정상 표시를 직접 확인 완료.
+- **검증**: `AndroidBuilds\phone-lock-desktop`에서 `compileKotlin`/`createDistributable` BUILD SUCCESSFUL 확인 후 표준 배포 절차(watchdog 비활성화→프로세스 종료→robocopy→FAILED 0 확인→재실행→watchdog 재활성화)로 재배포, 사용자 실사용 확인까지 완료(이 세션은 드물게 실기기 검증까지 끝난 케이스).
+- 부가로 루틴 스트릭 알림 구조(데스크탑 30초 폴링 vs 안드로이드 `AlarmManager` 예약)를 설명 — 코드 변경 없음.
+
+---
+
+## 2026-08-14 (53차 세션) — 계산기 데이터 복구 + 회유 멘트/조롱조 문구 확장 + 테마 버그 전수 수정(위젯·브라우저 확장 포함) + 테마 5종 추가 + 루틴 알림 강화 + 루틴 내보내기·가져오기 + 태블릿 레이아웃 수정
+
+52차 세션 종료 시점에 미확인이던 "계산기 저장 항목이 안 돌아왔다"는 사용자 보고로 시작 — 이어서 세션 내내 여러 독립 요청을 순서대로 처리했다.
+
+- **[Fixed] 계산기 저장 항목/폴더 트리 Firebase 유실 복구**: 52차의 DB 버전업 재앙 때 `resetSyncTimestamps()` 수정이 배포되기 전, 안드로이드가 빈 로컬 계산기 데이터(`saved=[]`)를 그대로 Firebase에 푸시해 원격의 진짜 저장 데이터(34개 항목)를 덮어썼던 것으로 확인(REST API 직접 조회로 원인 특정, [[feedback_firebase_debug_via_rest]] 패턴 재사용). 데스크탑 로컬 `data.json`엔 이 사고 이전 시점의 원본이 그대로 남아있어(동기화 타임스탬프가 우연히 원격과 일치해 이후 동기화가 트리거되지 않았음) 이를 소스로 복구 — 데스크탑 로컬 타임스탬프를 강제로 최신화해 앱이 정상 push 경로로 원격에 재업로드하게 했으나, `savedTs` 필드 자체는 갱신되지 않는 걸 확인해 이 필드만 REST PATCH로 직접 최신화. 이후 안드로이드가 계산기 탭 재진입 시 정상 재동기화되어 34개 항목 전부 복구 확인. `savedFolderTree`는 여전히 원격에 없지만 `healCalcFolderPaths()`(31차)가 항목의 `folderPath`로부터 자동 재구성하므로 기능상 문제없음.
+- **회유 절차 멘트 20개를 조롱조/놀림조로 전면 교체**: `PersuasionMessages.kt`(양 플랫폼, 그룹/루틴 설정 약화·삭제 시 뜨는 절차)의 정중한 반성 유도 문구 20개를 `MotivationalQuotes.kt`와 같은 계열의 조롱조로 교체 — 앞부분(1~5)은 가벼운 놀림, 중반(6~15)은 비아냥, 후반(16~20)은 독한 팩폭으로 갈수록 세지도록 순서를 짜고, 마지막 문구는 기존처럼 "최종 결정이야?"로 마무리.
+- **조롱조 문구 25개 추가(149→174개)**: `MotivationalQuotes.kt`(양 플랫폼)+브라우저 확장 `quotes.js`에 5단계(순한~극한) 각 5개씩 추가, 세 파일 내용이 정확히 동일함을 각 tier 항목 수(30/54/30/30/30) 비교로 확인.
+- **[Fixed] 테마 버그: 실행확인/차단 화면 "중단" 버튼이 테마 바꿔도 초록 고정**: 원인은 `secondaryContainerColor = Color(0xFF8BC34A)`(라이트+그린 하드코딩) — `ConfirmOpenActivity.kt`/`BlockActivity.kt`(안드로이드), `ConfirmScreen.kt`/`BlockScreen.kt`(데스크탑) 4곳을 `MaterialTheme.colorScheme.primary`로 교체. 같은 유형의 버그를 전수 검토해 안드로이드 "사용 중" 접근성 오버레이(`AppMonitorAccessibilityService.kt`)와 데스크탑 코너 위젯(`UsageOverlayContent.kt`, `PhoneLockTheme`로 감싸지지 않았던 것도 함께 수정)의 타이머 색상도 초록 고정이었던 걸 찾아 함께 수정. 계산기/캘린더/루틴 통계의 빨강·초록·노랑 등은 의미론적 색상(요일/완료상태)이라 49차 결정대로 테마와 무관하게 유지.
+- **안드로이드 홈스크린 위젯 테마 연동**: RemoteViews는 Compose 테마를 못 써서 XML에 라이트+그린 색이 고정돼 있던 걸, 테마 3종별 드로어블(배경/아이템행/체크·미체크 아이콘) 세트를 만들어 `RoutineWidgetProvider`/`RoutineWidgetFactory`가 런타임에 현재 테마에 맞는 리소스를 선택하도록 변경. 설정 화면 테마 버튼 클릭 시 `RoutineWidgetProvider.updateAll()`도 함께 호출해 위젯이 즉시 갱신되게 함.
+- **브라우저 확장 프로그램 테마 연동 신규**: 그동안 확장 전체가 다크+블루 고정이었던 것(35차 결정으로 범위 밖 취급)을 이번에 3종 테마 연동으로 확장 — 데스크탑 로컬 API에 `/theme` 엔드포인트 신설(`themeMode` 반환, `overlay-status`와 동일하게 openCors), 신규 `theme.js`가 3개 팔레트를 CSS 변수로 매핑. `confirm.html`/`blocked.html`/`onboarding.html`을 하드코딩 색상에서 CSS 변수로 전환(:root 기본값은 앱 기본 테마인 라이트+그린), `overlay.js`(사용 중 오버레이)도 팔레트를 받아와 적용(30초마다 재확인). 데스크탑 앱과 통신 안 되면 라이트+그린으로 안전하게 폴백.
+- **루틴 알림 플로팅 바(헤드업) + 진동 추가**: 기존 `IMPORTANCE_DEFAULT`(알림창에 조용히 쌓임) 채널을 `IMPORTANCE_HIGH`(화면 위 플로팅)로 바꾸고 진동 패턴 추가 — 기존 채널은 안드로이드 정책상 앱이 사후에 importance를 못 올려서 새 채널 ID(`routine_reminder_v2`)를 발급하는 방식으로 우회, `VIBRATE` 권한 매니페스트에 추가. 데스크탑은 진동 개념이 없고 트레이 풍선 알림은 이미 플로팅이라 변경 없음.
+- **루틴 파일 내보내기/가져오기 신규**: 그룹 백업(안드로이드)/전체 백업(데스크탑)과 별개로 루틴 목록+체크 기록만 JSON으로 내보내거나 불러올 수 있는 기능을 양 플랫폼 설정 화면에 추가. Firebase 동기화 문서(`routines`+`routineLogs`)와 동일 스키마를 재사용, 가져오기는 현재 데이터를 전체 대체 후 Firebase에도 재푸시(확인 다이얼로그 필수).
+- **테마 5종 추가(3종→8종)**: 라벤더·퍼플/민트·틸/로즈·핑크(라이트 3종), 미드나잇·퍼플/포레스트·그린(다크 2종) 신규 — `ThemeMode`/`PhoneLockPalette`(양 플랫폼 `Color.kt`)와 브라우저 확장 `theme.js`의 `THEME_PALETTES`에 동일 값으로 추가, `THEME_DISPLAY_NAMES` 신규(설정 화면이 하드코딩 3개 대신 이 목록을 순회하도록 리팩터링).
+- **[Fixed] 안드로이드 설정 화면 테마 선택 UI가 8종으로 늘며 화면 밖으로 잘림**: 3개 전용으로 짠 고정 `Row`가 8개 `FilterChip`을 못 담아 찌부러지던 문제 — 계산기 연동 업무 선택 버튼(50차)과 동일하게 `FlowRow`로 교체해 자동 줄바꿈되도록 수정(데스크탑도 동일하게 통일, 8개는 데스크탑 창 폭에선 아직 안 잘리지만 일관성을 위해 함께 적용).
+- **[Fixed] 태블릿에서 공부앱/루틴앱 통계 탭의 "최근 30일 완료 추이" 막대그래프가 좁게 뭉쳐 보임**: 50차에 폰 화면 대응으로 막대를 고정폭(20dp)+가로스크롤로 바꿨는데, 이 처리가 태블릿에도 그대로 적용돼 넓은 화면에서도 그래프가 작게 뭉친 채 스크롤바만 뜨는 상태였다 — `InterstitialScreen.kt`의 태블릿 분기(화면폭 600dp 이상)와 동일한 기준으로 `StudyStatsScreen.kt`/`RoutineScreen.kt`(안드로이드) 양쪽에 태블릿 분기 추가, 태블릿에선 스크롤 없이 `weight(1f)` 균등분할로 폭을 꽉 채움(데스크탑은 원래도 이 방식).
+- **검증**: 매 기능 단위로 양 플랫폼 컴파일(`assembleDebug --offline`/`compileKotlin`) 확인 후 안드로이드 APK 두 위치 갱신 + 데스크탑 표준 배포 절차(watchdog 비활성화→종료→robocopy FAILED 0 확인→재실행→watchdog 재활성화) 총 7회 반복. 브라우저 확장 CSS 변수 폴백은 Browser 미리보기로 콘솔 에러 없음까지만 확인(로컬 API 응답 자체는 샌드박스에서 검증 불가). **이번 세션 신규 기능 전부 실기기 미검증** — 계산기 복구만 사용자가 직접 확인 완료.
+
+---
+
+## 2026-08-14 (52차 세션) — 릴스/쇼츠 감지 버그 수정 + 루틴 순서/복사 + 아이콘/알림/기간 설정 + 심각한 동기화 버그 발견·수정
+
+이어서 진행 요청으로 시작 — HANDOFF.md 최우선 버그 조사, 그리고 사용자가 이번 세션에 새로 요청한 두 기능(루틴 순서 변경, 루틴/그룹 복사)과 지난 세션 종료 시 IDEAS.md에 남겨둔 4개 요청(아이콘/알림/스트릭알림/기간설정)을 순서대로 처리했다. 마지막에 사용자가 "모바일 동기화가 안 된다"고 보고해 조사하다 이번 세션 자체가 유발한 심각한 동기화 버그를 발견해 수정했다.
+
+- **[Fixed] 안드로이드 릴스/쇼츠 감지 차단 미작동**: 원인은 `AppMonitorAccessibilityService.kt`의 `REELS_KEYWORDS`/`SHORTS_KEYWORDS` 문자열이 파일 바이트 단위로 깨져 있던 것(mojibake) — 정상 한글로 교체. [[BUGS.md]] 52차 참고.
+- **루틴 순서 변경(▲/▼) + 루틴/그룹 복사 신규**: 계산기/캘린더와 같은 ▲/▼ 버튼 패턴으로 구현(사용자 확인 후 결정, 진짜 드래그는 프로젝트에 전례 없어 제외) — 시간대 없는 루틴에만 표시(`swapRoutineOrder` 신규, 데스크탑/안드로이드 대칭). 루틴 편집 다이얼로그에 "루틴 복사" 버튼, 그룹 편집 화면에 "복사" 버튼 신규(`copyRoutine`/`copyGroup`, 양 플랫폼). [[DECISIONS.md]] 52차 참고.
+- **루틴 상징 아이콘**: `Routine.icon`(이모지, 선택) 필드 — 편집 다이얼로그에 텍스트필드+12개 quick-pick 팔레트, 오늘 탭/통계/안드로이드 홈위젯 목록에 표시.
+- **루틴 알림 설정**: 루틴별 `notifyEnabled`+`timeSlot` 기준 리마인드 — 안드로이드는 `AlarmManager.setAndAllowWhileIdle`(특수 권한 불필요)로 예약, 부팅 시(`RoutineReminderReceiver`의 `BOOT_COMPLETED`)와 앱 실행 시(`MainActivity.onCreate`) 재예약. 데스크탑은 30초 주기 틱(`RoutineNotifier.tick`)에서 현재 시각과 직접 비교, 기존 트레이 아이콘으로 풍선 알림(`DesktopNotifier`+`TrayState.sendNotification`, 새 TrayIcon 추가 안 함).
+- **스트릭 기반 응원/비판/조롱 알림**: 설정 화면 전역 토글("스트릭 알림 받기") — 매일 초기화 시각에 어제 스트릭을 계산해 끊겼으면 비판, 쌓이고 있으면 응원 톤 알림(`RoutineQuotes.kt`, 42차 `MotivationalQuotes.kt`와는 별개의 작은 세트, 양 플랫폼 대칭).
+- **루틴 기간 설정**: `Routine.startDate`/`endDate`(yyyy-MM-dd, 선택) — `RoutineEngine.isScheduledOn`(양 플랫폼 4곳: `RoutineEngine.kt`/`RoutineScreen.kt`/안드로이드 `RoutineWidgetFactory.kt`)이 daysMask와 함께 기간도 검사하도록 확장.
+- **Room DB 26→27 (안드로이드)**: 위 아이콘/알림/기간 필드 4개를 한 번에 추가해 스키마 변경(=destructive migration)을 1회로 최소화. `PreMigrationBackup.TABLES`는 이미 `routine`/`routine_log` 포함(48차에 확인됨), 추가 변경 불필요.
+- **[Fixed, Critical] 캘린더/루틴/계산기 동기화가 Room 버전업 후 조용히 멈추는 버그 발견·수정**: 위 DB 버전업을 실제로 사용자 폰에 배포한 뒤 "모바일 동기화가 안 된다"는 보고를 받고 조사 — `fallbackToDestructiveMigration()`이 Room만 지우고 `AppPreferences`(SharedPreferences)에 저장된 동기화 타임스탬프 6종(`calendarTs`/`routinesTs`/`calcTasksTs`/`calcSavedTs`/`calcFolderTs`/`calcFolderOrderTs`)은 살아남아서, 다음 동기화의 LWW 비교가 "로컬이 이미 최신"으로 오판하고 아무것도 다시 안 받아오는 버그였다. Firebase REST API로 원격 데이터가 멀쩡함을 직접 확인(루틴 22개/캘린더 43일치/계산기 데이터 전부 존재) — `AppPreferences.resetSyncTimestamps()` 신규 + `PreMigrationBackup.backupIfVersionChanged()`가 백업을 만든 직후 호출해서 강제로 재동기화되도록 수정.
+- **그룹 데이터 복구 기능 신규**: 그룹(차단 대상 앱/사이트 목록)은 애초에 Firebase에 동기화되지 않는 데이터라 이번 DB 초기화로 실제로 유실됨(사용자 확인) — `PreMigrationBackup`이 자동으로 남긴 raw SQLite 백업 JSON에서 그룹/멤버/사이트/사용기록/실행확인레벨/카운터를 복원하는 `PhoneLockRepository.restoreGroupsFromBackup()` + 설정 화면 "⚠ 그룹 데이터 복구" 카드(백업 있을 때만 노출) 신규. [[BUGS.md]] 52차 참고 — **사용자의 실제 복구 결과는 세션 종료 시점까지 미확인, 다음 세션 최우선**.
+- **검증**: 매 기능 단위로 양 플랫폼 `compileKotlin`/`compileDebugKotlin` BUILD SUCCESSFUL 반복 확인. 안드로이드는 기능 추가할 때마다 APK 재빌드+두 위치(AndroidBuilds/OneDrive) 갱신을 4회 반복. 데스크탑은 이 세션 환경에 jpackage 포함 JDK가 없어 Temurin JDK 21.0.12를 사용자 승인 받아 다운로드([[project_build_toolchain_missing]] 참고) 후 `createDistributable`+표준 배포 절차(watchdog 비활성화→프로세스 종료→robocopy FAILED 0 확인→jar 해시 일치 확인→재실행→watchdog 재활성화)로 2회 재배포. 실기기(사용자 폰) 검증은 그룹 복구 기능만 아직 진행 중 — 나머지(순서변경/복사/아이콘/알림/기간설정)는 전부 미검증.
+
+---
+
+## 2026-08-13 (50차 세션) — 루틴앱 v2 개편 + 계산기-캘린더 연동 이식 + 8단계 무지개 회독 + 루틴 Firebase 동기화 + 안드로이드 홈 위젯
+
+49차까지 완료된 루틴앱 v1/공부앱을 실사용 관점에서 다듬은 대규모 세션. 사용자 피드백을 받는 즉시 순서대로 반영했다.
+
+- **루틴 스트릭 방어권 주 2회로 고정**: "일정 하나만 못해도 스트릭이 깨지는" 문제를 방지하기 위해, 편집 화면에서 노출하던 방어권 종류/횟수 커스텀 UI를 제거하고 `RoutineEngine`이 항상 "주 2회"를 기본 적용하도록 고정. 편집 다이얼로그(`RoutineEditScreen.kt`)엔 방어권이 항상 켜져 있다는 안내 문구만 남김.
+- **첫 화면 큰 제목 헤더 추가**: 다른 화면들처럼 좌상단에 큰 글자로 화면 이름을 띄워달라는 요청으로 `GroupListScreen.kt`(양 플랫폼)에 "🗂️ 그룹" headline 추가.
+- **테마 선택 기능 신설**: 설정에 테마 선택 `SectionCard` 추가, 라이트+그린(49차 기본)/다크+파랑(28~48차 옛 테마)/화이트+오렌지(최초 테마) 3종 중 고를 수 있게 함 — `ui/theme/Color.kt`를 `ThemeMode` 상수 + `PhoneLockPalette` + 팔레트 3종으로 재구조화, `Theme.kt`가 `themeMode` 문자열을 받아 팔레트를 선택. 선택값은 데스크탑 `AppData.themeMode`/안드로이드 `AppPreferences.themeMode`로 영속화.
+- **새 루틴 생성 시 스트릭 추적 기본 ON**: `addRoutine` 기본값 `trackStreak=true`로 변경.
+- **일과표 탭 제거, 오늘 탭에 병합 + 시간순 기본 정렬**: `RoutineScreen.kt`(양 플랫폼) 서브탭을 "오늘"/"일과표"/"습관" 3개에서 "오늘"/"통계" 2개로 축소, 오늘 탭의 루틴 목록이 항상 `timeSlot` 기준 시간순으로 정렬되도록 변경(시간 미지정 루틴은 뒤로).
+- **습관 탭 → 통계 탭 교체 + 데스크탑 체크박스 즉시 반영 안 되던 버그 수정**: 습관 탭(스트릭+방어권 카드 나열)을 삭제하고 "현재 스트릭"/"오늘 완료"/"오늘 완료율"/"최고 스트릭" 지표 카드 중심의 통계 탭으로 교체. 별개로 사용자가 지적한 "데스크탑에서 체크박스가 바로 체크가 안 되고 다른 탭을 왔다갔다 해야 반영되는" 버그를 조사 — `mutableStateOf<List<Routine>>`을 구조적으로 동일한 새 리스트로 재할당해도 Compose가 리컴포지션을 스킵하는 문제였음(그룹 탭에서 이미 겪었던 것과 같은 유형). 항상 증가하는 `refreshTick`을 `key(refreshTick){...}`으로 감싸 강제 리컴포지션시키는 패턴으로 해결. [[BUGS.md]] 50차 참고.
+- **오늘 탭에 요일 피커 + 주 단위 이동 추가**: "오늘" 탭 상단에 일~토 요일 칩과 ◀/▶ 주 이동 버튼을 추가해 과거/미래 날짜의 루틴 완료 상태를 조회할 수 있게 함(스트릭 계산은 항상 실제 오늘 기준으로 별도 유지). 안드로이드에서 처음엔 `horizontalScroll`+`FilterChip`으로 구현했는데 금/토 칩이 화면 밖으로 밀려 안 보이는 문제가 재현 — 스크롤 기반 대신 7개 칩을 `Modifier.weight(1f)`로 균등 분할하는 커스텀 `Column` 칩으로 재작성해 스크롤 없이 항상 7개가 다 보이도록 확정 수정. 데스크탑은 폭이 넉넉해 원래 방식 유지.
+- **안드로이드 요일 표시/통계 30일 그래프 뭉개짐 수정**: 위 요일 피커 1차 수정과 별개로, `StudyStatsScreen.kt`/`RoutineScreen.kt`의 30일 완료 추이 막대그래프가 30개 칸을 `weight(1f)`로 좁은 화면에 욱여넣어 안 보이던 문제를 `horizontalScroll`+칸당 고정 `width(20.dp)`로 교체해 해결(데스크탑은 폭이 넉넉해 기존 유지).
+- **공부앱 계산기 ↔ 캘린더 연동 기능 이식**: 원본 웹앱(`공부앱/index.html`)에만 있고 네이티브 재구현 때 누락됐던 핵심 기능 — 캘린더 일정에 계산기 업무를 연결해두면 일정 완료 시 계산기 진행량이 자동 차감/복원되는 연동을 양 플랫폼에 이식. `Repository`/`PhoneLockRepository`에 `linkedProgressAmount`/`addLinkedCalendarTask`/`isLinkedGoalAchieved`/`adjustLinkedCalcProgress` 등 신규, `setCalendarTaskStatus`가 연동된 일정의 완료/취소 시 계산기 진행량을 함께 조정. `CalendarScreen.kt`(양 플랫폼)의 날짜 상세에 `LinkedCalcSection` 신규(연동 업무 선택+수량 입력+추가), `TimetableScreen.kt`(양 플랫폼)이 연동 목표 달성 시 ✅ 표시+색상 강조.
+- **연동 업무 선택 버튼 오버플로우 수정**: 업무가 많을 때 위 연동 섹션의 업무 선택 버튼들이 화면 밖으로 넘쳐 안 보이던 문제 — 요일 피커 때와 같은 유형이지만 이번엔 처음부터 스크롤이 아니라 `FlowRow`(여러 줄 자동 줄바꿈)로 구현해 확정 해결.
+- **회독 8단계 무지개 색상 + 망각곡선 기반 주기 재설계**: 회독 수를 늘려달라는 요청으로 논의 끝에 8단계(1~8회독)로 확장, 색상은 무지개 순서(하양→빨강→주황→노랑→초록→파랑→남색→보라)로 배정. 처음엔 1,1,3,7,14,30,60일 간격으로 구현했다가, "과학적 원리(망각곡선 등)를 검토해 다시 판단해달라"는 요청을 받고 에빙하우스 망각곡선/spacing effect/SuperMemo 방식의 ~2~2.3배 지수 증가 원칙에 맞춰 1→3→7→14→30→60→120일로 재조정(연속된 1일 간격 중복 제거). `CALENDAR_COLOR_ORDER`/`CALENDAR_SCHEDULE`(양 플랫폼)/`COLOR_LABEL`/색상 선택 UI/`stageTextColor` 등 전면 갱신, 새 캘린더 일정 기본색을 `red`에서 `white`(1회독)로 변경. 기존에 저장된 `color="red"` 데이터는 이제 다른 회독 번호로 표시됨(재라벨링, 원본 색상 문자열 자체는 안 바뀜) — [[DECISIONS.md]] 50차 참고.
+- **루틴앱 Firebase 동기화 추가**: 47~49차엔 로컬 전용이었던 루틴을 그룹/캘린더처럼 기기 간 동기화하도록 확장. 안드로이드는 Room auto-increment ID, 데스크탑은 수동 카운터라 ID가 기기마다 어긋날 수 있어, Firebase엔 루틴을 배열 인덱스 기준으로 저장하고 로그는 그 인덱스로 부모 루틴을 참조하는 방식(`routinesToJson`/`routinesFromJson`)으로 ID 충돌을 피함. 전체 문서 단위 LWW(캘린더/계산기와 같은 패턴).
+- **탭 순서 변경 + "앱" 단어 제거**: 최상위 섹션 순서를 루틴→공부→관리→설정으로 변경(기존 관리→공부→루틴→설정), "공부앱"/"관리앱" 라벨에서 "앱"을 빼고 "공부"/"관리"로 축약(루틴/설정은 이미 "앱" 없었음).
+- **공부앱 캘린더 데스크탑 월그리드에 완료 배지 추가**: 안드로이드엔 이미 있던 월 그리드 날짜 칸의 "총 개수/완료 개수" 색상 배지(초록/노랑/빨강, 완료율 기준)를 데스크탑에도 대칭 구현.
+- **안드로이드 홈스크린 위젯 신규**: 루틴 목록을 홈 화면에서 바로 체크할 수 있는 위젯 추가 — 새 Gradle 의존성 없이 기존 `RemoteViews`/`AppWidgetProvider`/`RemoteViewsService` 인프라로 구현(`widget/RoutineWidgetProvider.kt`/`RoutineWidgetService.kt`/`RoutineWidgetFactory.kt`/`RoutineWidgetToggleReceiver.kt` 신규), 리스트 항목 클릭 시 `PendingIntent` 템플릿으로 토글, 위젯이 그룹/루틴 데이터를 직접 쓰지 않고 항상 Repository를 거치도록 해 다른 화면과 상태 일관성 유지.
+- **검증**: 매 변경 후 양 플랫폼 `compileKotlin`/`compileDebugKotlin` BUILD SUCCESSFUL 확인(15회 이상 반복), 안드로이드 APK 두 위치+데스크탑 표준 절차로 다회 재배포. **이번 세션 신규 기능(홈 위젯/루틴 Firebase 동기화/8색 무지개/계산기-캘린더 연동) 전부 실기기 미검증** — 컴파일/배포만 확인됨. Room DB 스키마 변경 없음(SharedPreferences/기존 필드 재사용만).
+
+---
+
+## 2026-08-13 (49차 세션) — 루틴앱 v1 화면 구현 + 앱 전체 라이트+그린 테마 전환
+
+48차의 데이터 모델/CRUD/스트릭 엔진 위에 실제 화면을 얹고, 47차에 방향만 정해뒀던 라이트+그린 테마까지 전환. HANDOFF.md "다음 작업 우선순위"에 있던 순서(오늘 탭→일과표→습관 탭→편집 화면→테마)를 그대로 따랐다.
+
+- **루틴 화면 3종 신규(양 플랫폼 대칭, `RoutineScreen.kt`)**: "오늘"(오늘 요일마스크에 해당하는 루틴을 체크박스로 완료 처리, `trackStreak`면 스트릭 배지 표시)/"일과표"(`timeSlot` 있는 루틴을 오늘 기준 시간순으로 보여주는 파생 뷰, `TimetableScreen`과 같은 "저장 없이 매번 파생" 철학)/"습관"(`trackStreak` 루틴만 모아 스트릭+방어권 정보를 카드로 표시). 안드로이드는 Repository 루틴 함수가 전부 suspend라 `LaunchedEffect(refreshTick)`으로 완료 날짜 집합을 미리 한 번에 캐싱하는 방식(StudyStatsScreen과 같은 패턴)을 썼고, 데스크탑은 동기 함수라 상태 변경 즉시 재조회.
+- **루틴 편집을 별도 화면이 아니라 다이얼로그로(`RoutineEditScreen.kt`)**: 그룹 편집(`GroupEditScreen`)처럼 좌우 분할 전체 화면을 쓰지 않고 `AlertDialog` 기반 폼으로 구현 — 필드 수가 그룹보다 훨씬 적어(제목/시간대/요일/스트릭 추적/방어권) 화면 전환이 과하다고 판단. 요일 토글은 `GroupEditScreen`의 `DayMaskRow`와 동일한 비트 규칙(bit0=월요일)으로 새로 작성(파일이 달라 재사용 대신 대칭 복제, `RoutineEngine`과 같은 관례).
+- **MainScreen/MainActivity에 "루틴" 진입점 추가**: 데스크탑은 `NavigationRail`에 "🌱 루틴" 항목 신규(관리앱/공부앱/설정과 동급), 안드로이드는 하단 `NavigationBar`에 4번째 탭으로 추가.
+- **앱 전체 라이트+그린 테마 전환(47차 방향 확정, 이번에 실제 톤 확정)**: 사용자에게 그린 톤 후보 3개(포레스트/에메랄드/세이지)를 제시했으나 전부 기각, "더 밝은 연두색"을 요청받아 Primary를 `#8BC34A`(밝은 연두, Material Light Green 500)로 확정 — 대비를 위해 이 색 위 텍스트(`onPrimary`)는 흰색 대신 짙은 그린빛 다크 톤(`#20261A`)을 쓴다. 배경은 순백 대신 옅은 그린 틴트 오프화이트(`#FAFBF6`). `Color.kt`/`Theme.kt`(양 플랫폼) `darkColorScheme`→`lightColorScheme` 전환. 자세한 배색 표는 [[DECISIONS.md]] 참고.
+- **테마 전환에 맞춰 옛 파란 accent(`#4F8EF7`, 35차에 주황에서 교체됐던 색)도 초록으로 일괄 교체**: 차단/실행확인 화면(`BlockScreen`/`ConfirmScreen`/`BlockActivity`/`ConfirmOpenActivity`)의 강조색, 사용 중 오버레이 타이머 텍스트(`UsageOverlayContent.kt`/`AppMonitorAccessibilityService.kt`/브라우저 확장 `overlay.js`)까지 전부 `#8BC34A`(또는 rgb `139,195,74`)로 변경 — 이 값들은 `MaterialTheme.colorScheme`을 안 쓰고 원시 `Color(0xFF...)`로 하드코딩돼 있어서 Theme.kt만 바꿔선 자동으로 안 바뀌는 구조였다. 다만 브라우저 확장의 `confirm.html`/`blocked.html`/`onboarding.html` 자체의 다크 팔레트(35차에 통일된 것)는 이번 범위 밖으로 유지 — "앱 전체"는 네이티브 앱(Compose) 기준으로 해석했고, 확장의 전면 라이트 전환은 범위가 훨씬 커서 별도 요청 시 진행.
+- **버그 발견/수정**: 캘린더 "오늘" 날짜 배지가 `Color.White` 텍스트를 primary 배경(원형) 위에 하드코딩하고 있었는데, 새 Primary가 밝은 연두라 흰 텍스트 대비가 나빠짐 — `MaterialTheme.colorScheme.onPrimary`로 교체(양 플랫폼 `CalendarScreen.kt`).
+- **검증**: 양 플랫폼 `compileKotlin`/`compileDebugKotlin` BUILD SUCCESSFUL(무관한 기존 경고 외 신규 오류 없음, 도중 발견한 미사용 `refreshTick` 파라미터 정리). 안드로이드 `assembleDebug`로 APK 재빌드 후 두 위치(`AndroidBuilds\phone-lock-app.apk`, OneDrive 원본) 모두 갱신. 데스크탑은 표준 절차(watchdog 비활성화→프로세스 종료→PowerShell robocopy→`createDistributable`→배포 robocopy FAILED 0 확인→재실행→watchdog 재활성화)로 재배포, 배포된 jar에서 `RoutineScreen`/`RoutineEditScreen` 클래스와 새 Primary 색상 리터럴(`FF 8B C3 4A`)이 실제로 포함됐음을 바이트 레벨로 확인. Room DB 버전 변경 없음(48차에 이미 26으로 올라감, 이번엔 스키마 변경 없음). **브라우저 확장은 코드만 바뀌었고 `chrome://extensions` 재로드 필요(사용자 몫), 실기기 UI 검증은 안 함.**
+
+---
+
+## 2026-08-13 (48차 세션) — 루틴앱 v1 착수: Routine/RoutineLog 데이터 모델 + CRUD + 스트릭 엔진
+
+47차에 확정된 설계를 바탕으로 실제 구현 착수. 이번 세션 범위는 데이터 모델 계층까지만(화면/테마는 다음 세션) — HANDOFF.md "다음 작업 우선순위" 순서를 그대로 따랐다.
+
+- **Routine/RoutineLog 데이터 모델 신규**: `id`/`title`/`timeSlot`(HH:mm, null=시간 미지정)/`daysMask`(그룹의 scheduleDaysMask와 동일 비트 규칙)/`trackStreak`/`defenseType`(NONE/WEEKLY/MONTHLY)/`defenseCount`/`sortOrder`/`archived`. 안드로이드는 `data/Entities.kt`에 `@Entity` 2종 + `data/Daos.kt`에 `RoutineDao`/`RoutineLogDao` 추가, 데스크탑은 `data/Models.kt`에 데이터클래스 2종 + `AppData.routines`/`routineLogs`/`nextRoutineId` 추가하고 `data/JsonStore.kt` parse/save 반영.
+- **Room DB 25→26**(안드로이드): `AppDatabase.kt` entities 목록에 `Routine::class`/`RoutineLog::class` 추가, `PreMigrationBackup.kt`의 TABLES 목록에도 `routine`/`routine_log` 추가(마이그레이션 전 백업 대상에 포함). `fallbackToDestructiveMigration()`이라 마이그레이션 코드는 불필요.
+- **CRUD를 양 플랫폼 `PhoneLockRepository.kt`/`Repository.kt`에 대칭 추가**: `getRoutines`/`addRoutine`/`updateRoutine`/`deleteRoutine`/`moveRoutineOrder`(정렬), `getRoutineLogsForDate`/`isRoutineCompleted`/`toggleRoutineLog`/`getRoutineCompletedDateKeys`. Firebase 동기화는 이번 v1에서 안 함(그룹처럼 로컬 전용으로 시작 — 47차 설계에서 동기화 여부가 명시적으로 논의되지 않았음, 필요해지면 다음에 논의).
+- **`RoutineEngine.kt` 신규(양 플랫폼, `routine` 패키지)**: `currentStreak(routine, completedDateKeys, today)` — StudyStatsScreen의 "지정 요일만 카운트, 미체크 시 즉시 끊김" 로직을 재사용하되, 미완료인 날을 만나면 `defenseType`/`defenseCount` 기준 그 시점 주기(주/월)의 방어권이 남아있는지 확인해 남아있으면 "지정 안 된 날"처럼 취급(스트릭 유지, 증가는 안 함)하고 방어권을 소모, 없으면 그 자리에서 끊는다. **방어권 소모 카운터는 별도로 저장하지 않고, 스트릭을 계산할 때마다 뒤로 걸어가며 그때그때 계산하는 파생값으로 설계**했다(47차 DECISIONS.md 표현은 "소모 카운터를 리셋"이지만, 순수 함수로 매번 다시 계산하면 리셋 로직 자체가 필요 없어 코드가 더 단순함 — TimetableScreen/StudyStatsScreen과 같은 "파생 뷰" 철학을 그대로 유지, CalcEngine.kt와 같은 위치에 플랫폼별 대칭 복제).
+- **양 플랫폼 컴파일 확인 완료**(`compileKotlin`/`compileDebugKotlin` 둘 다 BUILD SUCCESSFUL, 기존에 있던 무관한 경고 몇 건 외 신규 오류 없음). **화면(오늘 탭/일과표/습관 탭/편집 화면)과 라이트+그린 테마 전환은 아직 착수 안 함, 빌드/배포도 안 함** — 다음 세션에서 이어서 진행.
+
+---
+
+## 2026-08-13 (47차 세션) — 루틴앱 v1 설계 확정 (코드 변경 없음)
+
+45차에 통합만 결정되고 미착수였던 루틴앱을 실제로 설계하는 세션. 순서대로:
+
+1. "루틴앱에 대해 조사해" 요청 → 처음엔 코드 조사로 오해해 기존 네비게이션/데이터 모델/Firebase 패턴을 조사(에이전트 위임)했으나, 사용자가 "마이루틴 같은 기존 루틴앱들 시장 조사"를 의미한 것으로 정정 → 마이루틴/Streaks/Loop Habit Tracker/Habitica를 웹서치로 조사해 기능 비교 정리.
+2. 핵심 기능 3가지(반복 체크리스트/습관 트래커+스트릭/시간대별 일과표) 확인 → 관리앱 대개편(루틴앱 중심 통합) 방향이 잠깐 논의됐다가, 실제 설계 단계에서 사용자가 관리앱 요소는 배제하기로 범위 축소.
+3. `Routine`/`RoutineLog` 데이터 모델, 화면 구성(오늘 탭/일과표/습관 탭/편집 화면), 스트릭 방어권(주/월 단위 봐주는 횟수) 개념을 대화로 확정.
+4. 마지막으로 UI 세부사항 5개(알림 여부/요일 토글 재사용/시간대 겹침 표시/완료취소/정렬 방식)와 테마(라이트+그린, 앱 전체 적용)까지 확정. 자세한 설계 근거는 [[DECISIONS.md]] 47차 참고.
+
+**코드는 전혀 건드리지 않음** — 다음 세션에서 데이터 모델부터 실제 구현 착수 예정([[HANDOFF.md]] 참고).
+
+---
+
+## 2026-08-13 (46차 세션) — 앱 이름/아이콘을 프로젝트명("갓생살기종합세트")으로 통일 + 데스크탑 그룹 off
+
+세 가지 요청을 순서대로 처리.
+
+- **앱 표시 이름 통일**: "폰컨트롤"로 남아있던 앱 표시 이름을 45차에 정한 프로젝트명 "갓생살기종합세트"로 양 플랫폼 통일. 안드로이드 `strings.xml`의 `app_name`, 데스크탑 `Main.kt`의 트레이 툴팁/창 제목/`ExitConfirmScreen.kt` 종료 확인 문구, `MainScreen.kt` 상단 타이틀바 텍스트 전부 교체. 브라우저 확장/각 README는 요청 범위 밖이라 그대로 둠.
+- **픽셀아트 일출 아이콘 신규 제작**: 사용자가 제시한 3개 방향(자물쇠+체크, 상승 그래프, 태양/일출) 중 "태양/일출"을 픽셀아트로 선택. 안드로이드는 기존 흰 자물쇠 벡터(`ic_launcher_foreground.xml`)를 새벽하늘 그라데이션 배경(`ic_launcher_background.xml`, 파랑→주황 12줄)+태양/광선/언덕 실루엣 전경으로 완전 교체(9dp 그리드, 108x108 좌표). 데스크탑은 같은 좌표로 다중 해상도 `.ico`(`packaging/generate_icon.ps1`로 생성, `packaging/app-icon.ico`)를 만들어 `build.gradle.kts`의 `windows.iconFile`(exe 아이콘)에 연결하고, 트레이/창 아이콘도 기존 단색 `ColorPainter` 대신 같은 좌표를 그리는 커스텀 `Painter`(`ui/PixelSunriseIcon.kt`)로 교체 — 세 플랫폼(안드로이드 런처, 데스크탑 exe, 데스크탑 트레이/창)이 좌표 하나를 공유해서 어긋나지 않는다.
+- **데스크탑 그룹 2개 off**: "그룹들 좀 off 해줘" 요청, 범위를 물어 데스크탑만으로 확정. `%APPDATA%\PhoneLockDesktop\data.json`의 그룹 "게임"(id 11)/"제어"(id 16)를 직접 편집.
+  - **버그(같은 세션에 발견/수정)**: 처음엔 `Group.enabled` 필드를 껐는데, 이 필드는 `Models.kt` 주석에 "통계 탭 표시 필터 전용, 잠금/차단 판정과 무관"이라고 명시된 필드였다 — 사용자가 "off 안됐는데?"라고 지적해서 재확인, 실제 차단 on/off는 별도 필드 `Group.groupEnabled`(그룹 목록 화면 스위치)였다는 걸 발견해 정정. `enabled`는 원래 값(true)으로 되돌리고 `groupEnabled=false`로 다시 껐다. 앱 재시작 후에도 유지되는 것 확인. [[BUGS.md]] 46차, 메모리 `project_group_enabled_vs_groupEnabled` 참고.
+  - **작업표시줄 아이콘 잔상**: 아이콘 변경 후 exe 파일 자체(임베드 아이콘)는 새 아이콘으로 확인됐는데 작업표시줄엔 옛 아이콘이 남아있던 문제 — Windows 아이콘 캐시(`%LocalAppData%\IconCache.db`, `Explorer\iconcache_*.db`/`thumbcache_*.db`) 삭제 후 `explorer.exe` 재시작으로 해결.
+- **검증/빌드**: 안드로이드는 이름 변경(1회)+아이콘 변경(1회) 총 2회 `assembleDebug` BUILD SUCCESSFUL, APK 두 위치(`AndroidBuilds\phone-lock-app.apk`, OneDrive 원본) 갱신. 데스크탑은 표준 절차(watchdog 비활성화→종료→robocopy→`createDistributable`→배포 FAILED 0→재실행→watchdog 재활성화)로 3회 재배포(이름 변경, 아이콘+`build.gradle.kts`, 그룹 데이터 정정) — 이 과정에서 43~44차부터 밀려있던 데스크탑 미반영분(`WatchAndWaitScreen.kt` 힌트 가독성, `MotivationalQuotes.kt` 문구 25개)도 함께 반영됨. jpackage용 Temurin JDK 21.0.12가 이전 세션 캐시에서 손상돼 있어 사용자 승인 받아 재다운로드. **사용자가 최종 확인 완료("해결 됐어").**
+
+---
+
+## 2026-08-13 (45차 세션) — 프로젝트 개명("갓생살기종합세트") + 루틴앱 통합 결정
+
+코드 변경 없음, 프로젝트 범위/이름에 대한 논의 세션.
+
+- 사용자가 "관리앱+공부앱 통합 구조가 나은지" 질문 → 공부 잠금이 타이머 로컬 상태를 직접 읽는 실제 코드 결합이 있어 통합 유지를 추천.
+- 이어서 "알람앱도 합칠까" 질문 → 알람앱(`com.wakealarm`, 별도 저장소)은 도메인·DB·코드가 완전히 독립적이라 분리 유지를 추천.
+- "루틴앱을 새로 만들 건데 이 프로젝트에 포함시키자, 프로젝트 이름을 갓생살기종합세트로 바꿔줘" 요청 → 프로젝트명 변경, 루틴앱을 향후 이 프로젝트에 통합하기로 결정(계획 단계, 미착수). 자세한 판단 근거는 [[DECISIONS.md]] 45차 참고.
+
+---
+
+## 2026-08-12 (44차 세션) — 태블릿 제목 축소 제외 + 조롱조 문구 25개 추가
+
+독립된 두 요청을 순서대로 처리.
+
+- **태블릿은 제목 자동 축소 대상에서 제외**: "두줄이 되면 글자 크기가 줄어드게 하는 패치를 전에 진행했는데 생각해보니 태블릿은 또 상관이 없단 말이야 태블릿은 데스크탑처럼 글자 변환이 없게 하고 싶은데 가능해?" 요청. 43차에 구현한 `InterstitialScreen.kt`의 `maxLines=1`+`didOverflowWidth` 축소 로직이 폰/태블릿 구분 없이 전부 적용돼 있었음 — 이 프로젝트에 폼팩터 구분 로직이 아예 없어서 새로 만들어야 했고, 안드로이드 표준 브레이크포인트인 `LocalConfiguration.current.screenWidthDp >= 600`(sw600dp)으로 태블릿을 판정. 태블릿이면 데스크탑 `WatchAndWaitScreen.kt`가 하는 것과 동일하게 `Text(title, style=baseTitleStyle)`만 호출해 축소 없이 필요하면 자연스럽게 2줄로 감싸지도록 분기, 폰(600dp 미만)은 기존 43차 축소 로직 그대로 유지.
+- **조롱조 문구 5단계에 각 5개씩 25개 추가**: "마지막으로 조롱조/놀림조 문구 더 추가하자" 요청. 42차에 만든 5단계(순한/중간/매콤/독함/극한, 각 20개씩 총 124개) `MotivationalQuotes.kt`/`quotes.js`에 각 단계 기존 톤에 맞춰 5개씩 새로 작성해 추가(124→149개) — 안드로이드 `MotivationalQuotes.kt`, 데스크탑 `MotivationalQuotes.kt`, 브라우저 확장 `quotes.js` 3곳 내용을 동일하게 유지.
+- **검증**: 안드로이드는 두 변경을 모두 포함해 PowerShell robocopy(OneDrive→AndroidBuilds)+`assembleDebug`(JAVA_HOME=Android Studio JBR) BUILD SUCCESSFUL, APK 두 위치(`AndroidBuilds\phone-lock-app.apk`, OneDrive 원본 `app-debug.apk`) 갱신(태블릿 분기 반영 1회 → 문구 추가 반영 1회 총 2회 재빌드/배포). **데스크탑(`MotivationalQuotes.kt`)과 브라우저 확장(`quotes.js`)은 소스 파일만 갱신, 이 세션에 재빌드/재배포·재로드 안 함** — 43차부터 밀려있던 데스크탑 재배포(`WatchAndWaitScreen.kt` 힌트 가독성)와 함께 다음에 처리할 것. **실기기 검증(안드로이드)은 요청받지 않아 수행 안 함.**
+
+---
+
+## 2026-08-12 (43차 세션) — 사용 중 오버레이 재설계(문구 삭제+타이머 확대+레벨 연동 투명도) + 실행확인 가독성 개선
+
+세 가지 독립 요청을 순서대로 처리.
+
+- **사용 중 오버레이 재설계**: "오버레이는 여전히 무시 어쩌고저쩌고가 뜨는데 그냥 멘트를 아예 삭제하고 타이머만 남겨놔, 타이머를 중앙에 배치하고 크기를 많이 키운 다음에 타이머 또한 오버레이의 일부로 판단하여 평상시엔 투명하다가 레벨이 오르면 오를수록 불투명해지는 시스템으로" 요청. 안드로이드 `AppMonitorAccessibilityService.ensureUsageOverlayView()`에서 제목("무시당하면서 살기, 무시하면서 살기")과 문구(`MOTIVATIONAL_QUOTES` 랜덤 선택) TextView를 완전히 제거하고 타이머 TextView만 남겨 32sp→64sp로 확대, `FrameLayout` 정중앙 배치로 단순화. `applyOverlayOpacityForLevel()`과 뽀모도로 오버레이 둘 다 배경 alpha뿐 아니라 타이머 텍스트 색상(`argb(alpha, 0x4F, 0x8E, 0xF7)`)에도 같은 alpha를 적용해서, 레벨 0일 땐 타이머 숫자도 거의 안 보이다가 레벨이 오를수록 배경과 함께 또렷해지도록 만들었다. 브라우저 확장 `overlay.js`도 동일 패턴 — `ensureOverlay()`에서 title/quote `div` 생성 자체를 제거하고 timer `div`만 32px→96px로 확대, `applyOverlayOpacityForLevel()`/`applyPomodoroOverlayOpacity()`가 `overlayEl.style.background`뿐 아니라 `overlayTimerEl.style.color`도 같은 opacity의 `rgba(79,142,247,opacity)`로 갱신하도록 수정. 데스크탑 코너 위젯(`UsageOverlayContent.kt`)은 애초에 "무시" 문구가 없는 별개 구조(작은 창이라 전체화면 불가, `DECISIONS.md` 참고)라 이번 변경 대상에서 제외 — 사용자도 "그건 놔둬도 될 거 같다"고 확인.
+- **실행확인 화면 힌트 문구 가독성 개선**: "실행확인 단계에서 뜨는 문구들의 가독성을 올려줘" 요청. 체크포인트에 걸렸을 때 뜨는 "이게 의무입니까?"/"화면(창/탭)을 벗어나서 다시 눌러야 합니다" 문구가 셋 다 작고 흐린 회색(bodySmall 또는 13px `#6b7694`)이었던 걸 굵고 밝은 텍스트로 교체 — 안드로이드 `InterstitialScreen.kt`(bodySmall→bodyMedium+`FontWeight.SemiBold`), 데스크탑 `WatchAndWaitScreen.kt`(동일), 브라우저 확장 `confirm.html`(`#hint` 13px `#6b7694`→15px 600 weight `#e4e8f5`, `<h1>` 24px→30px+`line-height:1.4`+`max-width:560px`).
+- **제목 줄바꿈 자동 축소(안드로이드)**: "제목이 길어지면서 줄바꿈이 된단 말이야 모바일은, 근데 그 줄바꿈으로 인해 가독성이 떨어져" 요청. `InterstitialScreen.kt`의 제목 `Text`에 `titleScale`(remember, `title` 키로 리셋) 상태를 추가해 `onTextLayout` 콜백에서 실제 레이아웃 결과를 보고 폰트를 줄이는 shrink-to-fit을 구현.
+  - **버그(같은 세션에 발견/수정)**: 1차 구현은 `maxLines=2`+`didOverflowHeight`로 짜서 "2줄을 넘칠 때만" 줄이도록 했는데, 사용자가 실제로 겪던 문제는 "2줄로 꺾이는 것 자체"였다 — 대부분의 문구는 정확히 2줄에 들어가서 애초에 축소가 발동하지 않았다("바뀐 게 없다"는 사용자 지적으로 발견). `maxLines=1`+`softWrap=false`+`didOverflowWidth`(한 줄에 안 들어가면 무조건 5%씩 줄이기, 최소 55%)로 재작업해서 해결.
+- **검증**: 안드로이드는 PowerShell robocopy(OneDrive→AndroidBuilds)+`assembleDebug`(JAVA_HOME=Android Studio JBR) BUILD SUCCESSFUL, APK 두 위치(`AndroidBuilds\phone-lock-app.apk`, OneDrive 원본 `app-debug.apk`) 갱신 — 축소 로직 1차 구현 후 1회, 재작업 후 1회 총 2회 빌드/배포. `confirm.html`은 Browser 프리뷰로 실제 렌더링(제목/힌트 문구 가독성) 확인. **데스크탑은 이 세션에 재빌드/재배포 안 함** — `WatchAndWaitScreen.kt` 변경분(힌트 문구)이 실행 중인 데스크탑 앱엔 아직 반영 안 된 상태로 인계. **실기기 검증(안드로이드)은 요청받지 않아 수행 안 함.**
+
+---
+
+## 2026-08-12 (42차 세션) — 그룹 자동 재활성화 신규, 버튼 문구 고정, 조롱조 문구 124개+강도별 로테이션 신규
+
+세 가지 독립 요청을 순서대로 처리.
+
+- **그룹 자동 재활성화**: "설정에서 정한 초기화 시간이 지나면 그룹들이 꺼져 있더라도 다시 켜지게" 요청. 데스크탑 `Repository.applyDailyGroupResetIfNeeded()`/안드로이드 `PhoneLockRepository.recordBlockAttempt()`와 대칭인 `applyDailyGroupResetIfNeeded()` 신규 — `dailyResetHour` 기준 "오늘" 날짜가 바뀌면 `groupEnabled=false`인 그룹을 전부 `true`로 되돌리고, 하루 한 번만 적용되도록 `AppData.lastGroupAutoResetDate`(데스크탑)/`AppPreferences.lastGroupAutoResetDate`(안드로이드)로 날짜를 추적한다. 매 tick(2초 주기) 시작 지점에서 호출. 회유 절차 진행 중(`groupOffPending`)인 그룹은 이미 `groupEnabled=true`라 대상이 아니다.
+- **버튼 문구 "전자"/"후자" → "진행"/"중단" 고정**: 실행확인/잠김 화면 버튼 라벨을 의미가 바로 읽히는 고정 단어로 교체. 배선(동작)은 그대로 — 잠김 화면의 "진행" 버튼이 장식용(아무 동작 없음)인 것도 그대로 유지, 라벨만 바꿈. 데스크탑 `ConfirmScreen.kt`/`BlockScreen.kt`, 안드로이드 `ConfirmOpenActivity.kt`/`BlockActivity.kt`, 브라우저 확장 `confirm.html`/`confirm.js`/`blocked.html`/`blocked.js` 전부 반영.
+- **조롱조 문구 124개 + 강도별 로테이션**: 사용자가 반복 요청한 "무시당하면서 살기, 무시하면서 살기" 대체 문구 아이디어를 순한~극한 5단계로 총 124개까지 뽑았고, "이거 싹 다 넣어서 강도별로 로테이션 돌리자"는 요청으로 구현. `MotivationalQuotes.kt`(데스크탑/안드로이드 동일)+`quotes.js`에 5단계 배열(`MILD_QUOTES`~`EXTREME_QUOTES`, 각 20개)과 `confirmQuoteTier(level)`/`blockQuoteTier(attempts)` 두 매핑 함수 신규. 실행확인 화면은 재확인 레벨(`Repository.getCurrentLevel`, 오버레이 밝기 설정 `overlayLevelStepsToMax`와 무관한 절대 수치)이 높을수록, 잠김(스케줄/일일한도) 화면은 오늘 이 그룹을 열려고 시도한 횟수(`Group.blockAttemptDate`/`blockAttemptCount` 신규 필드, 스누즈 카운터와 동일한 하루 단위 리셋 패턴)가 많을수록 독한 문구가 뜬다. STUDY_LOCK/REELS/SHORTS 차단은 "시도 횟수" 개념이 안 맞아 강도 없이 순한 맛 고정으로 남김.
+  - **버그(같은 세션에 발견/수정)**: 처음엔 로테이션 문구를 화면 부제(quote, 원래 "의무에 따라 행동하세요" 한 줄이 뜨던 자리)에 걸었는데, 사용자가 실제로 바꿔달라던 건 큰 제목(title, "무시당하면서 살기, 무시하면서 살기")이었다. title에 로테이션 문구를 걸도록 전부 스왑하고, 중복되는 quote 줄은 제거(브라우저 확장은 `<p class="quote">` 요소 자체를 HTML에서 삭제).
+- **브라우저 확장 오버레이 안 뜨는 현상 제보**: 원인 조사 중 사용자가 직접 해결, 코드 변경 없이 종료("없던 일로 해").
+- **검증**: 세 변경마다 각각 desktop `compileKotlin`/android `compileDebugKotlin` 확인 후 최종 `assembleDebug`+APK 두 위치 갱신, 데스크탑 `createDistributable`+robocopy 배포(FAILED 0)+재실행 — 세션 중 총 3회 배포. 매 배포 전 빌드 산출물(APK dex, 데스크탑 jar 클래스)에서 새 심볼/문구가 실제로 컴파일돼 들어갔는지 바이트 레벨로 확인(한글 문자열은 UTF-8→Latin1 재인코딩 후 `.Contains()`로 검색). 데스크탑 `createDistributable`(jpackage 필요)은 이 세션 캐시에 없어 Temurin JDK 21.0.12를 사용자 승인 받아 새로 다운로드해 사용. Room DB 버전 24→25(`AppGroup.blockAttemptDate`/`blockAttemptCount` 추가, `fallbackToDestructiveMigration()`이라 마이그레이션 코드 불필요). **실기기 UI 검증은 안 함.**
+
+---
+
+## 2026-08-11 (41차 세션) — 스누즈(#1) 크로스디바이스 동기화 신규 구현 + 양 플랫폼 빌드/배포
+
+사용자가 "스누즈도 동기화되고 있는거지?"라고 문의. 코드 확인 결과 `AppGroup`/`Group` 자체를 Firebase로 push하는 로직이 원래 없어서(그룹은 애초부터 기기별 로컬), 39차에 만든 스누즈도 자연스럽게 기기별 로컬 전용이었다 — 데스크탑에서 스누즈해도 안드로이드의 같은 이름 그룹엔 전혀 반영 안 됨. 사용자가 "바로 동기화 기능 추가"를 선택해 이번 세션에 구현.
+
+- **설계**: `confirmSync`(실행확인 레벨 동기화)와 동일한 "최신값(종료 시각) 승리" 병합 패턴을 그대로 재사용. Firebase `users/{user}/snoozeSync/{그룹명}` 경로 신설(종료시각+오늘 사용날짜+사용횟수 3필드). 데스크탑/안드로이드 양쪽 `PomodoroSyncClient`에 `readSnoozeSync`/`writeSnoozeSync` 추가.
+- **Repository 병합 로직**: 양쪽 `Repository`/`PhoneLockRepository`에 `mergedSnooze()`(데스크탑은 `mergedEscalation()`과 동일한 10초 캐시+`synchronized(lock)`, 안드로이드는 별도 `snoozeMutex`+10초 캐시) 신설 — 다른 기기가 더 최근에(더 미래 시각으로) 스누즈했으면 그 상태를 로컬에도 병합·저장한다. `snoozeGroup()`(실제 스누즈 버튼 액션)은 이 병합값 기준으로 하루 3회 한도를 판정해서, 데스크탑/안드로이드에 나눠 눌러도 총 3회를 못 넘게 했다.
+- **UI vs 판정 경로 분리(중요)**: `isSnoozeActive()`(그룹 목록 "😴 스누즈 중" 배지, `snoozeRemainingToday()`)는 Compose 리컴포지션마다 직접 호출되는 자리라 네트워크 호출을 넣으면 안 돼서 **로컬 값만** 보도록 그대로 유지했다. 실제 판정 게이트(`isConfirmActiveNow`/`evaluate`/`isCurrentlyRestricting`가 내부에서 쓰는 private `isSnoozed()`)만 `repository.syncedSnoozeUntil(group)`을 거치도록 바꿨다 — 이 함수는 EnforcementService/AppMonitorAccessibilityService의 백그라운드 판정 경로에서만 호출된다. 안드로이드는 이 때문에 `LockEvaluator.isConfirmActiveNow()`를 `fun`에서 `suspend fun`으로 바꿨다(호출부 3곳 모두 이미 suspend 함수 안이라 문제 없음 확인).
+- **검증**: 데스크탑 `compileKotlin`, 안드로이드 `compileDebugKotlin`/`assembleDebug` 전부 BUILD SUCCESSFUL(둘 다 AndroidBuilds 경로에서, PowerShell robocopy로 소스 동기화 후). 빌드 산출물(안드로이드 apk의 classes3.dex, 데스크탑 distributable jar) 안에 `snoozeSync` 문자열이 실제로 컴파일돼 들어갔는지 바이트 레벨로 직접 확인. 안드로이드 APK는 `AndroidBuilds`/OneDrive 두 위치 모두 갱신. 데스크탑은 표준 절차(watchdog 비활성화 → 프로세스 종료 → robocopy 동기화 → `createDistributable` → 배포 전 jar 해시 일치 확인 → robocopy 배포(FAILED 0) → watchdog 재활성화 → 재실행)대로 재배포, 새 버전으로 재실행 중인 것까지 확인.
+- **실기기 기능 검증**: 사용자가 직접 진행하기로 함(이번 세션에선 요청하지 않음) — 데스크탑 스누즈가 안드로이드에 실제로 반영되는지, 하루 3회 합산 한도가 정확히 작동하는지는 미확인 상태로 인계.
+
+---
+
+## 2026-08-11 (40차 세션) — 데스크탑 재배포(37차 → 39차 코드), 스누즈/기간 지정 UI 노출 확인
+
+사용자가 "스누즈랑 기간 지정 잠금이 데스크탑에 안 보인다"고 문의. 소스 코드(`GroupListScreen.kt`/`GroupEditScreen.kt`)에는 39차에 이미 구현돼 있었으나, HANDOFF에 남아있던 대로 **실행 중이던 데스크탑 앱이 여전히 37차 최종 빌드**였고 38~39차 변경사항이 재빌드·재배포된 적이 없어서 안 보였던 것으로 확인.
+
+- 표준 절차([[HANDOFF.md]] "데스크탑 빌드/배포") 그대로 진행: watchdog 비활성화 → 프로세스 종료 → PowerShell robocopy로 소스 동기화(OneDrive→AndroidBuilds) → `createDistributable` → 빌드된 jar에서 "스누즈" 문자열 실제 포함 확인(PowerShell로 클래스 바이트 직접 검사, `GroupListScreenKt$GroupRow$2` 등에서 발견) → robocopy로 배포(FAILED 0, 구 37차 jar는 extra로 정리됨) → watchdog 재활성화 → 앱 재실행.
+- 이번 세션엔 소스 코드 변경 없음 — 순수 빌드/배포 갱신.
+- 사용자가 재실행된 앱에서 그룹 목록의 "😴 스누즈" 버튼과 그룹 편집의 "기간 지정 자동 강화" 섹션이 **화면에 보이는 것까지 확인**. 단, 스누즈가 실제로 판정을 우회하는지/기간 지정이 스위치를 무시하고 강제하는지 같은 **기능적 동작 검증은 아직 안 함** — 다음 세션 우선순위로 유지.
+
+---
+
+## 2026-08-10 (39차 세션) — 38차 컴파일 확인 + 신규 기능 4건(회고 입력, 설정 내보내기/가져오기, 스누즈, 기간 지정 자동 강화)
+
+38차가 빌드 툴체인이 없어 컴파일조차 못 하고 끝난 것을 이어받아, 이 세션에선 툴체인이 있어 최우선 과제인 컴파일 확인부터 진행. 이어서 사용자가 실기기 검증은 직접 하겠다고 하여, 전문가 보고서의 미구현 기능 중 판정 로직을 건드리지 않는 것부터 순서대로 확인하며(#6, #10) 구현했고, 마지막엔 사용자가 스누즈(#1)/기간 지정 자동 강화(#7) 세부 규칙을 직접 정해줘서 그것도 구현했다.
+
+### 38차 컴파일 확인 및 버그 수정
+
+- **[버그 발견/수정] 데스크탑+안드로이드 `StudyTimerScreen.kt`의 "오늘 한눈에" 요약 카드가 컴파일 자체가 안 됨**: `"$totalCount개(완료 $doneCount)"` — Kotlin 문자열 템플릿은 한글도 식별자 문자로 인식해서 `$totalCount개`가 `totalCount개`라는 존재하지 않는 변수 참조로 파싱됨(38차에 처음 작성된 코드, 양 플랫폼 대칭이라 동일 버그가 둘 다 있었음). `${totalCount}개`로 중괄호를 추가해 수정.
+- 수정 후 데스크탑 `compileKotlin`, 안드로이드 `compileDebugKotlin`/`assembleDebug` 전부 BUILD SUCCESSFUL 확인. 안드로이드 APK를 `AndroidBuilds`/OneDrive 두 위치 모두 갱신.
+
+### 신규 기능 4건(전문가 보고서 #6/#10/#1/#7, 판정 로직 영향 있는 #1/#7은 사용자와 세부 규칙 확정 후 구현)
+
+- **[#10] 공부 세션 종료 후 짧은 회고 입력**: `StudyLogEntry`에 `note` 필드 추가(데스크탑 `Models.kt`+`JsonStore.kt`, 안드로이드 Room DB version 22→23). 타이머 탭 "정지" 버튼을 누르면 즉시 멈추는 대신 짧은 회고를 남길 수 있는 확인 대화상자가 뜬다(비워도 정지 가능). "오늘의 공부 기록"에서 업무별 최근 회고를 이름 아래 작게 표시. 전체화면 잠금 화면(`StudyLockScreen`/`StudyLockActivity`)의 정지 버튼은 회고 다이얼로그 없이 기존대로 즉시 정지(의도적 — 잠금 화면은 최소한으로 유지). 기존 크로스디바이스 공부기록 동기화 채널(`writeStudyLogForDate`/`readStudyLogForDate`)에 note가 자연히 포함됨.
+- **[#6] 설정/그룹 내보내기·가져오기**: 조사 결과 **안드로이드는 이미 완전히 구현돼 있었음**(SAF `CreateDocument`/`OpenDocument`로 "클라우드로 백업"/"백업 파일에서 복원", 위치 자유 선택). **데스크탑만 빠져 있었음** — 기존 백업/복원(38차)은 앱 전용 폴더 자동 저장뿐이라 다른 PC로 옮기기 불편했음. `JsonStore.save()`의 JSON 구성 로직을 `toJsonObject()`로 추출해 공유하고 `exportToFile()` 신설, 설정 화면에 "설정/그룹 내보내기·가져오기" 카드 추가 — `java.awt.FileDialog`로 원하는 위치에 저장/불러오기(가져오기는 기존 `restoreFromBackup()`을 임의 파일에도 그대로 재사용).
+- **[#1] 그룹 일시정지(스누즈)**: 사용자가 세부 규칙 확정(스누즈 시간은 그룹별로 직접 설정 가능, 하루 3회 제한). `LockEvaluator`에 `isSnoozeActive()`를 기존 `isPomodoroUnlocked()`와 동일한 패턴으로 추가 — `evaluate()`/`isCurrentlyRestricting()`/`isConfirmActiveNow()` 최상단에서 판정을 일시적으로 우회하되 `groupEnabled` 등 영구 상태는 전혀 안 건드림(그룹 목록 스위치는 계속 "켜짐"으로 보임). `Group`/`AppGroup`에 `snoozeMinutes`(그룹별 설정)/`snoozedUntilEpochMillis`/`snoozeUsedDate`/`snoozeUsedCount`(런타임 상태) 필드 추가, `Repository.snoozeGroup()`/`PhoneLockRepository.snoozeGroup()` 신설(하루 3회 초과 시 false). 그룹 목록 화면에 "😴 스누즈 N분 (n/3)" 버튼 추가(제한 중이거나 스누즈 중일 때만 표시). `ConfirmationGate.kt`는 전혀 안 건드림.
+- **[#7] 기간 지정 자동 강화(시험기간 등)**: `Group`/`AppGroup`에 `forceEnabledFrom`/`forceEnabledUntil`(yyyy-MM-dd, 포함) 필드 추가. `LockEvaluator.isGroupActive()`가 이 날짜 범위 안이면 `groupEnabled`를 껐어도 켜진 것으로 강제 취급(시간대/한도 판정 자체는 그대로 따름 — "무조건 잠금"이 아니라 "스위치 무시하고 판정 파이프라인에 들어가게만" 함). 그룹 편집 화면에 시작일/종료일 입력 필드 추가. **스누즈보다 우선하도록 결정** — 시험기간처럼 미리 각오하고 설정한 강제 기간엔 즉흥적인 스누즈가 안 먹히게(`evaluate()`/`isCurrentlyRestricting()`/`isConfirmActiveNow()` 모두 `isForceEnabled() || !isSnoozed()` 순서로 체크).
+
+### 검증
+
+- **컴파일: 완료** — 위 모든 변경사항 포함 데스크탑 `compileKotlin`, 안드로이드 `compileDebugKotlin`/`assembleDebug` 전부 BUILD SUCCESSFUL. 안드로이드 APK 두 위치 모두 갱신.
+- **실기기 검증: 미완료(사용자가 직접 진행 예정)** — 특히 신규 스누즈/기간 지정 강화는 이번 세션에 처음 만들어진 판정 로직 확장이라 우선순위 높음.
+- Room DB version 22→23(`StudyLogEntry.note` 추가) → 24(`AppGroup`에 snooze/forceEnabled 필드 6종 추가) — 이번 세션에 두 번 올라감. 둘 다 컬럼 추가라 마이그레이션 코드는 불필요하지만(`fallbackToDestructiveMigration()`), 스키마 변경 시 버전을 올리는 규칙은 계속 유지.
+
+---
+
+## 2026-08-10 (38차 세션) — 전문가 종합분석 보고서 작성 + 신규 발견 버그 6건 수정 + 신규 기능 9건 구현
+
+사용자가 "20년 경력 시니어 아키텍트/보안/UX/DevOps 관점에서 프로젝트 전체를 분석하고 개선하라"는 대규모 17단계 분석·기획 요청을 함. 먼저 범위를 확인(전체 그대로 진행 확정)한 뒤 3개 조사 에이전트(코드/버그/보안/성능, 기능기획 30건, 창의기능/로드맵/아키텍처)를 병렬 투입해 실제 소스(Android ~8,630줄/Desktop ~8,326줄/확장 ~700줄)를 근거로 종합 보고서를 작성하고 사용자에게 전달, 이어서 "보고서를 따라 앱 개선 진행시켜" 요청에 따라 보고서 내용을 실제로 구현. **이 세션 환경엔 빌드 툴체인(gradle)이 없어 컴파일/실기기 검증을 못했다 — 다음 세션 최우선 후보.**
+
+- **[산출물] `전문가_종합분석_보고서_2026-08-10.md`**: 관리앱 루트에 생성, 사용자에게 파일 전달 완료. 프로젝트/코드/버그/보안/성능/UX 분석, 리팩토링 제안, 신규기능 30건+구현계획, 창의기능 10건, Phase 0~4 로드맵, 아키텍처 개선(KMP는 `CalcEngine`만 권장), 테스트 전략(테스트 코드 0개 확인), 문서화, 최종평가+TOP20 전부 포함.
+
+### 신규 발견 버그 수정(6건, 전부 이 세션에 처음 발견 — BUGS.md 기존 항목과 무관)
+
+- **[Critical, Desktop] `Repository.pushUsageToFirebase`가 `tickMutex`+`Repository.lock`을 쥔 채 동기 Firebase HTTP 호출**: 다른 4개 push 함수(`pushStudyLogToFirebase` 등)는 전부 `Thread{}.start()` 비동기인데 이 함수만 예외였음 — 일일한도 그룹 사용 중 30초마다 최대 수초간 다른 그룹 감시/Repository 전체 호출이 정지될 수 있는 구조적 결함. 다른 push 함수와 동일한 `Thread{}.start()` 패턴으로 전환하되, 셧다운훅 경로(`flushPendingUsage()`)는 전송 유실 방지를 위해 별도의 동기 버전(`pushUsageToFirebaseBlocking`)을 신설해 그대로 사용.
+- **[High, Desktop] `peerUsageSeconds`(모바일 사용시간 합산 읽기)도 락 안 블로킹**: 캐시 만료 시(10초 TTL) `synchronized(lock)` 안에서 동기 GET. "캐시값(또는 0) 즉시 반환 + 백그라운드 스레드에서 갱신 후 짧게 재잠금해 캐시만 갱신" 패턴(stale-while-revalidate)으로 전환. `mergedEscalation()`(실행확인 레벨 계산, escalation 판정과 밀접)의 동일 문제는 판정 로직에 인접한 민감 영역이라 **이번엔 손대지 않고 남겨둠** — 향후 수정 시 사용자와 설계 재확인 필요.
+- **[High, Android] `PreMigrationBackup.TABLES`가 25~27차 신규 테이블 4개 누락**: `study_log_entry`/`calendar_task`/`calc_task`/`calc_saved_item`이 백업 목록에서 빠져 있어, 다음 Room 스키마 변경(`fallbackToDestructiveMigration()`) 시 이 데이터가 유일한 로컬 안전망 없이 통째로 사라질 수 있었음. 4개 테이블 추가(이번 세션에 추가한 `confirm_counter`까지 총 5개 추가).
+- **[High, Android] 캘린더/계산기 Firebase 동기화의 delete→insert 구간에 트랜잭션 부재**: `syncCalendarFromFirebase()`/`syncCalculatorFromFirebase()`가 `calendarTaskDao.deleteAll()` 이후 별도로 `insert()`를 반복 호출해서, 그 사이 프로세스가 죽으면 로컬이 빈 상태로 남을 위험이 있었음(`importBackupJson()`은 이미 `db.withTransaction{}`으로 안전했음). 세 군데(캘린더, 계산기 draft, 계산기 저장됨) 모두 `db.withTransaction{}`으로 delete+insert를 하나로 묶음.
+- **[Medium, Android] `ConfirmOpenActivity.recordConfirm()`이 `lifecycleScope`(화면 소멸 시 취소됨) 사용**: `Repository.kt` 자체 주석이 경고하는 패턴을 이 호출부만 어기고 있어, 메모리 압박/태스크 스와이프 시 확인 기록이 유실될 수 있었음. `PhoneLockRepository.recordConfirmFireAndForget(groupId)` 신설(자체 `ioScope` 기반)로 교체.
+- **[Medium, Android] `addUsageSeconds`의 read-modify-write가 뮤텍스 없이 동시 실행 가능**: `tick()`과 `checkSitesInternal()`이 독립 `AtomicBoolean` 가드로 동시 진행 가능해 같은 그룹 사용시간이 초 단위로 유실될 수 있었음(escalationCache는 이미 뮤텍스 보호 중이었는데 이쪽만 없었음). `usageMutex` 신설.
+- **[Medium, Android] `PomodoroSyncClient`의 `tokenCache`/`statusCache`가 동기화 없는 공유 var**: 여러 IO 스레드에서 check-then-act로 접근됨. `@Volatile` 추가(가시성 문제만 해소, 논리적 경쟁은 원래도 최악의 경우가 "중복 재로그인" 정도로 낮은 위험).
+
+### 신규 기능 9건(보고서 9~10절 번호 기준, 전부 양 플랫폼 대칭 구현·판정 로직 미변경)
+
+- **[#11, 즉시 적용 권장] "오늘 한눈에" 요약 위젯**: 타이머 탭 상단에 오늘 캘린더 일정(전체/완료)·오늘 계산기 목표(요일별 목표량 합)·오늘 누적 공부시간을 한 줄 요약. 새 데이터/API 없이 기존 3개 조회 결과만 조합.
+- **[#31] 최근 7일 vs 지난 7일 완료율 비교**: 통계 탭에 캘린더 완료율 비교 카드 추가(`+N%p`/`-N%p` 색상 구분). 새 조회 없이 기존 `allTasks`를 두 구간으로 재집계.
+- **[#32] 그룹별 "재확인 통과 횟수" 카운터**: 그룹이 재확인을 통과할 때마다(`recordConfirm()` 호출부에서만) 그날 카운터를 증가. `ConfirmEscalation`과 별개의 로컬 전용 데이터(`ConfirmCounter(groupId, date, count)`) — 데스크탑은 `AppData.confirmCounters`+`JsonStore` parse/save, 안드로이드는 Room 신규 엔티티 `confirm_counter`(Room DB version 21→22). 통계 화면에 "오늘 N회(어제 M회)" 표시. **판정 로직(`ConfirmationGate.kt`) 자체는 전혀 안 건드림** — 37차의 "원본 유지, 호출부에서 부가 기능" 패턴 그대로 재사용.
+- **[#19, Desktop만] 일일 다세대 백업/복원**: 앱 시작 시 하루 1회(`JsonStore.rotateDailyBackupIfNeeded()`) `data.json`을 `backups/backup_YYYY-MM-DD.json`으로 복사, 7일 초과분 자동 삭제. 설정 화면에서 날짜별 목록을 보고 "이 시점으로 복원" 가능(복원 시 확인 다이얼로그, 현재 데이터 완전 대체를 명시). 스키마 변경 시 1회성인 `PreMigrationBackup`(안드로이드)과는 목적이 다른, 매일 회전하는 안전망.
+- **[#21] 오래된 통계 데이터 정리**: 설정 화면에 "12개월 이상 지난 사용시간/재확인 카운터/공부기록 정리" 버튼(수동 트리거, 캘린더의 기존 "🧹 정리" 버튼과 동일한 UX 관례 — 자동 삭제 대신 사용자가 직접 누르는 방식 채택). `Repository.pruneOldStats(monthsAgo=12)`/`PhoneLockRepository.pruneOldStats(monthsAgo=12)` 신설, 캘린더 일정과 스트릭 계산엔 영향 없음.
+- **[#20] 사용 기록 CSV 내보내기**: 통계 화면에 CSV 내보내기 버튼. 데스크탑은 `java.awt.FileDialog`(SAVE 모드), 안드로이드는 `ActivityResultContracts.CreateDocument("text/csv")`로 저장 위치를 물어봄. `Repository.exportUsageCsv()`/`PhoneLockRepository.exportUsageCsv()` 신설(date,group,usedSeconds).
+- **[#13, Android만] 공부 잠금 중 방해금지 모드 자동 적용**: 설정에 토글 추가(기본 off), `ACCESS_NOTIFICATION_POLICY` 특수 접근 권한이 있을 때만 `StudyLockActivity` 진입 시 `INTERRUPTION_FILTER_PRIORITY`로 전환하고 `onDestroy()`에서 원래 상태로 복원(이 화면이 직접 켠 경우만 되돌림 — 사용자가 원래 켜둔 방해금지는 안 건드림).
+- **[#34] 이상 사용 패턴 경고**: 통계 화면에 그룹별 "최근 7일 평균(오늘 제외) 대비 오늘 사용량이 1.5배 넘으면" 경고 문구 표시. 시스템 알림이 아니라 화면 내 배너로 구현(모니터링 tick 루프를 건드리지 않기 위한 의도적 범위 축소). `Repository.getRecentAverageUsageSeconds()`/`PhoneLockRepository.getRecentAverageUsageSeconds()` 신설(로컬 기록 기준).
+
+### 의도적으로 보류한 항목(보고서엔 있으나 이번에 구현 안 함)
+
+- **#1(그룹 스누즈), #17(그룹 완화 시 PIN)**: `LockEvaluator.evaluate()`/`detectWeakeningEdit()` 등 잠금 여부를 결정하는 핵심 판정 게이트를 직접 확장해야 함 — 이 파일은 "사용자가 스스로 규칙을 약화시키는 걸 막기 위한" 방대한 방어 로직 그 자체라, HANDOFF.md의 "절대 손대지 말 것" 원칙과 정면으로 인접한 영역. 특히 스누즈는 앱의 핵심 목적(자기통제)과 정면 충돌할 여지가 있어 설계를 사용자와 먼저 확정해야 한다고 판단해 보류.
+- **#14(안드로이드 접근성 이벤트 디바운싱)**: 보고서 자체가 "스로틀 값은 실기기 프로파일링 후 결정" 조건을 달았고, 해당 코드(`AppMonitorAccessibilityService.onAccessibilityEvent`)는 과거 "넷플릭스 버그"(일부 창 전환이 이벤트를 안 일으켜 감지가 멈추던 문제) 등 실기기에서만 드러난 이슈를 겪으며 조심스럽게 조정된 영역이라 실기기 검증 없이 건드리지 않음.
+- **#2(원클릭 그룹 추가), #27/#28(접근성 큰글씨·TalkBack)**: 트레이 메뉴/알림 액션 통합이나 전체 화면 전수 점검처럼 범위가 넓어 컴파일 검증 불가 환경에서 리스크가 누적된다고 판단해 이번 세션엔 보류.
+
+### 검증
+
+- **컴파일/빌드: 못함** — 이 세션 환경엔 gradle 등 빌드 툴체인이 없음(메모리 `project_build_toolchain_missing` 참고 대상이나 이번엔 시도 안 함). 모든 수정은 기존 코드의 확립된 패턴(다른 push 함수의 `Thread{}.start()`, 캘린더의 `db.withTransaction{}`, 37차의 "원본 유지 호출부 병합" 등)을 그대로 재사용하는 최소 diff로 진행했으나, **다음 세션에서 반드시 컴파일 확인부터 먼저 할 것**.
+- **실기기 검증: 못함** — 37차부터 누적된 실기기 검증 부채에 이번 9개 기능까지 더해짐.
+- **남은 것**: (1) 컴파일 확인(최우선, 지금까지 없던 새로운 최우선순위), (2) 기존 1~5단계+37차 크로스디바이스 실기기 검증, (3) 위 신규 6개 버그수정+9개 기능의 실기기 검증, (4) Alt-Tab 버그 실제 수정(계속 보류 중) — [[HANDOFF.md]] 참고.
+
+---
+
+## 2026-08-10 (37차 세션) — 오버레이 밝기 재확인 횟수 설정 + 크로스디바이스 공부 잠금·실행확인 유예시간 동기화 신규
+
+사용자 요청 두 가지를 순서대로 구현. 첫 번째는 순수 표시값 설정(작은 범위), 두 번째는 크로스디바이스 판정 로직을 실제로 넓히는 작업(큰 범위) — 특히 "재확인/escalation 판정 로직에는 절대 손대지 말 것" 원칙이 걸린 `ConfirmationGate.kt`를 건드리지 않고 목표를 달성하는 방법을 찾는 게 핵심이었다.
+
+- **[신규] 그룹별 "오버레이 최고 밝기까지 재확인 횟수" 설정**: `GroupEditScreen`의 "실행 확인" 섹션(사용 중 남은 시간 오버레이 표시 토글 아래)에 정수 입력 필드 추가. 기존엔 오버레이 알파 증가폭(`OVERLAY_ALPHA_PER_LEVEL`)이 고정 상수였는데, 이제 그룹의 `overlayLevelStepsToMax`(기본 5)로부터 `(최대 알파 - 기본 알파) / 설정값`을 매번 계산해서 쓴다 — 사용자는 "몇 번째 재확인 만에 최고 밝기에 도달할지"만 정하고, 한 번 재확인할 때마다 오르는 양은 시스템이 자동 계산. 데스크탑(`Group`/`JsonStore`/`UsageOverlayContent`/`EnforcementService`/`SiteEnforcement`/`LocalApiServer`), 안드로이드(`AppGroup`/`AppMonitorAccessibilityService`, Room DB version 20→21), 브라우저 확장(`overlay.js`, `/overlay-status` 응답에 `levelStepsToMax` 필드 추가) 세 곳 모두 적용. 재확인이 언제 뜨는지/레벨이 언제 오르내리는지 같은 판정 로직은 전혀 안 건드림 — 순수하게 "보여지는 값"만 바뀜.
+- **[신규] 크로스디바이스 공부 잠금 강제 적용**: 기존(34차)엔 다른 기기의 공부 타이머 실행 상태를 "표시(미러링)"만 했는데, 이번엔 실제로 잠금까지 걸도록 확장했다. `EnforcementService.checkStudyLock()`/`SiteEnforcement.isBlockedByStudyLock()`(데스크탑), `AppMonitorAccessibilityService.checkStudyLock()`/`checkStudyLockSite()`(안드로이드)가 로컬 타이머 상태(`isStudyLockActive()`)뿐 아니라 `PomodoroSyncClient.isStudyTimerActive()` 원격 신호도 OR로 확인한다. 허용 프로그램/사이트는 여전히 각 기기의 로컬 설정을 그대로 쓴다(24차 원칙 유지). 원격 신호로 잠긴 경우 정지/전환 버튼은 로컬에 실행 중인 타이머가 없어 눌러도 효과가 없으므로 화면에서 숨기고 "다른 기기에서 공부 타이머가 실행 중" 안내 문구로 대체(데스크탑 `StudyLockScreen`/안드로이드 `StudyLockActivity` 둘 다, `StudyLockStatus.isRemote`/`EXTRA_STUDY_LOCK_IS_REMOTE`로 전달). 안드로이드는 `StudyLockActivity`의 `isStillActive` 콜백을 suspend로 바꿔 로컬+원격 신호를 함께 폴링하도록 수정(안 바꾸면 원격으로 잠긴 화면이 로컬 상태만 보고 매초 즉시 닫혀버리는 버그가 생길 뻔했음 — 구현 중 발견해 함께 수정). **안전장치**: 34차에 미러 표시용으로 이미 쓰던 20분 신선도 컷오프(`REMOTE_STUDY_SIGNAL_STALE_MS`, `remoteUpdatedAtMillis()` 기준)를 재사용 — 신호를 올리던 기기가 정지 없이 앱을 꺼버리면 `timerActive:true`가 유령처럼 남을 수 있는데, 이게 실제 잠금에 쓰이므로 컷오프 없이 두면 이 기기가 영구히 잠길 위험이 있었다.
+- **[신규] 크로스디바이스 실행확인 유예시간(쿨다운) 공유**: 같은 이름의 그룹을 가진 다른 기기가 실행확인 "전자"를 눌러 통과하면, 이 기기도 재확인 없이 같은 유예시간을 이어서 쓸 수 있게 했다. 기존에 이미 있던 `confirmSync`(실행확인 레벨 동기화, `lastConfirmedAtEpochMillis` 최신값 승리)를 그대로 재사용 — `Repository.syncedLastConfirmedAtEpochMillis(group)`(데스크탑)/`PhoneLockRepository.syncedLastConfirmedAtEpochMillis(group)`(안드로이드)를 신설해 `mergedEscalation()`이 계산해두던 값을 그대로 노출하고, 호출부(`EnforcementService.decide()`/`overlayStatusFor()`, `SiteEnforcement.check()`/`overlayStatus()`/`tick()`, 안드로이드 `AppMonitorAccessibilityService`의 동일 위치들)에서 로컬 `ConfirmationGate` 값과 동기화 값 중 더 최근인 쪽으로 "지금 유예시간 안인지"/"남은 시간이 얼마인지"를 계산하는 `effectiveRemainingCooldownSeconds()`/`isRecentlyConfirmedAnyDevice()`를 새로 추가했다. **`ConfirmationGate.kt`(양 플랫폼) 자체는 한 줄도 안 건드림** — "절대 손대지 말 것" 원칙(과거 큰 삽질 전례, [[DECISIONS.md]] "표시값과 판정 로직 분리" 참고)을 지키면서도, 이미 검증된 `mergedEscalation`의 최신값 승리 로직을 호출부에서 재사용하는 방식으로 목표를 달성했다. 결과적으로 두 기기의 오버레이 남은시간 표시도 같은 종료 시각을 기준으로 계산되어 "같은 타이머 시간대"를 공유하게 된다.
+- **검증**: 데스크탑 `compileKotlin`, 안드로이드 `compileDebugKotlin`/`assembleDebug` 전부 `BUILD SUCCESSFUL`(사전 존재하던 무관한 경고만 있음). 데스크탑은 robocopy(PowerShell+절대경로, FAILED 0 확인)→`createDistributable`→배포 후, 배포된 jar를 직접 압축 해제해 `Group.class`(오버레이 설정 1차 배포분)와 `EnforcementService.class`(2차 배포분, `syncedLastConfirmedAtEpochMillis`/`isRemoteStudyTimerActive` 문자열 확인)에 새 필드/함수가 실제로 컴파일돼 들어갔는지 바이트코드 레벨로 확인한 뒤 재실행(2회 배포). 안드로이드는 두 차례 모두 `assembleDebug` 성공 후 APK를 `AndroidBuilds`/OneDrive 원본 두 위치 모두 갱신. **실기기(폰 재설치, 데스크탑+안드로이드 2대 동시 크로스디바이스) 검증은 이번 세션에 못함** — 다음 세션 최우선 후보.
+- **남은 것**: 위 두 크로스디바이스 신규 기능의 실기기 검증(최우선 신규) + 1~5단계 전체 실기기 검증(여전히 미완료) + Alt-Tab 버그 실제 수정(여전히 보류 중) — [[HANDOFF.md]] 참고.
+
+---
+
+## 2026-08-08 (36차 세션) — 뽀모도로 모드 토글 유지 버그 수정 + robocopy(Bash 도구) 무반영 버그 발견
+
+사용자 요청은 짧았다("뽀모도로 타이머 on/off가 다른 탭 갔다 오면 off로 초기화 되는게 불편해") — 실제 코드 수정 자체는 금방 끝났지만, 이후 재현이 안 된다는 보고가 3차례 반복되면서 원인이 앱 버그가 아니라 세션 내내 사용한 빌드 파이프라인 자체에 있었다는 게 드러난 세션.
+
+- **[신규] "🍅 뽀모도로 모드" 토글이 다른 서브탭 갔다 오면 항상 OFF로 초기화되던 문제 수정**: `StudyTimerScreen`의 `pomodoroEnabled`가 `remember { mutableStateOf(false) }`로 하드코딩돼 있어 화면(서브탭)을 벗어났다 돌아오면 항상 초기값(false)으로 리마운트됐다. `pomodoroStudyMinutes`/`pomodoroBreakMinutes`와 동일한 패턴으로 `Repository`에 영속화되는 `pomodoroModeEnabled` 프로퍼티를 신설(양 플랫폼: 데스크탑 `Models.kt`+`Repository.kt`, 안드로이드 `AppPreferences.kt`+`PhoneLockRepository.kt`)해서 초기값을 그걸로 읽고, 토글 클릭 시 즉시 저장하도록 수정. 데스크탑은 수동 JSON 직렬화(`JsonStore.kt`)라 `parse()`/`save()` 양쪽에도 필드를 추가해야 했음(처음엔 누락해서 재시작 시 안 살아남는 문제가 있었다가 발견 후 추가).
+- **[발견/Fixed] robocopy를 Bash 도구로 실행하면 이 프로젝트(한글 경로)에서 조용히 아무것도 복사하지 않는 버그**: 위 코드 수정을 완료하고 여러 차례 재빌드/재배포했다고 보고했지만 사용자가 "여전히 안 된다"고 세 번 반복 보고 — Gradle이 `compileKotlin`/`jar`를 매번 `UP-TO-DATE`로 스킵하며 "BUILD SUCCESSFUL"을 찍어서 정상처럼 보였다. 배포된 jar를 직접 압축 해제해 `.class` 파일에서 새로 추가한 필드/문자열을 grep해본 뒤에야, `AndroidBuilds\phone-lock-desktop\src`(빌드가 실제로 읽는 소스)에 내 수정사항이 전혀 없다는 걸 발견했다. 원인은 `robocopy "phone-lock-desktop\src" "C:\Users\sunae\AndroidBuilds\...\src" /MIR`를 **Bash 도구**로(상대경로, `cd` 이후) 실행하면 "성공"으로 보고되지만 실제로는 아무 파일도 안 옮겨지는 것 — Git Bash가 `OneDrive\바탕 화면\클로드\관리앱`의 한글 경로를 다루는 과정에서 조용히 실패하는 것으로 추정. **PowerShell 도구로 절대경로를 써서 다시 실행하니 그제서야 변경된 파일들이 "Newer"로 실제 복사됐고**, 그 뒤로는 재빌드/재배포가 정상적으로 반영됨을 배포된 jar의 클래스 파일을 직접 grep해서 확인했다. 이번 세션 내내(문제 발견 전까지) 진행한 모든 "재빌드/재배포"는 전부 옛날 코드를 다시 배포한 것이었음 — [[HANDOFF.md]] "현재 주의사항", 메모리 `feedback_robocopy_use_powershell` 참고.
+- **[디버깅 기법] 임시 DebugLog 계측 후 제거**: robocopy 문제를 의심하기 전 단계에서, `StudyTimerScreen`의 mount/click 지점에 `DebugLog.log()` 임시 계측을 추가해 실행 로그(`%APPDATA%\PhoneLockDesktop\debug.log`)로 실제 동작을 확인하려 했다 — 이 로그가 전혀 안 쌓이는 것도 "배포가 반영 안 되고 있다"는 결정적 단서였다. 최종 원인(robocopy) 확인 후 계측 코드는 제거.
+- **검증**: robocopy를 PowerShell+절대경로로 재실행 후 desktop `clean createDistributable`로 완전 재빌드, 배포된 jar를 직접 압축 해제해 `AppData.class`/`JsonStore.class`/`Repository.class`에 `pomodoroModeEnabled` 필드가 실제로 존재함을 바이트코드 레벨에서 확인. 안드로이드도 같은 방식(PowerShell robocopy)으로 다시 동기화 후 `assembleDebug --rerun-tasks`로 재빌드, APK 두 위치 갱신. 사용자가 데스크탑에서 토글 유지 정상 동작 확인 완료("해결됐어"). **안드로이드 실기기 재설치 확인은 아직 안 됨**(APK만 갱신, 폰에 재설치는 사용자 몫).
+- **남은 것**: 1~5단계 전체 실기기 검증(여전히 최우선 미완료) + Alt-Tab 버그 실제 수정(35차부터 보류 중) — [[HANDOFF.md]] 참고.
+
+---
+
+## 2026-08-08 (35차 세션) — Alt-Tab 버그 원인 확정, 캘린더 미완료 자동복사, 확장 다크테마 통일, 주황→파랑 accent 전면 교체
+
+여러 개의 짧은 요청을 순서대로 처리한 세션. 큰 구조 변경 없이 기존 패턴을 그대로 재사용하는 작업 위주.
+
+- **[조사] Alt-Tab 사이트 차단 우회 버그 원인 확정(수정은 보류)**: `background.js`가 `chrome.webNavigation.onBeforeNavigate`(새 네비게이션)에만 반응하고, 공부 잠금 켜지기 전부터 이미 열려있던 탭으로 Alt-Tab만 하는 경우는 이 리스너가 발동하지 않는다는 걸 코드로 확인. 유일한 백업이 1분 주기 `tick` 알람이라 최악의 경우 60초까지 실제로 이용 가능. 해결 방향(`chrome.tabs.onActivated`/`chrome.windows.onFocusChanged` 즉시 재검사)은 확인했으나 사용자가 "원인만 문서화, 수정은 나중에"로 결정. [[BUGS.md]] Open 항목에 상세 기록.
+- **[신규] 캘린더 "미완료(X)" 처리 시 다음날로 같은 업무 자동 복사**: 기존 "완료(O) → 자동으로 다음 회독 생성"(`applyCalendarAutoSchedule`/`revertCalendarAutoSchedule`)과 정확히 대칭되는 `applyIncompleteCarryOver`/`revertIncompleteCarryOver`를 양 플랫폼 Repository에 추가. X 누르면 같은 업무가 다음날(+1일)에 상태 초기화된 채로 복사되고 원본(오늘)은 그대로 남는다. 다시 X를 눌러 취소하면 복사된 다음날 항목도 함께 제거(O의 되돌리기 규칙과 동일).
+- **[신규] 브라우저 확장 3개 페이지 다크테마로 통일**: `confirm.html`/`blocked.html`이 28차 세션에 앱 전체(안드로이드/데스크탑)에 적용된 공부앱(index.html) 다크 팔레트를 못 따라가고 옛날 라이트 "따뜻한 미니멀 테마"(`#fbf6f0`)에 남아있었고, `onboarding.html`은 아예 다른 남색 톤(`#1e293b`)이었음 — 공부앱/네이티브 앱과 동일한 다크 팔레트(`#0f1117`/`#e4e8f5`/`#2a3045` 등)로 3개 페이지 모두 교체. 브라우저에서 computed style로 hex 일치 확인.
+- **[신규] "후자" 버튼/타이머 강조색을 주황(#FF9800)에서 파란 accent(#4F8EF7)로 앱 전체 교체**: 사용자 요청으로 안드로이드 6곳(`ConfirmOpenActivity.kt` 2곳, `BlockActivity.kt`, `AppMonitorAccessibilityService.kt`) + 데스크탑 3곳(`ConfirmScreen.kt`, `BlockScreen.kt`, `UsageOverlayContent.kt`) + 확장 2곳(`confirm.html`/`blocked.html` 버튼, `overlay.js` 타이머 숫자) 총 9개 파일의 `0xFFFF9800`/`#ff9800`을 전부 `0xFF4F8EF7`/`#4f8ef7`로 교체. 버튼 텍스트 색도 native의 `onPrimary=Background` 관례에 맞춰 밝은색→어두운색(`#0f1117`)으로 함께 조정(파란 배경과 대비 유지).
+- **[설명, 코드 변경 없음] "어제 공부기록/캘린더 일정이 오늘도 보이는" 문의에 답변**: 버그가 아니라 `dailyResetHour` 설정(현재 9, 즉 오전 9시 리셋) 때문 — `effectiveDate()`가 자정이 아니라 이 리셋 시각 기준으로 "오늘"을 계산해서, 리셋 시각 전이면 캘린더/공부기록/일일한도 전부 아직 "어제"로 취급한다. 로컬 데이터파일(`data.json`)에서 실제 값을 확인해 원인 설명. 사용자가 "수정 없이 이대로 간다"고 결정 — dailyResetHour=9 그대로 유지.
+- **검증**: 캘린더 자동복사 + 색상 교체 각각 desktop `compileKotlin`/android `compileDebugKotlin` 확인 후 안드로이드 `assembleDebug`+APK 두 위치 갱신, 데스크탑 `createDistributable`+robocopy(FAILED 0)+재실행 반복(세션 중 총 3회 배포). 브라우저 확장 3페이지는 로컬 파일을 직접 열어 computed style로 색상값 검증.
+- **남은 것**: Alt-Tab 버그 수정 자체(원인은 확정, 리스너 추가는 보류) + 1~5단계 전체 실기기 검증(여전히 최우선 미완료) — [[HANDOFF.md]] 참고.
+
+---
+
+## 2026-08-07 (34차 세션) — 32차 아이디어 6건 전부 구현 + 타이머/공부기록 크로스디바이스 동기화
+
+33차 세션에서 사용자가 지정한 32차 아이디어 6건을 쉬운 순서대로 전부 구현. 이어서 사용자가 "타이머가 동기화가 잘 안되네"라고 지적 → 대화로 범위를 좁혀가며 두 가지를 추가로 구현: ① 타이머 실행 상태를 다른 기기에서도 실시간에 가깝게 미러링해서 보여주는 기능(제어는 제외), ② 공부 기록(StudyLogEntry) 자체의 진짜 크로스디바이스 동기화. 마지막엔 실제 Firebase 서버 상태를 REST API로 직접 조회해 디버깅한 끝에 캘린더 화면의 "진입 시 1회만 동기화" 버그를 찾아 고쳤다.
+
+- **[신규] 32차 아이디어 6건 전부 구현(양 플랫폼, 데스크탑 전용 항목 제외)**:
+  1. "타이머" 탭 이름 → "⏱️ 시간 측정"으로 라벨만 변경(탭 타이틀+화면 제목).
+  2. 데스크탑 일정표에 이전주/다음주 이동 버튼 추가(`weekOffset` 상태로 기준 일요일을 옮김, 이번 주엔 "(이번 주)" 표시).
+  3. 캘린더 날짜 상세에 그날 타이머 기록 표시 — `Repository.getStudyLogForDate(dateKey)` 신규(양 플랫폼). 처음엔 "이 날 잰 시간" 별도 섹션으로 붙였다가, 사용자 요청으로 "날짜 옆에 총 시간, 각 업무 이름 옆에 그 업무 시간"으로 재배치(SectionCard 제목에 `· ⏱ 총 X` 추가, `CalendarTaskRow`의 회독 라벨 옆에 `· ⏱ X` 이어붙임).
+  4. 저장됨 폴더 지정 팝오버를 웹앱과 동일한 모양으로 — 인라인 텍스트 목록 대신 `DropdownMenu`(Material3)로 버튼 옆에 뜨는 팝오버, 현재 폴더는 accent 색+굵게 강조, 폴더는 depth만큼 들여쓰기.
+  5. 웹앱 애니메이션 이식 — 뽀모도로 phase 배지 dot에 `rememberInfiniteTransition`으로 pulse(1↔0.3 알파, 0.5초 왕복) 적용, 계산기 결과 카드/저장됨 항목에 `AnimatedVisibility`(fadeIn+slideInVertically)로 진입 애니메이션.
+  6. 관리앱(그룹/통계) 데스크탑 좌우 분할 — 그룹 화면은 왼쪽 목록(선택 시 accent 테두리 강조)+오른쪽 편집 폼(선택 없으면 안내문)으로, 통계 화면은 왼쪽 그룹별 요약(진행바만)+오른쪽 선택한 그룹 상세(같은 데이터를 확대)로 재작성. 통계는 새 데이터(그래프 등)를 만들지 않고 있는 데이터를 선택 기반으로 확대하는 선에서 범위를 제한했다.
+- **[신규] 타이머 크로스디바이스 미러**: `PomodoroSyncClient`의 push 페이로드에 `phaseStartedAt`/`taskName` 추가, `remoteUpdatedAtMillis()`(20분 초과 시 무시)로 죽은 신호 방어. `StudyTimerScreen`은 로컬 타이머가 꺼져 있을 때 다른 기기가 신선하게 재고 있으면 시작 버튼 없이 메인 카드 자체가 그 상태(phase 배지/업무명/큰 숫자)를 그대로 보여준다 — 단 정지/전환 버튼은 숨기고 "다른 기기에서 실행 중입니다" 안내만 표시(원격 제어는 하지 않음, 19차 remoteCommand 문제 재발 방지). 자세한 설계는 [[DECISIONS.md]] "타이머 크로스디바이스 '미러' 표시" 참고.
+- **[신규] 공부 기록(StudyLogEntry) 크로스디바이스 동기화**: `users/{user}/studyLog/{날짜}/{기기}`에 각 기기가 자기 기록 전체를 덮어쓰는 방식(dailyUsage와 같은 "기기별 키" 패턴, 경쟁 없음). Repository에 `remoteStudyLogCache`(표시 전용, 로컬 DB엔 병합 안 함)를 추가해 `getTodayStudyLog()`/`getStudyLogForDate()`가 로컬+원격을 합쳐서 반환. 타이머 탭은 5초마다, 캘린더 날짜 상세는 패널이 열려 있는 동안 5초마다 동기화. 자세한 설계는 [[DECISIONS.md]] "공부 기록 크로스디바이스 동기화" 참고.
+- **[Fixed] 캘린더 날짜 상세가 패널 진입 시 1회만 동기화하던 버그**: 날짜를 한 번 연 뒤 화면을 계속 켜놓은 채로 다른 기기에서 방금 기록을 남겨도 반영되지 않았다 — 실제 Firebase 서버 값을 REST API로 직접 조회해서(desktop 로컬 `data.json`에서 fbDatabaseUrl/fbApiKey/fbUser를 읽어 anonymous 인증 후 조회) 데스크탑 쓰기는 정상인데 안드로이드 쪽 반영이 안 됨을 먼저 확인한 뒤, 이 1회성 동기화가 원인 중 하나였음을 찾아 5초 주기로 바꿔 해결(양 플랫폼).
+- **검증**: 6개 아이디어 + 미러 기능 + 공부기록 동기화 각 변경마다 desktop `compileKotlin`/android `compileDebugKotlin` 확인 후 안드로이드 `assembleDebug`+APK 두 위치 갱신, 데스크탑 `createDistributable`+robocopy(FAILED 0)+재실행을 반복(세션 중 총 8회 배포). 사용자가 안드로이드 실기기에서 공부기록 크로스디바이스 동기화 실사용 확인 완료.
+- **남은 것**: Alt-Tab 사이트 차단 우회 버그(여전히 미착수) + 1~5단계 전체 실기기 검증(여전히 최우선 미완료) — [[HANDOFF.md]] 참고.
+
+---
+
+## 2026-08-07 (33차 세션) — 32차 신규 버그 4건 수정
+
+32차 세션에서 사용자가 실사용 중 발견한 버그 4건을 순서대로 수정. `debug.log`/`data.json`을 직접 열어 원인을 먼저 확정한 뒤 고치는 방식으로 진행 — 특히 ②는 로그를 까보니 저장 로직이 아니라 표시 로직 문제였다는 걸 미리 확인해서 불필요한 저장 로직 수정을 피했다.
+
+- **[Fixed] 데스크탑: 공부 잠금 중 허용 프로그램 실행 안 됨** — 원인: `ProcessBuilder("chrome.exe")`는 PATH만 검색해서 설치 경로가 PATH에 없는 실행파일명은 `CreateProcess error=2`로 못 찾는다(`debug.log`로 확정). 1차 시도로 `cmd /c start`로 바꿨더니 Chrome은 됐지만(App Paths 레지스트리에 등록돼 있어서) Discord는 여전히 실패하면서 콘솔 창만 남기고, 그 실패조차 cmd 프로세스 자체는 정상 종료라 "성공"으로 잘못 기록되는 새 문제가 생겼다(사용자 재현: "이상한 명령 프롬프트만 켜지고"). 최종적으로 `resolveAppPath()`를 신설 — ① 레지스트리 `App Paths`(Chrome/Edge류) 조회 → ② 시작 메뉴 바로가기(`.lnk`, Discord류) 이름 검색 → ③ 못 찾으면 예전처럼 PATH만 시도. 찾은 exe는 `ProcessBuilder`로 창 없이 직접 실행, `.lnk`는 `Desktop.open()`이 "Unsupported URI content"로 실패해서 `explorer.exe`에 경로를 넘겨 대신 열게 함. 자세한 배경은 [[DECISIONS.md]] "공부 잠금 허용 프로그램 실행: 이름만으로 찾는 3단계 폴백" 참고.
+- **[Fixed] 데스크탑/안드로이드: 공부 타이머 기록이 "오늘의 공부 기록"에 안 남음** — 원인: `data.json`을 직접 열어보니 `Repository.timerStop()`이 실제로는 `studyLog`에 정상 적립하고 있었다(저장 로직은 처음부터 문제없었음). 진짜 원인은 UI 쪽 — 전체화면 잠금(`StudyLockScreen`/`StudyLockActivity`)에서 정지/전환했을 때, 타이머 탭(`StudyTimerScreen`)의 `todayLog` 상태가 그 탭 자체 버튼을 눌러야만(`refreshLog()`) 갱신되는 구조라 잠금 화면 경로로 쌓인 기록은 반영이 안 됐다. 두 화면의 기존 1초 tick 루프(`run == null`일 때 `todayTasks` 재조회하던 부분)에 `todayLog` 재조회를 같이 추가해서, 타이머가 멈춰 있는 동안엔 항상 최신 기록이 보이게 함.
+- **[Fixed] 안드로이드: "설치 앱 목록에서 골라 허용앱 지정" 창이 안 뜸** — 원인: 정상 작동하는 `GroupEditScreen`은 앱 체크박스 목록을 최상위 `LazyColumn`의 `items()`로 바로 펼치는데, `AllowedAppsPickerBody`(`StudyLockAppsScreen`/타이머 탭 인라인 섹션이 공유)는 `LazyColumn`을 `Column`(`weight(1f, fill=false)`) 안에 중첩시켜 놨다 — 특히 타이머 탭의 `verticalScroll(Column)` 안에서 쓰일 땐 무한 높이 부모 안에서 `weight()`가 있는 중첩 스크롤이라 렌더링 자체가 깨진 것으로 보인다. `weight()`를 빼고 `heightIn(max=360dp)`만으로 고정 높이를 줘서 어느 부모 안에서도 항상 뜨게 수정.
+- **[Fixed] 데스크탑: 계산기 결과 카드 가로세로 비율이 웹앱과 다름** — 원인: `CardGrid`가 화면 폭 상관없이 `items.chunked(2)`로 항상 2열 고정이라, 창을 넓게 쓸수록 카드가 웹앱보다 훨씬 가로로 넓고 짧아졌다. 웹앱의 `grid-template-columns: repeat(auto-fill, minmax(320px, 1fr))`와 동일하게 `LazyVerticalGrid(GridCells.Adaptive(minSize = 320.dp))`로 교체 — 폭에 따라 열 개수가 자동으로 늘고 줄게 됨.
+- **검증**: 4건 모두 수정마다 desktop `compileKotlin` 성공 확인 후 최종적으로 안드로이드 `assembleDebug`+APK 두 위치 갱신 1회, 데스크탑 `createDistributable`+robocopy 배포(FAILED 0)+재실행 3회 반복(허용 프로그램 실행 건은 사용자 재현으로 2차 수정까지 감). 사용자가 데스크탑에서 chrome.exe/discord.exe 둘 다 정상 실행되는 것 실사용 확인 완료. ③(안드로이드 앱 목록)·④(카드 비율)는 여전히 실기기 검증 대기.
+- **남은 것**: Alt-Tab 사이트 차단 우회 버그(32차 이전부터 있던 별개 버그, 이번엔 미착수) + 1~5단계 전체 실기기 검증 + 32차에서 나온 아이디어 6건([[IDEAS.md]] 참고, 다음 세션 시작 항목으로 사용자가 지정).
+
+---
+
+## 2026-08-07 (32차 세션) — 계산기 기능 보강 + 웹앱 소스 기반 전면 UI/색상 재검토
+
+31차까지 완료된 코드가 실제로는 웹앱(`공부앱/index.html`)과 시각적으로 크게 다르다는 사용자 지적으로 시작, 세션 내내 스크린샷 비교 → 소스(CSS/JS) 직접 확인으로 방법을 전환하며 계산기/타이머/캘린더 3개 화면을 순차로 재구현. 사용자가 여러 차례 재현/재확인을 요구할 만큼 반복 수정이 많았던 세션 — 핵심 교훈은 "스크린샷으로 추측하지 말고 `index.html`의 CSS/JS부터 grep"([[feedback_gwanrieob_ui_reference_source_first]] 메모리화됨).
+
+- **[신규] 계산기 기능 보강(양 플랫폼)**: ① 폴더 접기 상태 영속화(`calcFolderCollapsed`, 로컬 전용) — 나갔다 들어와도 유지, ② 업무 입력/결과 카드 개별 접기, ③ "모두 펴기/접기" 버튼(입력·결과 각각), ④ 결과 탭 "전체 저장" 버튼, ⑤ 입력 탭 하단 버튼(추가/계산/초기화)을 스크롤 밖 고정 영역으로 분리. 안드로이드 타이머 탭엔 기존 `StudyLockAppsScreen`의 앱 선택 로직을 재사용한 인라인 접이식 "공부 잠금 허용 앱" 섹션 신규 추가.
+- **[신규] 계산기 결과 카드를 웹앱 실제 CSS(`​.result-block`/`.dday-badge`/`.progress-bar-fill`/`.pace-table`/`.result-verdict`) 기준으로 재구현**: 여러 차례 오독을 거쳐 최종적으로 확정된 규칙 — 카드 배경/테두리는 항상 무채색, 색은 ①D-day 배지(파랑 고정) ②진행바 채움(파랑→초록 그라디언트, 상태 무관) ③"필요⚠️" 행(빨강 고정) ④판정 배너 배경+테두리(충분=초록/부족=빨강, 텍스트는 무채색) ⑤마감 초과/여유 배지, 이 5곳에만 쓰인다. `CalcEngine`에 이미 있던 `totalCapacity`/`finishDiffDays` 필드(엔진 수정 없이 UI만 새로 사용)로 "기간 내 X 소화 가능"·"마감 N일 초과/전" 문구를 처음으로 표시.
+- **[신규] 타이머 화면을 웹앱 실제 CSS(`.pomo-phase-badge`/`.timer-display.running`/`.pomo-toggle-btn`/`.study-log-row`/`.lock-app-*`) 기준으로 재구현**: 상태 배지 공부=파랑/휴식=**초록**(먼저 보라로 잘못 넣었다가 정정), 타이머 숫자는 phase 무관 실행 중이면 항상 파랑 굵은 모노스페이스, "전환" 버튼을 채워진 버튼→파랑 틴트 아웃라인으로, 뽀모도로 on/off를 스위치→ON/OFF 알약 버튼으로, 시간 초과 시 노란 안내 박스 신규 추가, "오늘의 공부 기록"을 텍스트 나열→카드형 행+합계 행(파랑 강조)으로, 허용 프로그램/사이트 입력을 여러 줄 텍스트박스→입력+추가버튼+개별 삭제(✕) 리스트로 전면 교체.
+- **[Fixed] 타이머 탭 "오늘 캘린더 일정" 드롭다운이 여러 항목이 있어도 선택이 안 바뀌는 버그**: `OutlinedTextField(readOnly=true)`에 `Modifier.clickable`만 얹은 방식이 readOnly 텍스트필드 자체의 포인터 입력 가로채기와 충돌하는 것으로 추정 — Material3 표준 패턴인 `ExposedDropdownMenuBox`로 교체해 해결(양 플랫폼).
+- **[신규] 캘린더 화면을 웹앱 실제 CSS(`.day-cell`/`.task-chip`/`.task-name-modal`/`.modal-btn`) 기준으로 재구현(좌:월그리드/우:날짜상세 분할 레이아웃은 유지)**: "오늘" 표시를 셀 전체 배경→날짜 숫자만 원형 파란 배지로 정정, 월 그리드 일정은 회독 단계별 배경+테두리를 채운 배지(O/X 완료 표시는 칩 색과 별개로 항상 초록/빨강), 날짜 상세의 일정 이름은 칩이 아니라 배경 없는 색 텍스트(red 단계는 "회색"이 아니라 사실 흰 텍스트 — 테두리만 회색이라 그리 보였던 것, 이전 세션에 잘못 칩으로 만들었던 부분 정정), 완료/미완료/이동/복사/삭제 5개 버튼을 각각 초록/빨강/파랑/보라/빨강으로 틴트.
+- **[신규] 캘린더 월 그리드 세로 스트레치**: 데스크탑 날짜 칸을 고정 72dp에서 남는 세로 공간을 다 채우도록(행마다 `weight(1f)`) 변경 — 창을 키워도 그리드 아래 빈 공간이 안 남음.
+- **[신규] 캘린더 날짜 상세 행 재배치**: "다음 회독" 입력을 라벨 붙은 140dp 텍스트필드(별도 줄)→헤더 줄 안의 64dp 소형 알약 입력으로, 완료/미완료/이동/복사/삭제 5개 버튼을 웹앱처럼 폭 균등 분배(`flex:1`)로.
+- **[일정표/통계 색상 보정]**: 일정표 오늘 칸 값 빨강/합계 열 파랑 추가(이전엔 무채색), 통계 지표 타일에 테두리만 있고 없던 배경 틴트(7%) 추가.
+- **검증**: 각 단계마다 양 플랫폼 컴파일 확인(`compileKotlin`/`compileDebugKotlin`) 후 안드로이드 `assembleDebug`+APK 두 위치 갱신, 데스크탑 `createDistributable`+robocopy 배포(FAILED 0)+재실행 — 세션 중 총 8회 반복 배포. **실기기(안드로이드 실물 기기) 검증은 여전히 안 함**, 데스크탑은 사용자가 매 반복마다 스크린샷으로 확인.
+- **사용자가 이번 세션 중 발견한 새 버그 4건**([[BUGS.md]] Open 참고): ① 데스크탑 공부 잠금 중 허용 프로그램 실행 안 됨, ② 데스크탑 타이머 측정 기록이 "오늘의 공부 기록"에 안 남음, ③ 안드로이드 허용 앱 선택 창이 안 뜸(그룹 만들 때 앱 고르는 화면은 정상 작동 — 그 구현 참고 요청), ④ 계산기 결과 카드 가로세로 비율이 웹앱과 다름(2열 고정 그리드 vs 웹앱 `minmax(320px,1fr)` 자동 배치).
+- **다음 세션으로 넘긴 아이디어 6건**([[IDEAS.md]] 참고): 캘린더 날짜 상세에 타이머 기록 표시, 웹앱 애니메이션 이식, 관리앱 섹션(그룹/통계)도 데스크탑 좌우 분할, 폴더 지정 팝오버를 웹앱과 동일하게, 데스크탑 일정표 주 이동 네비게이션, "타이머"→"시간 측정" 이름 변경.
+
+---
+
+## 2026-08-07 (31차 세션) — 계산기 버그 3건 수정(사용자 실기기 검증 중 발견)
+
+30차까지 로드맵 5단계 전체가 완료된 뒤, 사용자가 실제로 계산기 탭을 써보면서 발견한 버그 3건.
+
+- **[Fixed] 데스크탑: "계산하기" 버튼을 누르면 항상 이상한 오류가 뜸** — 원인: `CalculatorScreen.kt`의 `CalcResultTab`이 `results.filterIsInstance<Pair<CalcTask, CalcEngine.CalcOutcome.Error>>()`로 에러만 골라내려 했는데, 제네릭 타입 소거 때문에 이 필터는 실제로 `Pair`이기만 하면(Success든 Error든 상관없이) 전부 통과시킨다. 이후 `outcome.message`에 접근하는 순간 실제 런타임 타입이 `Success`인 항목에서 `ClassCastException`이 터져 계산 결과가 하나라도 성공하면(거의 항상) 크래시. `is` 체크로 직접 분기하도록 수정.
+- **[Fixed] 저장됨 항목이 폴더 소속 표시는 되는데 그 폴더가 목록에 안 뜸** — 원인: 웹앱에서 만들어진 기존 Firebase 데이터가 항목별 `folderPath`만 갖고 `savedFolderTree`(폴더 트리 자체)는 비어있는 채로 동기화된 경우, 데스크탑/안드로이드 둘 다 폴더 목록을 `savedFolderTree`에서만 읽어와 그런 폴더는 트리에 없어 안 보였다(항목의 폴더 이름 텍스트는 항목 자체에 저장돼 있어 그대로 표시됨). `Repository`(데스크탑)/`PhoneLockRepository`(안드로이드)에 `healCalcFolderPaths()` 추가 — `syncCalculatorFromFirebase()` 실행 시 저장 항목이 참조하는 폴더 경로(및 조상 경로)가 목록에 없으면 자동으로 채워 넣고 Firebase에도 다시 푸시(웹앱의 `rebuildFolderTreeFromItems`와 동일한 보정).
+- **[Changed] 데스크탑 계산기 레이아웃을 웹앱 사이드바 구조로 재작성** — 28차에서 입력/결과/저장됨을 동등한 3개 탭으로 바꿨는데, 결과가 별도 탭 뒤에 숨어 있어 계산 후 결과를 못 찾는 것처럼 보인다는 문제(사용자 지적)가 있었다. 웹앱(`공부앱/index.html`의 `.calc-layout`/`.calc-sidebar`/`.calc-content`)과 동일하게 왼쪽 좁은 칸(비율 2, 업무 입력/저장됨 서브탭)+오른쪽 넓은 칸(비율 8, 결과 — 서브탭이 아니라 항상 보이는 영역)으로 되돌렸다. 왼쪽 폭이 좁아진 만큼 입력 카드는 2열 그리드 대신 1열로, 저장됨은 좌우 분할 폴더 탐색기 대신 안드로이드판과 동일한 재귀 폴더 트리(세로 나열)로 함께 되돌림 — 안드로이드 레이아웃은 이번 변경 대상 아님(원래도 세로 분리 구조로 사용자가 문제없다고 확인).
+- **검증**: 양 플랫폼 컴파일 성공(`compileDebugKotlin`/`compileKotlin`), 안드로이드 `assembleDebug`+APK 두 위치 갱신, 데스크탑 `createDistributable`+robocopy 배포(FAILED 0)+재실행 완료. **실기기 UI 재확인은 아직 안 함.**
+
+---
+
+## 2026-08-07 (30차 세션) — 5단계(통계) 네이티브 구현
+23차에서 확정된 5단계 로드맵의 마지막 단계 착수. 사용자가 실기기 검증보다 5단계 착수를 먼저 선택.
+
+- **신규**: 양 플랫폼 "통계" 탭 — `phone-lock-desktop/.../ui/StudyStatsScreen.kt`, `phone-lock-android/.../ui/StudyStatsScreen.kt`. 웹앱(`공부앱/index.html`)의 `renderStats()`를 이식, 별도 데이터 모델 없이 캘린더 일정(`repository.getAllCalendarTasks()`/`getAllCalendarTasksOnce()`)만 집계하는 읽기 전용 파생 뷰 — 4단계(일정표)와 같은 "파생 뷰" 원칙.
+  - 전체 일정/완료/완료율/연속 완료일(스트릭) 4개 지표 카드, 회독 단계별(1~4회독) 완료 현황, 최근 30일 완료 추이 막대그래프(막대 높이=일정 개수, 색상=완료율)를 웹앱 로직 그대로 이식.
+  - 스트릭 계산은 웹앱과 동일하게 "일정 없는 날은 중립(건너뜀), 일정 있는데 미완료면 중단" 규칙 유지.
+  - `Repository`(데스크탑)/`PhoneLockRepository`(안드로이드)에 날짜 범위 없이 전체 캘린더 일정을 가져오는 함수 신규 추가(`getAllCalendarTasks`/`getAllCalendarTasksOnce`, 안드로이드는 기존 `CalendarTaskDao.getAllOnce()` 재사용).
+  - "관리앱"/"공부앱" 탭 구조의 공부앱 섹션에 5번째(마지막) 서브탭으로 추가(`MainScreen.kt`/`MainActivity.kt`의 `studySubTab`/`subTab` 인덱스 4).
+  - 안드로이드는 화면 폭이 좁아 30일 막대그래프의 날짜 라벨을 5일 간격(+오늘)만 표시, 데스크탑은 매일 표시 — 플랫폼별 화면 폭 차이에 따른 자연스러운 조정(일정표 데스크탑/모바일 뷰 분기와 같은 종류의 차이).
+- **범위**: 계산기 연동(`linkedCalc`)은 3~4단계와 마찬가지로 이번에도 제외. 이로써 23차 세션에서 확정한 5단계(타이머→캘린더→계산기→일정표→통계) 로드맵 전체가 코드/빌드 기준으로 완료됨.
+- **검증**: 양 플랫폼 컴파일 성공(`compileKotlin`/`compileDebugKotlin`), 안드로이드 `assembleDebug` 성공+APK 두 위치 갱신, 데스크탑 `createDistributable`+robocopy 배포(FAILED 0)+재실행 확인 완료. **실기기 UI 확인은 아직 안 함** — 1~5단계 전체 + 28~29차 UI 변경사항의 미검증 항목과 함께 다음 세션 최우선.
+
+---
+
+## 2026-08-07 (29차 세션) — 4단계(일정표) 네이티브 구현
+23차에서 확정된 5단계 로드맵의 4번째 단계 착수. 사용자가 실기기 검증보다 4단계 착수를 먼저 선택.
+
+- **신규**: 양 플랫폼 "일정표" 탭 — `phone-lock-desktop/.../ui/TimetableScreen.kt`, `phone-lock-android/.../ui/TimetableScreen.kt`. 웹앱(`공부앱/index.html`)의 `renderTimetable()`을 이식, 할당량 계산기의 draft 업무 목록(`repository.getCalcTasks()`, 저장됨 목록 아님)을 요일별 목표량 표로 보여준다.
+  - **데스크탑**: 웹앱 데스크탑(주간) 뷰 그대로 — 이번 주(일~토) 고정, 업무×요일 테이블 + 요일별/전체 합계 행.
+  - **안드로이드**: 웹앱 모바일(일 단위) 뷰 그대로 — ◀/▶ 날짜 이동 + 선택한 날짜의 업무 목록 + 합계.
+  - 웹앱의 캘린더 연동(`linkedCalc`/`progressStep` 완료 체크마크)은 3단계에서 이미 제외된 기능이라 이번에도 미포함 — [[DECISIONS.md]] "4단계(일정표) 네이티브 재구현" 참고.
+  - "관리앱"/"공부앱" 탭 구조의 공부앱 섹션에 4번째 서브탭으로 추가(`MainScreen.kt`/`MainActivity.kt`의 `studySubTab`/`subTab` 인덱스 3).
+- **검증**: 양 플랫폼 컴파일 성공(`compileKotlin`/`compileDebugKotlin`), 안드로이드 `assembleDebug` 성공+APK 두 위치 갱신, 데스크탑 `createDistributable`+robocopy 배포(FAILED 0)+재실행 확인 완료. **실기기 UI 확인은 아직 안 함** — 이전 세션들의 미검증 항목과 함께 다음 세션 최우선.
+
+---
+
+## 2026-08-07 (28차 세션) — 실기기 검증 1차 발견 버그 수정 + 탭 구조 개편 + 다크 테마 전면 적용
+1~3단계 실기기 검증 중 발견된 버그 수정과 함께, 사용자 요청으로 네비게이션 구조와 전체 테마를 개편.
+
+- **버그 수정**: `StudyTimerScreen.kt`(양 플랫폼) 타이머 탭에서 캘린더 일정 선택이 1초마다 첫 항목으로 리셋되던 문제 수정. [[BUGS.md]] 참고.
+- **다크 테마 전면 적용**: `ui/theme/Color.kt`/`Theme.kt`(양 플랫폼)를 공부앱(`공부앱/index.html`)과 동일한 다크 팔레트(배경 `#0f1117`/카드 `#1e2333`/포인트 파랑 `#4f8ef7`·보라 `#a78bfa`/성공 `#34d399`/경고 `#fbbf24`/에러 `#f87171`)로 교체, `lightColorScheme`→`darkColorScheme`. `Shape.kt` medium/large 반경 16dp→12dp(공부앱 `--radius`와 통일). 기존 따뜻한 톤(주황/베이지)의 라이트 테마는 폐기.
+- **네비게이션 구조 개편**: 기존에 그룹/통계/타이머/캘린더/계산기/설정 6개가 나란히 있던 구조를, "관리앱"(그룹/통계)과 "공부앱"(타이머/캘린더/계산기) 2개 상위 섹션 + 설정으로 재구성.
+  - **데스크탑**: `MainScreen.kt`를 왼쪽 `NavigationRail`(관리앱/공부앱/설정) + 섹션 내부 `TabRow` 서브탭 구조로 재작성 — 사용자가 데스크탑 전용 최적화로 사이드바 방식을 선택.
+  - **안드로이드**: `MainActivity.kt`의 하단 `NavigationBar`를 6탭→3탭(관리앱/공부앱/설정)으로 축소, `NavHost`에 `ManageSection`/`StudySection` composable을 새로 추가해 내부 `TabRow` 서브탭으로 그룹/통계, 타이머/캘린더/계산기를 각각 묶음. 그룹 편집(`group_edit/{groupId}`)·허용 앱 선택(`study_lock_apps`) 등 드릴다운 라우트는 그대로 유지.
+- **검증**: 양 플랫폼 컴파일 성공, 안드로이드 `assembleDebug` 성공+APK 두 위치 갱신, 데스크탑 `createDistributable`+robocopy 배포(FAILED 0)+재실행 확인 완료. **이번 세션 변경사항(탭 구조/테마/버그 수정)의 실기기 확인은 아직 안 함** — 다음 세션에서 기존 1~3단계 검증과 함께 확인.
+
+### 후속 수정: 데스크탑 다크 테마가 흰 배경으로 보임 + 시각적 완성도 보강
+사용자가 배포된 앱을 확인한 뒤 "다크 테마가 아니라 흰 바탕이 보이고, 공부앱만큼 세련된 느낌이 아니다"라고 피드백.
+- **원인**: `Main.kt`의 메인 `Window`가 `MainScreen(repository)`를 `PhoneLockTheme`으로만 감싸고 배경을 실제로 칠하는 `Surface`가 없었다 — `MaterialTheme`은 색상 팔레트만 정의할 뿐 캔버스를 칠하지 않으므로, `MainScreen`의 각 화면이 덮지 않는 여백은 Window 기본 배경(흰색)이 그대로 비쳤다. 전체화면 인터스티셜 창들(`WatchAndWaitScreen` 등)은 이미 `Surface { }`로 감싸고 있어 이 문제가 없었음.
+- **해결**: `Main.kt`에 `Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize())`로 `MainScreen`을 감쌈.
+- **시각 보강**(사용자가 "데스크탑다운 세련된 디자인"을 원함): `SectionCard`(양 플랫폼)에 공부앱 카드 스타일과 동일한 1px `outline` 테두리 추가. 데스크탑 `MainScreen.kt`에 공부앱 상단바를 흉내낸 슬림 타이틀 바("폰컨트롤" 로고) 추가, `NavigationRail`/`TabRow`에 명시적 다크 테마 색상(선택 시 `primary`, 배경 `background`/`surface`) 지정.
+- **검증**: 양 플랫폼 재컴파일 성공, 안드로이드 `assembleDebug`+APK 두 위치 갱신, 데스크탑 재배포(FAILED 0)+재실행 확인 완료.
+
+### 후속 수정: 데스크탑 전용 좌우 분할 레이아웃(가로/세로 역할 구분)
+사용자가 재배포 후에도 "데스크탑만의 UI가 없다"고 재차 피드백 — 데스크탑판이 모바일처럼 카드/필드를 세로로 쭉 나열하기만 할 뿐, 넓은 화면을 가로로 나눠 쓰는 레이아웃이 없었다는 지적. 데스크탑 화면 3개를 좌우 분할 구조로 재작성.
+- `StudyTimerScreen.kt`: 왼쪽 = 타이머 본체, 오른쪽 = 허용 프로그램/사이트 설정 + 오늘 기록(각각 독립 스크롤).
+- `CalendarScreen.kt`: 왼쪽 = 월 그리드(고정 높이), 오른쪽 = 선택한 날짜 상세(독립 스크롤) — 웹앱의 모달 대신 항상 곁에 두고 보는 패널.
+- `CalculatorScreen.kt`: 입력/결과 탭은 카드를 2열 그리드로 배치(`CardGrid` 헬퍼, 창 폭에 맞춰 세로 1열로도 접힘). 저장됨 탭은 기존의 재귀 중첩 폴더 트리(전부 펼쳐야만 항목이 보이던 방식) 대신 파일 탐색기 스타일 좌우 분할로 전면 재작성 — 왼쪽 폴더 목록(전체/미분류/폴더별, 항목 개수 표시)에서 폴더를 고르면 오른쪽에 그 폴더 항목만 표시. "저장됨에 아무것도 안 보인다"는 지적(하위 폴더에 저장된 항목이 안 펼쳐진 트리에 묻혀 안 보였을 가능성)도 "전체" 뷰로 해결.
+- **검증**: 양 플랫폼 재컴파일 성공, 데스크탑 재배포(FAILED 0)+재실행 확인 완료. 안드로이드는 변경 없음(모바일은 기존 세로 레이아웃 유지, 데스크탑 전용 최적화라는 사용자 확인 범위 그대로).
+
+## 2026-08-07 (27차 세션) — 공부앱 네이티브 재구현 3단계: 계산기
+2단계(캘린더) 완료 후 착수. 사용자 확인: 저장됨 목록의 폴더 트리(생성/이름변경/삭제/순서변경/항목 이동)까지 웹앱과 동일하게 전부 구현, 캘린더 연동은 이번에도 제외. 설계 판단은 [[DECISIONS.md]] "3단계(계산기) 네이티브 재구현" 참고.
+
+- **데스크탑**: 신규 `calc/CalcEngine.kt`(웹앱 `calculate()`/`simulateFinish()`/`calcRequiredPace()`/`countDaysInRange()` 이식, `LocalDate` 기반 순수 함수). `data/Models.kt`에 `CalcTask`(draft)/`CalcSavedItem`(저장됨) 데이터클래스, `AppData`에 `calcTasks`/`calcSaved`/`calcFolderPaths`/`calcFolderOrder`+각 구간 LWW 타임스탬프 필드 신설. `JsonStore`에 직렬화 추가. `Repository`에 계산기 CRUD(업무 추가/수정/삭제/순서변경/초기화, 결과 저장, 폴더 생성/이름변경/삭제/순서변경, 항목 폴더 이동) 및 Firebase 3구간(draft/저장됨/폴더) 독립 LWW 동기화(`syncCalculatorFromFirebase`) 신설. `monitor/PomodoroSyncClient.kt`에 `readCalculator`/`writeCalcTasksAndSaved`/`writeCalcFolders` 추가(`users/{user}/calculator` 경로, 웹앱과 동일 스키마 — PATCH로 부분 갱신, 폴더 트리는 평평한 경로 리스트↔웹앱 중첩 객체 상호 변환). 신규 `ui/CalculatorScreen.kt`(입력/결과/저장됨 3서브탭, 저장됨은 재귀 폴더 트리 렌더링)를 `MainScreen.kt`에 새 탭으로 등록(그룹/통계/타이머/캘린더/**계산기**/설정).
+- **안드로이드**: `Entities.kt`에 `CalcTask`/`CalcSavedItem` Room 엔티티(요일 필드/holidays는 CSV 문자열로 저장, 순서는 `sortOrder`), `Daos.kt`에 `CalcTaskDao`/`CalcSavedItemDao`, `AppDatabase` version 19→20. `AppPreferences`에 계산기 ts 필드 4종 + 폴더 트리/순서 JSON 문자열 필드 추가. `PhoneLockRepository`에 데스크탑과 대칭인 계산기 CRUD+Firebase 동기화 함수 신설(단, 순서는 리스트 인덱스 대신 Room 엔티티 자체+`sortOrder`로 관리). `service/PomodoroSyncClient.kt`에 동일 기능 추가 — **Android `HttpURLConnection`은 PATCH 메서드를 지원하지 않아 `POST + X-HTTP-Method-Override: PATCH` 헤더로 우회**(Firebase REST API 공식 지원 방식, 데스크탑은 `java.net.http.HttpClient`라 이 문제 없음). 신규 `calc/CalcEngine.kt`(데스크탑판과 동일 로직 대칭 복제), `ui/CalculatorScreen.kt`를 `MainActivity.kt`에 새 탭으로 등록(bottom navigation, `Icons.Filled.Calculate`).
+- **범위 제외**: 캘린더 연동(`linkedCalc`/`progressStep`)은 2단계와 마찬가지로 UI 미구현(필드만 데이터 모델에 보존).
+- **검증**: 양 플랫폼 컴파일 성공(`compileKotlin`/`compileDebugKotlin`), 안드로이드 `assembleDebug` 성공 + APK 두 위치(AndroidBuilds/OneDrive 원본) 갱신 완료, 데스크탑 `createDistributable`+robocopy 배포(FAILED 0) + 앱 재실행 확인(3개 프로세스 정상 기동)까지 완료. **실기기 동작 검증(1~3단계 전부)은 아직 안 함** — 다음 세션 최우선.
+
+## 2026-08-07 (26차 세션) — 데스크탑 재배포(jpackage 포함 JDK 확보)
+25차에서 미뤄진 데스크탑 `createDistributable`/배포를 마무리. 코드 변경 없음, 순수 빌드/배포 작업.
+
+- 이 세션 샌드박스 스크래치에 jpackage 포함 JDK가 없어(`project_build_toolchain_missing` 메모리대로) adoptium.net에서 Temurin JDK 21.0.12(`OpenJDK21U-jdk_x64_windows_hotspot_21.0.12_8.zip`, 약 195MB)를 사용자 승인 받고 다운로드, 세션 스크래치에 압축 해제.
+- HANDOFF "데스크탑 빌드/배포" 순서대로: watchdog 예약 작업 비활성화 → 앱 프로세스 종료 → 소스 robocopy(변경 없음) → 새 JDK로 `gradle createDistributable`(BUILD SUCCESSFUL) → `robocopy /MIR`로 `PhoneLockDesktopApp`에 배포(FAILED 0) → watchdog 재활성화 → 앱 재실행 확인.
+- **검증**: 배포된 앱 3개 프로세스로 정상 기동 확인(실행만 확인, 캘린더 탭 등 기능 동작은 미검증). 실기기 동작 검증(1·2단계 모두)은 여전히 다음 세션 최우선.
+
+## 2026-08-07 (25차 세션) — 공부앱 네이티브 재구현 2단계: 캘린더
+1단계(타이머) 완료 후 착수. 사용자 확인: 캘린더는 Firebase로 기기 간 동기화(기존 웹앱과 같은 경로, 데이터 그대로 이어받음), 타이머의 자유 텍스트 업무 입력을 "오늘 캘린더 일정" 드롭다운으로 교체. 설계 판단은 [[DECISIONS.md]] "2단계(캘린더) 네이티브 재구현" 참고.
+
+- **데스크탑**: `data/Models.kt`에 `CalendarTask` 데이터클래스 추가, `AppData`에 `calendarTasks`(통짜 리스트)·`calendarTs`(LWW 타임스탬프) 필드 신설. `JsonStore`에 직렬화 추가. `Repository`에 캘린더 CRUD(`addCalendarTask`/`renameCalendarTask`/`recolorCalendarTask`/`setCalendarTaskNextDays`/`moveCalendarTaskOrder`/`deleteCalendarTask`/`moveCalendarTaskToDate`/`copyCalendarTaskToDate`/`archiveOldCalendarTasks`)와 완료 시 자동 다음-회독 생성/취소 로직(`setCalendarTaskStatus`, `applyCalendarAutoSchedule`/`revertCalendarAutoSchedule`), Firebase 전체문서 LWW 동기화(`syncCalendarFromFirebase`/`pushCalendarToFirebase`) 신설. `monitor/PomodoroSyncClient.kt`에 `readCalendarTasks`/`writeCalendarTasks` 추가(`users/{user}/calendar` 경로, 웹앱과 동일 스키마). 신규 `ui/CalendarScreen.kt`(월 그리드 + 선택 날짜 상세 섹션)를 `MainScreen.kt`에 새 탭으로 등록(그룹/통계/타이머/**캘린더**/설정). `StudyTimerScreen.kt`의 "업무 이름" 자유 텍스트 입력을 오늘 캘린더 일정 드롭다운으로 교체.
+- **안드로이드**: `Entities.kt`에 `CalendarTask` Room 엔티티(순서 관리용 `sortOrder` 필드 포함) 추가, `Daos.kt`에 `CalendarTaskDao`, `AppDatabase` version 18→19. `AppPreferences`에 `calendarTs` 필드 추가. `PhoneLockRepository`에 데스크탑과 대칭인 캘린더 CRUD+자동 스케줄링+Firebase 동기화 함수 신설(단, 순서는 `dateKey+ordinal` 대신 Room의 `CalendarTask.id`+`sortOrder`로 관리 — 데이터 저장 방식 차이에 따른 자연스러운 API 차이, [[DECISIONS.md]] 참고). `service/PomodoroSyncClient.kt`에 `readCalendarTasks`/`writeCalendarTasks` 추가(데스크탑과 동일 스키마). 신규 `ui/CalendarScreen.kt`를 `MainActivity.kt`에 새 탭으로 등록. `StudyTimerScreen.kt` 동일하게 드롭다운으로 교체.
+- **범위 제외**: "할당량 연동 추가"(계산기 연동) 섹션은 계산기(3단계)가 아직 없어 이번엔 만들지 않음 — `linkedCalc`/`progressStep` 필드는 데이터 모델에만 보존.
+- **검증**: 양 플랫폼 `robocopy → compileKotlin`/`compileDebugKotlin` 컴파일 성공, 안드로이드는 `assembleDebug`까지 성공하고 APK 두 위치(AndroidBuilds/OneDrive 원본) 갱신 완료. 데스크탑 `createDistributable`(jpackage 필요)은 이 세션 환경에 jpackage 포함 JDK가 없어 미실행(재현 절차는 `project_build_toolchain_missing` 메모리 참고) — 재배포 필요 시 다음 세션에서. **실기기/실행 동작 검증은 아직 안 함**(1단계 검증도 여전히 미완) — 다음 세션 최우선.
+
+## 2026-08-07 (24차 세션) — 공부앱 네이티브 재구현 1단계: 타이머/뽀모도로
+23차에서 확정된 방침의 착수. 착수 전 사용자 확인: 공부앱 웹 버전은 장기적으로 완전히 네이티브가 대체(당장은 미변경), 단계 순서는 타이머 → 캘린더 → 계산기 → 일정표 → 통계. 자세한 설계 판단은 [[DECISIONS.md]] "1단계(타이머/뽀모도로) 네이티브 재구현" 참고.
+
+- **데스크탑**: `data/Models.kt`에 `TimerRunState`/`StudyLogEntry` 추가, `AppData`에 타이머 상태·뽀모도로 설정(분)·공부기록·허용 프로그램/사이트 필드 신설. `JsonStore`에 직렬화 추가. `Repository`에 `timerStart`/`timerStop`/`timerSwitchPhase`/`timerExtendBreak`/`isStudyLockActive`/`isTimerPomodoroMode` 등 웹앱 `index.html`의 타이머 규칙(wall-clock 기반, 공부→휴식은 시간 다 채워야 전환, "5분만 더" 1회)을 그대로 이식. 신규 `ui/StudyTimerScreen.kt`(타이머 UI + 허용 프로그램/사이트 입력 폼, 지금까지 데스크탑엔 이 입력 UI 자체가 없었음)를 `MainScreen.kt`의 기존 "공부앱 열기(브라우저)" 탭 자리에 배치. `EnforcementService`/`SiteEnforcement`의 `checkStudyLock`/`isBlockedByStudyLock`이 Firebase 폴링 대신 로컬 `Repository` 읽기로 전환. `StudyLockScreen`/`Main.kt`의 정지/전환 버튼이 `PomodoroSyncClient.sendRemoteCommand`(비동기 Firebase 왕복) 대신 `Repository.timerStop()`/`timerSwitchPhase()` 로컬 직접 호출로 교체.
+- **안드로이드**: `AppPreferences`에 타이머 상태/뽀모도로 설정/허용 사이트 필드 추가. `Entities.kt`에 `StudyLogEntry` Room 엔티티, `Daos.kt`에 DAO 추가, `AppDatabase` version 17→18. `PhoneLockRepository`에 데스크탑과 대칭인 타이머 제어 함수 신설. 신규 `ui/StudyTimerScreen.kt`를 `MainActivity`의 기존 "공부앱"(WebView 임베드) 탭 자리에 배치, `ui/StudyAppScreen.kt`(WebView)+`StudyAppWebViewHolder` 삭제. `AppMonitorAccessibilityService.checkStudyLock`/`checkStudyLockSite`가 로컬 읽기로 전환. `StudyLockActivity`의 정지/전환 버튼이 로컬 직접 호출로 교체되고, 화면 자체도 1초 tick마다 `repository.isStudyLockActive()`를 재확인해 비활성화되면 스스로 `finish()`(잠금화면 안 닫힘 버그 수정). `StudyLockAppsScreen`에 허용 사이트 입력 필드 추가.
+- **양 플랫폼 `PomodoroSyncClient.kt`**: `sendRemoteCommand`/`readAllowedDesktopApps`/`readAllowedSites` 제거, 신규 `pushLocalStudyStatus()`로 대체(로컬 상태 변경 시 페이즈 전환 시점에만 `users/{user}/pomodoro`에 write해 크로스디바이스 신호 유지). `isBreakActive`/`currentPhaseEndAt`/`isStudyTimerActive`/`isPomodoroMode`는 남겨뒀지만 이제 "다른 기기" 상태 조회 용도로만 쓰임(`LockEvaluator`의 `pomodoroUnlockEnabled` 체크).
+- **부수 수정**: 데스크탑 `JsonStore.save()`에 `pomodoroUnlockEnabled` 저장이 누락돼 있던 기존 버그 발견 후 수정([[BUGS.md]] Fixed 참고).
+- **검증**: 양 플랫폼 `robocopy → compileKotlin`/`assembleDebug` 컴파일 성공 확인, 안드로이드 APK 두 위치(AndroidBuilds/OneDrive 원본) 갱신 완료. **실기기 동작 검증은 아직 안 함** — 다음 세션 우선순위.
+- [[BUGS.md]] 갱신: "타이머 정지/전환 무반응"(양 플랫폼), "안드로이드 잠금화면 안 닫힘" Fixed로 이동. "허용앱 실행 실패", "Alt-Tab 우회", "허용앱 선택화면 문제"는 이번 변경과 무관한 별개 원인이라 Open 유지(설명 갱신).
+
+## 2026-08-07 (세션 마무리, 23차 세션 종료) — 공부앱 완전 네이티브 재구현 확정, 다음 세션 최우선으로 격상
+- 23차 세션에서 데스크탑 정지/전환·허용앱 실행 버튼에 계측(로그+화면 배너)을 추가·배포했지만 사용자가 재확인한 결과 여전히 문제가 해결되지 않음을 보고. 코드 변경 없음 — 사용자가 "공부앱 HTML을 완전히 새 코드로 앱에 직접 구현해야 한다"는 근본적 방침을 확정하고 이를 모든 작업 중 1순위로 지정.
+- [[DECISIONS.md]]에 "공부앱을 웹/웹뷰가 아닌 완전 네이티브로 재구현하기로 결정" 항목 신설(기존 [[IDEAS.md]]의 "오늘 할 일 아님" 아이디어에서 확정된 결정으로 격상). [[HANDOFF.md]] 진행률/진행 중인 작업/다음 작업 우선순위/다음 세션 안내를 전부 "재구현이 다음 세션 최우선"으로 갱신. [[IDEAS.md]]의 관련 두 항목(네이티브 재구현, 최소 상태 동기화 재설계)도 정리.
+
+## 2026-08-07 (23차 세션) — 데스크탑 공부 잠금 원격명령/허용앱 실행 계측 추가
+- **계측 추가(버그 수정 아님)**: 22차까지 "고쳤다"고 배포했다가 두 차례 틀렸던 것에 대한 대응 — 추측 대신 실제 실패 원인을 볼 수 있게 로그/화면 토스트부터 추가. `PomodoroSyncClient.sendRemoteCommand()`가 `runCatching`으로 결과를 통째로 삼키던 것을 고쳐 idToken 발급 실패/HTTP 상태코드/응답본문/예외를 신설한 `DebugLog`(`%APPDATA%\PhoneLockDesktop\debug.log`)에 남기고 성공 여부를 `Boolean`으로 반환하도록 변경. `Main.kt`의 "허용 프로그램" 실행(`ProcessBuilder`) 실패도 동일하게 로그 추가. 두 실패 모두 `StudyLockScreen`에 빨간 배너로 4초간 노출(`toastMessage`/`onToastShown`). 컴파일 확인(`compileKotlin`) 및 `createDistributable` 배포까지 완료 — 다음 실기기 재현 시 배너/로그로 원인 1차 분류 가능해짐. [[BUGS.md]] "Open" 항목별 계측 내용 갱신.
+
+## 2026-08-07 (세션 마무리, 22차 세션 종료) — 공부 잠금 버그 미해결 상태로 확정, 문서 정리
+- 사용자가 20~22차에서 시도한 수정들(포커스 획득, 자기 프로세스 예외 처리, 웹뷰 JS 직접 실행 등)을 실기기에서 재현한 결과 **전부 여전히 재현됨**을 보고: 데스크탑 정지/전환 버튼 무반응, 데스크탑 허용앱 실행 버튼 무반응, 데스크탑 Alt-Tab으로 사이트 차단 우회 가능, 안드로이드 잠금화면이 정지 후 자동으로 안 닫힘, 안드로이드 "허용앱 선택" 화면이 작동 안 하는 것으로 보임. 코드 변경 없음 — [[BUGS.md]] "Open" 섹션에 5건 모두 원인 추정/시도 내역과 함께 기록, [[HANDOFF.md]] 우선순위/진행중 작업/다음 세션 안내를 이 상태에 맞게 갱신.
+- 사용자가 근본적 대안 두 가지 제안(둘 다 "오늘 할 일 아님"으로 보류, [[IDEAS.md]] 기록): ① 공부앱을 웹/웹뷰가 아닌 완전 네이티브 재구현, ② 원격 제어를 최소 필요 상태만 동기화하는 방식으로 재설계.
+
+## 2026-08-06 (18차 세션) — 스크롤바 디자인 통일
+- **리팩터링**: `.cal-wrap`/`.tab-panel`/`.calc-content`/`.timetable-container`가 각자 따로 `::-webkit-scrollbar` 규칙을 중복 정의하고 있었고, 그중 `.tab-panel`만 폭 4px/반경 2px로 나머지(5px/3px)와 달랐다. 하나의 통합 규칙(셀렉터 그룹핑)으로 합치고 전부 5px/3px로 통일, 신규 스크롤 영역(`.timer-wrap`, `.cal-modal-body`, `.fb-modal` — 원래 스크롤바 스타일이 아예 없어 브라우저 기본 스크롤바가 보이던 곳들)도 같은 규칙에 포함시켰다.
+
+## 2026-08-07 (22차 세션) — 데스크탑 공부 잠금 화면 버튼 전부 먹통이던 원인(포커스) 수정
+- **버그 수정**: 공부 잠금 화면(`StudyLockScreen`)의 버튼이 정지뿐 아니라 허용 프로그램 실행까지 전부 눌러도 반응 없던 원인 — `checkStudyLock()`이 잠금을 걸기 직전 대상 창을 `minimizeForegroundWindow()`로 최소화하는데, 그 직후 뜨는 새 창이 자동으로 OS 포커스를 못 받는 경우가 있어(`ConfirmScreen`에 이미 있던 동일한 문제와 원인·해결책 동일) 클릭 자체가 창에 전달되지 않고 있었다. `Main.kt`의 공부 잠금 `Window` 블록에 `ConfirmScreen`과 같은 `LaunchedEffect { window.toFront(); window.requestFocus() }`를 추가해서 해결.
+- 데스크탑 빌드/배포 완료 — 배포 중 `PhoneLockDesktopWatchdog` 예약 작업이 프로세스를 즉시 재실행시켜 robocopy가 exe/dll 파일 잠김으로 반복 실패했음(이번에 처음 발견). 배포 절차에 "watchdog 예약 작업을 임시로 비활성화 → 배포 → 재활성화" 단계 추가 필요 — [[HANDOFF.md]]/[[BUGS.md]] 참고.
+
+## 2026-08-07 (21차 세션) — 안드로이드 공부 잠금: 홈 화면도 잠그기 + 정지 버튼 안 먹던 문제 수정
+- **동작 변경(사용자 재확인)**: "홈 화면으로 도망가면 공부 잠금이 안 걸리는 게 이상하다, 열품타처럼 앱 화면을 벗어나지 못해야 한다"는 지적을 받고 확인 — 애초 요구사항이 그거였는데 구현 시 `shouldIgnore()`(런처 예외 포함, 그룹 차단용 로직)를 그대로 재사용하면서 의도치 않게 홈 화면이 안전지대가 되어 있었다. `checkStudyLock()`을 `shouldIgnore()`보다 먼저 확인하도록 순서를 바꾸고, 공부 잠금 자체의 예외는 "이 앱 자신"(+시스템 UI/`android`)으로만 좁혀서 런처(홈 화면)도 이제 감지·재차단 대상에 포함시켰다.
+- **버그 수정**: 안드로이드 잠금 화면의 "타이머 정지"/"휴식으로 전환" 버튼이 Firebase 원격 명령에만 의존했는데, 공부앱이 앱 내장 웹뷰(`StudyAppScreen`)로 열려있는 경우 잠금 화면(별도 Activity)이 그 위에 뜨면서 웹뷰를 가진 MainActivity가 배경으로 밀려나 JS 실행이 스로틀링돼 반영이 안 되거나 크게 늦어졌다. `StudyAppWebViewHolder`(전역 참조)를 신설해서, 같은 기기에 내장 웹뷰가 열려있으면 `evaluateJavascript()`로 `timerStop()`/`timerSwitchPhase()`를 직접 즉시 호출하고(배경 상태와 무관하게 실행됨), Firebase 원격 명령은 외부 브라우저를 쓰는 경우를 위한 폴백으로 그대로 유지.
+- 안드로이드 `assembleDebug` 완료, APK 두 위치 갱신 완료. 실기기 검증 필요.
+
+## 2026-08-07 (20차 세션) — 데스크탑 공부 잠금 화면 깜빡임/버튼 먹통 버그 수정
+- **버그 수정**: `EnforcementService.checkStudyLock()`이 "이 앱 자신"을 항상 허용 프로세스로 취급해서, 공부 잠금 전체화면이 뜨는 순간 그 창 자체가 포그라운드가 되면 다음 tick에 "허용됨"으로 오인해 즉시 잠금을 내렸다. 그러면 잠금 화면 밑에 있던(허용 안 된) 창이 다시 포그라운드가 되어 곧바로 재차단 → 잠금 화면이 다시 포그라운드가 되어 또 내려가는 무한 루프가 발생해 화면이 깜빡였고, 그 사이 창이 계속 다시 만들어지면서 "타이머 정지" 버튼 클릭도 씹혔다.
+- **원인**: `isAllowed` 판정에 `processName.equals(selfProcessName, ...)`이 섞여 있어서, 자기 자신이 포그라운드일 때 `onStudyLockUpdate(null)`을 호출해버림. 수정: 자기 자신이 포그라운드면 기존 잠금 상태를 그대로 두고 아무 것도 하지 않도록 분리(`return true`로 조기 종료, 상태 변경 없음). 안드로이드는 애초에 `shouldIgnore()`가 자기 패키지명을 `checkStudyLock` 호출 전에 걸러내서 이 버그가 없었음.
+- 데스크탑 빌드/배포 완료(로컬 watchdog이 즉시 재시작하는 바람에 robocopy가 exe 잠김으로 몇 차례 재시도했으나 최종 성공, jar 해시 변경으로 확인).
+
+## 2026-08-06 (19차 세션) — 공부 잠금 화면 원격 제어(타이머 정지/휴식 전환)
+- **신규 기능**: 데스크탑/안드로이드 공부 잠금 전체화면에 "⏹ 타이머 정지" 버튼(항상 표시), 뽀모도로 모드일 때 "☕ 휴식으로 전환" 버튼 추가. 자세한 설계(관리앱 읽기 전용 원칙의 예외인 이유, 한계)는 [[DECISIONS.md]] "공부 잠금 원격 제어" 참고.
+- **공부앱**: `pomodoro` 노드에 `mode`("plain"/"pomodoro") 필드 추가(모든 push 지점에서 갱신). `pomodoro/remoteCommand`(action, ts) 구독 추가 — 관리앱이 여기 쓰면 공부앱이 `timerStop()`/`timerSwitchPhase()`를 그대로 호출해서 실행(기존 게이팅 로직 그대로 적용됨). 처리한 명령의 ts는 localStorage에 기록해 재구독 시 중복 실행 방지.
+- **phone-lock-desktop**: `PomodoroSyncClient`에 `isPomodoroMode()`/`sendRemoteCommand()` 추가. `StudyLockStatus`에 `isPomodoroMode` 추가, `StudyLockScreen`에 버튼 UI 추가. `Main.kt`에서 버튼 클릭 시 백그라운드 스레드로 명령 전송.
+- **phone-lock-android**: `PomodoroSyncClient`에 동일 기능 추가. `StudyLockActivity`에 `EXTRA_STUDY_LOCK_IS_POMODORO` extra 추가 및 버튼 UI, `lifecycleScope`로 명령 전송.
+- 데스크탑 빌드/배포, 안드로이드 `assembleDebug` + APK 두 위치 갱신 완료. 실기기 검증 미완료(원격 명령은 공부앱이 브라우저/웹뷰에 열려 있어야 반영되는 제약 있음 — 사용자에게 사전 설명 후 진행 동의 받음).
+
+## 2026-08-06 (17차 세션) — 타이머 탭 스크롤 버그 수정 + 데스크탑 레이아웃
+- **버그 수정**: 타이머 탭이 스크롤되지 않던 원인 — `renderTimer()`가 매번 innerHTML을 새로 쓰는 대상 `#timerContainer`가 `.view`(flex 컨테이너)와 `.timer-wrap`(flex:1+overflow-y:auto) 사이에 낀 "그냥 div"라서, `.timer-wrap`의 flex 속성이 부모가 flex 컨테이너가 아니라 무시되고 있었음(캘린더 뷰는 `.cal-wrap`이 `.view` 바로 아래라 이 문제가 없었음). `#timerContainer`에 `flex:1;min-height:0;display:flex;flex-direction:column`을 줘서 해결.
+- **데스크탑 전용 2단 레이아웃(≥900px)**: 좁은 화면용 640px 고정폭 세로 스택을 넓은 화면에도 그대로 쓰던 걸, `@media (min-width:900px)`에서 타이머를 왼쪽 고정 열(sticky)로, 오늘의 기록·허용 프로그램·허용 사이트를 오른쪽 열로 배치하는 레이아웃으로 분리. 타이머 숫자도 44px→64px로 확대. 모바일(≤640px) 레이아웃은 변경 없음. `renderTimer()`의 섹션들을 `.timer-col-main`/`.timer-col-side` 두 래퍼로 그룹화해서 구현.
+
+## 2026-08-06 (16차 세션) — 공부 잠금에 허용 사이트 추가
+- **신규 기능**: 공부 잠금에 "허용 프로그램"(플랫폼별)과 별개로 "허용 사이트"(도메인)를 추가 — 데스크탑·안드로이드가 공유하는 값(공부앱 타이머 탭에서 한 번만 설정). 브라우저 자체가 허용 프로그램/앱이라 열려 있어도, 그 안에서 방문하는 사이트가 허용 목록에 없으면 별도로 차단한다.
+- **공부앱**: `studyLockConfig` Firebase 노드에 `allowedSites` 필드 추가, `_ts`는 허용 프로그램과 공유(하나의 설정 단위로 취급). 타이머 탭에 "🌐 공부 중 허용 사이트" 섹션 추가(같은 입력/목록 UI 재사용).
+- **phone-lock-desktop**: `PomodoroSyncClient.readAllowedSites()` 추가(허용 프로그램과 같은 캐시 재사용, HTTP 호출 안 늘어남). `SiteEnforcement.check()`/`tick()` 맨 앞에서 공부 잠금 사이트 판정(도메인 suffix 매칭, 그룹 판정보다 우선) — 새 `LockReason.STUDY_LOCK` 사유로 `/check`·`/tick` JSON에 실려 브라우저 확장으로 전달됨. `blocked.js`에 `STUDY_LOCK` 메시지 추가.
+- **phone-lock-android**: `PomodoroSyncClient.readAllowedSites()` 추가. `AppMonitorAccessibilityService.checkSitesInternal()`에 공부 잠금 사이트 판정 추가(주소 텍스트 substring 매칭, 기존 그룹 사이트 판정과 같은 방식) — 허용 안 된 사이트면 `BlockActivity`를 `LockReason.STUDY_LOCK`으로 띄운다. `LockEvaluator.kt`의 `LockReason` enum에 `STUDY_LOCK` 추가(양 플랫폼), `BlockScreen.kt`/`BlockActivity.kt`에 메시지 분기 추가.
+- 데스크탑 빌드/배포, 안드로이드 `assembleDebug` + APK 두 위치 갱신 모두 완료. 실기기 검증은 미완료.
+
+## 2026-08-06 (15차 세션) — 공부 잠금 기능 구현
+- **신규 기능**: 공부앱 타이머가 "공부" 페이즈로 진행 중일 때(휴식 중엔 잠그지 않음, 일반 모드는 항상 공부로 취급) 데스크탑/안드로이드에 전체화면 잠금 — 14차 세션 신규 요청 구현. 처음엔 "타이머 실행 중 항상(휴식 포함)"으로 구현했다가, 세션 중 사용자 요청으로 "공부 중일 때만"으로 변경(휴식 중 잠그는 케이스가 dead code가 되어 관련 필드/분기 삭제). 자세한 설계는 [[DECISIONS.md]] "공부 잠금" 참고.
+- **UI 수정**: 허용 프로그램 입력/삭제 버튼이 기존 `.calc-btn` 계열(너비 100%, 큰 패딩)을 그대로 써서 지나치게 크고 입력창 배경이 테마와 안 맞는(흰색) 문제가 있어, 전용 클래스(`.lock-app-input`/`.lock-app-add-btn`/`.lock-app-remove-btn`)로 교체 — 입력창은 다른 폼 필드와 같은 다크 배경, 추가 버튼은 44×44 정사각 아이콘 버튼, 삭제 버튼은 32×44 소형 버튼.
+- **공부앱** (`index.html`, `공부앱/index.html`): 타이머 표시를 항상 `H:MM:SS`로 변경(기존엔 1시간 미만이면 `MM:SS`만 표시). 타이머 탭에 "공부 중 허용 프로그램" 목록 UI 추가(추가/삭제, localStorage + Firebase `studyLockConfig` 노드 동기화). `pushPomodoroStatus`에 `timerActive` 필드 추가(모든 타이머 시작/정지/페이즈 전환 지점에서 갱신).
+- **phone-lock-desktop**: `PomodoroSyncClient`에 `isStudyTimerActive`/`readAllowedDesktopApps` 추가. `EnforcementService.checkStudyLock()`이 매 tick마다 공부 잠금 여부를 확인해 허용 목록(exe 파일명) 외 프로세스를 전체화면으로 잠근다(자기 자신은 항상 예외). 신규 `StudyLockScreen.kt`(위: 타이머, 아래: 허용 프로그램 실행 버튼), `Main.kt`에 `Window` 추가. `BlockScreen`과 동일하게 `Maximized`+`undecorated`+`alwaysOnTop` 창이라 JNA click-through 없이 구현됨.
+- **phone-lock-android**: `AppPreferences.studyLockAllowedPackages` 신설(설치 앱 중 선택, `SettingsScreen` → 신규 `StudyLockAppsScreen`에서 관리). `PomodoroSyncClient`에 `isStudyTimerActive` 추가. `AppMonitorAccessibilityService.checkStudyLock()`이 허용 목록 외 앱이 전면에 뜨면 감지해서 신규 `StudyLockActivity`(위: 타이머, 아래: 허용 앱 실행 버튼)로 되돌린다 — 기기 소유자 권한 없이는 진짜 차단이 불가능해 "감지 후 재차단" 방식(베스트 에포트).
+- 데스크탑 빌드/배포 완료(`createDistributable` → `PhoneLockDesktopApp`), 안드로이드 `assembleDebug` 완료 및 APK 두 위치(`AndroidBuilds`, OneDrive 원본) 갱신 완료. 실기기 검증은 미완료 — HANDOFF.md "다음 작업 우선순위" 참고.
+
+## 2026-08-05 (14차 세션) — 문서 체계 개편 (코드 변경 없음)
+- **리팩터링(문서)**: 단일 `HANDOFF.md`(726줄/130KB, 1~13차 세션 상세 전부 누적)를 역할별 5개 문서로 분리 — `HANDOFF.md`(현재 상태만), `CHANGELOG.md`(이 문서, 세션별 변경 이력), `DECISIONS.md`(설계 결정), `BUGS.md`(버그 이력), `IDEAS.md`(아이디어).
+- `CLAUDE.md`를 새 5문서 체계 규칙으로 갱신(기존 단일-HANDOFF 절차 서술 교체).
+- 사용자 요청으로 공부앱 프로젝트의 옛 단일-HANDOFF 방식 메모리 2건(`feedback_handoff_workflow`, `feedback_handoff_local_only`) 삭제, 관리앱 전용 5문서 체계 메모리 신설.
+- **신규 요청 접수**: 뽀모도로 타이머 작동(공부) 중 핸드폰/데스크탑 제한 기능 — 설계/구현 전, HANDOFF.md "다음 작업 우선순위"에 기록만 해둠.
+
+## 2026-08-05 (13차 세션) — 뽀모도로 자동해제 토글 UI 분리
+- **수정**: `pomodoroUnlockEnabled` `ToggleRow`를 "실행 확인" 섹션 밖으로 빼서 "관리 종류" 섹션 뒤에 항상 보이는 신규 `SectionCard("뽀모도로 연동")`으로 이동 (안드로이드/데스크탑 `GroupEditScreen.kt` 공통). 판정 로직(`LockEvaluator.isPomodoroUnlocked`)은 원래부터 `confirmEnabled`와 무관 — 순수 UI 배치 문제였음.
+- 데이터/로직 변경 없음.
+- 검증: 안드로이드 `assembleDebug`, 데스크탑 `createDistributable` 성공, 양쪽 배포 완료. 실기기 UI 확인 미완.
+
+## 2026-08-05 (12차 세션) — 일일 사용한도 그룹별 Firebase 합산 동기화
+- **구현**: 그룹 이름 기준으로 안드로이드↔데스크탑 오늘 사용시간을 Firebase에서 합산 동기화. 경로 `users/{user}/dailyUsage/{date}/{groupKey}/{android|desktop}`.
+- 설계: 기기별 자기 키에만 쓰기(lost update 방지) + 읽을 때 상대 기기 값을 더함(합산 방식, confirmSync의 "최신값 승리"와 다름). 쓰기는 기존 30초 스로틀에 얹음, 읽기는 10초 TTL 캐시(`peerUsageCache`).
+- 수정 파일: `PomodoroSyncClient.kt`(양쪽) `readDailyUsage`/`writeDailyUsage`, `Repository.kt`/`PhoneLockRepository.kt`의 `getTodayUsageSeconds`/`addUsageSeconds`.
+- 검증: 컴파일/빌드/배포 완료. 실기기 합산 동기화 검증 미완.
+
+## 2026-08-05 (11차 세션) — 실행확인 레벨 동기화: 구글 드라이브 → Firebase 전환
+- **삭제**: 안드로이드 SAF 파일선택(`ConfirmSyncManager.kt`), 데스크탑 드라이브 자동탐지(`findGoogleDriveRoot` 등) 전면 삭제, 마이그레이션 없음(기존 `confirm_sync.json` 방치).
+- **구현**: 기존 뽀모도로 연동용 Firebase 설정(`fbDatabaseUrl`/`fbApiKey`/`fbUser`) 재사용, `users/{user}/confirmSync/{groupKey}` 경로로 레벨 read/write. `PomodoroSyncClient`에 `readConfirmSync`/`writeConfirmSync`/`firebaseSafeKey` 추가(양쪽).
+- 빌드 환경 이슈: 이 세션 샌드박스에 `gradlew`/jpackage 포함 JDK 없어서 캐싱된 gradle-8.7 + JBR/Temurin JDK 21로 우회(자세한 절차는 메모리 `project_build_toolchain_missing` 참고).
+- 검증: 컴파일/빌드/배포 완료. 실기기 동기화 검증 미완.
+
+## 2026-08-05 (10차 세션) — 뽀모도로 휴식 임시 해제 오버레이
+- **구현**: `pomodoroUnlockEnabled`로 임시 해제된 그룹에도 실행확인 오버레이와 같은 톤의 오버레이 표시(안드로이드/데스크탑/브라우저 확장). 레벨 무관 고정 불투명도(안드로이드 alpha 70, 데스크탑 0.72f, 브라우저 확장 0.28), 남은시간은 재확인 쿨다운이 아닌 "휴식 종료 시각"까지.
+- `LockEvaluator`에 공개 wrapper `isPomodoroUnlockActive()` 추가(판정 로직 자체는 불변), `PomodoroSyncClient`에 `currentPhaseEndAt()` 신설.
+- 검증: 컴파일/빌드/배포 완료. 실기기 검증 미완.
+
+## 2026-08-04 (9차 세션) — 잠김 화면 통일 / 그룹 on-off 분리 / 관리 종류별 요일 설정
+- **구현**: 잠김 화면(스케줄/일일한도)을 실행확인 화면과 같은 톤으로 통일, 전자 버튼은 무반응 장식용.
+- **버그 수정**: 그룹 전체 on/off와 스케줄 on/off가 `scheduleEnabled` 한 필드에 묶여 있던 설계 결함 발견 → `groupEnabled`(그룹 전체) 신설로 분리, `scheduleEnabled`는 스케줄 관리 종류 전용으로 축소. 안드로이드가 데스크탑과 달리 `group.enabled`도 체크하던 불일치도 통일(`enabled`는 순수 통계 필터로 확정).
+- **구현**: `dailyLimitDaysMask`/`confirmDaysMask` 신설, 일일한도/실행확인에 독립 요일 설정. `detectWeakeningEdit`에 각 마스크 우회 방지 항목 추가.
+- Room `AppDatabase` version 16→17.
+- 검증: 컴파일/빌드/배포 완료. 실기기 검증 미완.
+
+## 2026-08-04 (8차 세션) — 공부앱 탭 위치 / WebView 높이 수정
+- **수정**: 안드로이드 하단 탭에서 "📚 공부앱"을 설정보다 왼쪽으로 이동, 데스크탑도 동일하게 탭 순서 변경.
+- **버그 수정 시도**: 안드로이드 공부앱 WebView 하단이 비어 보이는 문제 — `layoutParams(MATCH_PARENT)` 명시 + `useWideViewPort`/`loadWithOverviewMode` 추가(실기기 재현/검증 못함, 근본원인 100% 특정 아님).
+- 검증: 컴파일/빌드/배포 완료. 실기기 검증 미완.
+
+## 2026-08-04 (7차 세션) — 공부앱 뽀모도로 휴식 연동
+- **구현**: 완전히 별개 웹앱인 공부앱의 Firebase RTDB를 읽기 전용 폴링해서, 그룹 편집 화면에서 지정한 특정 그룹만 뽀모도로 휴식 시간 동안 자동 임시 해제.
+- 신규 `PomodoroSyncClient.kt`(양쪽 독립 구현): 익명 인증+토큰 캐싱, `breakActive && now < phaseEndAt + GRACE_MS(15초)` 재검증(공부앱이 꺼져도 자동 무효화), 네트워크 오류 시 fail-safe(false, 해제 안 함), 5초 TTL 캐시.
+- `Group.pomodoroUnlockEnabled` 필드, 전역 Firebase 설정 3종(`fbDatabaseUrl`/`fbApiKey`/`fbUser`) 추가. `LockEvaluator` 최상단에 `isPomodoroUnlocked()` 단락 추가(영구 상태에 기록 안 함, `detectWeakeningEdit`와 무관).
+- 안드로이드 `INTERNET` 퍼미션 신규 추가, Room version 15→16.
+- "📚 공부앱" 탭 신설(안드로이드는 앱 내 WebView, 데스크탑은 외부 브라우저 — Compose Desktop에 내장 웹뷰 없어 기술적 여건 차이로 결정).
+- 검증: 컴파일/빌드/배포 완료. 실사용 검증 미완.
+
+## 2026-07-30 (6차 세션) — "관리 종류" 재구성 + "적용 시간대" 추가
+- **삭제**: 시간대+일일한도 AND 융합 옵션(`requireAllConditions`) 삭제 — 항상 OR.
+- **구현**: "관리 종류"(스케줄/일일 사용한도 설정/실행 확인) 3분류 신설, 일일한도·실행확인 각각에 "적용 시간대" 옵션 추가. 스케줄도 토글에 포함시키되 `detectWeakeningEdit`에 "요일 제한 중 스케줄 바로 끄기" 방지 항목 추가.
+- 후속 수정: 스케줄도 다른 두 항목처럼 토글 켜야 상세 카드 노출 + 새 그룹 기본 off로 변경.
+- **버그 수정**: robocopy가 실행 중 프로세스 파일을 조용히 스킵해 1차 배포가 반영 안 됐던 사고 발견 → 프로세스 종료 확인 후 동기 robocopy + jar 해시 비교 절차 확립(이후 세션 표준 절차화).
+- Room version 14→15.
+
+## 2026-07-30 (5차 세션) — 데스크탑 그룹 끄기 작업 중 삽질 2건
+- **버그 발견**: `Group.enabled`는 통계 탭 필터 전용이지 실제 on/off 스위치가 아님(진짜는 `scheduleEnabled`) — 데이터 직접 편집 시 혼동해서 실수.
+- **버그 발견/수정**: PowerShell `Set-Content -Encoding UTF8`이 BOM을 붙여 `org.json` 파서가 파싱 실패, `JsonStore.load()` 손상파일 방어 로직이 조용히 빈 상태로 시작 → BOM 없는 `UTF8Encoding($false)`로 재작성해 해결.
+- 코드 변경 없음(데이터 파일 편집 + 재시작만).
+
+## 2026-07-30 (4차 세션) — 실행 확인 오버레이 타이머 버벅거림 수정
+- **버그 수정**: 확인 대기 카운트다운(`InterstitialScreen`/`WatchAndWaitScreen`) 틱 루프를 `System.nanoTime()` 기반 wall-clock 계산으로 교체(디스패처 지연 보정).
+- **버그 수정(진짜 원인)**: "남은 유예시간" 오버레이가 2초 주기 서버 폴링값으로 로컬 1초 타이머를 매번 덮어써 버벅거림 → 로컬/서버 값 차이 1초 이하면 무시하도록 수정(`AppMonitorAccessibilityService`, `UsageOverlayContent.kt`).
+- 사용자가 실기기+데스크탑에서 버벅거림 해결 확인 완료.
+
+## 2026-07-30 (3차 세션) — 오버레이 불투명도 불안정 상승 문제
+- 1차 시도(원인 아니었으나 유효): 안드로이드 `escalationCache`에 동기화 없던 레이스 컨디션 발견, `Mutex`로 수정(유지).
+- 2~3차(잘못된 접근, 이후 원복): `ConfirmationGate`에 연속성 추적(`touch`/`hasLeftSinceConfirm`/`renewSilently`) 추가해 재확인 자체를 스킵하도록 했으나, 사용자가 "재확인이 없어져야 한다고는 안 했다"고 강하게 정정 → **완전히 원복**.
+- **진짜 수정**: 오버레이가 화면에 "보여주는" 값에만 캡을 씌움 — 같은 쿨다운 사이클 안에서는 표시 알파/레벨이 위로 못 튀고, 진짜 새 재확인 시에만 캡 해제. 안드로이드는 인라인(`lastDisplayedOverlayAlpha`), 데스크탑은 신규 `OverlayLevelRatchet.kt` 공용 객체. 재확인/escalation 판정 로직 자체는 전혀 안 건드림.
+- **교훈**: "표시가 이랬으면" 요청을 판정/보안 로직 변경으로 확대 해석하지 말 것 ([[feedback_ui_request_scope]] 메모리화됨).
+
+## 2026-07-29 (2차 세션)
+- **구현**: 데스크탑 네이티브 프로그램 감시에 "확인 후 오버레이 표시" 이식(안드로이드에만 있던 기능 격차 해소). 신규 `UsageOverlayContent.kt`, `Group.usageOverlayEnabled` 필드.
+- **버그 수정**: 브라우저 확장 오버레이가 CORS로 차단됨(content script fetch가 페이지 출처로 나가 직전 세션 CORS 강화에 걸림) → `/overlay-status`만 `openCors=true`로 개방.
+
+## 이전 세션 (요약, git 이력 없음 — 이 문서가 유일한 기록)
+- 시니어 코드 리뷰 기반 대규모 개선: 토큰 인증, CORS, 뮤텍스 데드락 방지, 원자적 쓰기(JsonStore `.tmp`+`ATOMIC_MOVE`), 스로틀링/캐싱, heartbeat/watchdog 안전장치.
+- 플랫폼 간 기능 격차 조사: 안드로이드에만 있던 기능 2건(오버레이, 릴스/쇼츠 감지) 발견.
+- 안드로이드 APK 이중 위치 갱신 누락 버그 발견·해결.
