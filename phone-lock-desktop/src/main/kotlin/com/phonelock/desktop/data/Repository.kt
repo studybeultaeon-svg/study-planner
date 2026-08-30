@@ -129,16 +129,20 @@ class Repository {
         }
         if (!shouldCheck) return
         Thread {
-            val latest = com.phonelock.desktop.monitor.DesktopUpdateChecker.checkLatestDesktopRelease()
+            val result = com.phonelock.desktop.monitor.DesktopUpdateChecker.checkLatestDesktopRelease()
+            val latest = result.getOrNull()
             synchronized(lock) {
                 if (latest != null && latest.buildTimestamp > com.phonelock.desktop.BuildInfo.BUILD_TIMESTAMP) {
                     data.updateAvailableBuildTimestamp = latest.buildTimestamp
                     data.updateAvailableInstallerUrl = latest.installerUrl
-                } else {
+                    persist()
+                } else if (result.isSuccess) {
+                    // 확인 자체가 실패했으면(네트워크/요청 한도 등) 이전에 남아있던 "업데이트 있음" 상태를
+                    // 함부로 지우지 않는다 — 성공했고 정말 최신 버전일 때만 지운다.
                     data.updateAvailableBuildTimestamp = 0L
                     data.updateAvailableInstallerUrl = null
+                    persist()
                 }
-                persist()
             }
         }.start()
     }
@@ -155,24 +159,36 @@ class Repository {
     /**
      * 설정 화면 "지금 확인" 버튼 전용 — [checkForUpdateIfNeeded]의 하루 1회 가드를 무시하고 즉시
      * GitHub Releases를 확인한다. 네트워크 호출은 마찬가지로 락 밖에서 수행하고, 끝나면 [onResult]로
-     * 새 버전이 있으면 설치파일 URL을, 없으면 null을 콜백한다(UI 스레드 전환은 호출부 책임).
+     * 결과를 콜백한다(UI 스레드 전환은 호출부 책임). 2026-08-30 발견: 예전엔 확인 실패와 "정말 최신
+     * 버전"을 구분 못 해서 실패해도 "최신 버전"으로 잘못 표시됐다 — 이제 세 결과를 명확히 나눈다.
      */
-    fun checkForUpdateNow(onResult: (String?) -> Unit) {
+    sealed class UpdateCheckOutcome {
+        data class Available(val installerUrl: String) : UpdateCheckOutcome()
+        object UpToDate : UpdateCheckOutcome()
+        data class Failed(val reason: String) : UpdateCheckOutcome()
+    }
+
+    fun checkForUpdateNow(onResult: (UpdateCheckOutcome) -> Unit) {
         Thread {
-            val latest = com.phonelock.desktop.monitor.DesktopUpdateChecker.checkLatestDesktopRelease()
-            val result = synchronized(lock) {
+            val result = com.phonelock.desktop.monitor.DesktopUpdateChecker.checkLatestDesktopRelease()
+            val latest = result.getOrNull()
+            val outcome = synchronized(lock) {
                 data.lastUpdateCheckDate = effectiveDate(data.dailyResetHour).toString()
                 if (latest != null && latest.buildTimestamp > com.phonelock.desktop.BuildInfo.BUILD_TIMESTAMP) {
                     data.updateAvailableBuildTimestamp = latest.buildTimestamp
                     data.updateAvailableInstallerUrl = latest.installerUrl
-                } else {
+                    persist()
+                    UpdateCheckOutcome.Available(latest.installerUrl)
+                } else if (result.isSuccess) {
                     data.updateAvailableBuildTimestamp = 0L
                     data.updateAvailableInstallerUrl = null
+                    persist()
+                    UpdateCheckOutcome.UpToDate
+                } else {
+                    UpdateCheckOutcome.Failed(result.exceptionOrNull()?.message ?: "알 수 없는 오류")
                 }
-                persist()
-                data.updateAvailableInstallerUrl
             }
-            onResult(result)
+            onResult(outcome)
         }.start()
     }
 

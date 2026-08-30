@@ -597,8 +597,8 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
 
                     SectionCard("업데이트") {
                         var checking by remember { mutableStateOf(false) }
-                        var checkedOnce by remember { mutableStateOf(false) }
                         var installerUrl by remember { mutableStateOf(repository.pendingUpdateInstallerUrl()) }
+                        var lastOutcome by remember { mutableStateOf<Repository.UpdateCheckOutcome?>(null) }
                         Text(
                             "현재 빌드: ${repository.currentBuildTimestamp()} · 초기화 시각이 지나면 하루 1회 자동으로도 확인합니다.",
                             style = MaterialTheme.typography.bodySmall,
@@ -607,10 +607,10 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                         Spacer(Modifier.height(Spacing.sm))
                         Button(enabled = !checking, onClick = {
                             checking = true
-                            repository.checkForUpdateNow { url ->
-                                installerUrl = url
+                            repository.checkForUpdateNow { outcome ->
+                                lastOutcome = outcome
+                                installerUrl = (outcome as? Repository.UpdateCheckOutcome.Available)?.installerUrl
                                 checking = false
-                                checkedOnce = true
                             }
                         }) {
                             Text(if (checking) "확인 중..." else "지금 확인")
@@ -619,9 +619,22 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                             Spacer(Modifier.height(Spacing.sm))
                             UpdateBanner(repository, url)
                         }
-                        if (checkedOnce && installerUrl == null && !checking) {
-                            Spacer(Modifier.height(Spacing.xs))
-                            Text("최신 버전입니다", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (!checking) {
+                            when (val outcome = lastOutcome) {
+                                is Repository.UpdateCheckOutcome.UpToDate -> {
+                                    Spacer(Modifier.height(Spacing.xs))
+                                    Text("최신 버전입니다", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                is Repository.UpdateCheckOutcome.Failed -> {
+                                    Spacer(Modifier.height(Spacing.xs))
+                                    Text(
+                                        "확인 실패: ${outcome.reason} — 잠시 후 다시 시도해주세요",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                                else -> {}
+                            }
                         }
                     }
                     Spacer(Modifier.height(Spacing.md))

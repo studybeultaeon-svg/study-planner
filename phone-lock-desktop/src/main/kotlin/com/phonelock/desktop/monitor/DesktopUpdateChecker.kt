@@ -12,8 +12,9 @@ import java.time.Duration
  * 데스크탑 설치파일(exe/msi) 릴리스를 확인한다. 태그명은 "desktop-<BuildInfo.BUILD_TIMESTAMP>"
  * 규칙(안드로이드는 "android-<versionCode>" — [com.phonelock.app.service.UpdateChecker] 참고)을
  * 쓰고, 그 릴리스에 첨부된 exe/msi 에셋의 다운로드 URL을 함께 반환한다. 공개 저장소라 토큰 없이 조회
- * 가능하며, PomodoroSyncClient와 같은 fail-safe 원칙으로 네트워크/파싱 오류가 나도 예외를 던지지 않고
- * 조용히 null을 반환한다.
+ * 가능하다. 2026-08-30 이전엔 네트워크/파싱 오류를 조용히 삼켜 null로 반환했으나, 그러면 "확인 실패"와
+ * "정말 최신 버전"을 구분할 수 없어(요청 한도 초과 시에도 "최신 버전"으로 잘못 표시되던 버그) 지금은
+ * Result로 실패를 그대로 알린다.
  */
 object DesktopUpdateChecker {
     private const val RELEASES_URL = "https://api.github.com/repos/studybeultaeon-svg/study-planner/releases"
@@ -26,9 +27,11 @@ object DesktopUpdateChecker {
 
     data class LatestRelease(val buildTimestamp: Long, val installerUrl: String)
 
-    /** 저장소의 모든 릴리스를 훑어 "desktop-" 태그 중 빌드 타임스탬프가 가장 큰 것을 찾는다. */
-    fun checkLatestDesktopRelease(): LatestRelease? = runCatching {
-        val body = fetch(RELEASES_URL) ?: return@runCatching null
+    /** 이전엔 네트워크 실패(요청 한도 초과 등)와 "확인해보니 진짜 최신 버전"을 구분 못 하고 둘 다 null로
+     *  뭉뚱그렸다 — 그래서 API가 실패해도 화면엔 "최신 버전입니다"라고 잘못 표시됐다(2026-08-30 발견,
+     *  안드로이드판 UpdateChecker와 동일한 문제). 이제 실패는 Result.failure로 던져 호출부가 구분한다. */
+    fun checkLatestDesktopRelease(): Result<LatestRelease?> = runCatching {
+        val body = fetch(RELEASES_URL)
         val releases = JSONArray(body)
         var best: LatestRelease? = null
         for (i in 0 until releases.length()) {
@@ -52,9 +55,9 @@ object DesktopUpdateChecker {
             }
         }
         best
-    }.getOrNull()
+    }
 
-    private fun fetch(urlString: String): String? = runCatching {
+    private fun fetch(urlString: String): String {
         val request = HttpRequest.newBuilder()
             .uri(URI.create(urlString))
             .header("Accept", "application/vnd.github+json")
@@ -62,6 +65,7 @@ object DesktopUpdateChecker {
             .GET()
             .build()
         val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-        if (response.statusCode() != 200) null else response.body()
-    }.getOrNull()
+        if (response.statusCode() != 200) error("GitHub 응답 코드 ${response.statusCode()}")
+        return response.body()
+    }
 }

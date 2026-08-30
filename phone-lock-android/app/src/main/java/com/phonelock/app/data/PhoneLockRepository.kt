@@ -151,11 +151,14 @@ class PhoneLockRepository(context: Context) {
         val today = effectiveDate(dailyResetHour).toString()
         if (preferences.lastUpdateCheckDate == today) return
         preferences.lastUpdateCheckDate = today
-        val latest = com.phonelock.app.service.UpdateChecker.checkLatestAndroidRelease()
+        val result = com.phonelock.app.service.UpdateChecker.checkLatestAndroidRelease()
+        val latest = result.getOrNull()
         if (latest != null && latest.versionCode > BuildConfig.VERSION_CODE) {
             preferences.updateAvailableVersionCode = latest.versionCode
             preferences.updateAvailableApkUrl = latest.apkUrl
-        } else {
+        } else if (result.isSuccess) {
+            // 확인엔 성공했고 정말 최신 버전일 때만 지워야 한다 — 확인 자체가 실패했으면(네트워크/요청
+            // 한도 등) 이전에 남아있던 "업데이트 있음" 상태를 함부로 지우지 않는다.
             preferences.updateAvailableVersionCode = 0L
             preferences.updateAvailableApkUrl = null
         }
@@ -169,19 +172,32 @@ class PhoneLockRepository(context: Context) {
     /** 지금 설치된 versionCode — 설정 화면에 표시용. */
     fun currentVersionCode(): Long = BuildConfig.VERSION_CODE.toLong()
 
-    /** 설정 화면 "지금 확인" 버튼 전용 — [checkForUpdateIfNeeded]의 하루 1회 가드를 무시하고 즉시
-     *  GitHub Releases를 확인한다. 새 버전이 있으면 APK 다운로드 URL을, 없으면 null을 반환한다. */
-    suspend fun checkForUpdateNow(): String? {
+    /**
+     * 설정 화면 "지금 확인" 버튼 전용 — [checkForUpdateIfNeeded]의 하루 1회 가드를 무시하고 즉시
+     * GitHub Releases를 확인한다. 2026-08-30 발견: 예전엔 확인 실패(네트워크 오류, GitHub 요청 한도
+     * 초과 등)와 "정말 최신 버전"을 구분 못 해서 실패해도 화면에 "최신 버전입니다"라고 잘못 표시됐다 —
+     * 이제 세 가지 결과(업데이트 있음/최신 버전/확인 실패)를 명확히 구분해 돌려준다.
+     */
+    sealed class UpdateCheckOutcome {
+        data class Available(val apkUrl: String) : UpdateCheckOutcome()
+        object UpToDate : UpdateCheckOutcome()
+        data class Failed(val reason: String) : UpdateCheckOutcome()
+    }
+
+    suspend fun checkForUpdateNow(): UpdateCheckOutcome {
         preferences.lastUpdateCheckDate = effectiveDate(dailyResetHour).toString()
-        val latest = com.phonelock.app.service.UpdateChecker.checkLatestAndroidRelease()
+        val result = com.phonelock.app.service.UpdateChecker.checkLatestAndroidRelease()
+        val latest = result.getOrNull()
         return if (latest != null && latest.versionCode > BuildConfig.VERSION_CODE) {
             preferences.updateAvailableVersionCode = latest.versionCode
             preferences.updateAvailableApkUrl = latest.apkUrl
-            latest.apkUrl
-        } else {
+            UpdateCheckOutcome.Available(latest.apkUrl)
+        } else if (result.isSuccess) {
             preferences.updateAvailableVersionCode = 0L
             preferences.updateAvailableApkUrl = null
-            null
+            UpdateCheckOutcome.UpToDate
+        } else {
+            UpdateCheckOutcome.Failed(result.exceptionOrNull()?.message ?: "알 수 없는 오류")
         }
     }
 
