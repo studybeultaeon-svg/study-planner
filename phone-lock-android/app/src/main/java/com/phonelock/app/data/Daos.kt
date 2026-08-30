@@ -127,6 +127,10 @@ interface StudyLogEntryDao {
     @Query("SELECT * FROM study_log_entry WHERE dateKey = :dateKey ORDER BY startedAt")
     suspend fun getByDate(dateKey: String): List<StudyLogEntry>
 
+    /** 모임 멤버 상세의 캘린더 날짜 상세에서 "그 날 얼마나 공부했는지"를 보여주기 위한 범위 조회. */
+    @Query("SELECT * FROM study_log_entry WHERE dateKey BETWEEN :fromKey AND :toKey")
+    suspend fun getInRange(fromKey: String, toKey: String): List<StudyLogEntry>
+
     @Insert
     suspend fun insert(entry: StudyLogEntry)
 

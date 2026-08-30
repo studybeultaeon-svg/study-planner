@@ -30,7 +30,7 @@ import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.delay
 
-private enum class TopSection { MANAGE, STUDY, ROUTINE, SETTINGS }
+private enum class TopSection { MANAGE, STUDY, ROUTINE, SOCIAL_GROUP, SETTINGS }
 
 /**
  * 데스크탑 전용 레이아웃: 왼쪽 사이드바(NavigationRail)로 관리앱/공부앱/설정을 고르고, 관리앱·공부앱은
@@ -39,13 +39,27 @@ private enum class TopSection { MANAGE, STUDY, ROUTINE, SETTINGS }
  */
 @Composable
 fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
-    var section by remember { mutableStateOf(TopSection.ROUTINE) }
+    // 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임)에 맞춰 보이는 섹션만 남긴다 — 설정은 항상
+    // 보임(로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 Repository가 전부 true를
+    // 기본값으로 주므로 이 필터링으로 인한 회귀는 없다.
+    val visibleSections = remember {
+        listOfNotNull(
+            TopSection.ROUTINE.takeIf { repository.permRoutine },
+            TopSection.STUDY.takeIf { repository.permStudy },
+            TopSection.MANAGE.takeIf { repository.permManage },
+            TopSection.SOCIAL_GROUP.takeIf { repository.permSocial },
+            TopSection.SETTINGS
+        )
+    }
+    var section by remember { mutableStateOf(visibleSections.first()) }
     var manageSubTab by remember { mutableIntStateOf(0) }
     var studySubTab by remember { mutableIntStateOf(0) }
     var editingGroupId by remember { mutableStateOf<Long?>(null) }
     var isCreatingNew by remember { mutableStateOf(false) }
     var groups by remember { mutableStateOf(repository.getGroups()) }
     var extensionWarning by remember { mutableStateOf(false) }
+    var selectedSocialGroupId by remember { mutableStateOf<String?>(null) }
+    var updateInstallerUrl by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
         groups = repository.getGroups()
@@ -71,6 +85,15 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
         }
     }
 
+    // EnforcementService.tick()이 하루 1회 GitHub Releases를 확인해 남겨둔 값을 폴링만 한다(네트워크
+    // 호출 없음, Repository.checkForUpdateIfNeeded 참고).
+    LaunchedEffect(Unit) {
+        while (true) {
+            updateInstallerUrl = repository.pendingUpdateInstallerUrl()
+            delay(30_000)
+        }
+    }
+
     val railColors = NavigationRailItemDefaults.colors(
         selectedIconColor = MaterialTheme.colorScheme.primary,
         selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -93,27 +116,42 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
 
         Row(Modifier.weight(1f).fillMaxWidth()) {
             NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
-                NavigationRailItem(
-                    selected = section == TopSection.ROUTINE,
-                    onClick = { section = TopSection.ROUTINE },
-                    icon = { Text("🌱") },
-                    label = { Text("루틴") },
-                    colors = railColors
-                )
-                NavigationRailItem(
-                    selected = section == TopSection.STUDY,
-                    onClick = { section = TopSection.STUDY },
-                    icon = { Text("📘") },
-                    label = { Text("공부") },
-                    colors = railColors
-                )
-                NavigationRailItem(
-                    selected = section == TopSection.MANAGE,
-                    onClick = { section = TopSection.MANAGE; refresh() },
-                    icon = { Text("🗂️") },
-                    label = { Text("관리") },
-                    colors = railColors
-                )
+                if (TopSection.ROUTINE in visibleSections) {
+                    NavigationRailItem(
+                        selected = section == TopSection.ROUTINE,
+                        onClick = { section = TopSection.ROUTINE },
+                        icon = { Text("🌱") },
+                        label = { Text("루틴") },
+                        colors = railColors
+                    )
+                }
+                if (TopSection.STUDY in visibleSections) {
+                    NavigationRailItem(
+                        selected = section == TopSection.STUDY,
+                        onClick = { section = TopSection.STUDY },
+                        icon = { Text("📘") },
+                        label = { Text("공부") },
+                        colors = railColors
+                    )
+                }
+                if (TopSection.MANAGE in visibleSections) {
+                    NavigationRailItem(
+                        selected = section == TopSection.MANAGE,
+                        onClick = { section = TopSection.MANAGE; refresh() },
+                        icon = { Text("🗂️") },
+                        label = { Text("관리") },
+                        colors = railColors
+                    )
+                }
+                if (TopSection.SOCIAL_GROUP in visibleSections) {
+                    NavigationRailItem(
+                        selected = section == TopSection.SOCIAL_GROUP,
+                        onClick = { section = TopSection.SOCIAL_GROUP },
+                        icon = { Text("👥") },
+                        label = { Text("모임") },
+                        colors = railColors
+                    )
+                }
                 NavigationRailItem(
                     selected = section == TopSection.SETTINGS,
                     onClick = { section = TopSection.SETTINGS },
@@ -124,6 +162,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
             }
 
             Column(Modifier.weight(1f).fillMaxHeight()) {
+                updateInstallerUrl?.let { url -> UpdateBanner(repository, url) }
                 if (extensionWarning) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -220,6 +259,16 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                     TopSection.ROUTINE -> {
                         Box(Modifier.weight(1f)) {
                             RoutineScreen(repository)
+                        }
+                    }
+                    TopSection.SOCIAL_GROUP -> {
+                        Box(Modifier.weight(1f)) {
+                            val groupId = selectedSocialGroupId
+                            if (groupId != null) {
+                                SocialGroupMembersScreen(repository, groupId, onBack = { selectedSocialGroupId = null })
+                            } else {
+                                SocialGroupScreen(repository, onSelectGroup = { selectedSocialGroupId = it })
+                            }
                         }
                     }
                     TopSection.SETTINGS -> {

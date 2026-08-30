@@ -131,15 +131,15 @@ fun StudyTimerScreen(repository: Repository) {
                 // 이 기기 타이머가 꺼져 있을 때만 "다른 기기" 상태를 읽어와 그대로 미러링해서 보여준다
                 // (사용자 요청: 다른 기기가 재고 있으면 이 기기도 시작 없이 같은 숫자를 보여줄 것).
                 withContext(Dispatchers.IO) {
-                    val url = repository.fbDatabaseUrl; val key = repository.fbApiKey; val user = repository.fbUser
-                    val updatedAt = PomodoroSyncClient.remoteUpdatedAtMillis(url, key, user)
+                    val url = repository.fbDatabaseUrl; val key = repository.fbApiKey
+                    val updatedAt = PomodoroSyncClient.remoteUpdatedAtMillis(url, key)
                     val fresh = updatedAt > 0 && nowMillis - updatedAt < REMOTE_STALE_MS
-                    remoteStudying = fresh && PomodoroSyncClient.isStudyTimerActive(url, key, user)
-                    remoteResting = fresh && PomodoroSyncClient.isBreakActive(url, key, user)
-                    remotePhaseStartedAt = PomodoroSyncClient.remotePhaseStartedAt(url, key, user)
-                    remotePhaseEndAt = PomodoroSyncClient.currentPhaseEndAt(url, key, user)
-                    remoteTaskName = PomodoroSyncClient.remoteTaskName(url, key, user)
-                    remoteMode = if (PomodoroSyncClient.isPomodoroMode(url, key, user)) "pomodoro" else "plain"
+                    remoteStudying = fresh && PomodoroSyncClient.isStudyTimerActive(url, key)
+                    remoteResting = fresh && PomodoroSyncClient.isBreakActive(url, key)
+                    remotePhaseStartedAt = PomodoroSyncClient.remotePhaseStartedAt(url, key)
+                    remotePhaseEndAt = PomodoroSyncClient.currentPhaseEndAt(url, key)
+                    remoteTaskName = PomodoroSyncClient.remoteTaskName(url, key)
+                    remoteMode = if (PomodoroSyncClient.isPomodoroMode(url, key)) "pomodoro" else "plain"
                 }
             }
             // 5초마다 다른 기기가 올린 "오늘의 공부 기록"을 읽어와 합친다 — 이 기기가 실행 중이어도
@@ -603,10 +603,7 @@ private fun LockListEditor(items: List<String>, placeholder: String, onAdd: (Str
     }
 }
 
-private val TIMER_COLOR_LABEL = mapOf(
-    "white" to "1회독", "red" to "2회독", "orange" to "3회독", "yellow" to "4회독", "green" to "5회독",
-    "blue" to "6회독", "indigo" to "7회독", "purple" to "8회독"
-)
+private val TIMER_COLOR_LABEL = mapOf("red" to "1회독", "yellow" to "2회독", "green" to "3회독")
 
 private fun taskDropdownLabel(task: CalendarTask): String {
     val done = if (task.status == "O") " ✅" else ""

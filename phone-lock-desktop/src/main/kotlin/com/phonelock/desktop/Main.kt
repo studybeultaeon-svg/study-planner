@@ -26,6 +26,8 @@ import com.phonelock.desktop.data.DebugLog
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.routine.DesktopNotifier
 import com.phonelock.desktop.routine.RoutineNotifier
+import com.phonelock.desktop.routine.SocialGroupNotifier
+import com.phonelock.desktop.routine.VoiceMessageNotifier
 import com.sun.jna.platform.win32.Advapi32Util
 import com.sun.jna.platform.win32.WinReg
 import com.phonelock.desktop.monitor.EnforcementService
@@ -33,11 +35,12 @@ import com.phonelock.desktop.monitor.LockReason
 import com.phonelock.desktop.monitor.StudyLockStatus
 import com.phonelock.desktop.monitor.UsageOverlayStatus
 import com.phonelock.desktop.net.LocalApiServer
+import com.phonelock.desktop.ui.AccountGate
 import com.phonelock.desktop.ui.BlockScreen
 import com.phonelock.desktop.ui.ConfirmScreen
 import com.phonelock.desktop.ui.ExitConfirmScreen
 import com.phonelock.desktop.ui.MainScreen
-import com.phonelock.desktop.ui.PixelSunriseIcon
+import com.phonelock.desktop.ui.SunriseIcon
 import com.phonelock.desktop.ui.StudyLockScreen
 import com.phonelock.desktop.ui.UsageOverlayContent
 import com.phonelock.desktop.ui.theme.PhoneLockTheme
@@ -156,12 +159,23 @@ private fun startApp() = application {
         // 안드로이드는 AlarmManager로 정확히 예약하지만 데스크탑엔 그런 API가 없어 30초 주기로 직접 비교한다(52차).
         while (true) {
             RoutineNotifier.tick(repository)
+            SocialGroupNotifier.tick(repository)
             delay(30_000)
         }
     }
 
+    // "무전기" — 켜짐/모드/일정이 모임마다 다를 수 있어(그룹 설정 화면에서 관리) 전역 플래그 없이 항상
+    // 짧은 주기로 폴링한다. VoiceMessageNotifier.tick()이 매 폴링마다 모임별 설정을 따로 조회해서
+    // 처리하므로, 어느 모임에서도 안 켜져 있으면 실질적으로 아무 일도 하지 않는다.
+    LaunchedEffect(Unit) {
+        while (true) {
+            VoiceMessageNotifier.tick(repository)
+            delay(7_000L)
+        }
+    }
+
     Tray(
-        icon = PixelSunriseIcon,
+        icon = SunriseIcon,
         state = trayState,
         tooltip = "갓생살기종합세트",
         onAction = { mainWindowVisible = true },
@@ -175,13 +189,15 @@ private fun startApp() = application {
         Window(
             onCloseRequest = { mainWindowVisible = false },
             title = "갓생살기종합세트",
-            icon = PixelSunriseIcon
+            icon = SunriseIcon
         ) {
             PhoneLockTheme(themeMode) {
                 // MaterialTheme은 색상 팔레트만 정의할 뿐 실제로 캔버스를 칠하진 않는다 — 이 Surface가
                 // 없으면 MainScreen이 덮지 않는 여백(패딩 등)이 Window 기본 배경(흰색)으로 비쳐 보인다.
                 Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-                    MainScreen(repository, onThemeChange = { themeMode = it })
+                    AccountGate(repository) {
+                        MainScreen(repository, onThemeChange = { themeMode = it })
+                    }
                 }
             }
         }

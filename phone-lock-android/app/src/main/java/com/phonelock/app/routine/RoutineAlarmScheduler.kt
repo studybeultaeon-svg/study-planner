@@ -22,19 +22,39 @@ import java.time.ZoneId
 object RoutineAlarmScheduler {
     const val ACTION_ROUTINE_REMINDER = "com.phonelock.app.ACTION_ROUTINE_REMINDER"
     const val ACTION_STREAK_CHECK = "com.phonelock.app.ACTION_STREAK_CHECK"
+    const val ACTION_GROUP_NUDGE_CHECK = "com.phonelock.app.ACTION_GROUP_NUDGE_CHECK"
     const val EXTRA_ROUTINE_ID = "routineId"
     private const val STREAK_REQUEST_CODE = -1
+    private const val GROUP_NUDGE_REQUEST_CODE = -2
 
     private fun alarmManager(context: Context) = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
     private fun scheduleAlarm(context: Context, triggerAtMillis: Long, pendingIntent: PendingIntent) {
         val manager = alarmManager(context)
         val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || manager.canScheduleExactAlarms()
-        if (canExact) {
-            manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
-        } else {
-            manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+        // 앱당 예약 알람 500개 한도(IllegalStateException)에 걸려도 앱 전체가 죽지 않게 흡수한다 —
+        // 2026-08-30에 실제로 이 예외가 잡히지 않아 앱이 열자마자 계속 죽는 크래시 루프가 있었다.
+        // 근본 원인(루틴 동기화 시 옛 ID의 알람이 취소 안 되고 계속 쌓이던 버그)은 별도로 고쳤지만,
+        // 이 한도 자체는 다른 경로로도 걸릴 수 있으니 방어는 남겨둔다.
+        runCatching {
+            if (canExact) {
+                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+            } else {
+                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+            }
         }
+    }
+
+    /** 2026-08-30 발견된 알람 누수(루틴 동기화 때마다 옛 Room ID의 예약 알람이 취소되지 않고 쌓이던 버그)로
+     *  이미 기기에 쌓여있는 알람을 한 번 정리한다 — Room ID는 순차 정수(autoIncrement)이므로 있음직한
+     *  범위를 넉넉히 훑어 전부 취소 시도한다(존재하지 않는 걸 취소해도 예외 없이 조용히 무시됨). 앱
+     *  실행마다 반복할 필요는 없어 [AppPreferences.leakedAlarmsCleaned]로 한 번만 수행한다. */
+    fun cleanupLeakedAlarmsIfNeeded(context: Context, prefs: com.phonelock.app.data.AppPreferences) {
+        if (prefs.leakedAlarmsCleaned) return
+        for (id in 1..20000) {
+            cancel(context, id.toLong())
+        }
+        prefs.leakedAlarmsCleaned = true
     }
 
     private fun pendingIntentFor(context: Context, requestCode: Int, action: String, routineId: Long? = null): PendingIntent {
@@ -86,10 +106,11 @@ object RoutineAlarmScheduler {
         repository.getRoutines().forEach { scheduleNext(context, it) }
     }
 
-    /** 스트릭 알림(전역, 루틴별 아님)을 dailyResetHour 정각에 매일 예약한다. */
-    fun scheduleStreakCheck(context: Context, hour: Int) {
+    /** 스트릭 알림(전역, 루틴별 아님)을 하루에 한 번, 완전히 랜덤한 시각에 예약한다(58차 사용자 요청 —
+     *  기존엔 dailyResetHour 정각 고정이었으나 예측 가능해서 매번 하루 중 아무 시각이나 고르도록 변경). */
+    fun scheduleStreakCheck(context: Context) {
         val now = LocalDateTime.now()
-        var candidate = LocalDateTime.of(now.toLocalDate(), LocalTime.of(hour.coerceIn(0, 23), 0))
+        var candidate = LocalDateTime.of(now.toLocalDate(), LocalTime.of((0..23).random(), (0..59).random()))
         if (!candidate.isAfter(now)) candidate = candidate.plusDays(1)
         val triggerAtMillis = candidate.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val pendingIntent = pendingIntentFor(context, STREAK_REQUEST_CODE, ACTION_STREAK_CHECK)
@@ -98,5 +119,19 @@ object RoutineAlarmScheduler {
 
     fun cancelStreakCheck(context: Context) {
         alarmManager(context).cancel(pendingIntentFor(context, STREAK_REQUEST_CODE, ACTION_STREAK_CHECK))
+    }
+
+    /** "무작위 알림"(77차) — 스트릭 알림과 동일한 패턴으로 하루 한 번, 완전히 랜덤한 시각에 예약한다. */
+    fun scheduleGroupNudgeCheck(context: Context) {
+        val now = LocalDateTime.now()
+        var candidate = LocalDateTime.of(now.toLocalDate(), LocalTime.of((0..23).random(), (0..59).random()))
+        if (!candidate.isAfter(now)) candidate = candidate.plusDays(1)
+        val triggerAtMillis = candidate.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val pendingIntent = pendingIntentFor(context, GROUP_NUDGE_REQUEST_CODE, ACTION_GROUP_NUDGE_CHECK)
+        scheduleAlarm(context, triggerAtMillis, pendingIntent)
+    }
+
+    fun cancelGroupNudgeCheck(context: Context) {
+        alarmManager(context).cancel(pendingIntentFor(context, GROUP_NUDGE_REQUEST_CODE, ACTION_GROUP_NUDGE_CHECK))
     }
 }

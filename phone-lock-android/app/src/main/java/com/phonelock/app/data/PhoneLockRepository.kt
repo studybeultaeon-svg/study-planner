@@ -2,6 +2,7 @@ package com.phonelock.app.data
 
 import android.content.Context
 import androidx.room.withTransaction
+import com.phonelock.app.BuildConfig
 import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlinx.coroutines.CoroutineScope
@@ -108,7 +109,6 @@ class PhoneLockRepository(context: Context) {
     /** 공부앱 연동용 Firebase 설정 — LockEvaluator가 PomodoroSyncClient 호출 시 읽기 전용으로 사용한다. */
     val fbDatabaseUrl: String? get() = preferences.fbDatabaseUrl
     val fbApiKey: String? get() = preferences.fbApiKey
-    val fbUser: String get() = preferences.fbUser
 
     // 그룹 일정 off-패널티 취소/완료 기록처럼, 호출한 화면(Composable)이 사라지는 바로 그 순간에도
     // 반드시 끝까지 실행되어야 하는 쓰기 작업을 위한 스코프. 화면의 rememberCoroutineScope를 쓰면
@@ -139,6 +139,49 @@ class PhoneLockRepository(context: Context) {
             if (!group.groupEnabled) {
                 groupDao.update(group.copy(groupEnabled = true, groupOffPending = false, groupOffMessageIndex = 0))
             }
+        }
+    }
+
+    /**
+     * GitHub Releases(공부앱과 같은 저장소)에 새 안드로이드 APK가 올라왔는지 하루 1회(dailyResetHour
+     * 기준 "오늘"이 바뀔 때) 확인한다 — applyDailyGroupResetIfNeeded와 동일한 lastXxxDate 가드 패턴.
+     * 결과는 [AppPreferences]에 남기고 [pendingUpdateApkUrl]로 네트워크 호출 없이 조회한다.
+     */
+    suspend fun checkForUpdateIfNeeded() {
+        val today = effectiveDate(dailyResetHour).toString()
+        if (preferences.lastUpdateCheckDate == today) return
+        preferences.lastUpdateCheckDate = today
+        val latest = com.phonelock.app.service.UpdateChecker.checkLatestAndroidRelease()
+        if (latest != null && latest.versionCode > BuildConfig.VERSION_CODE) {
+            preferences.updateAvailableVersionCode = latest.versionCode
+            preferences.updateAvailableApkUrl = latest.apkUrl
+        } else {
+            preferences.updateAvailableVersionCode = 0L
+            preferences.updateAvailableApkUrl = null
+        }
+    }
+
+    /** 지금 설치된 버전보다 새 릴리스가 있으면 그 APK 다운로드 URL, 없으면 null. [checkForUpdateIfNeeded]가
+     *  남겨둔 값만 읽으므로(네트워크 호출 없음) Compose에서 매 리컴포지션에 불러도 안전하다. */
+    fun pendingUpdateApkUrl(): String? =
+        if (preferences.updateAvailableVersionCode > BuildConfig.VERSION_CODE) preferences.updateAvailableApkUrl else null
+
+    /** 지금 설치된 versionCode — 설정 화면에 표시용. */
+    fun currentVersionCode(): Long = BuildConfig.VERSION_CODE.toLong()
+
+    /** 설정 화면 "지금 확인" 버튼 전용 — [checkForUpdateIfNeeded]의 하루 1회 가드를 무시하고 즉시
+     *  GitHub Releases를 확인한다. 새 버전이 있으면 APK 다운로드 URL을, 없으면 null을 반환한다. */
+    suspend fun checkForUpdateNow(): String? {
+        preferences.lastUpdateCheckDate = effectiveDate(dailyResetHour).toString()
+        val latest = com.phonelock.app.service.UpdateChecker.checkLatestAndroidRelease()
+        return if (latest != null && latest.versionCode > BuildConfig.VERSION_CODE) {
+            preferences.updateAvailableVersionCode = latest.versionCode
+            preferences.updateAvailableApkUrl = latest.apkUrl
+            latest.apkUrl
+        } else {
+            preferences.updateAvailableVersionCode = 0L
+            preferences.updateAvailableApkUrl = null
+            null
         }
     }
 
@@ -286,7 +329,7 @@ class PhoneLockRepository(context: Context) {
         )
         snoozeCache[id] = CachedSnooze(updated, System.currentTimeMillis())
         com.phonelock.app.service.PomodoroSyncClient
-            .writeSnoozeSync(fbDatabaseUrl, fbApiKey, fbUser, group.name, updated.untilEpochMillis, updated.usedDate, updated.usedCount)
+            .writeSnoozeSync(fbDatabaseUrl, fbApiKey, group.name, updated.untilEpochMillis, updated.usedDate, updated.usedCount)
         true
     }
 
@@ -331,7 +374,7 @@ class PhoneLockRepository(context: Context) {
         }
         val local = SnoozeState(group.snoozedUntilEpochMillis ?: 0L, group.snoozeUsedDate, group.snoozeUsedCount)
         val synced = com.phonelock.app.service.PomodoroSyncClient
-            .readSnoozeSync(fbDatabaseUrl, fbApiKey, fbUser, group.name)
+            .readSnoozeSync(fbDatabaseUrl, fbApiKey, group.name)
             ?.let { SnoozeState(it.untilEpochMillis, it.usedDate, it.usedCount) }
         val winner = if (synced != null && synced.untilEpochMillis > local.untilEpochMillis) synced else local
         if (winner != local) {
@@ -402,7 +445,7 @@ class PhoneLockRepository(context: Context) {
         val cached = peerUsageCache[group.id]
         if (cached != null && now - cached.fetchedAtMillis < PEER_USAGE_CACHE_TTL_MS) return cached.peerSeconds
         val map = com.phonelock.app.service.PomodoroSyncClient
-            .readDailyUsage(fbDatabaseUrl, fbApiKey, fbUser, dateStr, group.name) ?: emptyMap()
+            .readDailyUsage(fbDatabaseUrl, fbApiKey, dateStr, group.name) ?: emptyMap()
         val peerSeconds = map.filterKeys { it != DAILY_USAGE_DEVICE }.values.sum()
         peerUsageCache[group.id] = CachedPeerUsage(peerSeconds, now)
         return peerSeconds
@@ -432,7 +475,7 @@ class PhoneLockRepository(context: Context) {
             val group = groupDao.getById(groupId)
             if (group != null) {
                 com.phonelock.app.service.PomodoroSyncClient
-                    .writeDailyUsage(fbDatabaseUrl, fbApiKey, fbUser, today, group.name, DAILY_USAGE_DEVICE, updated)
+                    .writeDailyUsage(fbDatabaseUrl, fbApiKey, today, group.name, DAILY_USAGE_DEVICE, updated)
             }
         }
     }
@@ -476,7 +519,7 @@ class PhoneLockRepository(context: Context) {
 
         val local = confirmEscalationDao.get(group.id) ?: ConfirmEscalation(groupId = group.id)
         val synced = com.phonelock.app.service.PomodoroSyncClient
-            .readConfirmSync(fbDatabaseUrl, fbApiKey, fbUser, group.name)
+            .readConfirmSync(fbDatabaseUrl, fbApiKey, group.name)
             ?.let { ConfirmEscalation(groupId = group.id, level = it.level, lastConfirmedAtEpochMillis = it.lastConfirmedAtEpochMillis) }
         if (synced == null) {
             escalationCache[group.id] = CachedEscalation(local, System.currentTimeMillis())
@@ -522,7 +565,7 @@ class PhoneLockRepository(context: Context) {
         escalationCache[group.id] = CachedEscalation(updated, System.currentTimeMillis())
         incrementConfirmCounter(group.id)
         com.phonelock.app.service.PomodoroSyncClient
-            .writeConfirmSync(fbDatabaseUrl, fbApiKey, fbUser, group.name, updated.level, updated.lastConfirmedAtEpochMillis)
+            .writeConfirmSync(fbDatabaseUrl, fbApiKey, group.name, updated.level, updated.lastConfirmedAtEpochMillis)
     }
 
     /** 재확인 화면을 통과할 때마다 그날 카운터를 1 증가 — 순수 로컬 통계, 판정 로직과 무관(데스크탑판과 대칭). */
@@ -607,7 +650,7 @@ class PhoneLockRepository(context: Context) {
         }
         ioScope.launch {
             com.phonelock.app.service.PomodoroSyncClient.pushLocalStudyStatus(
-                fbDatabaseUrl, fbApiKey, fbUser,
+                fbDatabaseUrl, fbApiKey,
                 timerActive = state?.phase == "study",
                 breakActive = state?.phase == "break",
                 phaseEndAt = state?.phaseEndAt ?: 0L,
@@ -652,7 +695,7 @@ class PhoneLockRepository(context: Context) {
                 put("taskName", e.taskName); put("seconds", e.seconds); put("startedAt", e.startedAt); put("note", e.note)
             })
         }
-        com.phonelock.app.service.PomodoroSyncClient.writeStudyLogForDate(fbDatabaseUrl, fbApiKey, fbUser, dateKey, DAILY_USAGE_DEVICE, json)
+        com.phonelock.app.service.PomodoroSyncClient.writeStudyLogForDate(fbDatabaseUrl, fbApiKey, dateKey, DAILY_USAGE_DEVICE, json)
     }
 
     /**
@@ -660,7 +703,7 @@ class PhoneLockRepository(context: Context) {
      * 채운다. 로컬 DB엔 병합하지 않으므로(재호출해도 중복 안 생김) 부담 없이 반복 호출 가능하다.
      */
     suspend fun syncStudyLogFromFirebase(dateKey: String) {
-        val remote = com.phonelock.app.service.PomodoroSyncClient.readStudyLogForDate(fbDatabaseUrl, fbApiKey, fbUser, dateKey) ?: return
+        val remote = com.phonelock.app.service.PomodoroSyncClient.readStudyLogForDate(fbDatabaseUrl, fbApiKey, dateKey) ?: return
         val others = mutableListOf<StudyLogEntry>()
         remote.keys().forEach { device ->
             if (device == DAILY_USAGE_DEVICE) return@forEach
@@ -726,27 +769,21 @@ class PhoneLockRepository(context: Context) {
     // 정수 필드로 같은 dateKey 안에서의 표시 순서를 관리한다. Firebase는 데스크탑과 동일하게
     // users/{user}/calendar 경로에 { tasks:{dateKey:[...]}, _ts } 전체문서 단위 LWW로 동기화한다.
 
-    // 51차: 4단계(빨주노초)→7단계 무지개(빨주노초파남보)→8단계(사용자 요청, 데스크탑판과 대칭) —
-    // 1회독을 "하얀색"으로 새로 두고 기존 빨주노초파남보는 2~8회독으로 한 칸씩 밀렸다.
+    // 77차: 8단계(51차, 데스크탑판과 대칭)에서 다시 3단계(빨/노/초)로 축소(사용자 요청). 저장된 기존
+    // color 값(white/orange/blue/indigo/purple)은 그대로 두되(51차와 같은 전례: "라벨만 바뀐다")
+    // 새로 고르거나 자동 생성되는 회독은 이 3색만 쓴다.
     private val CALENDAR_COLOR_ORDER = mapOf(
-        "purple" to 0, "indigo" to 1, "blue" to 2, "green" to 3, "yellow" to 4, "orange" to 5, "red" to 6, "white" to 7
+        "green" to 0, "yellow" to 1, "red" to 2
     )
 
     /**
-     * color -> (다음 회독 color, 기본 간격일수). purple(8회독)은 종단이라 매핑 없음. 데스크탑판과 대칭.
-     * 에빙하우스 망각곡선 + 간격 효과(spacing effect, Cepeda et al.) 기반 — SuperMemo/Anki류 SRS가
-     * 검증한 대로 회독마다 간격을 약 2~2.3배씩 일관되게 넓힌다: 1→3→7→14→30→60→120일(1회독부터
-     * 8회독 완료까지 총 약 235일). 예전엔 첫 두 구간이 똑같이 1일이라 초반에 간격이 하나도 안 늘어나던
-     * 결함이 있었는데(사용자와 검토 후 확인), 이번에 처음부터 끝까지 배수를 일정하게 맞춰 바로잡았다.
+     * color -> (다음 회독 color, 기본 간격일수). green(3회독)은 종단이라 매핑 없음. 데스크탑판과 대칭.
+     * 사용자 지정값 — 1회독(만든 날)부터 누적 0/3/7일차: red(1회독, 0일)→yellow(2회독, +3일)→
+     * green(3회독, 1회독 기준 +7일 = yellow 기준 +4일).
      */
     private val CALENDAR_SCHEDULE = mapOf(
-        "white" to ("red" to 1),
-        "red" to ("orange" to 3),
-        "orange" to ("yellow" to 7),
-        "yellow" to ("green" to 14),
-        "green" to ("blue" to 30),
-        "blue" to ("indigo" to 60),
-        "indigo" to ("purple" to 120)
+        "red" to ("yellow" to 3),
+        "yellow" to ("green" to 4)
     )
 
     private val koreanCollator = java.text.Collator.getInstance(java.util.Locale.KOREAN)
@@ -775,7 +812,7 @@ class PhoneLockRepository(context: Context) {
     suspend fun addCalendarTask(dateKey: String, name: String) {
         if (name.isBlank()) return
         val nextOrder = (calendarTaskDao.getByDate(dateKey).maxOfOrNull { it.sortOrder } ?: -1) + 1
-        calendarTaskDao.insert(CalendarTask(dateKey = dateKey, name = name.trim(), color = "white", status = null, sortOrder = nextOrder))
+        calendarTaskDao.insert(CalendarTask(dateKey = dateKey, name = name.trim(), color = "red", status = null, sortOrder = nextOrder))
         resortCalendarDay(dateKey)
         pushCalendarToFirebase()
     }
@@ -866,8 +903,8 @@ class PhoneLockRepository(context: Context) {
         if (task.status == "O") revertCalendarAutoSchedule(task.dateKey, task)
         if (task.status == "X") revertIncompleteCarryOver(task.dateKey, task)
         if (task.status == targetStatus) {
-            // 완료 취소 — 계산기 연동 항목이었다면(1회독=white일 때만 최초 반영했으므로 그때만) 진행량을 되돌린다.
-            if (task.status == "O" && task.linkedCalc != null && task.color == "white") {
+            // 완료 취소 — 계산기 연동 항목이었다면(1회독=red일 때만 최초 반영했으므로 그때만) 진행량을 되돌린다.
+            if (task.status == "O" && task.linkedCalc != null && task.color == "red") {
                 adjustLinkedCalcProgress(task.linkedCalc, -linkedProgressAmount(task))
             }
             calendarTaskDao.update(task.copy(status = null))
@@ -876,7 +913,7 @@ class PhoneLockRepository(context: Context) {
             calendarTaskDao.update(updated)
             if (targetStatus == "O") {
                 applyCalendarAutoSchedule(task.dateKey, updated)
-                if (updated.linkedCalc != null && updated.color == "white") {
+                if (updated.linkedCalc != null && updated.color == "red") {
                     adjustLinkedCalcProgress(updated.linkedCalc, linkedProgressAmount(updated))
                 }
             }
@@ -917,7 +954,7 @@ class PhoneLockRepository(context: Context) {
         val nextOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
         calendarTaskDao.insert(
             CalendarTask(
-                dateKey = dateKey, name = taskName, color = "white", status = null,
+                dateKey = dateKey, name = taskName, color = "red", status = null,
                 linkedCalc = calcTaskName, progressStep = (to - from + 1).toString(), sortOrder = nextOrder
             )
         )
@@ -1018,7 +1055,7 @@ class PhoneLockRepository(context: Context) {
         calendarTs = ts
         ioScope.launch {
             val tasksJson = calendarTasksToJson(calendarTaskDao.getAllOnce())
-            com.phonelock.app.service.PomodoroSyncClient.writeCalendarTasks(fbDatabaseUrl, fbApiKey, fbUser, tasksJson, ts)
+            com.phonelock.app.service.PomodoroSyncClient.writeCalendarTasks(fbDatabaseUrl, fbApiKey, tasksJson, ts)
         }
     }
 
@@ -1027,7 +1064,7 @@ class PhoneLockRepository(context: Context) {
      * 최신이면 반대로 원격에 푸시한다.
      */
     suspend fun syncCalendarFromFirebase() {
-        val result = com.phonelock.app.service.PomodoroSyncClient.readCalendarTasks(fbDatabaseUrl, fbApiKey, fbUser) ?: return
+        val result = com.phonelock.app.service.PomodoroSyncClient.readCalendarTasks(fbDatabaseUrl, fbApiKey) ?: return
         if (result.ts > calendarTs) {
             val tasks = calendarTasksFromJson(result.tasksJson)
             // delete+insert를 하나의 트랜잭션으로 묶는다 — 따로 실행하면 그 사이 프로세스가 죽었을 때
@@ -1388,7 +1425,7 @@ class PhoneLockRepository(context: Context) {
             val tasksJson = JSONArray().also { arr -> calcTaskDao.getAll().forEach { arr.put(calcTaskToJson(it)) } }
             val savedJson = JSONArray().also { arr -> calcSavedItemDao.getAll().forEach { arr.put(calcSavedToJson(it)) } }
             com.phonelock.app.service.PomodoroSyncClient.writeCalcTasksAndSaved(
-                fbDatabaseUrl, fbApiKey, fbUser, tasksJson, calcTasksTs, savedJson, calcSavedTs
+                fbDatabaseUrl, fbApiKey, tasksJson, calcTasksTs, savedJson, calcSavedTs
             )
         }
     }
@@ -1398,7 +1435,7 @@ class PhoneLockRepository(context: Context) {
         val order = getCalcFolderOrderLocal()
         val folderTs = calcFolderTs; val folderOrderTs = calcFolderOrderTs
         ioScope.launch {
-            com.phonelock.app.service.PomodoroSyncClient.writeCalcFolders(fbDatabaseUrl, fbApiKey, fbUser, paths, folderTs, order, folderOrderTs)
+            com.phonelock.app.service.PomodoroSyncClient.writeCalcFolders(fbDatabaseUrl, fbApiKey, paths, folderTs, order, folderOrderTs)
         }
     }
 
@@ -1408,7 +1445,7 @@ class PhoneLockRepository(context: Context) {
      * 캘린더와 같은 단순화, DECISIONS.md 참고).
      */
     suspend fun syncCalculatorFromFirebase() {
-        val result = com.phonelock.app.service.PomodoroSyncClient.readCalculator(fbDatabaseUrl, fbApiKey, fbUser) ?: return
+        val result = com.phonelock.app.service.PomodoroSyncClient.readCalculator(fbDatabaseUrl, fbApiKey) ?: return
 
         // delete+insert를 트랜잭션으로 묶는다 — 그 사이 프로세스가 죽으면 로컬이 빈 상태로 남을 수 있음(캘린더와 동일 수정).
         if (result.tasksTs > calcTasksTs) {
@@ -1755,7 +1792,7 @@ class PhoneLockRepository(context: Context) {
         routinesTs = ts
         ioScope.launch {
             val (routinesArr, logsArr) = routinesToJson(routineDao.getAll(), routineLogDao.getAllOnce())
-            com.phonelock.app.service.PomodoroSyncClient.writeRoutines(fbDatabaseUrl, fbApiKey, fbUser, routinesArr, logsArr, ts)
+            com.phonelock.app.service.PomodoroSyncClient.writeRoutines(fbDatabaseUrl, fbApiKey, routinesArr, logsArr, ts)
         }
     }
 
@@ -1764,9 +1801,15 @@ class PhoneLockRepository(context: Context) {
      * 최신이면 반대로 원격에 푸시한다.
      */
     suspend fun syncRoutinesFromFirebase() {
-        val result = com.phonelock.app.service.PomodoroSyncClient.readRoutines(fbDatabaseUrl, fbApiKey, fbUser) ?: return
+        val result = com.phonelock.app.service.PomodoroSyncClient.readRoutines(fbDatabaseUrl, fbApiKey) ?: return
         if (result.ts > routinesTs) {
             val (newRoutines, logRefs) = routinesFromJson(result.routinesJson, result.logsJson)
+            // Room auto-increment ID라 delete+insert하면 새 루틴들이 전부 새 ID를 받는다 — 이 ID를
+            // requestCode로 쓰는 예약 알람(RoutineAlarmScheduler)이 그대로 두면 옛 ID의 알람은 절대
+            // 취소될 길이 없어 동기화 때마다 계속 쌓인다(안드로이드 앱당 예약 알람 500개 한도에 걸려
+            // 실제로 크래시 루프가 났던 원인, 2026-08-30). 지우기 전에 지금 있는 루틴들의 알람부터 먼저
+            // 취소해서 이 누수를 막는다.
+            val oldRoutines = routineDao.getAll()
             // delete+insert를 하나의 트랜잭션으로 묶는다 — 캘린더 동기화와 동일한 이유(도중에 죽어도 빈 상태로 안 남게).
             db.withTransaction {
                 routineLogDao.deleteAll()
@@ -1776,11 +1819,222 @@ class PhoneLockRepository(context: Context) {
                     routineLogDao.insert(RoutineLog(newIds[idx], dateKey))
                 }
             }
+            oldRoutines.forEach { com.phonelock.app.routine.RoutineAlarmScheduler.cancel(appContext, it.id) }
             routinesTs = result.ts
             refreshRoutineWidget()
             com.phonelock.app.routine.RoutineAlarmScheduler.rescheduleAll(appContext, this)
         } else if (routinesTs > result.ts) {
             pushRoutinesToFirebase()
         }
+    }
+
+    // ══════════════════════════════════════════════════════
+    // "모임"(소셜 그룹, 계획 dynamic-shimmying-map.md) — SocialGroupSyncClient의 얇은 pass-through.
+    // groups/{id}/... 데이터는 로컬에 캐싱/영속화하지 않고 화면 진입 시마다 Firebase에서 직접 읽는다
+    // (여러 사용자가 실시간으로 공유하는 데이터라 캐싱해도 이득이 적고 구현만 복잡해짐).
+    // ══════════════════════════════════════════════════════
+
+    suspend fun createSocialGroup(name: String) =
+        com.phonelock.app.service.SocialGroupSyncClient.createGroup(fbDatabaseUrl, fbApiKey, name)
+
+    suspend fun joinSocialGroup(code: String) =
+        com.phonelock.app.service.SocialGroupSyncClient.joinGroupByCode(fbDatabaseUrl, fbApiKey, code)
+
+    suspend fun leaveSocialGroup(groupId: String) =
+        com.phonelock.app.service.SocialGroupSyncClient.leaveGroup(fbDatabaseUrl, fbApiKey, groupId)
+
+    suspend fun deleteSocialGroup(groupId: String) =
+        com.phonelock.app.service.SocialGroupSyncClient.deleteGroup(fbDatabaseUrl, fbApiKey, groupId)
+
+    suspend fun readMySocialGroupIds() =
+        com.phonelock.app.service.SocialGroupSyncClient.readMyGroupIds(fbDatabaseUrl, fbApiKey)
+
+    suspend fun readSocialGroupInfo(groupId: String) =
+        com.phonelock.app.service.SocialGroupSyncClient.readGroupInfo(fbDatabaseUrl, fbApiKey, groupId)
+
+    suspend fun readSocialGroupMembers(groupId: String) =
+        com.phonelock.app.service.SocialGroupSyncClient.readGroupMembers(fbDatabaseUrl, fbApiKey, groupId)
+
+    /** 77차: 관리자/모임장 시스템 — 관리자 목록 조회, 승격/해제(모임장만), 멤버 내쫓기, 이름/코드 수정(모임장·관리자). */
+    suspend fun readSocialGroupAdmins(groupId: String) =
+        com.phonelock.app.service.SocialGroupSyncClient.readGroupAdmins(fbDatabaseUrl, fbApiKey, groupId)
+    suspend fun setSocialGroupAdmin(groupId: String, targetUid: String, isAdmin: Boolean) =
+        com.phonelock.app.service.SocialGroupSyncClient.setGroupAdmin(fbDatabaseUrl, fbApiKey, groupId, targetUid, isAdmin)
+    suspend fun kickSocialGroupMember(groupId: String, targetUid: String) =
+        com.phonelock.app.service.SocialGroupSyncClient.kickMember(fbDatabaseUrl, fbApiKey, groupId, targetUid)
+    suspend fun updateSocialGroupName(groupId: String, newName: String) =
+        com.phonelock.app.service.SocialGroupSyncClient.updateGroupName(fbDatabaseUrl, fbApiKey, groupId, newName)
+    suspend fun regenerateSocialGroupInviteCode(groupId: String) =
+        com.phonelock.app.service.SocialGroupSyncClient.regenerateInviteCode(fbDatabaseUrl, fbApiKey, groupId)
+
+    suspend fun readSocialGroupStats(groupId: String) =
+        com.phonelock.app.service.SocialGroupSyncClient.readGroupStats(fbDatabaseUrl, fbApiKey, groupId)
+
+    /**
+     * 내 루틴(오늘 예정분+완료여부)/공부시간·진행률/스트릭/오늘 일정/공부중 여부/현재 작동 중인 관리 그룹을
+     * 계산해 이 모임에 올린다. 설정에서 끈 항목은 SocialGroupSyncClient가 아예 필드 생략하고 쓰므로,
+     * 여기선 계산만 해서 넘긴다. 공유 설정은 62차의 앱 전체 공통 토글에서 75차+에 모임별 설정
+     * (`preferences.groupShareSettings(groupId)`)으로 바뀌었다.
+     */
+    suspend fun pushMySocialStats(groupId: String) {
+        val displayName = com.phonelock.app.service.AccountSyncClient.myDisplayName(fbDatabaseUrl, fbApiKey)
+        val today = LocalDate.now()
+        val todayKey = today.toString()
+        val routines = routineDao.getAll()
+        val completed = routines.associate { it.id to getRoutineCompletedDateKeys(it.id) }
+        val scheduledToday = routines.filter { com.phonelock.app.routine.RoutineEngine.isScheduledOn(it, today) }
+        val routineStats = scheduledToday.map {
+            com.phonelock.app.service.SocialGroupSyncClient.RoutineStat(
+                it.title, todayKey in (completed[it.id] ?: emptySet()), it.icon, it.timeSlot
+            )
+        }
+        val studySeconds = getTodayStudyLog().sumOf { it.seconds }
+        val calTasksToday = calendarTaskDao.getByDate(todayCalendarDateKey())
+        val studyProgress = if (calTasksToday.isNotEmpty()) {
+            Math.round(calTasksToday.count { it.status == "O" } * 100.0 / calTasksToday.size).toInt()
+        } else 0
+        val streak = com.phonelock.app.routine.RoutineEngine.currentStreak(routines, completed, today)
+        val routineBestStreak = com.phonelock.app.routine.RoutineEngine.bestStreak(routines, completed, today)
+        // 오늘 하루치만 이름/상태로 보여주던 걸 76차에 실제 캘린더 미니 그리드로 바꾸면서, 이 달 전체
+        // (달력 그리드가 앞뒤로 걸치는 주까지 포함해 ±7일 버퍼) 일정을 통째로 올린다 — 데스크탑
+        // CalendarScreen.refresh()와 동일한 조회 범위 패턴.
+        val firstOfMonth = today.withDayOfMonth(1)
+        val lastOfMonth = firstOfMonth.plusMonths(1).minusDays(1)
+        val monthTasks = getCalendarTasksInRange(firstOfMonth.minusDays(7).toString(), lastOfMonth.plusDays(7).toString())
+        val scheduleStats = monthTasks.map {
+            com.phonelock.app.service.SocialGroupSyncClient.ScheduleStat(it.dateKey, it.name, it.status, it.color)
+        }
+        // 캘린더 날짜 상세에서 "그 날 얼마나 공부했는지" 보여주려고 같은 달 범위의 공부기록을 날짜별로 합산.
+        val studySecondsByDate = studyLogEntryDao.getInRange(
+            firstOfMonth.minusDays(7).toString(), lastOfMonth.plusDays(7).toString()
+        ).groupBy { it.dateKey }.mapValues { (_, entries) -> entries.sumOf { it.seconds } }
+
+        val localStudying = preferences.timerPhase == "study" && preferences.timerPhaseStartedAt > 0L
+        val remoteStudying = runCatching {
+            com.phonelock.app.service.PomodoroSyncClient.isStudyTimerActive(fbDatabaseUrl, fbApiKey)
+        }.getOrDefault(false)
+        val studyingNow = localStudying || remoteStudying
+        val studyingTaskName = if (localStudying) preferences.timerTaskName else {
+            runCatching { com.phonelock.app.service.PomodoroSyncClient.remoteTaskName(fbDatabaseUrl, fbApiKey) }.getOrDefault("")
+        }
+
+        // 76차: "지금 실제로 제한 중인" 그룹만 걸러 보여줬으나(isCurrentlyRestricting), 시간대가 안 맞아
+        // 당장은 제한 중이 아닌 그룹(예: 주말에만 도는 그룹)도 사용자가 "그냥 다 보이게" 요청해
+        // groupEnabled 기준으로 넓혔다(데스크탑 Repository.currentlyActiveGroupNames와 동일 패턴).
+        val allGroups = groupDao.getAllOnce()
+        val activeGroups = allGroups.filter { it.groupEnabled }.map {
+            com.phonelock.app.service.SocialGroupSyncClient.ActiveGroupStat(
+                name = it.name,
+                description = it.description,
+                scheduleEnabled = it.scheduleEnabled,
+                scheduleStartMinute = it.scheduleStartMinute,
+                scheduleEndMinute = it.scheduleEndMinute,
+                scheduleDaysMask = it.scheduleDaysMask,
+                dailyLimitSeconds = it.dailyLimitSeconds,
+                dailyLimitApplyStartMinute = it.dailyLimitApplyStartMinute,
+                dailyLimitApplyEndMinute = it.dailyLimitApplyEndMinute,
+                dailyLimitDaysMask = it.dailyLimitDaysMask,
+                confirmEnabled = it.confirmEnabled,
+                confirmApplyStartMinute = it.confirmApplyStartMinute,
+                confirmApplyEndMinute = it.confirmApplyEndMinute,
+                confirmDaysMask = it.confirmDaysMask,
+                processNames = memberDao.getMembers(it.id).map { m -> m.packageName },
+                domains = groupSiteDao.getSites(it.id).map { s -> s.domain },
+                todayUsageSeconds = getTodayUsageSeconds(it.id),
+                confirmCountToday = getConfirmCountToday(it.id),
+                confirmCountYesterday = getConfirmCountYesterday(it.id),
+                recentAverageSeconds = getRecentAverageUsageSeconds(it.id)
+            )
+        }
+
+        val share = preferences.groupShareSettings(groupId)
+        val hiddenFromUids = preferences.hiddenFromUidsFor(groupId)
+
+        com.phonelock.app.service.SocialGroupSyncClient.pushMyStats(
+            fbDatabaseUrl, fbApiKey, groupId, displayName,
+            share.shareRoutines, share.shareStudy, share.shareStreak,
+            share.shareSchedule, share.shareStudyingNow, share.shareActiveGroup,
+            routineStats, studySeconds, studyProgress, streak, routineBestStreak,
+            scheduleStats, studySecondsByDate, studyingNow, studyingTaskName, activeGroups,
+            hiddenFromUids
+        )
+    }
+
+    /** "모임" 공유 설정/사용자별 비공개 설정 — 전부 로컬 SharedPreferences, UI는 이 창구로만 접근한다. */
+    fun groupShareSettings(groupId: String) = preferences.groupShareSettings(groupId)
+    fun setGroupShareSettings(groupId: String, settings: AppPreferences.GroupShareSettings) =
+        preferences.setGroupShareSettings(groupId, settings)
+
+    /** 특정 상대에게 내 정보 전체를 숨길지 — 다음 [pushMySocialStats] 때 RTDB에 반영된다. */
+    fun hiddenFromUidsFor(groupId: String) = preferences.hiddenFromUidsFor(groupId)
+    fun setHiddenFromUid(groupId: String, targetUid: String, hidden: Boolean) =
+        preferences.setHiddenFromUid(groupId, targetUid, hidden)
+
+    /** 특정 상대의 정보를 내 화면에서만 안 보이게 할지 — 순수 로컬 표시 설정, 서버엔 안 올라간다. */
+    fun hiddenPeerUidsFor(groupId: String) = preferences.hiddenPeerUidsFor(groupId)
+    fun setHiddenPeerUid(groupId: String, targetUid: String, hidden: Boolean) =
+        preferences.setHiddenPeerUid(groupId, targetUid, hidden)
+
+    /** "무작위 알림"(77차) — 이 모임에서 내 기기가 처지는 멤버를 자동으로 깨울지, 순수 로컬 설정. */
+    fun randomNudgeEnabledFor(groupId: String) = preferences.randomNudgeEnabledFor(groupId)
+    fun setRandomNudgeEnabled(groupId: String, enabled: Boolean) =
+        preferences.setRandomNudgeEnabled(groupId, enabled)
+
+    suspend fun sendSocialGroupNudge(groupId: String, targetUid: String) {
+        val fromName = com.phonelock.app.service.AccountSyncClient.myDisplayName(fbDatabaseUrl, fbApiKey)
+        com.phonelock.app.service.SocialGroupSyncClient.sendNudge(fbDatabaseUrl, fbApiKey, groupId, targetUid, fromName)
+    }
+
+    /** 내가 속한 모든 모임에서 나에게 온 새 넛지를 읽는다(마지막 확인 시각은 [AppPreferences]에 있음). */
+    suspend fun readIncomingSocialGroupNudges(): List<com.phonelock.app.service.SocialGroupSyncClient.NudgeInfo> {
+        val groupIds = readMySocialGroupIds()
+        return com.phonelock.app.service.SocialGroupSyncClient.readIncomingNudges(
+            fbDatabaseUrl, fbApiKey, groupIds, preferences.nudgeLastSeenByGroup()
+        )
+    }
+
+    fun markSocialGroupNudgeSeen(groupId: String, atMillis: Long) {
+        preferences.setNudgeLastSeen(groupId, atMillis)
+    }
+
+    /** 무전(강제 음성 메시지) 보내기. */
+    suspend fun sendVoiceMessage(groupId: String, targetUid: String, audioBase64: String, durationMs: Long): Result<Unit> {
+        val fromName = com.phonelock.app.service.AccountSyncClient.myDisplayName(fbDatabaseUrl, fbApiKey)
+        return com.phonelock.app.service.SocialGroupSyncClient.sendVoiceMessage(
+            fbDatabaseUrl, fbApiKey, groupId, targetUid, fromName, audioBase64, durationMs
+        )
+    }
+
+    /** 무전(텍스트 메시지, 상대 기기에서 TTS로 읽어줌) 보내기. */
+    suspend fun sendTextMessage(groupId: String, targetUid: String, textMessage: String): Result<Unit> {
+        val fromName = com.phonelock.app.service.AccountSyncClient.myDisplayName(fbDatabaseUrl, fbApiKey)
+        return com.phonelock.app.service.SocialGroupSyncClient.sendTextMessage(
+            fbDatabaseUrl, fbApiKey, groupId, targetUid, fromName, textMessage
+        )
+    }
+
+    /** 이 모임에서 내가 무전기를 어떻게 받을지(모임마다 다르게 설정 가능). */
+    suspend fun readGroupWalkieSettings(groupId: String): com.phonelock.app.service.SocialGroupSyncClient.GroupWalkieSettings {
+        return com.phonelock.app.service.SocialGroupSyncClient.readGroupWalkieSettings(fbDatabaseUrl, fbApiKey, groupId)
+    }
+
+    suspend fun writeGroupWalkieSettings(groupId: String, settings: com.phonelock.app.service.SocialGroupSyncClient.GroupWalkieSettings): Result<Unit> {
+        return com.phonelock.app.service.SocialGroupSyncClient.writeGroupWalkieSettings(fbDatabaseUrl, fbApiKey, groupId, settings)
+    }
+
+    /** 내가 속한 모든 모임에서 나에게 온 무전 메시지 전부(재생/확인 후 [deleteVoiceMessage]로 지울 것). */
+    suspend fun readIncomingVoiceMessages(): List<com.phonelock.app.service.SocialGroupSyncClient.VoiceMessageInfo> {
+        val groupIds = readMySocialGroupIds()
+        return com.phonelock.app.service.SocialGroupSyncClient.readIncomingVoiceMessages(fbDatabaseUrl, fbApiKey, groupIds)
+    }
+
+    /** 실패 시 실제 원인(상태코드/응답 본문)이 담긴 예외를 돌려준다 — 자동재생 후 삭제처럼 "지워진 게
+     *  확인돼야 재생해도 된다"는 호출부도 `result.isSuccess`로 판단할 수 있다. */
+    suspend fun deleteVoiceMessage(groupId: String, msgId: String): Result<Unit> {
+        return com.phonelock.app.service.SocialGroupSyncClient.deleteVoiceMessage(fbDatabaseUrl, fbApiKey, groupId, msgId)
+    }
+
+    suspend fun markVoiceMessageListened(groupId: String, msg: com.phonelock.app.service.SocialGroupSyncClient.VoiceMessageInfo) {
+        com.phonelock.app.service.SocialGroupSyncClient.markVoiceMessageListened(fbDatabaseUrl, fbApiKey, groupId, msg)
     }
 }

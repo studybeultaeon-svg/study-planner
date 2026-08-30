@@ -47,9 +47,8 @@ private const val REMOTE_STUDY_SIGNAL_STALE_MS = 20 * 60 * 1000L
 private suspend fun isRemoteStudyTimerActive(repository: PhoneLockRepository): Boolean {
     val url = repository.fbDatabaseUrl
     val key = repository.fbApiKey
-    val user = repository.fbUser
-    if (!PomodoroSyncClient.isStudyTimerActive(url, key, user)) return false
-    val updatedAt = PomodoroSyncClient.remoteUpdatedAtMillis(url, key, user)
+    if (!PomodoroSyncClient.isStudyTimerActive(url, key)) return false
+    val updatedAt = PomodoroSyncClient.remoteUpdatedAtMillis(url, key)
     return updatedAt > 0 && System.currentTimeMillis() - updatedAt < REMOTE_STUDY_SIGNAL_STALE_MS
 }
 

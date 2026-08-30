@@ -86,6 +86,7 @@ class EnforcementService(
      */
     private suspend fun tick() {
         repository.applyDailyGroupResetIfNeeded()
+        repository.checkForUpdateIfNeeded()
         val pid = ForegroundWindowWatcher.currentProcessId() ?: return
         val processName = ForegroundWindowWatcher.currentProcessName() ?: return
 
@@ -146,7 +147,7 @@ class EnforcementService(
 
         val startedAt = studyLockStartedAt ?: run {
             val remoteStartedAt = if (remoteActive) {
-                PomodoroSyncClient.remotePhaseStartedAt(repository.fbDatabaseUrl, repository.fbApiKey, repository.fbUser)
+                PomodoroSyncClient.remotePhaseStartedAt(repository.fbDatabaseUrl, repository.fbApiKey)
             } else {
                 0L
             }
@@ -160,7 +161,7 @@ class EnforcementService(
         val isPomodoroMode = if (localActive) {
             repository.isTimerPomodoroMode()
         } else {
-            PomodoroSyncClient.isPomodoroMode(repository.fbDatabaseUrl, repository.fbApiKey, repository.fbUser)
+            PomodoroSyncClient.isPomodoroMode(repository.fbDatabaseUrl, repository.fbApiKey)
         }
         onStudyLockUpdate(StudyLockStatus(allowedApps, startedAt, isPomodoroMode, isRemote = remoteActive))
         ForegroundWindowWatcher.minimizeForegroundWindow()
@@ -170,9 +171,8 @@ class EnforcementService(
     private fun isRemoteStudyTimerActive(): Boolean {
         val url = repository.fbDatabaseUrl
         val key = repository.fbApiKey
-        val user = repository.fbUser
-        if (!PomodoroSyncClient.isStudyTimerActive(url, key, user)) return false
-        val updatedAt = PomodoroSyncClient.remoteUpdatedAtMillis(url, key, user)
+        if (!PomodoroSyncClient.isStudyTimerActive(url, key)) return false
+        val updatedAt = PomodoroSyncClient.remoteUpdatedAtMillis(url, key)
         return updatedAt > 0 && System.currentTimeMillis() - updatedAt < REMOTE_STUDY_SIGNAL_STALE_MS
     }
 
@@ -264,7 +264,7 @@ class EnforcementService(
         // 휴식이라 임시로 풀려있다"는 걸 알 수 있게 같은 위젯을 기본보다 진한 불투명도로 띄운다.
         val hasPomodoroUnlock = groups.any { it.pomodoroUnlockEnabled && it.usageOverlayEnabled && evaluator.isPomodoroUnlockActive(it) }
         if (!hasPomodoroUnlock) return null
-        val phaseEndAt = PomodoroSyncClient.currentPhaseEndAt(repository.fbDatabaseUrl, repository.fbApiKey, repository.fbUser)
+        val phaseEndAt = PomodoroSyncClient.currentPhaseEndAt(repository.fbDatabaseUrl, repository.fbApiKey)
         val remainingBreakSeconds = ((phaseEndAt - System.currentTimeMillis()) / 1000L).toInt()
         if (remainingBreakSeconds <= 0) return null
         return UsageOverlayStatus(remainingBreakSeconds, level = 0, isPomodoro = true)

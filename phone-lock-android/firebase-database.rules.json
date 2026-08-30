@@ -1,0 +1,89 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "usernames": {
+      ".read": "auth != null",
+      "$customId": {
+        ".write": "auth != null && !data.exists() && newData.isString() && newData.val() === auth.uid"
+      }
+    },
+
+    "allowedUsers": {
+      ".read": false,
+      "$uid": {
+        ".write": "auth != null && root.child('usernames').child('BEULTAEON').val() === auth.uid"
+      }
+    },
+
+    "users": {
+      ".read": "auth != null && root.child('usernames').child('BEULTAEON').val() === auth.uid",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid && root.child('allowedUsers').child(auth.uid).exists()",
+        ".write": "auth != null && auth.uid === $uid && root.child('allowedUsers').child(auth.uid).exists()",
+
+        "profile": {
+          ".read": "auth != null && (auth.uid === $uid || root.child('usernames').child('BEULTAEON').val() === auth.uid)",
+          ".write": "auth != null && ((auth.uid === $uid && newData.child('status').val() !== 'approved') || root.child('usernames').child('BEULTAEON').val() === auth.uid)"
+        },
+
+        "socialGroupIds": {
+          "$groupId": {
+            ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && (auth.uid === $uid || root.child('groups').child($groupId).child('info').child('ownerUid').val() === auth.uid || root.child('groups').child($groupId).child('admins').child(auth.uid).val() === true)"
+          }
+        }
+      }
+    },
+
+    "groups": {
+      "$groupId": {
+        ".read": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && data.child('members').child(auth.uid).exists()",
+        ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && ((!data.exists() && newData.child('info').child('ownerUid').val() === auth.uid) || (data.exists() && data.child('info').child('ownerUid').val() === auth.uid))",
+
+        "info": {
+          ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && (data.child('ownerUid').val() === auth.uid || root.child('groups').child($groupId).child('admins').child(auth.uid).val() === true)"
+        },
+
+        "members": {
+          "$memberUid": {
+            ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && (auth.uid === $memberUid || root.child('groups').child($groupId).child('info').child('ownerUid').val() === auth.uid || root.child('groups').child($groupId).child('admins').child(auth.uid).val() === true)"
+          }
+        },
+
+        "stats": {
+          "$statUid": {
+            ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && auth.uid === $statUid"
+          }
+        },
+
+        "nudges": {
+          "$targetUid": {
+            ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && root.child('groups').child($groupId).child('members').child(auth.uid).exists()"
+          }
+        },
+
+        "voiceMessages": {
+          "$targetUid": {
+            "$msgId": {
+              ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && root.child('groups').child($groupId).child('members').child(auth.uid).exists()"
+            }
+          }
+        },
+
+        "walkieSettings": {
+          "$uid": {
+            ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && auth.uid === $uid"
+          }
+        }
+      }
+    },
+
+    "inviteCodes": {
+      "$code": {
+        ".read": "auth != null && root.child('allowedUsers').child(auth.uid).exists()",
+        ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists()"
+      }
+    }
+  }
+}

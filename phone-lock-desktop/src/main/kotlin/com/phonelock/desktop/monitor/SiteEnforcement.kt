@@ -43,9 +43,8 @@ class SiteEnforcement(private val repository: Repository) {
     private fun isRemoteStudyTimerActive(): Boolean {
         val url = repository.fbDatabaseUrl
         val key = repository.fbApiKey
-        val user = repository.fbUser
-        if (!PomodoroSyncClient.isStudyTimerActive(url, key, user)) return false
-        val updatedAt = PomodoroSyncClient.remoteUpdatedAtMillis(url, key, user)
+        if (!PomodoroSyncClient.isStudyTimerActive(url, key)) return false
+        val updatedAt = PomodoroSyncClient.remoteUpdatedAtMillis(url, key)
         return updatedAt > 0 && System.currentTimeMillis() - updatedAt < REMOTE_STUDY_SIGNAL_STALE_MS
     }
 
@@ -122,7 +121,7 @@ class SiteEnforcement(private val repository: Repository) {
 
         val hasPomodoroUnlock = groups.any { it.pomodoroUnlockEnabled && evaluator.isPomodoroUnlockActive(it) }
         if (!hasPomodoroUnlock) return null
-        val phaseEndAt = PomodoroSyncClient.currentPhaseEndAt(repository.fbDatabaseUrl, repository.fbApiKey, repository.fbUser)
+        val phaseEndAt = PomodoroSyncClient.currentPhaseEndAt(repository.fbDatabaseUrl, repository.fbApiKey)
         val remainingBreakSeconds = ((phaseEndAt - System.currentTimeMillis()) / 1000L).toInt()
         if (remainingBreakSeconds <= 0) return null
         return OverlayStatus(remainingBreakSeconds, level = 0, isPomodoro = true)

@@ -19,9 +19,13 @@ import java.time.Duration
  * 간주한다 — 공부앱 브라우저 탭이 갑자기 닫히는 등으로 breakActive:false를 못 올렸을 때도 관리앱 쪽에서
  * 영구 해제 상태로 남지 않도록 하는 안전장치.
  *
- * 같은 익명 인증/idToken 캐시를 데스크탑↔모바일 실행확인 레벨 동기화(`users/{user}/confirmSync/{그룹}`)에도
- * 재사용한다 — 두 기능이 같은 Firebase 설정(fbDatabaseUrl/fbApiKey/fbUser)을 공유하므로, 별도 클라이언트를
- * 만들면 토큰을 두 번 발급/갱신하게 되어 그냥 이 오브젝트에 read/write 함수를 추가했다.
+ * **로그인 필수(2단계 이후)**: 모든 함수가 [AuthManager] 로그인 여부로 동작한다 — 로그인
+ * 돼 있으면 그 계정의 uid를 경로(`users/{uid}/...`)로 쓰고 그 파일이 관리하는(자동 갱신되는) Firebase
+ * ID 토큰을 그대로 쓴다. 로그인이 안 돼 있으면 다른 판정 함수들과 같은 fail-safe 원칙으로 조용히
+ * 아무것도 하지 않는다(동기화 없음) — 예전엔 로그인 없이도 익명 인증 + 설정에 입력한 사용자 텍스트로
+ * 동작했지만, 이 앱은 여러 사용자가 각자 쓰는 걸 전제하므로 기기마다 텍스트가 어긋나 동기화가 안 맞는
+ * 문제의 근본 원인이라 로그인 필수로 전환하며 그 경로(사용자 텍스트 파라미터 자체)를 완전히
+ * 제거했다(사용자 확인).
  */
 object PomodoroSyncClient {
     private const val GRACE_MS = 15_000L
@@ -32,9 +36,6 @@ object PomodoroSyncClient {
         .connectTimeout(Duration.ofSeconds(TIMEOUT_SECONDS))
         .build()
 
-    private data class TokenCache(val idToken: String, val refreshToken: String, val expiresAtMillis: Long)
-    private var tokenCache: TokenCache? = null
-
     private data class StatusCache(
         val breakActive: Boolean, val phaseEndAt: Long, val timerActive: Boolean, val mode: String,
         val phaseStartedAt: Long, val taskName: String, val remoteUpdatedAt: Long, val fetchedAtMillis: Long
@@ -42,14 +43,14 @@ object PomodoroSyncClient {
     private var statusCache: StatusCache? = null
 
     /** 공부앱의 뽀모도로 휴식이 지금 유효하게 진행 중인지. 설정이 비어있거나 어떤 오류가 나도 false를 반환한다. */
-    fun isBreakActive(databaseUrl: String?, apiKey: String?, user: String?): Boolean {
-        return refreshStatusCache(databaseUrl, apiKey, user)?.breakActive ?: false
+    fun isBreakActive(databaseUrl: String?, apiKey: String?): Boolean {
+        return refreshStatusCache(databaseUrl, apiKey)?.breakActive ?: false
     }
 
     /** 지금 휴식이 유효하다면 그 휴식이 끝나는 시각(epoch millis), 아니면 0. isBreakActive()와 같은
      *  5초 캐시를 공유하므로 오버레이 표시용으로 남은 시간을 구할 때 추가 네트워크 호출이 생기지 않는다. */
-    fun currentPhaseEndAt(databaseUrl: String?, apiKey: String?, user: String?): Long {
-        if (!isBreakActive(databaseUrl, apiKey, user)) return 0L
+    fun currentPhaseEndAt(databaseUrl: String?, apiKey: String?): Long {
+        if (!isBreakActive(databaseUrl, apiKey)) return 0L
         return statusCache?.phaseEndAt ?: 0L
     }
 
@@ -59,33 +60,33 @@ object PomodoroSyncClient {
      * [readAllowedDesktopApps]에 등록된 프로그램만 예외로 허용한다. 다른 판정과 마찬가지로 오류/설정
      * 누락 시 항상 false(잠그지 않음)로 fail-safe.
      */
-    fun isStudyTimerActive(databaseUrl: String?, apiKey: String?, user: String?): Boolean {
-        return refreshStatusCache(databaseUrl, apiKey, user)?.timerActive ?: false
+    fun isStudyTimerActive(databaseUrl: String?, apiKey: String?): Boolean {
+        return refreshStatusCache(databaseUrl, apiKey)?.timerActive ?: false
     }
 
     /** 공부앱 타이머가 뽀모도로 모드인지("plain"이면 휴식 개념이 없어 전환 버튼을 보여줄 필요가 없음). */
-    fun isPomodoroMode(databaseUrl: String?, apiKey: String?, user: String?): Boolean {
-        return refreshStatusCache(databaseUrl, apiKey, user)?.mode == "pomodoro"
+    fun isPomodoroMode(databaseUrl: String?, apiKey: String?): Boolean {
+        return refreshStatusCache(databaseUrl, apiKey)?.mode == "pomodoro"
     }
 
     /** 다른 기기가 이 페이즈를 시작한 시각(epoch millis) — 공부 페이즈 경과시간을 로컬에서 계산할 때 씀. 값 없으면 0. */
-    fun remotePhaseStartedAt(databaseUrl: String?, apiKey: String?, user: String?): Long {
-        return refreshStatusCache(databaseUrl, apiKey, user)?.phaseStartedAt ?: 0L
+    fun remotePhaseStartedAt(databaseUrl: String?, apiKey: String?): Long {
+        return refreshStatusCache(databaseUrl, apiKey)?.phaseStartedAt ?: 0L
     }
 
     /** 다른 기기가 지금 재고 있는 업무 이름(캘린더 일정 이름). 값 없으면 빈 문자열. */
-    fun remoteTaskName(databaseUrl: String?, apiKey: String?, user: String?): String {
-        return refreshStatusCache(databaseUrl, apiKey, user)?.taskName ?: ""
+    fun remoteTaskName(databaseUrl: String?, apiKey: String?): String {
+        return refreshStatusCache(databaseUrl, apiKey)?.taskName ?: ""
     }
 
     /** 다른 기기가 이 상태를 마지막으로 write한 시각(epoch millis). 값 없으면 0 — 화면에서 "너무 오래된
      *  신호"(예: 그 기기가 정지 없이 앱을 꺼서 갱신이 끊긴 경우)를 걸러낼 때 쓴다. */
-    fun remoteUpdatedAtMillis(databaseUrl: String?, apiKey: String?, user: String?): Long {
-        return refreshStatusCache(databaseUrl, apiKey, user)?.remoteUpdatedAt ?: 0L
+    fun remoteUpdatedAtMillis(databaseUrl: String?, apiKey: String?): Long {
+        return refreshStatusCache(databaseUrl, apiKey)?.remoteUpdatedAt ?: 0L
     }
 
-    private fun refreshStatusCache(databaseUrl: String?, apiKey: String?, user: String?): StatusCache? {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return null
+    private fun refreshStatusCache(databaseUrl: String?, apiKey: String?): StatusCache? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
         val now = System.currentTimeMillis()
         val cached = statusCache
         if (cached != null && now - cached.fetchedAtMillis < CACHE_TTL_MS) return cached
@@ -97,7 +98,7 @@ object PomodoroSyncClient {
         var taskName = ""
         var remoteUpdatedAt = 0L
         val breakActive = runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching false
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching false
             val status = fetchStatus(databaseUrl, user, token) ?: return@runCatching false
             val active = status.optBoolean("breakActive", false)
             phaseEndAt = status.optLong("phaseEndAt", 0L)
@@ -122,13 +123,13 @@ object PomodoroSyncClient {
      * 저장된 뒤이므로 조용히 무시한다.
      */
     fun pushLocalStudyStatus(
-        databaseUrl: String?, apiKey: String?, user: String?,
+        databaseUrl: String?, apiKey: String?,
         timerActive: Boolean, breakActive: Boolean, phaseEndAt: Long, mode: String,
         phaseStartedAt: Long = 0L, taskName: String = ""
     ) {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
             val base = databaseUrl.trimEnd('/')
             val body = JSONObject().apply {
                 put("timerActive", timerActive)
@@ -157,10 +158,10 @@ object PomodoroSyncClient {
     }
 
     /** 실행확인 레벨을 읽는다. 설정이 비어있거나 오류가 나면 null(동기화 값 없음과 동일하게 취급). */
-    fun readConfirmSync(databaseUrl: String?, apiKey: String?, user: String?, groupName: String): ConfirmSyncEntry? {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return null
+    fun readConfirmSync(databaseUrl: String?, apiKey: String?, groupName: String): ConfirmSyncEntry? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
         return runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching null
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
             val base = databaseUrl.trimEnd('/')
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$base/users/$user/confirmSync/${firebaseSafeKey(groupName)}.json?auth=$token"))
@@ -180,10 +181,10 @@ object PomodoroSyncClient {
     }
 
     /** 실행확인 레벨을 올린다(그룹 하나만 갱신, 실패해도 조용히 무시 — 로컬 값은 이미 저장된 뒤이므로 안전). */
-    fun writeConfirmSync(databaseUrl: String?, apiKey: String?, user: String?, groupName: String, level: Int, lastConfirmedAtEpochMillis: Long) {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return
+    fun writeConfirmSync(databaseUrl: String?, apiKey: String?, groupName: String, level: Int, lastConfirmedAtEpochMillis: Long) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
             val base = databaseUrl.trimEnd('/')
             val body = JSONObject().apply {
                 put("level", level)
@@ -201,10 +202,10 @@ object PomodoroSyncClient {
     data class SnoozeSyncEntry(val untilEpochMillis: Long, val usedDate: String, val usedCount: Int)
 
     /** 스누즈(#1) 상태를 읽는다. 설정이 비어있거나 오류가 나면 null(동기화 값 없음과 동일하게 취급). */
-    fun readSnoozeSync(databaseUrl: String?, apiKey: String?, user: String?, groupName: String): SnoozeSyncEntry? {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return null
+    fun readSnoozeSync(databaseUrl: String?, apiKey: String?, groupName: String): SnoozeSyncEntry? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
         return runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching null
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
             val base = databaseUrl.trimEnd('/')
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$base/users/$user/snoozeSync/${firebaseSafeKey(groupName)}.json?auth=$token"))
@@ -225,10 +226,10 @@ object PomodoroSyncClient {
     }
 
     /** 스누즈 상태를 올린다(그룹 하나만 갱신, 실패해도 조용히 무시 — 로컬 값은 이미 저장된 뒤이므로 안전). */
-    fun writeSnoozeSync(databaseUrl: String?, apiKey: String?, user: String?, groupName: String, untilEpochMillis: Long, usedDate: String, usedCount: Int) {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return
+    fun writeSnoozeSync(databaseUrl: String?, apiKey: String?, groupName: String, untilEpochMillis: Long, usedDate: String, usedCount: Int) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
             val base = databaseUrl.trimEnd('/')
             val body = JSONObject().apply {
                 put("untilEpochMillis", untilEpochMillis)
@@ -249,10 +250,10 @@ object PomodoroSyncClient {
      * 마지막으로 올린 오늘 누적 사용시간. 기기마다 자기 값만 쓰고(경쟁 없음), 읽는 쪽이 "내 기기를 뺀
      * 나머지 기기들의 합"을 로컬 값에 더해서 일일 한도를 기기 합산 기준으로 판정한다.
      */
-    fun readDailyUsage(databaseUrl: String?, apiKey: String?, user: String?, date: String, groupName: String): Map<String, Int>? {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return null
+    fun readDailyUsage(databaseUrl: String?, apiKey: String?, date: String, groupName: String): Map<String, Int>? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
         return runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching null
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
             val base = databaseUrl.trimEnd('/')
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$base/users/$user/dailyUsage/$date/${firebaseSafeKey(groupName)}.json?auth=$token"))
@@ -269,10 +270,10 @@ object PomodoroSyncClient {
     }
 
     /** 이 기기의 오늘 사용시간(초, 그날 누적 총합)을 올린다. 실패해도 조용히 무시(로컬 값은 이미 저장됨). */
-    fun writeDailyUsage(databaseUrl: String?, apiKey: String?, user: String?, date: String, groupName: String, device: String, usedSeconds: Int) {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return
+    fun writeDailyUsage(databaseUrl: String?, apiKey: String?, date: String, groupName: String, device: String, usedSeconds: Int) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
             val base = databaseUrl.trimEnd('/')
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$base/users/$user/dailyUsage/$date/${firebaseSafeKey(groupName)}/$device.json?auth=$token"))
@@ -285,10 +286,10 @@ object PomodoroSyncClient {
 
     /** 이 기기가 그날(dateKey) 기록한 공부 기록 전체를 덮어쓴다 — dailyUsage와 같은 기기별 키 패턴이라
      *  경쟁이 없다(각 기기가 자기 키에만 쓴다). */
-    fun writeStudyLogForDate(databaseUrl: String?, apiKey: String?, user: String?, dateKey: String, device: String, entries: org.json.JSONArray) {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return
+    fun writeStudyLogForDate(databaseUrl: String?, apiKey: String?, dateKey: String, device: String, entries: org.json.JSONArray) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
             val base = databaseUrl.trimEnd('/')
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$base/users/$user/studyLog/$dateKey/$device.json?auth=$token"))
@@ -300,10 +301,10 @@ object PomodoroSyncClient {
     }
 
     /** 그날(dateKey) 전체 기기별 공부 기록(device -> 배열)을 읽는다. 설정 누락/오류 시 null. */
-    fun readStudyLogForDate(databaseUrl: String?, apiKey: String?, user: String?, dateKey: String): JSONObject? {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return null
+    fun readStudyLogForDate(databaseUrl: String?, apiKey: String?, dateKey: String): JSONObject? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
         return runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching null
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
             val base = databaseUrl.trimEnd('/')
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$base/users/$user/studyLog/$dateKey.json?auth=$token"))
@@ -324,10 +325,10 @@ object PomodoroSyncClient {
      * 네이티브 캘린더(2단계) 전체 문서를 읽는다. 웹앱과 완전히 같은 경로/스키마(`users/{user}/calendar`,
      * `{tasks:{dateKey:[...]}, _ts}`)를 써서 기존 웹앱 데이터를 그대로 이어받는다. 설정 누락/오류 시 null.
      */
-    fun readCalendarTasks(databaseUrl: String?, apiKey: String?, user: String?): CalendarSyncResult? {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return null
+    fun readCalendarTasks(databaseUrl: String?, apiKey: String?): CalendarSyncResult? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
         return runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching null
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
             val base = databaseUrl.trimEnd('/')
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$base/users/$user/calendar.json?auth=$token"))
@@ -337,17 +338,19 @@ object PomodoroSyncClient {
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
             if (response.statusCode() !in 200..299) return@runCatching null
             val body = response.body()
-            if (body.isNullOrBlank() || body == "null") return@runCatching null
+            // body == "null"은 네트워크 오류가 아니라 "원격 문서가 아직 없다"는 확정 응답 — routines와
+            // 동일한 이유로 null 대신 빈 결과(ts=0)를 반환해야 첫 동기화 때 로컬→원격 push가 일어난다.
+            if (body.isNullOrBlank() || body == "null") return@runCatching CalendarSyncResult(JSONObject(), 0L)
             val json = JSONObject(body)
             CalendarSyncResult(json.optJSONObject("tasks") ?: JSONObject(), json.optLong("_ts", 0L))
         }.getOrNull()
     }
 
     /** 캘린더 전체 문서를 덮어쓴다(문서 단위 LWW — 호출부가 이미 로컬이 더 최신임을 확인한 뒤 호출). */
-    fun writeCalendarTasks(databaseUrl: String?, apiKey: String?, user: String?, tasksJson: JSONObject, ts: Long) {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return
+    fun writeCalendarTasks(databaseUrl: String?, apiKey: String?, tasksJson: JSONObject, ts: Long) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
             val base = databaseUrl.trimEnd('/')
             val body = JSONObject().apply {
                 put("tasks", tasksJson)
@@ -371,10 +374,10 @@ object PomodoroSyncClient {
      * routines 배열 안에서의 인덱스(routineIndex)로 소속 루틴을 가리킨다(호출부가 반입 시 그 인덱스의
      * 새로 배정된 로컬 id로 다시 연결). 설정 누락/오류 시 null.
      */
-    fun readRoutines(databaseUrl: String?, apiKey: String?, user: String?): RoutineSyncResult? {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return null
+    fun readRoutines(databaseUrl: String?, apiKey: String?): RoutineSyncResult? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
         return runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching null
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
             val base = databaseUrl.trimEnd('/')
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$base/users/$user/routines.json?auth=$token"))
@@ -384,7 +387,10 @@ object PomodoroSyncClient {
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
             if (response.statusCode() !in 200..299) return@runCatching null
             val body = response.body()
-            if (body.isNullOrBlank() || body == "null") return@runCatching null
+            // body == "null"은 네트워크 오류가 아니라 "이 uid엔 아직 원격 문서가 없다"는 확정 응답이다 —
+            // 새 계정의 첫 동기화처럼 원격이 진짜 비어있는 경우, 여기서 null을 반환하면 호출부가 오류와
+            // 구분 못 해 로컬 데이터를 원격에 올리지도 못하고 그냥 포기해버린다(첫 동기화 무한 실패 버그).
+            if (body.isNullOrBlank() || body == "null") return@runCatching RoutineSyncResult(org.json.JSONArray(), org.json.JSONArray(), 0L)
             val json = JSONObject(body)
             RoutineSyncResult(
                 json.optJSONArray("routines") ?: org.json.JSONArray(),
@@ -395,10 +401,10 @@ object PomodoroSyncClient {
     }
 
     /** 루틴 전체 문서를 덮어쓴다(문서 단위 LWW — 호출부가 이미 로컬이 더 최신임을 확인한 뒤 호출). */
-    fun writeRoutines(databaseUrl: String?, apiKey: String?, user: String?, routinesJson: org.json.JSONArray, logsJson: org.json.JSONArray, ts: Long) {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return
+    fun writeRoutines(databaseUrl: String?, apiKey: String?, routinesJson: org.json.JSONArray, logsJson: org.json.JSONArray, ts: Long) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
             val base = databaseUrl.trimEnd('/')
             val body = JSONObject().apply {
                 put("routines", routinesJson)
@@ -427,10 +433,10 @@ object PomodoroSyncClient {
      * 쓴다. 다만 네이티브 쪽 로컬 폴더 트리 표현은 평평한 경로 리스트(calcFolderPaths)라서, 웹앱의 중첩
      * savedFolderTree 객체를 읽을 때 이 함수가 경로 리스트로 펼쳐서 반환한다(호출부 Repository 참고).
      */
-    fun readCalculator(databaseUrl: String?, apiKey: String?, user: String?): CalculatorSyncResult? {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return null
+    fun readCalculator(databaseUrl: String?, apiKey: String?): CalculatorSyncResult? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
         return runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching null
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
             val base = databaseUrl.trimEnd('/')
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$base/users/$user/calculator.json?auth=$token"))
@@ -440,7 +446,16 @@ object PomodoroSyncClient {
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
             if (response.statusCode() !in 200..299) return@runCatching null
             val body = response.body()
-            if (body.isNullOrBlank() || body == "null") return@runCatching null
+            // body == "null"은 네트워크 오류가 아니라 "원격 문서가 아직 없다"는 확정 응답 — routines/
+            // calendar와 동일한 이유로 null 대신 빈 결과(모든 ts=0)를 반환해야 첫 동기화 push가 일어난다.
+            if (body.isNullOrBlank() || body == "null") {
+                return@runCatching CalculatorSyncResult(
+                    tasksJson = org.json.JSONArray(), tasksTs = 0L,
+                    savedJson = org.json.JSONArray(), savedTs = 0L,
+                    folderPathsJson = org.json.JSONArray(), folderTs = 0L,
+                    folderOrderJson = JSONObject(), folderOrderTs = 0L
+                )
+            }
             val json = JSONObject(body)
             val folderPaths = org.json.JSONArray()
             flattenFolderTree(json.optJSONObject("savedFolderTree"), mutableListOf(), folderPaths)
@@ -485,13 +500,13 @@ object PomodoroSyncClient {
      * 다른 키까지 지워지므로 반드시 부분 갱신(HTTP PATCH)이어야 한다(웹앱의 `.update()`와 동일한 이유).
      */
     fun writeCalcTasksAndSaved(
-        databaseUrl: String?, apiKey: String?, user: String?,
+        databaseUrl: String?, apiKey: String?,
         tasksJson: org.json.JSONArray, tasksTs: Long,
         savedJson: org.json.JSONArray, savedTs: Long
     ) {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
             val base = databaseUrl.trimEnd('/')
             val body = JSONObject().apply {
                 put("tasks", tasksJson); put("tasksTs", tasksTs)
@@ -508,13 +523,13 @@ object PomodoroSyncClient {
 
     /** 폴더 트리 + 순서만 별도 PATCH — 아이템(tasks/saved)과 완전히 분리(웹앱 pushFolderTreeToFirebase와 동일). */
     fun writeCalcFolders(
-        databaseUrl: String?, apiKey: String?, user: String?,
+        databaseUrl: String?, apiKey: String?,
         folderPaths: List<List<String>>, folderTs: Long,
         folderOrder: Map<String, List<String>>, folderOrderTs: Long
     ) {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || user.isNullOrBlank()) return
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         runCatching {
-            val token = ensureIdToken(apiKey) ?: return@runCatching
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
             val base = databaseUrl.trimEnd('/')
             val orderJson = JSONObject()
             folderOrder.forEach { (key, order) -> orderJson.put(key, org.json.JSONArray(order)) }
@@ -531,55 +546,19 @@ object PomodoroSyncClient {
         }
     }
 
-    private fun ensureIdToken(apiKey: String): String? {
-        val cached = tokenCache
-        val now = System.currentTimeMillis()
-        if (cached != null && now < cached.expiresAtMillis - 60_000L) return cached.idToken
-
-        val refreshed = if (cached != null) refreshIdToken(apiKey, cached.refreshToken) else null
-        if (refreshed != null) {
-            tokenCache = refreshed
-            return refreshed.idToken
-        }
-
-        val signedIn = signInAnonymously(apiKey) ?: return null
-        tokenCache = signedIn
-        return signedIn.idToken
+    /**
+     * (idToken, uid)를 반환한다. 로그인이 필수다 — [AuthManager]로 로그인이 안 돼 있으면
+     * null(동기화 안 함)을 반환한다. 예전엔 로그인 없이도 익명 인증 + 설정에 입력한 사용자 텍스트로
+     * 동작했지만, 여러 기기가 서로 다른 텍스트를 입력해 동기화가 안 맞는 문제의 근본 원인이라 로그인
+     * 기능이 자리잡은 뒤로는 그 경로를 완전히 제거했다(사용자 확인) — 여러 사용자가 각자 쓰는 앱이라
+     * 기기가 스스로 아이디를 대신 정해줄 이유가 없다.
+     */
+    private fun resolveIdentity(apiKey: String): Pair<String, String>? {
+        val uid = AuthManager.currentUid ?: return null
+        val token = AuthManager.ensureIdToken(apiKey)
+        if (token.isNullOrBlank()) return null
+        return token to uid
     }
-
-    private fun signInAnonymously(apiKey: String): TokenCache? = runCatching {
-        val request = HttpRequest.newBuilder()
-            .uri(URI.create("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$apiKey"))
-            .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
-            .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString("""{"returnSecureToken":true}"""))
-            .build()
-        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-        if (response.statusCode() !in 200..299) return null
-        val json = JSONObject(response.body())
-        TokenCache(
-            idToken = json.getString("idToken"),
-            refreshToken = json.getString("refreshToken"),
-            expiresAtMillis = System.currentTimeMillis() + json.optString("expiresIn", "3600").toLong() * 1000L
-        )
-    }.getOrNull()
-
-    private fun refreshIdToken(apiKey: String, refreshToken: String): TokenCache? = runCatching {
-        val request = HttpRequest.newBuilder()
-            .uri(URI.create("https://securetoken.googleapis.com/v1/token?key=$apiKey"))
-            .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .POST(HttpRequest.BodyPublishers.ofString("grant_type=refresh_token&refresh_token=$refreshToken"))
-            .build()
-        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-        if (response.statusCode() !in 200..299) return null
-        val json = JSONObject(response.body())
-        TokenCache(
-            idToken = json.getString("id_token"),
-            refreshToken = json.getString("refresh_token"),
-            expiresAtMillis = System.currentTimeMillis() + json.optString("expires_in", "3600").toLong() * 1000L
-        )
-    }.getOrNull()
 
     private fun fetchStatus(databaseUrl: String, user: String, idToken: String): JSONObject? = runCatching {
         val base = databaseUrl.trimEnd('/')

@@ -25,13 +25,20 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Tab as MaterialTab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -44,6 +51,8 @@ import com.phonelock.app.data.PreMigrationBackup
 import com.phonelock.app.routine.RoutineAlarmScheduler
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.service.AccessibilityServiceChecker
+import com.phonelock.app.service.AccountSyncClient
+import com.phonelock.app.service.AuthManager
 import com.phonelock.app.service.PhoneLockDeviceAdminReceiver
 import com.phonelock.app.ui.components.SectionCard
 import com.phonelock.app.ui.components.ToggleRow
@@ -93,11 +102,10 @@ fun SettingsScreen(
     var blockShorts by remember { mutableStateOf(prefs.blockShorts) }
     var routineStreakNotifyEnabled by remember { mutableStateOf(prefs.routineStreakNotifyEnabled) }
     var autoDndEnabled by remember { mutableStateOf(prefs.autoDndEnabled) }
+    var settingsSubTab by remember { mutableIntStateOf(0) }
     var notificationPolicyGranted by remember { mutableStateOf(isNotificationPolicyAccessGranted(context)) }
     var dailyResetHourText by remember { mutableStateOf(prefs.dailyResetHour.toString()) }
-    var fbDatabaseUrlText by remember { mutableStateOf(prefs.fbDatabaseUrl ?: "") }
-    var fbApiKeyText by remember { mutableStateOf(prefs.fbApiKey ?: "") }
-    var fbUserText by remember { mutableStateOf(prefs.fbUser) }
+    var loginId by remember { mutableStateOf(AuthManager.currentLoginId) }
     var showRestoreConfirmDialog by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
     val autoBackups = remember { PreMigrationBackup.listBackups(context) }
@@ -231,13 +239,33 @@ fun SettingsScreen(
     Scaffold(
         topBar = { TopAppBar(title = { Text("설정") }) }
     ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            // 관리자가 승인 시 지정한 기능 범위(MainActivity.visibleTabs와 동일한 permXxx)에 맞춰
+            // 해당 서브탭만 보여준다 — "공통"은 로그아웃 등 항상 필요한 항목이라 예외로 항상 표시.
+            // 본문 각 섹션은 여전히 고정 인덱스(0~4)로 분기하므로 숨긴 탭은 그냥 선택 불가능해질 뿐이다.
+            TabRow(selectedTabIndex = settingsSubTab) {
+                MaterialTab(selected = settingsSubTab == 0, onClick = { settingsSubTab = 0 }, text = { Text("공통") })
+                if (prefs.permRoutine) {
+                    MaterialTab(selected = settingsSubTab == 1, onClick = { settingsSubTab = 1 }, text = { Text("루틴") })
+                }
+                if (prefs.permStudy) {
+                    MaterialTab(selected = settingsSubTab == 2, onClick = { settingsSubTab = 2 }, text = { Text("공부") })
+                }
+                if (prefs.permManage) {
+                    MaterialTab(selected = settingsSubTab == 3, onClick = { settingsSubTab = 3 }, text = { Text("관리") })
+                }
+                if (prefs.permSocial) {
+                    MaterialTab(selected = settingsSubTab == 4, onClick = { settingsSubTab = 4 }, text = { Text("모임") })
+                }
+            }
         Column(
             Modifier
-                .fillMaxSize()
-                .padding(padding)
+                .weight(1f)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(Spacing.md)
         ) {
+          if (settingsSubTab == 0) {
             if (autoBackups.isNotEmpty()) {
                 SectionCard("⚠ 그룹 데이터 복구") {
                     Text(
@@ -431,6 +459,52 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(Spacing.md))
 
+            run {
+                val crashLogFile = java.io.File(context.filesDir, "crash_log.txt")
+                if (crashLogFile.exists()) {
+                    SectionCard("⚠ 마지막 강제종료 로그") {
+                        Text(
+                            "앱이 예기치 않게 꺼진 기록이 있습니다. 공유하면 원인을 정확히 찾는 데 도움이 됩니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            Button(onClick = {
+                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, crashLogFile.readText().takeLast(4000))
+                                }
+                                context.startActivity(Intent.createChooser(sendIntent, "로그 공유"))
+                            }) { Text("공유") }
+                            OutlinedButton(onClick = { crashLogFile.delete() }) { Text("지우기") }
+                        }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+                }
+            }
+          }
+
+          if (settingsSubTab == 4) {
+            SectionCard("모임 공유 설정") {
+                Text(
+                    "모임마다 공개할 내 정보(루틴/공부/스트릭/오늘 일정/공부중 여부/작동 중인 관리 그룹)를 " +
+                        "다르게 정할 수 있어, 여기가 아니라 각 모임 화면의 ⚙ 공유 설정에서 모임별로 관리합니다. " +
+                        "특정 멤버에게만 내 정보를 숨기거나 특정 멤버의 정보를 안 보이게 하는 것도 그 " +
+                        "멤버의 상세 화면에서 따로 설정할 수 있습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                "무전기(음성/텍스트 메시지) 수신 설정도 모임마다 다르게 정할 수 있어 여기가 아니라 각 모임 " +
+                    "화면의 ⚙ 무전기 설정에서 관리합니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+
+          if (settingsSubTab == 3) {
             SectionCard("릴스/쇼츠 차단") {
                 ToggleRow(
                     title = "인스타 차단",
@@ -455,7 +529,9 @@ fun SettingsScreen(
                 )
             }
             Spacer(Modifier.height(Spacing.md))
+          }
 
+          if (settingsSubTab == 1) {
             SectionCard("루틴 스트릭 알림") {
                 ToggleRow(
                     title = "스트릭 알림 받기",
@@ -464,20 +540,22 @@ fun SettingsScreen(
                         routineStreakNotifyEnabled = checked
                         prefs.routineStreakNotifyEnabled = checked
                         if (checked) {
-                            RoutineAlarmScheduler.scheduleStreakCheck(context, repository.dailyResetHour)
+                            RoutineAlarmScheduler.scheduleStreakCheck(context)
                         } else {
                             RoutineAlarmScheduler.cancelStreakCheck(context)
                         }
                     }
                 )
                 Text(
-                    "매일 초기화 시각(위 \"일일 초기화\" 참고)에 어제 루틴 스트릭 상태를 알려줍니다.",
+                    "하루 중 랜덤한 시각에 어제 루틴 스트릭 상태를 알려줍니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(Modifier.height(Spacing.md))
+          }
 
+          if (settingsSubTab == 3) {
             SectionCard("공부 잠금 중 방해금지 모드") {
                 Text(
                     "공부 잠금 화면이 뜨는 동안 자동으로 방해금지(우선순위만) 모드를 켜고, 잠금이 풀리면 원래대로 되돌립니다.",
@@ -508,50 +586,295 @@ fun SettingsScreen(
                 }
             }
             Spacer(Modifier.height(Spacing.md))
+          }
 
-            SectionCard("공부앱 연동 / 데스크탑과 실행 확인 레벨 동기화") {
+          if (settingsSubTab == 0) {
+            SectionCard("계정 동기화 (로그인 필수)") {
                 Text(
-                    "공부앱(별도 웹앱)의 \"동기화 설정\"에 입력한 것과 동일한 Realtime Database URL / Web API Key / " +
-                        "사용자 ID를 입력하세요. 이 설정은 두 가지에 쓰입니다 — ① 공부앱에서 뽀모도로 휴식이 시작될 때 " +
-                        "그룹 편집 화면의 \"뽀모도로 휴식 시 자동 해제\"를 켜둔 그룹만 휴식 시간 동안 임시로 잠금이 " +
-                        "풀립니다. ② 데스크탑과 동일한 값을 입력해두면 실행 확인 레벨이 Firebase를 통해 자동으로 " +
-                        "동기화됩니다. 비워두면 두 기능 모두 꺼진 상태로 유지됩니다.",
+                    "동기화(실행확인 레벨/스누즈/일일사용량/캘린더/계산기/루틴)는 이제 로그인이 있어야만 " +
+                        "작동합니다. 같은 계정으로 로그인한 기기끼리 자동으로 연결됩니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(Spacing.sm))
-                OutlinedTextField(
-                    value = fbDatabaseUrlText,
-                    onValueChange = { text ->
-                        fbDatabaseUrlText = text
-                        prefs.fbDatabaseUrl = text.ifBlank { null }
-                    },
-                    label = { Text("Realtime Database URL") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                OutlinedTextField(
-                    value = fbApiKeyText,
-                    onValueChange = { text ->
-                        fbApiKeyText = text
-                        prefs.fbApiKey = text.ifBlank { null }
-                    },
-                    label = { Text("Web API Key") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                OutlinedTextField(
-                    value = fbUserText,
-                    onValueChange = { text ->
-                        fbUserText = text
-                        prefs.fbUser = text.ifBlank { "default" }
-                    },
-                    label = { Text("사용자 ID (공부앱과 동일하게, 비워두면 default)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (loginId != null) {
+                    Text("로그인됨: $loginId", style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.height(Spacing.sm))
+                    Button(
+                        onClick = {
+                            AuthManager.signOut()
+                            loginId = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("로그아웃") }
+                } else {
+                    Text(
+                        AuthManager.currentUser?.let { "게스트로 로그인되어 있습니다." }
+                            ?: "로그아웃되었습니다. 앱을 다시 시작해서 로그인해주세요.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (AuthManager.currentUser != null) {
+                    Spacer(Modifier.height(Spacing.sm))
+                    var showDeleteConfirm by remember { mutableStateOf(false) }
+                    var deleteError by remember { mutableStateOf<String?>(null) }
+                    var deleting by remember { mutableStateOf(false) }
+                    Button(
+                        onClick = { showDeleteConfirm = true },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("계정 삭제") }
+                    deleteError?.let { msg ->
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                    if (showDeleteConfirm) {
+                        AlertDialog(
+                            onDismissRequest = { if (!deleting) showDeleteConfirm = false },
+                            title = { Text("계정을 삭제할까요?") },
+                            text = {
+                                Text(
+                                    "루틴/캘린더/계산기/모임 기록이 이 기기에서 로그아웃되며, 서버의 계정 데이터도 " +
+                                        "삭제됩니다(되돌릴 수 없음). 사용하던 아이디는 이후 본인을 포함해 아무도 다시 " +
+                                        "쓸 수 없게 영구히 잠깁니다."
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    enabled = !deleting,
+                                    onClick = {
+                                        scope.launch {
+                                            deleting = true
+                                            deleteError = null
+                                            val delResult = AccountSyncClient.deleteMyData(prefs.fbDatabaseUrl, prefs.fbApiKey)
+                                            val authResult = AuthManager.deleteAccount()
+                                            deleting = false
+                                            if (authResult.isSuccess) {
+                                                showDeleteConfirm = false
+                                                loginId = null
+                                                android.widget.Toast.makeText(
+                                                    context, "계정이 삭제되었습니다. 앱을 다시 시작해주세요.", android.widget.Toast.LENGTH_LONG
+                                                ).show()
+                                            } else {
+                                                deleteError = delResult.exceptionOrNull()?.message
+                                                    ?: authResult.exceptionOrNull()?.message
+                                                    ?: "삭제 실패 — 오래 전에 로그인했다면 로그아웃 후 다시 로그인해서 시도해주세요."
+                                            }
+                                        }
+                                    }
+                                ) { Text(if (deleting) "삭제 중..." else "삭제") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showDeleteConfirm = false }, enabled = !deleting) { Text("취소") }
+                            }
+                        )
+                    }
+                }
             }
             Spacer(Modifier.height(Spacing.md))
 
+            if (loginId != null) {
+                SectionCard("비밀번호 변경") {
+                    var newPassword by remember { mutableStateOf("") }
+                    var newPasswordConfirm by remember { mutableStateOf("") }
+                    var pwSaving by remember { mutableStateOf(false) }
+                    var pwResult by remember { mutableStateOf<String?>(null) }
+                    val pwValid = newPassword.length in 6..50 && newPassword == newPasswordConfirm
+
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = { newPassword = it; pwResult = null },
+                        label = { Text("새 비밀번호 (6자 이상)") },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                    OutlinedTextField(
+                        value = newPasswordConfirm,
+                        onValueChange = { newPasswordConfirm = it; pwResult = null },
+                        label = { Text("새 비밀번호 확인") },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                pwSaving = true
+                                pwResult = null
+                                val result = AuthManager.changePassword(newPassword)
+                                pwSaving = false
+                                result.onSuccess {
+                                    pwResult = "변경되었습니다."
+                                    newPassword = ""
+                                    newPasswordConfirm = ""
+                                }
+                                result.onFailure { e ->
+                                    pwResult = e.message ?: "변경 실패 — 오래 전에 로그인했다면 로그아웃 후 다시 로그인해서 시도해주세요."
+                                }
+                            }
+                        },
+                        enabled = pwValid && !pwSaving,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (pwSaving) "변경 중..." else "비밀번호 변경") }
+                    pwResult?.let {
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Spacer(Modifier.height(Spacing.md))
+            }
+
+            SectionCard("닉네임 설정") {
+                var nickname by remember { mutableStateOf("") }
+                var nicknameSaving by remember { mutableStateOf(false) }
+                var nicknameSaveResult by remember { mutableStateOf<String?>(null) }
+                LaunchedEffect(Unit) {
+                    val profile = AccountSyncClient.fetchMyProfile(prefs.fbDatabaseUrl, prefs.fbApiKey).getOrNull()
+                    nickname = profile?.optString("nickname", "") ?: ""
+                }
+                OutlinedTextField(
+                    value = nickname,
+                    onValueChange = { nickname = it },
+                    label = { Text("닉네임 (1~20자)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                Button(
+                    onClick = {
+                        val trimmed = nickname.trim()
+                        if (trimmed.isEmpty() || trimmed.length > 20) {
+                            nicknameSaveResult = "닉네임은 1~20자여야 합니다."
+                            return@Button
+                        }
+                        nicknameSaving = true
+                        nicknameSaveResult = null
+                        scope.launch {
+                            val result = AccountSyncClient.updateNickname(prefs.fbDatabaseUrl, prefs.fbApiKey, trimmed)
+                            nicknameSaving = false
+                            nicknameSaveResult = if (result.isSuccess) "저장했습니다" else "저장 실패: ${result.exceptionOrNull()?.message ?: "알 수 없는 오류"}"
+                        }
+                    },
+                    enabled = !nicknameSaving,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (nicknameSaving) "저장 중..." else "저장") }
+                nicknameSaveResult?.let {
+                    Spacer(Modifier.height(Spacing.sm))
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+
+            var isAdmin by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                isAdmin = AccountSyncClient.isAdmin(prefs.fbDatabaseUrl, prefs.fbApiKey)
+            }
+            if (isAdmin) {
+                SectionCard("관리자 패널") {
+                    var pendingUsers by remember { mutableStateOf<List<AccountSyncClient.PendingUser>>(emptyList()) }
+                    var approvedUsers by remember { mutableStateOf<List<AccountSyncClient.ApprovedUser>>(emptyList()) }
+                    // 대기 중인 사용자를 승인할 때 고를 권한 — 기본은 전부 허용, uid별로 독립적으로 고른다.
+                    val pendingSelection = remember { mutableStateMapOf<String, AccountSyncClient.Permissions>() }
+
+                    suspend fun refreshAdminLists() {
+                        pendingUsers = AccountSyncClient.listPendingUsers(prefs.fbDatabaseUrl, prefs.fbApiKey).getOrDefault(emptyList())
+                        approvedUsers = AccountSyncClient.listApprovedUsers(prefs.fbDatabaseUrl, prefs.fbApiKey).getOrDefault(emptyList())
+                    }
+
+                    LaunchedEffect(Unit) { refreshAdminLists() }
+
+                    Button(
+                        onClick = { scope.launch { refreshAdminLists() } },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("새로고침") }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    Text("가입 승인 대기", style = MaterialTheme.typography.titleSmall)
+                    if (pendingUsers.isEmpty()) {
+                        Text("없음", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        pendingUsers.forEach { user ->
+                            Spacer(Modifier.height(Spacing.sm))
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(
+                                    "${user.customId} · ${user.nickname}" + if (user.isGuest) " (게스트)" else "",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                Text(
+                                    java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                                        .format(java.util.Date(user.requestedAt)),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(Spacing.xs))
+                                PermissionChipsRow(
+                                    permissions = pendingSelection[user.uid] ?: AccountSyncClient.Permissions.ALL,
+                                    onChange = { pendingSelection[user.uid] = it }
+                                )
+                                Spacer(Modifier.height(Spacing.xs))
+                                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                    Button(onClick = {
+                                        scope.launch {
+                                            val perms = pendingSelection[user.uid] ?: AccountSyncClient.Permissions.ALL
+                                            AccountSyncClient.approveUser(prefs.fbDatabaseUrl, prefs.fbApiKey, user.uid, perms)
+                                            pendingSelection.remove(user.uid)
+                                            refreshAdminLists()
+                                        }
+                                    }) { Text("승인") }
+                                    Button(onClick = {
+                                        scope.launch {
+                                            AccountSyncClient.rejectUser(prefs.fbDatabaseUrl, prefs.fbApiKey, user.uid)
+                                            pendingSelection.remove(user.uid)
+                                            refreshAdminLists()
+                                        }
+                                    }) { Text("거절") }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(Spacing.md))
+                    Text("승인된 사용자 관리", style = MaterialTheme.typography.titleSmall)
+                    if (approvedUsers.isEmpty()) {
+                        Text("없음", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        approvedUsers.forEach { user ->
+                            Spacer(Modifier.height(Spacing.sm))
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(
+                                    "${user.customId} · ${user.nickname}" + if (user.isGuest) " (게스트)" else "",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                Spacer(Modifier.height(Spacing.xs))
+                                PermissionChipsRow(
+                                    permissions = user.permissions,
+                                    onChange = { updated ->
+                                        scope.launch {
+                                            AccountSyncClient.updatePermissions(prefs.fbDatabaseUrl, prefs.fbApiKey, user.uid, updated)
+                                            refreshAdminLists()
+                                        }
+                                    }
+                                )
+                                Spacer(Modifier.height(Spacing.xs))
+                                Button(onClick = {
+                                    scope.launch {
+                                        AccountSyncClient.revokeUser(prefs.fbDatabaseUrl, prefs.fbApiKey, user.uid)
+                                        refreshAdminLists()
+                                    }
+                                }) { Text("승인취소") }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(Spacing.md))
+            }
+          }
+
+          if (settingsSubTab == 3) {
             SectionCard("공부 잠금 허용 앱") {
                 Text(
                     "공부앱 타이머가 \"공부\" 페이즈로 진행 중일 때(휴식 중엔 아님) 여기서 고른 앱 외에는 열자마자 " +
@@ -563,6 +886,41 @@ fun SettingsScreen(
                 Spacer(Modifier.height(Spacing.sm))
                 Button(onClick = onNavigateToStudyLockApps, modifier = Modifier.fillMaxWidth()) {
                     Text("허용 앱 선택")
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+          }
+
+          if (settingsSubTab == 0) {
+            SectionCard("업데이트") {
+                var checking by remember { mutableStateOf(false) }
+                var checkedOnce by remember { mutableStateOf(false) }
+                var apkUrl by remember { mutableStateOf(repository.pendingUpdateApkUrl()) }
+                Text(
+                    "현재 버전: ${repository.currentVersionCode()} · 초기화 시각이 지나면 하루 1회 자동으로도 확인합니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                Button(
+                    enabled = !checking,
+                    onClick = {
+                        checking = true
+                        scope.launch {
+                            apkUrl = repository.checkForUpdateNow()
+                            checking = false
+                            checkedOnce = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (checking) "확인 중..." else "지금 확인") }
+                apkUrl?.let { url ->
+                    Spacer(Modifier.height(Spacing.sm))
+                    UpdateBanner(url)
+                }
+                if (checkedOnce && apkUrl == null && !checking) {
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text("최신 버전입니다", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Spacer(Modifier.height(Spacing.md))
@@ -608,7 +966,17 @@ fun SettingsScreen(
                 )
             }
             Spacer(Modifier.height(Spacing.md))
+          }
 
+          if (settingsSubTab == 2) {
+            Text(
+                "공부 전용 설정 항목은 아직 없습니다. 필요해지면 여기에 추가됩니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+
+          if (settingsSubTab == 1) {
             SectionCard("루틴 내보내기 / 가져오기") {
                 Text(
                     "루틴 목록과 체크 기록을 파일로 저장하거나 불러옵니다. 루틴은 이미 Firebase로 기기 간 자동 " +
@@ -631,6 +999,41 @@ fun SettingsScreen(
                     Text("루틴 파일에서 가져오기")
                 }
             }
+          }
         }
+        }
+    }
+}
+
+/** 관리자 패널에서 사용자별 기능 범위(루틴/공부/관리/모임)를 고르는 칩 4개 — 눌린 것만 허용. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun PermissionChipsRow(
+    permissions: AccountSyncClient.Permissions,
+    onChange: (AccountSyncClient.Permissions) -> Unit
+) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+    ) {
+        FilterChip(
+            selected = permissions.routine,
+            onClick = { onChange(permissions.copy(routine = !permissions.routine)) },
+            label = { Text("루틴") }
+        )
+        FilterChip(
+            selected = permissions.study,
+            onClick = { onChange(permissions.copy(study = !permissions.study)) },
+            label = { Text("공부") }
+        )
+        FilterChip(
+            selected = permissions.manage,
+            onClick = { onChange(permissions.copy(manage = !permissions.manage)) },
+            label = { Text("관리") }
+        )
+        FilterChip(
+            selected = permissions.social,
+            onClick = { onChange(permissions.copy(social = !permissions.social)) },
+            label = { Text("모임") }
+        )
     }
 }

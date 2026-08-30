@@ -71,9 +71,11 @@ object JsonStore {
             blockShorts = json.optBoolean("blockShorts", false),
             routineStreakNotifyEnabled = json.optBoolean("routineStreakNotifyEnabled", false),
             lastRoutineStreak = json.optInt("lastRoutineStreak", -1),
-            fbDatabaseUrl = if (json.isNull("fbDatabaseUrl")) null else json.optString("fbDatabaseUrl", null),
-            fbApiKey = if (json.isNull("fbApiKey")) null else json.optString("fbApiKey", null),
-            fbUser = json.optString("fbUser", "default"),
+            zeroStreakDays = json.optInt("zeroStreakDays", 0),
+            fbDatabaseUrl = (if (json.isNull("fbDatabaseUrl")) null else json.optString("fbDatabaseUrl", null))
+                ?.ifBlank { null } ?: DEFAULT_FB_DATABASE_URL,
+            fbApiKey = (if (json.isNull("fbApiKey")) null else json.optString("fbApiKey", null))
+                ?.ifBlank { null } ?: DEFAULT_FB_API_KEY,
             timerRun = json.optJSONObject("timerRun")?.let { t ->
                 TimerRunState(
                     taskName = t.optString("taskName", ""),
@@ -102,8 +104,44 @@ object JsonStore {
             calcFolderTs = json.optLong("calcFolderTs", 0L),
             calcFolderOrderTs = json.optLong("calcFolderOrderTs", 0L),
             lastGroupAutoResetDate = if (json.isNull("lastGroupAutoResetDate")) null else json.optString("lastGroupAutoResetDate", null),
-            nextRoutineId = json.optLong("nextRoutineId", 1)
+            nextRoutineId = json.optLong("nextRoutineId", 1),
+            cachedApprovalStatus = if (json.isNull("cachedApprovalStatus")) null else json.optString("cachedApprovalStatus", null),
+            permRoutine = json.optBoolean("permRoutine", true),
+            permStudy = json.optBoolean("permStudy", true),
+            permManage = json.optBoolean("permManage", true),
+            permSocial = json.optBoolean("permSocial", true),
+            lastUpdateCheckDate = if (json.isNull("lastUpdateCheckDate")) null else json.optString("lastUpdateCheckDate", null),
+            updateAvailableBuildTimestamp = json.optLong("updateAvailableBuildTimestamp", 0L),
+            updateAvailableInstallerUrl = if (json.isNull("updateAvailableInstallerUrl")) null else json.optString("updateAvailableInstallerUrl", null)
         )
+
+        val nudgeLastSeenJson = json.optJSONObject("nudgeLastSeenByGroup") ?: JSONObject()
+        nudgeLastSeenJson.keys().forEach { key -> data.nudgeLastSeenByGroup[key] = nudgeLastSeenJson.optLong(key, 0L) }
+
+        val groupShareJson = json.optJSONObject("groupShareSettings") ?: JSONObject()
+        groupShareJson.keys().forEach { groupId ->
+            val g = groupShareJson.getJSONObject(groupId)
+            data.groupShareSettings[groupId] = GroupShareSettings(
+                shareRoutines = g.optBoolean("shareRoutines", true),
+                shareStudy = g.optBoolean("shareStudy", true),
+                shareStreak = g.optBoolean("shareStreak", true),
+                shareSchedule = g.optBoolean("shareSchedule", true),
+                shareStudyingNow = g.optBoolean("shareStudyingNow", true),
+                shareActiveGroup = g.optBoolean("shareActiveGroup", true)
+            )
+        }
+        val hiddenFromJson = json.optJSONObject("hiddenFromUidsByGroup") ?: JSONObject()
+        hiddenFromJson.keys().forEach { groupId ->
+            val arr = hiddenFromJson.optJSONArray(groupId) ?: JSONArray()
+            data.hiddenFromUidsByGroup[groupId] = (0 until arr.length()).map { arr.getString(it) }.toMutableSet()
+        }
+        val hiddenPeerJson = json.optJSONObject("hiddenPeerUidsByGroup") ?: JSONObject()
+        hiddenPeerJson.keys().forEach { groupId ->
+            val arr = hiddenPeerJson.optJSONArray(groupId) ?: JSONArray()
+            data.hiddenPeerUidsByGroup[groupId] = (0 until arr.length()).map { arr.getString(it) }.toMutableSet()
+        }
+        val randomNudgeJson = json.optJSONObject("groupRandomNudgeEnabled") ?: JSONObject()
+        randomNudgeJson.keys().forEach { groupId -> data.groupRandomNudgeEnabled[groupId] = randomNudgeJson.optBoolean(groupId, true) }
 
         val studyLogJson = json.optJSONArray("studyLog") ?: JSONArray()
         for (i in 0 until studyLogJson.length()) {
@@ -336,14 +374,46 @@ object JsonStore {
         json.put("blockShorts", data.blockShorts)
         json.put("routineStreakNotifyEnabled", data.routineStreakNotifyEnabled)
         json.put("lastRoutineStreak", data.lastRoutineStreak)
+        json.put("zeroStreakDays", data.zeroStreakDays)
         json.put("fbDatabaseUrl", data.fbDatabaseUrl ?: JSONObject.NULL)
         json.put("fbApiKey", data.fbApiKey ?: JSONObject.NULL)
-        json.put("fbUser", data.fbUser)
         json.put("pomodoroStudyMinutes", data.pomodoroStudyMinutes)
         json.put("pomodoroBreakMinutes", data.pomodoroBreakMinutes)
         json.put("pomodoroModeEnabled", data.pomodoroModeEnabled)
         json.put("studyLockAllowedApps", JSONArray(data.studyLockAllowedApps))
         json.put("studyLockAllowedSites", JSONArray(data.studyLockAllowedSites))
+        json.put("cachedApprovalStatus", data.cachedApprovalStatus ?: JSONObject.NULL)
+        json.put("permRoutine", data.permRoutine)
+        json.put("permStudy", data.permStudy)
+        json.put("permManage", data.permManage)
+        json.put("permSocial", data.permSocial)
+        json.put("lastUpdateCheckDate", data.lastUpdateCheckDate ?: JSONObject.NULL)
+        json.put("updateAvailableBuildTimestamp", data.updateAvailableBuildTimestamp)
+        json.put("updateAvailableInstallerUrl", data.updateAvailableInstallerUrl ?: JSONObject.NULL)
+        val nudgeLastSeenJson = JSONObject()
+        data.nudgeLastSeenByGroup.forEach { (key, millis) -> nudgeLastSeenJson.put(key, millis) }
+        json.put("nudgeLastSeenByGroup", nudgeLastSeenJson)
+        val groupShareJson = JSONObject()
+        data.groupShareSettings.forEach { (groupId, s) ->
+            groupShareJson.put(groupId, JSONObject().apply {
+                put("shareRoutines", s.shareRoutines)
+                put("shareStudy", s.shareStudy)
+                put("shareStreak", s.shareStreak)
+                put("shareSchedule", s.shareSchedule)
+                put("shareStudyingNow", s.shareStudyingNow)
+                put("shareActiveGroup", s.shareActiveGroup)
+            })
+        }
+        json.put("groupShareSettings", groupShareJson)
+        val hiddenFromJson = JSONObject()
+        data.hiddenFromUidsByGroup.forEach { (groupId, uids) -> hiddenFromJson.put(groupId, JSONArray(uids.toList())) }
+        json.put("hiddenFromUidsByGroup", hiddenFromJson)
+        val hiddenPeerJson = JSONObject()
+        data.hiddenPeerUidsByGroup.forEach { (groupId, uids) -> hiddenPeerJson.put(groupId, JSONArray(uids.toList())) }
+        json.put("hiddenPeerUidsByGroup", hiddenPeerJson)
+        val randomNudgeJson = JSONObject()
+        data.groupRandomNudgeEnabled.forEach { (groupId, enabled) -> randomNudgeJson.put(groupId, enabled) }
+        json.put("groupRandomNudgeEnabled", randomNudgeJson)
         val timerRun = data.timerRun
         json.put("timerRun", if (timerRun == null) JSONObject.NULL else JSONObject().apply {
             put("taskName", timerRun.taskName)

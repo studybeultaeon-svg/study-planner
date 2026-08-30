@@ -86,6 +86,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
     val evaluator = remember { LockEvaluator(repository) }
 
     var name by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
     var scheduleEnabled by remember { mutableStateOf(false) }
     var dailyLimitEnabled by remember { mutableStateOf(false) }
     var dailyLimitHoursText by remember { mutableStateOf("") }
@@ -154,6 +155,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         if (groupId != null) {
             repository.getGroup(groupId)?.let { group ->
                 name = group.name
+                description = group.description
                 scheduleEnabled = group.scheduleEnabled
                 dailyLimitEnabled = group.dailyLimitSeconds != null
                 val (dlh, dlm, dls) = secondsToHmsText(group.dailyLimitSeconds ?: 0)
@@ -216,6 +218,13 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 value = name,
                 onValueChange = { name = it },
                 label = { Text("그룹 이름") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(Spacing.sm))
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text("설명 (선택, \"모임\"에 이 그룹 이름과 함께 표시됩니다)") },
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -662,6 +671,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                     val group = Group(
                         id = groupId ?: 0,
                         name = name.ifBlank { "이름 없는 그룹" },
+                        description = description,
                         dailyLimitSeconds = if (dailyLimitEnabled) {
                             hmsTextToSeconds(dailyLimitHoursText, dailyLimitMinutesText, dailyLimitSecondsText)
                         } else {

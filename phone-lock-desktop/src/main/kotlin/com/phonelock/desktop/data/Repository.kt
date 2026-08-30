@@ -113,6 +113,69 @@ class Repository {
         persist()
     }
 
+    /**
+     * GitHub Releases(공부앱과 같은 저장소)에 새 데스크탑 설치파일이 올라왔는지 하루 1회(dailyResetHour
+     * 기준 "오늘"이 바뀔 때) 확인한다 — applyDailyGroupResetIfNeeded와 동일한 lastXxxDate 가드 패턴.
+     * 실제 GitHub API 호출(최대 수초)은 pushUsageToFirebase 등과 같은 이유로 락 밖 백그라운드 스레드에서
+     * 수행한다 — 락 안에서 하면 그동안 다른 그룹 감시 전체가 멈춘다.
+     */
+    fun checkForUpdateIfNeeded() {
+        val shouldCheck = synchronized(lock) {
+            val today = effectiveDate(data.dailyResetHour).toString()
+            if (data.lastUpdateCheckDate == today) return@synchronized false
+            data.lastUpdateCheckDate = today
+            persist()
+            true
+        }
+        if (!shouldCheck) return
+        Thread {
+            val latest = com.phonelock.desktop.monitor.DesktopUpdateChecker.checkLatestDesktopRelease()
+            synchronized(lock) {
+                if (latest != null && latest.buildTimestamp > com.phonelock.desktop.BuildInfo.BUILD_TIMESTAMP) {
+                    data.updateAvailableBuildTimestamp = latest.buildTimestamp
+                    data.updateAvailableInstallerUrl = latest.installerUrl
+                } else {
+                    data.updateAvailableBuildTimestamp = 0L
+                    data.updateAvailableInstallerUrl = null
+                }
+                persist()
+            }
+        }.start()
+    }
+
+    /** 지금 실행 중인 빌드보다 새 릴리스가 있으면 그 설치파일 다운로드 URL, 없으면 null. 네트워크 호출
+     *  없이 [checkForUpdateIfNeeded]가 남겨둔 값만 읽으므로 UI 폴링 루프에서 바로 써도 안전하다. */
+    fun pendingUpdateInstallerUrl(): String? = synchronized(lock) {
+        if (data.updateAvailableBuildTimestamp > com.phonelock.desktop.BuildInfo.BUILD_TIMESTAMP) data.updateAvailableInstallerUrl else null
+    }
+
+    /** 지금 실행 중인 빌드의 식별자 — 설정 화면에 표시용. */
+    fun currentBuildTimestamp(): Long = com.phonelock.desktop.BuildInfo.BUILD_TIMESTAMP
+
+    /**
+     * 설정 화면 "지금 확인" 버튼 전용 — [checkForUpdateIfNeeded]의 하루 1회 가드를 무시하고 즉시
+     * GitHub Releases를 확인한다. 네트워크 호출은 마찬가지로 락 밖에서 수행하고, 끝나면 [onResult]로
+     * 새 버전이 있으면 설치파일 URL을, 없으면 null을 콜백한다(UI 스레드 전환은 호출부 책임).
+     */
+    fun checkForUpdateNow(onResult: (String?) -> Unit) {
+        Thread {
+            val latest = com.phonelock.desktop.monitor.DesktopUpdateChecker.checkLatestDesktopRelease()
+            val result = synchronized(lock) {
+                data.lastUpdateCheckDate = effectiveDate(data.dailyResetHour).toString()
+                if (latest != null && latest.buildTimestamp > com.phonelock.desktop.BuildInfo.BUILD_TIMESTAMP) {
+                    data.updateAvailableBuildTimestamp = latest.buildTimestamp
+                    data.updateAvailableInstallerUrl = latest.installerUrl
+                } else {
+                    data.updateAvailableBuildTimestamp = 0L
+                    data.updateAvailableInstallerUrl = null
+                }
+                persist()
+                data.updateAvailableInstallerUrl
+            }
+            onResult(result)
+        }.start()
+    }
+
     /** 스누즈(#1) — 회유 절차 없이 group.snoozeMinutes만큼 즉시 임시 해제한다. 하루 3회 초과면 false.
      *  다른 기기와 합산한 오늘 사용 횟수([mergedSnooze])를 기준으로 한도를 판정해서, 데스크탑/안드로이드
      *  양쪽에서 나눠 눌러도 총 3회를 넘지 못하게 한다. */
@@ -167,14 +230,14 @@ class Repository {
     /** Firebase에서 이 그룹(이름 매칭)의 스누즈 상태를 읽는다. 설정이 비어있거나 오류가 나면 null. */
     private fun readSyncedSnooze(groupName: String): SnoozeState? {
         val entry = com.phonelock.desktop.monitor.PomodoroSyncClient
-            .readSnoozeSync(data.fbDatabaseUrl, data.fbApiKey, data.fbUser, groupName) ?: return null
+            .readSnoozeSync(data.fbDatabaseUrl, data.fbApiKey, groupName) ?: return null
         return SnoozeState(entry.untilEpochMillis, entry.usedDate, entry.usedCount)
     }
 
     /** Firebase에 이 그룹(이름 매칭)의 스누즈 상태를 갱신한다. */
     private fun writeSyncedSnooze(groupName: String, state: SnoozeState) {
         com.phonelock.desktop.monitor.PomodoroSyncClient.writeSnoozeSync(
-            data.fbDatabaseUrl, data.fbApiKey, data.fbUser,
+            data.fbDatabaseUrl, data.fbApiKey,
             groupName, state.untilEpochMillis, state.usedDate, state.usedCount
         )
     }
@@ -300,11 +363,11 @@ class Repository {
         val now = System.currentTimeMillis()
         val cached = peerUsageCache[group.id]
         if ((cached == null || now - cached.fetchedAtMillis >= peerUsageCacheTtlMs) && peerUsageRefreshInFlight.add(group.id)) {
-            val url = data.fbDatabaseUrl; val key = data.fbApiKey; val user = data.fbUser
+            val url = data.fbDatabaseUrl; val key = data.fbApiKey
             val groupId = group.id; val groupName = group.name
             Thread {
                 val map = com.phonelock.desktop.monitor.PomodoroSyncClient
-                    .readDailyUsage(url, key, user, dateStr, groupName) ?: emptyMap()
+                    .readDailyUsage(url, key, dateStr, groupName) ?: emptyMap()
                 val peerSeconds = map.filterKeys { it != DAILY_USAGE_DEVICE }.values.sum()
                 synchronized(lock) {
                     peerUsageCache[groupId] = CachedPeerUsage(peerSeconds, System.currentTimeMillis())
@@ -358,11 +421,11 @@ class Repository {
      */
     private fun pushUsageToFirebase(groupId: Long, dateStr: String, usedSeconds: Int) {
         val group = data.groups.find { it.id == groupId } ?: return
-        val url = data.fbDatabaseUrl; val key = data.fbApiKey; val user = data.fbUser
+        val url = data.fbDatabaseUrl; val key = data.fbApiKey
         val groupName = group.name
         Thread {
             com.phonelock.desktop.monitor.PomodoroSyncClient.writeDailyUsage(
-                url, key, user, dateStr, groupName, DAILY_USAGE_DEVICE, usedSeconds
+                url, key, dateStr, groupName, DAILY_USAGE_DEVICE, usedSeconds
             )
         }.start()
     }
@@ -371,7 +434,7 @@ class Repository {
     private fun pushUsageToFirebaseBlocking(groupId: Long, dateStr: String, usedSeconds: Int) {
         val group = data.groups.find { it.id == groupId } ?: return
         com.phonelock.desktop.monitor.PomodoroSyncClient.writeDailyUsage(
-            data.fbDatabaseUrl, data.fbApiKey, data.fbUser, dateStr, group.name, DAILY_USAGE_DEVICE, usedSeconds
+            data.fbDatabaseUrl, data.fbApiKey, dateStr, group.name, DAILY_USAGE_DEVICE, usedSeconds
         )
     }
 
@@ -412,6 +475,77 @@ class Repository {
             persist()
         }
 
+    /** 켜져있는(groupEnabled) 관리 그룹 전체 — "모임" 공유용. 76차엔 "지금 실제로 제한 중인" 그룹만
+     *  걸러 보여줬으나(isCurrentlyRestricting), 시간대가 안 맞아 당장은 제한 중이 아닌 그룹(예: 주말에만
+     *  도는 그룹)도 사용자가 "그냥 다 보이게" 요청해 groupEnabled 기준으로 넓혔다. 이름/설명뿐 아니라
+     *  스케줄/일일한도/실행확인 설정과 차단 앱·사이트 목록까지 그대로 넘겨(SocialGroupSyncClient가
+     *  필요한 필드만 뽑아 씀) 모임 멤버 상세에서 "이 그룹이 정확히 뭘 하는지" 볼 수 있게 한다.
+     */
+    fun sharedActiveGroups(): List<Group> = getGroups().filter { it.groupEnabled }
+
+    /** 모임 멤버 상세의 캘린더 날짜 상세에서 "그 날 얼마나 공부했는지"를 보여주기 위한 범위 조회. */
+    fun getStudyLogInRange(fromKey: String, toKey: String): List<StudyLogEntry> = synchronized(lock) {
+        data.studyLog.filter { it.dateKey in fromKey..toKey }
+    }
+
+    /** "모임" 공유 설정/사용자별 비공개 설정 — 전부 로컬(JsonStore), UI는 이 창구로만 접근한다. */
+    fun groupShareSettings(groupId: String): GroupShareSettings =
+        synchronized(lock) { data.groupShareSettings[groupId] ?: GroupShareSettings() }
+    fun setGroupShareSettings(groupId: String, settings: GroupShareSettings) = synchronized(lock) {
+        data.groupShareSettings[groupId] = settings
+        persist()
+    }
+
+    /** 특정 상대에게 내 정보 전체를 숨길지 — 다음 [com.phonelock.desktop.monitor.SocialGroupSyncClient.pushMyStats] 때 RTDB에 반영된다. */
+    fun hiddenFromUidsFor(groupId: String): Set<String> = synchronized(lock) { data.hiddenFromUidsByGroup[groupId]?.toSet() ?: emptySet() }
+    fun setHiddenFromUid(groupId: String, targetUid: String, hidden: Boolean) = synchronized(lock) {
+        val set = data.hiddenFromUidsByGroup.getOrPut(groupId) { mutableSetOf() }
+        if (hidden) set.add(targetUid) else set.remove(targetUid)
+        persist()
+    }
+
+    /** 특정 상대의 정보를 내 화면에서만 안 보이게 할지 — 순수 로컬 표시 설정, 서버엔 안 올라간다. */
+    fun hiddenPeerUidsFor(groupId: String): Set<String> = synchronized(lock) { data.hiddenPeerUidsByGroup[groupId]?.toSet() ?: emptySet() }
+    fun setHiddenPeerUid(groupId: String, targetUid: String, hidden: Boolean) = synchronized(lock) {
+        val set = data.hiddenPeerUidsByGroup.getOrPut(groupId) { mutableSetOf() }
+        if (hidden) set.add(targetUid) else set.remove(targetUid)
+        persist()
+    }
+
+    /** "무작위 알림"(77차) — 이 모임에서 이 기기가 처지는 멤버를 자동으로 깨울지, 순수 로컬 설정. */
+    fun randomNudgeEnabledFor(groupId: String): Boolean = synchronized(lock) { data.groupRandomNudgeEnabled[groupId] ?: true }
+    fun setRandomNudgeEnabled(groupId: String, enabled: Boolean) = synchronized(lock) {
+        data.groupRandomNudgeEnabled[groupId] = enabled
+        persist()
+    }
+
+    /** 가입 승인 상태 로컬 캐시(AccountGateScreen 낙관적 표시용) — get/set 모두 즉시 반영. */
+    var cachedApprovalStatus: String?
+        get() = synchronized(lock) { data.cachedApprovalStatus }
+        set(value) = synchronized(lock) { data.cachedApprovalStatus = value; persist() }
+
+    /** 관리자가 지정한 기능별 사용 허가 로컬 캐시 — 옛 승인 사용자(필드 없음)는 기본 true. */
+    var permRoutine: Boolean
+        get() = synchronized(lock) { data.permRoutine }
+        set(value) = synchronized(lock) { data.permRoutine = value; persist() }
+    var permStudy: Boolean
+        get() = synchronized(lock) { data.permStudy }
+        set(value) = synchronized(lock) { data.permStudy = value; persist() }
+    var permManage: Boolean
+        get() = synchronized(lock) { data.permManage }
+        set(value) = synchronized(lock) { data.permManage = value; persist() }
+    var permSocial: Boolean
+        get() = synchronized(lock) { data.permSocial }
+        set(value) = synchronized(lock) { data.permSocial = value; persist() }
+
+    /** 이 모임에서 마지막으로 확인한 넛지 시각(epoch millis, 없으면 0) — SocialGroupNotifier가 새 넛지 판정에 쓴다. */
+    fun nudgeLastSeenFor(groupId: String): Long = synchronized(lock) { data.nudgeLastSeenByGroup[groupId] ?: 0L }
+
+    fun setNudgeLastSeen(groupId: String, millis: Long) = synchronized(lock) {
+        data.nudgeLastSeenByGroup[groupId] = millis
+        persist()
+    }
+
     var blockReels: Boolean
         get() = synchronized(lock) { data.blockReels }
         set(value) = synchronized(lock) {
@@ -440,6 +574,13 @@ class Repository {
             persist()
         }
 
+    var zeroStreakDays: Int
+        get() = synchronized(lock) { data.zeroStreakDays }
+        set(value) = synchronized(lock) {
+            data.zeroStreakDays = value
+            persist()
+        }
+
     var fbDatabaseUrl: String?
         get() = synchronized(lock) { data.fbDatabaseUrl }
         set(value) = synchronized(lock) {
@@ -454,17 +595,10 @@ class Repository {
             persist()
         }
 
-    var fbUser: String
-        get() = synchronized(lock) { data.fbUser }
-        set(value) = synchronized(lock) {
-            data.fbUser = value
-            persist()
-        }
-
     /** Firebase에서 이 그룹의 실행확인 레벨을 읽는다. 설정이 비어있거나 오류가 나면 null. */
     private fun readSyncedEscalation(groupName: String, groupId: Long): ConfirmEscalation? {
         val entry = com.phonelock.desktop.monitor.PomodoroSyncClient
-            .readConfirmSync(data.fbDatabaseUrl, data.fbApiKey, data.fbUser, groupName) ?: return null
+            .readConfirmSync(data.fbDatabaseUrl, data.fbApiKey, groupName) ?: return null
         return ConfirmEscalation(
             groupId = groupId,
             level = entry.level,
@@ -475,7 +609,7 @@ class Repository {
     /** Firebase에 이 그룹(이름으로 매칭)의 실행확인 레벨만 갱신한다. */
     private fun writeSyncedEscalation(groupName: String, escalation: ConfirmEscalation) {
         com.phonelock.desktop.monitor.PomodoroSyncClient.writeConfirmSync(
-            data.fbDatabaseUrl, data.fbApiKey, data.fbUser,
+            data.fbDatabaseUrl, data.fbApiKey,
             groupName, escalation.level, escalation.lastConfirmedAtEpochMillis
         )
     }
@@ -597,7 +731,7 @@ class Repository {
         // 백그라운드 스레드에서 fire-and-forget으로 보낸다 — 실패해도 로컬 상태는 이미 저장된 뒤.
         Thread {
             com.phonelock.desktop.monitor.PomodoroSyncClient.pushLocalStudyStatus(
-                fbDatabaseUrl, fbApiKey, fbUser,
+                fbDatabaseUrl, fbApiKey,
                 timerActive = state?.phase == "study",
                 breakActive = state?.phase == "break",
                 phaseEndAt = state?.phaseEndAt ?: 0L,
@@ -667,9 +801,9 @@ class Repository {
     private fun pushStudyLogToFirebase(dateKey: String) {
         val entries = data.studyLog.filter { it.dateKey == dateKey }
         val json = studyLogEntriesToJson(entries)
-        val url = data.fbDatabaseUrl; val key = data.fbApiKey; val user = data.fbUser
+        val url = data.fbDatabaseUrl; val key = data.fbApiKey
         Thread {
-            com.phonelock.desktop.monitor.PomodoroSyncClient.writeStudyLogForDate(url, key, user, dateKey, DAILY_USAGE_DEVICE, json)
+            com.phonelock.desktop.monitor.PomodoroSyncClient.writeStudyLogForDate(url, key, dateKey, DAILY_USAGE_DEVICE, json)
         }.start()
     }
 
@@ -679,8 +813,8 @@ class Repository {
      * 네트워크 호출을 포함하므로 호출부(UI)가 백그라운드 스레드/코루틴에서 실행해야 한다.
      */
     fun syncStudyLogFromFirebase(dateKey: String) {
-        val (url, key, user) = synchronized(lock) { Triple(data.fbDatabaseUrl, data.fbApiKey, data.fbUser) }
-        val remote = com.phonelock.desktop.monitor.PomodoroSyncClient.readStudyLogForDate(url, key, user, dateKey) ?: return
+        val (url, key) = synchronized(lock) { data.fbDatabaseUrl to data.fbApiKey }
+        val remote = com.phonelock.desktop.monitor.PomodoroSyncClient.readStudyLogForDate(url, key, dateKey) ?: return
         val others = mutableListOf<StudyLogEntry>()
         remote.keys().forEach { device ->
             if (device == DAILY_USAGE_DEVICE) return@forEach
@@ -750,28 +884,22 @@ class Repository {
     // Firebase엔 웹앱과 동일하게 users/{user}/calendar 경로에 { tasks:{dateKey:[...]}, _ts } 전체문서로
     // 동기화(문서 단위 LWW, calendarTs가 로컬 타임스탬프).
 
-    // 51차: 4단계(빨주노초)에서 7단계 무지개(빨주노초파남보)로 확장했다가, 이어서 8단계로 한 번 더
-    // 확장(사용자 요청) — 1회독을 "하얀색"으로 새로 두고 기존 빨주노초파남보는 2~8회독으로 한 칸씩
-    // 밀렸다. 가장 진행된 단계가 0(정렬 시 위/먼저 보임), white가 가장 마지막(아직 안 지난 시작 단계).
+    // 77차: 8단계(하양~보라, 51차)에서 다시 3단계(빨/노/초)로 축소(사용자 요청) — 과도하게 길었던
+    // 회독 주기를 짧게 되돌렸다. 저장된 기존 color 값(white/orange/blue/indigo/purple)은 그대로 두되
+    // (51차와 같은 전례: "라벨 매핑만 바뀌어 과거 일정은 다른 회독 번호로 보인다") 새로 고르거나
+    // 자동 생성되는 회독은 이 3색만 쓴다. 가장 진행된 단계가 0(정렬 시 위/먼저 보임).
     private val CALENDAR_COLOR_ORDER = mapOf(
-        "purple" to 0, "indigo" to 1, "blue" to 2, "green" to 3, "yellow" to 4, "orange" to 5, "red" to 6, "white" to 7
+        "green" to 0, "yellow" to 1, "red" to 2
     )
 
     /**
-     * color -> (다음 회독 color, 기본 간격일수). purple(8회독)은 종단이라 매핑 없음.
-     * 에빙하우스 망각곡선 + 간격 효과(spacing effect, Cepeda et al.) 기반 — SuperMemo/Anki류 SRS가
-     * 검증한 대로 회독마다 간격을 약 2~2.3배씩 일관되게 넓힌다: 1→3→7→14→30→60→120일(1회독부터
-     * 8회독 완료까지 총 약 235일). 예전엔 첫 두 구간이 똑같이 1일이라 초반에 간격이 하나도 안 늘어나던
-     * 결함이 있었는데(사용자와 검토 후 확인), 이번에 처음부터 끝까지 배수를 일정하게 맞춰 바로잡았다.
+     * color -> (다음 회독 color, 기본 간격일수). green(3회독)은 종단이라 매핑 없음.
+     * 사용자 지정값 — 1회독(만든 날)부터 누적 0/3/7일차: red(1회독, 0일)→yellow(2회독, +3일)→
+     * green(3회독, 1회독 기준 +7일 = yellow 기준 +4일).
      */
     private val CALENDAR_SCHEDULE = mapOf(
-        "white" to ("red" to 1),
-        "red" to ("orange" to 3),
-        "orange" to ("yellow" to 7),
-        "yellow" to ("green" to 14),
-        "green" to ("blue" to 30),
-        "blue" to ("indigo" to 60),
-        "indigo" to ("purple" to 120)
+        "red" to ("yellow" to 3),
+        "yellow" to ("green" to 4)
     )
 
     private val koreanCollator = java.text.Collator.getInstance(java.util.Locale.KOREAN)
@@ -803,7 +931,7 @@ class Repository {
 
     fun addCalendarTask(dateKey: String, name: String) = synchronized(lock) {
         if (name.isBlank()) return@synchronized
-        data.calendarTasks.add(CalendarTask(dateKey = dateKey, name = name.trim(), color = "white", status = null))
+        data.calendarTasks.add(CalendarTask(dateKey = dateKey, name = name.trim(), color = "red", status = null))
         sortCalendarDay(dateKey)
         persist()
         pushCalendarToFirebase()
@@ -906,8 +1034,8 @@ class Repository {
         if (current.status == "O") revertCalendarAutoSchedule(dateKey, current)
         if (current.status == "X") revertIncompleteCarryOver(dateKey, current)
         if (current.status == targetStatus) {
-            // 완료 취소 — 계산기 연동 항목이었다면(1회독=white일 때만 최초 반영했으므로 그때만) 진행량을 되돌린다.
-            if (current.status == "O" && current.linkedCalc != null && current.color == "white") {
+            // 완료 취소 — 계산기 연동 항목이었다면(1회독=red일 때만 최초 반영했으므로 그때만) 진행량을 되돌린다.
+            if (current.status == "O" && current.linkedCalc != null && current.color == "red") {
                 adjustLinkedCalcProgress(current.linkedCalc, -linkedProgressAmount(current))
             }
             data.calendarTasks[idx] = data.calendarTasks[idx].copy(status = null)
@@ -916,7 +1044,7 @@ class Repository {
             data.calendarTasks[idx] = updated
             if (targetStatus == "O") {
                 applyCalendarAutoSchedule(dateKey, updated)
-                if (updated.linkedCalc != null && updated.color == "white") {
+                if (updated.linkedCalc != null && updated.color == "red") {
                     adjustLinkedCalcProgress(updated.linkedCalc, linkedProgressAmount(updated))
                 }
             }
@@ -965,7 +1093,7 @@ class Repository {
         if (data.calendarTasks.any { it.dateKey == dateKey && it.name == taskName }) return@synchronized
         data.calendarTasks.add(
             CalendarTask(
-                dateKey = dateKey, name = taskName, color = "white", status = null,
+                dateKey = dateKey, name = taskName, color = "red", status = null,
                 linkedCalc = calcTaskName, progressStep = (to - from + 1).toString()
             )
         )
@@ -1080,9 +1208,9 @@ class Repository {
         val ts = System.currentTimeMillis()
         data.calendarTs = ts
         val tasksJson = calendarTasksToJson()
-        val url = data.fbDatabaseUrl; val key = data.fbApiKey; val user = data.fbUser
+        val url = data.fbDatabaseUrl; val key = data.fbApiKey
         Thread {
-            com.phonelock.desktop.monitor.PomodoroSyncClient.writeCalendarTasks(url, key, user, tasksJson, ts)
+            com.phonelock.desktop.monitor.PomodoroSyncClient.writeCalendarTasks(url, key, tasksJson, ts)
         }.start()
     }
 
@@ -1092,8 +1220,8 @@ class Repository {
      * 스레드/코루틴에서 실행해야 한다.
      */
     fun syncCalendarFromFirebase() {
-        val (url, key, user) = synchronized(lock) { Triple(data.fbDatabaseUrl, data.fbApiKey, data.fbUser) }
-        val result = com.phonelock.desktop.monitor.PomodoroSyncClient.readCalendarTasks(url, key, user) ?: return
+        val (url, key) = synchronized(lock) { data.fbDatabaseUrl to data.fbApiKey }
+        val result = com.phonelock.desktop.monitor.PomodoroSyncClient.readCalendarTasks(url, key) ?: return
         synchronized(lock) {
             if (result.ts > data.calendarTs) {
                 data.calendarTasks.clear()
@@ -1412,11 +1540,11 @@ class Repository {
     }
 
     private fun pushCalcTasksAndSaved() {
-        val url: String?; val key: String?; val user: String?
+        val url: String?; val key: String?
         val tasksJson: JSONArray; val tasksTs: Long
         val savedJson: JSONArray; val savedTs: Long
         synchronized(lock) {
-            url = data.fbDatabaseUrl; key = data.fbApiKey; user = data.fbUser
+            url = data.fbDatabaseUrl; key = data.fbApiKey
             tasksJson = JSONArray().also { arr -> data.calcTasks.forEach { arr.put(calcTaskToJson(it)) } }
             tasksTs = data.calcTasksTs
             savedJson = JSONArray().also { arr -> data.calcSaved.forEach { arr.put(calcSavedToJson(it)) } }
@@ -1424,22 +1552,22 @@ class Repository {
         }
         Thread {
             com.phonelock.desktop.monitor.PomodoroSyncClient.writeCalcTasksAndSaved(
-                url, key, user, tasksJson, tasksTs, savedJson, savedTs
+                url, key, tasksJson, tasksTs, savedJson, savedTs
             )
         }.start()
     }
 
     private fun pushCalcFolders() {
-        val url: String?; val key: String?; val user: String?
+        val url: String?; val key: String?
         val paths: List<List<String>>; val folderTs: Long
         val order: Map<String, List<String>>; val orderTs: Long
         synchronized(lock) {
-            url = data.fbDatabaseUrl; key = data.fbApiKey; user = data.fbUser
+            url = data.fbDatabaseUrl; key = data.fbApiKey
             paths = data.calcFolderPaths.toList(); folderTs = data.calcFolderTs
             order = data.calcFolderOrder.mapValues { it.value.toList() }; orderTs = data.calcFolderOrderTs
         }
         Thread {
-            com.phonelock.desktop.monitor.PomodoroSyncClient.writeCalcFolders(url, key, user, paths, folderTs, order, orderTs)
+            com.phonelock.desktop.monitor.PomodoroSyncClient.writeCalcFolders(url, key, paths, folderTs, order, orderTs)
         }.start()
     }
 
@@ -1449,8 +1577,8 @@ class Repository {
      * 단순화, DECISIONS.md 참고). 네트워크 호출을 포함하므로 호출부에서 백그라운드 스레드로 실행할 것.
      */
     fun syncCalculatorFromFirebase() {
-        val (url, key, user) = synchronized(lock) { Triple(data.fbDatabaseUrl, data.fbApiKey, data.fbUser) }
-        val result = com.phonelock.desktop.monitor.PomodoroSyncClient.readCalculator(url, key, user) ?: return
+        val (url, key) = synchronized(lock) { data.fbDatabaseUrl to data.fbApiKey }
+        val result = com.phonelock.desktop.monitor.PomodoroSyncClient.readCalculator(url, key) ?: return
         synchronized(lock) {
             var tasksChanged = false; var savedChanged = false; var foldersChanged = false
 
@@ -1690,9 +1818,9 @@ class Repository {
         val ts = System.currentTimeMillis()
         data.routinesTs = ts
         val (routinesArr, logsArr) = routinesToJsonArrays()
-        val url = data.fbDatabaseUrl; val key = data.fbApiKey; val user = data.fbUser
+        val url = data.fbDatabaseUrl; val key = data.fbApiKey
         Thread {
-            com.phonelock.desktop.monitor.PomodoroSyncClient.writeRoutines(url, key, user, routinesArr, logsArr, ts)
+            com.phonelock.desktop.monitor.PomodoroSyncClient.writeRoutines(url, key, routinesArr, logsArr, ts)
         }.start()
     }
 
@@ -1701,8 +1829,8 @@ class Repository {
      * 반대로 원격에 푸시한다. 네트워크 호출을 포함하므로 호출부(UI)에서 백그라운드 스레드/코루틴에서 실행.
      */
     fun syncRoutinesFromFirebase() {
-        val (url, key, user) = synchronized(lock) { Triple(data.fbDatabaseUrl, data.fbApiKey, data.fbUser) }
-        val result = com.phonelock.desktop.monitor.PomodoroSyncClient.readRoutines(url, key, user) ?: return
+        val (url, key) = synchronized(lock) { data.fbDatabaseUrl to data.fbApiKey }
+        val result = com.phonelock.desktop.monitor.PomodoroSyncClient.readRoutines(url, key) ?: return
         synchronized(lock) {
             if (result.ts > data.routinesTs) {
                 val (newRoutines, newLogs) = routinesFromJsonArrays(result.routinesJson, result.logsJson)

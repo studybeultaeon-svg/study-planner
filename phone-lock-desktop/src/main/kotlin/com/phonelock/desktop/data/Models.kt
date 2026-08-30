@@ -6,6 +6,8 @@ package com.phonelock.desktop.data
 data class Group(
     val id: Long,
     val name: String,
+    /** 이 그룹이 뭘 하는 그룹인지 짧은 설명 — "모임" 공유의 "작동 중인 관리 그룹"에서 이름과 함께 보여준다. */
+    val description: String = "",
     /** 일일 사용 한도(초). null이면 미적용. */
     val dailyLimitSeconds: Int? = null,
     /** 일일 사용 한도가 적용되는 시간대(분). 둘 다 null이면 하루 종일 적용된다. */
@@ -113,6 +115,18 @@ data class TimerRunState(
 
 data class StudyLogEntry(val dateKey: String, val taskName: String, val seconds: Int, val startedAt: Long, val note: String = "")
 
+/** 모임(소셜 그룹) 하나에 무엇을 공유할지 — 62차엔 앱 전체 공통 토글 3개였지만 75차+에 모임마다 다르게
+ *  설정하도록 확장, 항목도 루틴/공부/스트릭 3종에서 오늘 일정/공부중 여부/현재 작동 중인 관리 그룹까지
+ *  6종으로 확대(안드로이드 AppPreferences.GroupShareSettings와 대칭). */
+data class GroupShareSettings(
+    val shareRoutines: Boolean = true,
+    val shareStudy: Boolean = true,
+    val shareStreak: Boolean = true,
+    val shareSchedule: Boolean = true,
+    val shareStudyingNow: Boolean = true,
+    val shareActiveGroup: Boolean = true
+)
+
 /**
  * 네이티브 캘린더(2단계)의 날짜별 일정 한 건. 웹앱 index.html의 calTasks[dateKey][] 항목을 그대로 이식.
  * color는 51차에 8단계 무지개로 확장됨(white=1회독~purple=8회독, DECISIONS.md 참고).
@@ -203,6 +217,13 @@ data class Routine(
 /** Routine의 날짜별 완료 기록 — 존재 자체가 "그날 완료"를 의미한다. */
 data class RoutineLog(val routineId: Long, val dateKey: String)
 
+/**
+ * 앱이 접속할 Firebase 프로젝트(study-fc3bf) 고정값 — 62차까지는 설정 화면에서 사용자가 직접 입력했지만,
+ * 이제 로그인만으로 동기화되도록 하드코딩(안드로이드 google-services.json과 같은 프로젝트).
+ */
+const val DEFAULT_FB_DATABASE_URL = "https://study-fc3bf-default-rtdb.firebaseio.com"
+const val DEFAULT_FB_API_KEY = "AIzaSyASJv4Fox3b00uIrTvBom5fsoq7UmFTDW8"
+
 data class AppData(
     val groups: MutableList<Group> = mutableListOf(),
     val usageRecords: MutableList<UsageRecord> = mutableListOf(),
@@ -218,14 +239,15 @@ data class AppData(
     var routineStreakNotifyEnabled: Boolean = false,
     /** 직전에 확인했던 루틴 스트릭 값 — 다음 체크 때 이 값보다 0으로 떨어졌으면 "끊김"으로 판단(안드로이드판과 대칭). */
     var lastRoutineStreak: Int = -1,
+    /** 스트릭이 0으로 끊긴 날 이후 며칠째 0을 유지 중인지(58차, 응원→조롱→팩폭 단계 판단용, 안드로이드판과 대칭). */
+    var zeroStreakDays: Int = 0,
     /**
      * 공부앱(별도 웹앱)의 뽀모도로 휴식 신호를 읽어오고, 모바일과 실행 확인 레벨을 주고받기 위한 Firebase
-     * 설정. 공부앱의 "동기화 설정"에 입력한 것과 동일한 값이어야 한다. databaseUrl/apiKey 중 하나라도
-     * 비어있으면 두 연동 기능 모두 쓰지 않는다.
+     * 프로젝트 설정 — 앱이 접속할 프로젝트 고정값(DEFAULT_FB_DATABASE_URL/DEFAULT_FB_API_KEY)이며,
+     * 실제 계정 식별은 로그인(uid)만으로 이뤄진다.
      */
-    var fbDatabaseUrl: String? = null,
-    var fbApiKey: String? = null,
-    var fbUser: String = "default",
+    var fbDatabaseUrl: String? = DEFAULT_FB_DATABASE_URL,
+    var fbApiKey: String? = DEFAULT_FB_API_KEY,
     /** 네이티브 공부 타이머 상태(1단계). null이면 타이머 미실행. */
     var timerRun: TimerRunState? = null,
     var pomodoroStudyMinutes: Int = 25,
@@ -269,5 +291,35 @@ data class AppData(
     /** 루틴 전체 문서 단위 LWW 타임스탬프(51차, 캘린더의 calendarTs와 동일 패턴) — users/{user}/routines. */
     var routinesTs: Long = 0L,
     /** 앱 전체 테마 선택(설정 화면) — ThemeMode.LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE. */
-    var themeMode: String = "LIGHT_GREEN"
+    var themeMode: String = "LIGHT_GREEN",
+    /** "모임"(소셜 그룹)별 공유 설정 — groupId -> GroupShareSettings. 모임 가입 자체가 공유 의도이므로
+     *  각 항목 기본값은 true, 설정은 각 모임 화면의 "🔒 공유 설정"에서 모임 단위로 바꾼다(74차 무전기
+     *  설정을 전역→모임별로 옮긴 것과 동일한 선례). */
+    val groupShareSettings: MutableMap<String, GroupShareSettings> = mutableMapOf(),
+    /** 모임ID -> [내 정보를 안 보여줄 상대 uid 목록] — "모임 내 사용자 상세 설정", RTDB에도 함께 올라간다. */
+    val hiddenFromUidsByGroup: MutableMap<String, MutableSet<String>> = mutableMapOf(),
+    /** 모임ID -> [내가 보고 싶지 않아 숨긴 상대 uid 목록] — 순수 로컬 표시 설정, RTDB엔 올리지 않는다. */
+    val hiddenPeerUidsByGroup: MutableMap<String, MutableSet<String>> = mutableMapOf(),
+    /** 모임ID -> "무작위 알림"(77차) 켜짐 여부 — 이 모임에서 이 기기가 처지는 멤버를 자동으로 깨울지,
+     *  순수 로컬 설정(발신 여부만 결정하므로 RTDB엔 안 올림). 기본값 true(모임 가입 자체가 참여 의도). */
+    val groupRandomNudgeEnabled: MutableMap<String, Boolean> = mutableMapOf(),
+    /** 모임별 마지막으로 확인한 넛지 시각(epoch millis) — groupId -> millis. 새 넛지 도착 판정용. */
+    val nudgeLastSeenByGroup: MutableMap<String, Long> = mutableMapOf(),
+    /** 가입 신청/승인 게이트(AccountGateScreen) — 마지막으로 서버에서 확인한 내 승인 상태
+     *  ("pending"/"approved"/"rejected", 아직 한 번도 확인 못했으면 null). "approved"였다면 앱 시작 시
+     *  네트워크 응답이 오기 전에도 낙관적으로 메인 화면을 먼저 보여주고 백그라운드에서 재확인한다. */
+    var cachedApprovalStatus: String? = null,
+    /** 관리자가 승인 시(또는 이후) 지정한 기능별 사용 허가 캐시본 — 필드가 아예 없던 옛 승인 사용자와의
+     *  하위호환을 위해 기본값은 전부 true(제한 없음). [AccountGateScreen]이 승인 확인 때마다 갱신한다. */
+    var permRoutine: Boolean = true,
+    var permStudy: Boolean = true,
+    var permManage: Boolean = true,
+    var permSocial: Boolean = true,
+    // ---- 자체 업데이트 확인(GitHub Releases, 2026-08-30) ----
+    /** 마지막으로 GitHub Releases를 확인한 날짜(effectiveDate 기준) — 안드로이드판 lastUpdateCheckDate와 동일 패턴. */
+    var lastUpdateCheckDate: String? = null,
+    /** GitHub Releases에서 발견한 최신 데스크탑 릴리스의 빌드 타임스탬프(BuildInfo.BUILD_TIMESTAMP와 비교). 0이면 "새 버전 없음". */
+    var updateAvailableBuildTimestamp: Long = 0L,
+    /** 위 빌드 타임스탬프에 대응하는 설치파일(exe/msi) 다운로드 URL. */
+    var updateAvailableInstallerUrl: String? = null
 )

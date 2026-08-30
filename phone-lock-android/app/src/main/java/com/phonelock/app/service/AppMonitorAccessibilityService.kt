@@ -110,6 +110,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
      */
     private suspend fun tick() {
         repository.applyDailyGroupResetIfNeeded()
+        repository.checkForUpdateIfNeeded()
         if (!tickInFlight.compareAndSet(false, true)) return
         try {
             tickInternal()
@@ -196,7 +197,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         }
         val startedAt = studyLockStartedAt ?: run {
             val remoteStartedAt = if (remoteActive) {
-                PomodoroSyncClient.remotePhaseStartedAt(repository.fbDatabaseUrl, repository.fbApiKey, repository.fbUser)
+                PomodoroSyncClient.remotePhaseStartedAt(repository.fbDatabaseUrl, repository.fbApiKey)
             } else {
                 0L
             }
@@ -208,7 +209,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         val isPomodoroMode = if (localActive) {
             repository.isTimerPomodoroMode()
         } else {
-            PomodoroSyncClient.isPomodoroMode(repository.fbDatabaseUrl, repository.fbApiKey, repository.fbUser)
+            PomodoroSyncClient.isPomodoroMode(repository.fbDatabaseUrl, repository.fbApiKey)
         }
         hideUsageOverlay()
         launchStudyLock(allowedPackages, startedAt, isPomodoroMode, isRemote = remoteActive)
@@ -218,9 +219,8 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     private suspend fun isRemoteStudyTimerActive(): Boolean {
         val url = repository.fbDatabaseUrl
         val key = repository.fbApiKey
-        val user = repository.fbUser
-        if (!PomodoroSyncClient.isStudyTimerActive(url, key, user)) return false
-        val updatedAt = PomodoroSyncClient.remoteUpdatedAtMillis(url, key, user)
+        if (!PomodoroSyncClient.isStudyTimerActive(url, key)) return false
+        val updatedAt = PomodoroSyncClient.remoteUpdatedAtMillis(url, key)
         return updatedAt > 0 && System.currentTimeMillis() - updatedAt < REMOTE_STUDY_SIGNAL_STALE_MS
     }
 
@@ -533,7 +533,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             hideUsageOverlay()
             return
         }
-        val phaseEndAt = PomodoroSyncClient.currentPhaseEndAt(repository.fbDatabaseUrl, repository.fbApiKey, repository.fbUser)
+        val phaseEndAt = PomodoroSyncClient.currentPhaseEndAt(repository.fbDatabaseUrl, repository.fbApiKey)
         val remainingBreakSeconds = ((phaseEndAt - System.currentTimeMillis()) / 1000L).toInt()
         if (remainingBreakSeconds <= 0) {
             hideUsageOverlay()

@@ -2,6 +2,9 @@ package com.phonelock.app.data
 
 import android.content.Context
 
+const val DEFAULT_FB_DATABASE_URL = "https://study-fc3bf-default-rtdb.firebaseio.com"
+const val DEFAULT_FB_API_KEY = "AIzaSyBd474MozsRb5q4hYgHy2e-Aiz2htMJy14"
+
 class AppPreferences(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("phone_lock_prefs", Context.MODE_PRIVATE)
 
@@ -101,6 +104,12 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("routine_streak_notify_enabled", false)
         set(value) = prefs.edit().putBoolean("routine_streak_notify_enabled", value).apply()
 
+    /** 루틴 동기화 알람 누수 버그(2026-08-30)로 이미 쌓인 예약 알람을 한 번 정리했는지 — 앱 실행마다
+     *  반복할 필요 없어 [RoutineAlarmScheduler.cleanupLeakedAlarmsIfNeeded]가 이 값으로 1회만 수행한다. */
+    var leakedAlarmsCleaned: Boolean
+        get() = prefs.getBoolean("leaked_alarms_cleaned_20260830", false)
+        set(value) = prefs.edit().putBoolean("leaked_alarms_cleaned_20260830", value).apply()
+
     /** 직전에 확인했던 스트릭 값 — 다음 체크 때 이 값보다 0으로 떨어졌으면 "끊김"으로 판단. */
     var lastRoutineStreak: Int
         get() = prefs.getInt("last_routine_streak", -1)
@@ -111,22 +120,23 @@ class AppPreferences(context: Context) {
         get() = prefs.getString("last_routine_streak_notify_date", null)
         set(value) = prefs.edit().putString("last_routine_streak_notify_date", value).apply()
 
+    /** 스트릭이 0으로 끊긴 날 이후 며칠째 0을 유지 중인지(58차, 응원→조롱→팩폭 단계 판단용). */
+    var zeroStreakDays: Int
+        get() = prefs.getInt("zero_streak_days", 0)
+        set(value) = prefs.edit().putInt("zero_streak_days", value).apply()
+
     /**
-     * 공부앱(별도 웹앱)의 뽀모도로 휴식 신호를 읽어오고, 데스크탑과 실행 확인 레벨을 주고받기 위한
-     * Firebase 설정. 공부앱의 "동기화 설정"에 입력한 것과 동일한 값이어야 한다. databaseUrl/apiKey 중
-     * 하나라도 비어있으면 두 연동 기능 모두 쓰지 않는다.
+     * 앱이 접속할 Firebase 프로젝트(study-fc3bf) 고정값 — google-services.json과 같은 프로젝트.
+     * 62차까지는 설정 화면에서 사용자가 직접 입력했지만, 이제 로그인만으로 동기화되도록
+     * 하드코딩(데스크탑판 Models.kt의 DEFAULT_FB_DATABASE_URL/DEFAULT_FB_API_KEY와 동일 값).
      */
     var fbDatabaseUrl: String?
-        get() = prefs.getString("fb_database_url", null)
+        get() = prefs.getString("fb_database_url", null)?.ifBlank { null } ?: DEFAULT_FB_DATABASE_URL
         set(value) = prefs.edit().putString("fb_database_url", value).apply()
 
     var fbApiKey: String?
-        get() = prefs.getString("fb_api_key", null)
+        get() = prefs.getString("fb_api_key", null)?.ifBlank { null } ?: DEFAULT_FB_API_KEY
         set(value) = prefs.edit().putString("fb_api_key", value).apply()
-
-    var fbUser: String
-        get() = prefs.getString("fb_user", "default") ?: "default"
-        set(value) = prefs.edit().putString("fb_user", value).apply()
 
     /** 네이티브 캘린더(2단계) 전체 문서 단위 Firebase LWW 타임스탬프 — 웹앱의 studyCalendarTasks_ts에 대응. */
     var calendarTs: Long
@@ -196,4 +206,167 @@ class AppPreferences(context: Context) {
     var lastKnownVersionCode: Long
         get() = prefs.getLong("last_known_version_code", -1L)
         set(value) = prefs.edit().putLong("last_known_version_code", value).apply()
+
+    // ---- "모임"(소셜 그룹)별 공유 설정 — 62차엔 앱 전체 공통 토글 3개였지만, 모임마다 성격이 달라
+    // (가족 모임엔 공부시간만, 스터디 모임엔 루틴까지) 모임마다 따로 설정하도록 확장. 가입 자체가 공유
+    // 의도이므로 각 항목 기본값은 true, 설정은 각 모임 화면의 "⚙ 공유 설정"에서 개별 모임 단위로 바꾼다
+    // (74차 무전기 설정을 전역→모임별로 옮긴 것과 동일한 선례).
+    data class GroupShareSettings(
+        val shareRoutines: Boolean = true,
+        val shareStudy: Boolean = true,
+        val shareStreak: Boolean = true,
+        /** 오늘 캘린더 일정 목록(이름+완료여부). */
+        val shareSchedule: Boolean = true,
+        /** 지금 공부 중(뽀모도로 포함)인지 여부 + 업무 이름. */
+        val shareStudyingNow: Boolean = true,
+        /** 지금 실제로 나를 제한 중인 관리(차단) 그룹 이름 목록. */
+        val shareActiveGroup: Boolean = true
+    )
+
+    /** 모임ID -> 공유 설정(JSON 객체 문자열) — nudgeLastSeenByGroupJson과 동일한 맵 저장 패턴. */
+    var groupShareSettingsJson: String
+        get() = prefs.getString("group_share_settings_json", "{}") ?: "{}"
+        set(value) = prefs.edit().putString("group_share_settings_json", value).apply()
+
+    fun groupShareSettings(groupId: String): GroupShareSettings {
+        val g = org.json.JSONObject(groupShareSettingsJson).optJSONObject(groupId) ?: return GroupShareSettings()
+        return GroupShareSettings(
+            shareRoutines = g.optBoolean("shareRoutines", true),
+            shareStudy = g.optBoolean("shareStudy", true),
+            shareStreak = g.optBoolean("shareStreak", true),
+            shareSchedule = g.optBoolean("shareSchedule", true),
+            shareStudyingNow = g.optBoolean("shareStudyingNow", true),
+            shareActiveGroup = g.optBoolean("shareActiveGroup", true)
+        )
+    }
+
+    fun setGroupShareSettings(groupId: String, settings: GroupShareSettings) {
+        val json = org.json.JSONObject(groupShareSettingsJson)
+        json.put(groupId, org.json.JSONObject().apply {
+            put("shareRoutines", settings.shareRoutines)
+            put("shareStudy", settings.shareStudy)
+            put("shareStreak", settings.shareStreak)
+            put("shareSchedule", settings.shareSchedule)
+            put("shareStudyingNow", settings.shareStudyingNow)
+            put("shareActiveGroup", settings.shareActiveGroup)
+        })
+        groupShareSettingsJson = json.toString()
+    }
+
+    // ---- 무작위 알림(77차, 사용자 요청) — 하루 중 무작위 시각 한 번, 이 기기가 속한 모임의 멤버들을
+    // 확인해서 "오늘 해야 할 루틴/일정이 아직 남은" 사람에게 기존 넛지(😴 깨우기)와 같은 방식으로 자동
+    // 알림을 보낸다. 각 기기가 독립적으로 체크해서 보내므로(넛지가 1인 1슬롯 덮어쓰기라 중복 무해,
+    // 사용자 확인) 별도 발신자 조율은 없다. 모임마다 켜고 끌 수 있으며(기본 켜짐), 이 값은 순수 로컬
+    // 설정 — "받는 쪽" 설정인 무전기(walkieSettings, RTDB)와 달리 "이 기기가 보낼지"를 결정하므로
+    // 동기화 대상이 아니다.
+    var groupRandomNudgeEnabledJson: String
+        get() = prefs.getString("group_random_nudge_enabled_json", "{}") ?: "{}"
+        set(value) = prefs.edit().putString("group_random_nudge_enabled_json", value).apply()
+
+    fun randomNudgeEnabledFor(groupId: String): Boolean =
+        org.json.JSONObject(groupRandomNudgeEnabledJson).optBoolean(groupId, true)
+
+    fun setRandomNudgeEnabled(groupId: String, enabled: Boolean) {
+        val json = org.json.JSONObject(groupRandomNudgeEnabledJson)
+        json.put(groupId, enabled)
+        groupRandomNudgeEnabledJson = json.toString()
+    }
+
+    /** 무작위 알림 체크를 오늘 이미 수행했는지(하루 1회 제한) — 스트릭 알림의 lastRoutineStreakNotifyDate와 동일 패턴. */
+    var lastGroupNudgeCheckDate: String
+        get() = prefs.getString("last_group_nudge_check_date", "") ?: ""
+        set(value) = prefs.edit().putString("last_group_nudge_check_date", value).apply()
+
+    // ---- 모임 내 사용자별(상대방별) 공개 범위 — "모임 내 사용자 상세 설정" ----
+    /** 모임ID -> [내 정보를 안 보여줄 상대 uid 목록]. 상대가 나를 조회할 때 전체 항목이 "비공개"로 보이도록
+     *  내 stats push에 실려 RTDB에 함께 올라간다(각 상대 클라이언트가 이 목록에 자기 uid가 있는지 확인). */
+    var hiddenFromUidsByGroupJson: String
+        get() = prefs.getString("hidden_from_uids_by_group_json", "{}") ?: "{}"
+        set(value) = prefs.edit().putString("hidden_from_uids_by_group_json", value).apply()
+
+    fun hiddenFromUidsFor(groupId: String): Set<String> {
+        val arr = org.json.JSONObject(hiddenFromUidsByGroupJson).optJSONArray(groupId) ?: return emptySet()
+        return (0 until arr.length()).map { arr.getString(it) }.toSet()
+    }
+
+    fun setHiddenFromUid(groupId: String, targetUid: String, hidden: Boolean) {
+        val json = org.json.JSONObject(hiddenFromUidsByGroupJson)
+        val current = hiddenFromUidsFor(groupId).toMutableSet()
+        if (hidden) current.add(targetUid) else current.remove(targetUid)
+        json.put(groupId, org.json.JSONArray(current.toList()))
+        hiddenFromUidsByGroupJson = json.toString()
+    }
+
+    /** 모임ID -> [내가 보고 싶지 않아 숨긴 상대 uid 목록]. 순수 내 기기 표시 설정이라 RTDB엔 절대 올리지 않는다. */
+    var hiddenPeerUidsByGroupJson: String
+        get() = prefs.getString("hidden_peer_uids_by_group_json", "{}") ?: "{}"
+        set(value) = prefs.edit().putString("hidden_peer_uids_by_group_json", value).apply()
+
+    fun hiddenPeerUidsFor(groupId: String): Set<String> {
+        val arr = org.json.JSONObject(hiddenPeerUidsByGroupJson).optJSONArray(groupId) ?: return emptySet()
+        return (0 until arr.length()).map { arr.getString(it) }.toSet()
+    }
+
+    fun setHiddenPeerUid(groupId: String, targetUid: String, hidden: Boolean) {
+        val json = org.json.JSONObject(hiddenPeerUidsByGroupJson)
+        val current = hiddenPeerUidsFor(groupId).toMutableSet()
+        if (hidden) current.add(targetUid) else current.remove(targetUid)
+        json.put(groupId, org.json.JSONArray(current.toList()))
+        hiddenPeerUidsByGroupJson = json.toString()
+    }
+
+    /** 모임ID -> 마지막으로 확인한 넛지(깨우기) 시각(epoch millis). JSON 객체 문자열로 저장(다른 JSON 캐시 필드들과 동일 패턴). */
+    var nudgeLastSeenByGroupJson: String
+        get() = prefs.getString("nudge_last_seen_by_group_json", "{}") ?: "{}"
+        set(value) = prefs.edit().putString("nudge_last_seen_by_group_json", value).apply()
+
+    fun nudgeLastSeenByGroup(): Map<String, Long> {
+        val json = org.json.JSONObject(nudgeLastSeenByGroupJson)
+        return json.keys().asSequence().associateWith { json.optLong(it, 0L) }
+    }
+
+    fun setNudgeLastSeen(groupId: String, atMillis: Long) {
+        val json = org.json.JSONObject(nudgeLastSeenByGroupJson)
+        json.put(groupId, atMillis)
+        nudgeLastSeenByGroupJson = json.toString()
+    }
+
+    // ---- 가입/승인 계정 게이트 ----
+    /** 마지막으로 확인된 계정 승인 상태("approved" 등) — 오프라인일 때도 승인된 사용자가 앱을 열 수 있도록
+     *  낙관적으로 먼저 content()를 보여주는 데 쓴다([AccountGate] 참고). */
+    var cachedApprovalStatus: String?
+        get() = prefs.getString("cached_approval_status", null)
+        set(value) = prefs.edit().putString("cached_approval_status", value).apply()
+
+    /** 관리자가 승인 시(또는 이후) 지정한 기능별 사용 허가 — 캐시본이며 필드가 아예 없던 옛 승인 사용자와의
+     *  하위호환을 위해 기본값은 전부 true(제한 없음). [AccountGateScreen]이 승인 확인 때마다 갱신한다. */
+    var permRoutine: Boolean
+        get() = prefs.getBoolean("perm_routine", true)
+        set(value) = prefs.edit().putBoolean("perm_routine", value).apply()
+    var permStudy: Boolean
+        get() = prefs.getBoolean("perm_study", true)
+        set(value) = prefs.edit().putBoolean("perm_study", value).apply()
+    var permManage: Boolean
+        get() = prefs.getBoolean("perm_manage", true)
+        set(value) = prefs.edit().putBoolean("perm_manage", value).apply()
+    var permSocial: Boolean
+        get() = prefs.getBoolean("perm_social", true)
+        set(value) = prefs.edit().putBoolean("perm_social", value).apply()
+
+    // ---- 자체 업데이트 확인(GitHub Releases, 2026-08-30) ----
+    /** 마지막으로 GitHub Releases를 확인한 날짜(effectiveDate 기준) — 하루 1회만 네트워크 호출하기 위한 가드,
+     *  lastGroupAutoResetDate와 동일 패턴. */
+    var lastUpdateCheckDate: String?
+        get() = prefs.getString("last_update_check_date", null)
+        set(value) = prefs.edit().putString("last_update_check_date", value).apply()
+
+    /** GitHub Releases에서 발견한 최신 안드로이드 릴리스의 versionCode. 0이면 "새 버전 없음". */
+    var updateAvailableVersionCode: Long
+        get() = prefs.getLong("update_available_version_code", 0L)
+        set(value) = prefs.edit().putLong("update_available_version_code", value).apply()
+
+    /** 위 versionCode에 대응하는 APK 다운로드 URL(GitHub Release 에셋 직접 링크). */
+    var updateAvailableApkUrl: String?
+        get() = prefs.getString("update_available_apk_url", null)
+        set(value) = prefs.edit().putString("update_available_apk_url", value).apply()
 }

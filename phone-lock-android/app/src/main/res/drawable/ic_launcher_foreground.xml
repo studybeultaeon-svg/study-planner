@@ -3,29 +3,23 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 픽셀아트 일출: 언덕 사이로 떠오르는 해 -->
+    <!-- 데스크탑 일출 컨셉을 모바일 안전영역(66/108, x/y 21~87)에 맞게 재구성.
+         부드러운 원(태양)+매끄러운 곡선(언덕)만 써서 58차의 각진 픽셀아트보다 덜 난잡하게. -->
+
+    <!-- 태양 후광 -->
+    <path android:fillColor="#FFF3E0" android:pathData="M54,39 m-16,0 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0" />
+    <!-- 태양 원반 -->
+    <path android:fillColor="#FFB300" android:pathData="M54,39 m-12,0 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0" />
+
+    <!-- 언덕 실루엣(두 봉우리, 부드러운 곡선) -->
     <path
-        android:fillColor="#FFF176"
-        android:pathData="M36,18 L63,18 L63,27 L36,27 Z" />
-    <path
-        android:fillColor="#FFEE58"
-        android:pathData="M27,27 L72,27 L72,36 L27,36 Z" />
-    <path
-        android:fillColor="#FFCA28"
-        android:pathData="M27,36 L72,36 L72,45 L27,45 Z" />
-    <path
-        android:fillColor="#FFA726"
-        android:pathData="M27,45 L72,45 L72,54 L27,54 Z" />
-    <path
-        android:fillColor="#FF8F00"
-        android:pathData="M36,54 L63,54 L63,63 L36,63 Z" />
-    <path
-        android:fillColor="#FFF9C4"
-        android:pathData="M18,9 L27,9 L27,18 L18,18 Z M72,9 L81,9 L81,18 L72,18 Z M18,63 L27,63 L27,72 L18,72 Z M72,63 L81,63 L81,72 L72,72 Z" />
-    <path
-        android:fillColor="#1E293B"
-        android:pathData="M9,72 L27,72 L27,81 L9,81 Z M81,72 L99,72 L99,81 L81,81 Z" />
-    <path
-        android:fillColor="#1E293B"
-        android:pathData="M0,81 L108,81 L108,108 L0,108 Z" />
+        android:fillColor="#1E3A5F"
+        android:pathData="
+            M21,87
+            L21,74
+            C28,60 40,58 50,68
+            C58,76 68,56 78,64
+            C82,67 85,70 87,73
+            L87,87
+            Z" />
 </vector>

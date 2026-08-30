@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "811743396471",
+    "firebase_url": "https://study-fc3bf-default-rtdb.firebaseio.com",
+    "project_id": "study-fc3bf",
+    "storage_bucket": "study-fc3bf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:811743396471:android:53c80367b733fa4688fc72",
+        "android_client_info": {
+          "package_name": "com.phonelock.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "811743396471-dopicsuvjk4icidd7gr6bgtu9svmq8dv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBd474MozsRb5q4hYgHy2e-Aiz2htMJy14"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "811743396471-dopicsuvjk4icidd7gr6bgtu9svmq8dv.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

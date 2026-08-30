@@ -23,11 +23,37 @@ object RoutineQuotes {
         "여기까지 온 게 대단해요 — 오늘 하루만 더."
     )
 
+    // 58차: 스트릭이 0인 채로 며칠째인지에 따라 응원 → 조롱 → 팩폭으로 강도를 올린다.
+    private val ZERO_ENCOURAGE = listOf(
+        "스트릭이 비어있어요. 오늘 한 번으로 다시 시작할 수 있어요.",
+        "며칠 쉬었다고 끝난 거 아니에요 — 오늘 다시 채워봐요.",
+        "0에서 1 만드는 게 제일 어려워요, 오늘 그거 해봐요."
+    )
+    private val ZERO_MOCK = listOf(
+        "벌써 며칠째 0이에요. 이러다 아예 놓아버리는 거 아니에요?",
+        "며칠째 손도 안 대고 있네요 — 앱만 켜놓은 거예요?",
+        "스트릭이 며칠째 0인데, 그것도 이제 습관이 되겠어요."
+    )
+    private val ZERO_BRUTAL = listOf(
+        "일주일 넘게 아무것도 안 했어요. 계획은 실행 안 하면 그냥 메모예요.",
+        "이쯤 되면 다시 시작할 마음이 있긴 한 거예요?",
+        "며칠씩 0을 유지하는 것도 재주라면 재주네요.",
+        "루틴을 만든 이유, 아직 기억은 하고 있어요?"
+    )
+
     /** streak: 어제까지의 연속일수(오늘 아직 체크 전 기준), broken: 어제 스트릭이 0으로 끊겼는지. */
     fun forStreak(streak: Int, broken: Boolean): String = when {
         broken -> BROKEN.random()
         streak >= 14 -> STRONG.random()
         streak >= 3 -> BUILDING.random()
         else -> STARTING.random()
+    }
+
+    /** zeroStreakDays: 스트릭이 0으로 끊긴 날(0)부터 며칠째 0을 유지 중인지. broken: 오늘 막 끊긴 날인지. */
+    fun forZeroStreak(zeroStreakDays: Int, broken: Boolean): String = when {
+        broken -> BROKEN.random()
+        zeroStreakDays >= 7 -> ZERO_BRUTAL.random()
+        zeroStreakDays >= 3 -> ZERO_MOCK.random()
+        else -> ZERO_ENCOURAGE.random()
     }
 }

@@ -20,6 +20,7 @@ import androidx.compose.material3.Tab as MaterialTab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +43,7 @@ import androidx.work.WorkManager
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.PreMigrationBackup
+import com.phonelock.app.routine.GroupNudgeWorker
 import com.phonelock.app.routine.RoutineAlarmScheduler
 import com.phonelock.app.service.AccessibilityWatchdogWorker
 import com.phonelock.app.ui.theme.PhoneLockTheme
@@ -54,10 +56,20 @@ private sealed class Tab(val route: String, val label: String, val emoji: String
     object Manage : Tab("manage", "관리", "🗂️")
     object Study : Tab("study", "공부", "📘")
     object Routine : Tab("routine", "루틴", "🌱")
+    object Group : Tab("group", "모임", "👥")
     object Settings : Tab("settings", "설정", "⚙️")
 }
 
-private val tabs = listOf(Tab.Routine, Tab.Study, Tab.Manage, Tab.Settings)
+/** 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임)에 맞춰 보이는 탭만 남긴다 — 설정은 항상 보임
+ *  (로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 [AppPreferences]가 전부 true를
+ *  기본값으로 주므로 이 필터링으로 인한 회귀는 없다. */
+private fun visibleTabs(prefs: AppPreferences): List<Tab> = listOfNotNull(
+    Tab.Routine.takeIf { prefs.permRoutine },
+    Tab.Study.takeIf { prefs.permStudy },
+    Tab.Manage.takeIf { prefs.permManage },
+    Tab.Group.takeIf { prefs.permSocial },
+    Tab.Settings
+)
 
 class MainActivity : ComponentActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -90,6 +102,18 @@ class MainActivity : ComponentActivity() {
             watchdogRequest
         )
 
+        // "모임" 넛지("깨우기") 폴링 — WorkManager 최소 주기(15분)라 실시간 알림은 아니다(계획 문서에 고지된 한계).
+        val groupNudgeRequest = PeriodicWorkRequestBuilder<GroupNudgeWorker>(15, TimeUnit.MINUTES).build()
+        WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
+            "group_nudge",
+            ExistingPeriodicWorkPolicy.KEEP,
+            groupNudgeRequest
+        )
+
+        // "무전기" — 켜짐/모드/일정이 모임마다 다를 수 있어(그룹 설정 화면에서 관리) 서비스 자체는
+        // 항상 띄워두고, 폴링할 때마다 모임별 설정을 따로 조회해서 처리한다.
+        com.phonelock.app.service.WalkieTalkieService.start(applicationContext)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -100,18 +124,30 @@ class MainActivity : ComponentActivity() {
         // 56차: rescheduleAll은 로컬 DB만 보므로, 다른 기기에서 만들거나 수정한 루틴은 "루틴" 탭을 직접
         // 열기 전엔 반영이 안 돼 알림이 아예 예약되지 않는 문제가 있었음 — 여기서도 먼저 동기화한다.
         lifecycleScope.launch {
+            // 루틴 동기화 때마다 예약 알람이 취소 안 되고 계속 쌓이던 버그(2026-08-30, 앱당 500개 한도에
+            // 걸려 크래시 루프까지 났었음)로 이미 쌓인 알람을 한 번 정리한다 — 원인 자체는 고쳤지만
+            // 기존에 쌓인 건 남아있으므로 한 번은 쓸어줘야 한다. IPC 호출이 많아 IO 디스패처에서.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                RoutineAlarmScheduler.cleanupLeakedAlarmsIfNeeded(applicationContext, AppPreferences(applicationContext))
+            }
             repository.syncRoutinesFromFirebase()
             RoutineAlarmScheduler.rescheduleAll(applicationContext, repository)
             if (AppPreferences(applicationContext).routineStreakNotifyEnabled) {
-                RoutineAlarmScheduler.scheduleStreakCheck(applicationContext, repository.dailyResetHour)
+                RoutineAlarmScheduler.scheduleStreakCheck(applicationContext)
             }
+            // 무작위 알림(77차)은 모임별 켜짐 여부를 실제 체크 시점에 판단하므로(모임마다 다를 수 있어
+            // 전역 스위치가 없음) 여기선 무조건 예약한다 — 켠 모임이 하나도 없으면 체크가 아무것도
+            // 안 보낼 뿐, 알람 자체는 스트릭 알림과 같은 비용으로 하루 한 번만 돈다.
+            RoutineAlarmScheduler.scheduleGroupNudgeCheck(applicationContext)
         }
 
         setContent {
             var themeMode by remember { mutableStateOf(AppPreferences(applicationContext).themeMode) }
             PhoneLockTheme(themeMode) {
                 Surface(modifier = Modifier) {
-                    PhoneLockApp(repository, onThemeChange = { themeMode = it })
+                    AccountGate(repository) {
+                        PhoneLockApp(repository, onThemeChange = { themeMode = it })
+                    }
                 }
             }
         }
@@ -121,6 +157,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String) -> Unit = {}) {
     val navController = rememberNavController()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { AppPreferences(context) }
+    val tabs = remember { visibleTabs(prefs) }
+    var pendingUpdateApkUrl by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        repository.checkForUpdateIfNeeded()
+        pendingUpdateApkUrl = repository.pendingUpdateApkUrl()
+    }
 
     Scaffold(
         bottomBar = {
@@ -145,11 +189,13 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             }
         }
     ) { padding ->
-        NavHost(
-            navController = navController,
-            startDestination = Tab.Routine.route,
-            modifier = Modifier.padding(padding)
-        ) {
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            pendingUpdateApkUrl?.let { url -> UpdateBanner(url) }
+            NavHost(
+                navController = navController,
+                startDestination = tabs.first().route,
+                modifier = Modifier.weight(1f)
+            ) {
             composable(Tab.Manage.route) {
                 ManageSection(repository, navController)
             }
@@ -167,6 +213,32 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             composable(Tab.Routine.route) {
                 RoutineScreen(repository)
             }
+            composable(Tab.Group.route) {
+                SocialGroupScreen(repository) { groupId -> navController.navigate("social_group/$groupId") }
+            }
+            composable(
+                "social_group/{groupId}",
+                arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+            ) { entry ->
+                val groupId = entry.arguments?.getString("groupId") ?: ""
+                SocialGroupMembersScreen(
+                    repository,
+                    groupId,
+                    onOpenMember = { uid -> navController.navigate("social_group_member/$groupId/$uid") },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(
+                "social_group_member/{groupId}/{uid}",
+                arguments = listOf(
+                    navArgument("groupId") { type = NavType.StringType },
+                    navArgument("uid") { type = NavType.StringType }
+                )
+            ) { entry ->
+                val groupId = entry.arguments?.getString("groupId") ?: ""
+                val uid = entry.arguments?.getString("uid") ?: ""
+                SocialGroupMemberDetailScreen(repository, groupId, uid) { navController.popBackStack() }
+            }
             composable(Tab.Settings.route) {
                 SettingsScreen(
                     repository,
@@ -176,6 +248,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             }
             composable("study_lock_apps") {
                 StudyLockAppsScreen()
+            }
             }
         }
     }

@@ -54,10 +54,8 @@ import java.time.LocalDate
 
 private val MONTHS_KO = arrayOf("1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월")
 private val WEEKDAYS_KO = arrayOf("일", "월", "화", "수", "목", "금", "토")
-private val COLOR_LABEL = mapOf(
-    "white" to "1회독", "red" to "2회독", "orange" to "3회독", "yellow" to "4회독", "green" to "5회독",
-    "blue" to "6회독", "indigo" to "7회독", "purple" to "8회독"
-)
+// 77차: 8단계(51차)에서 3단계(빨/노/초)로 축소(사용자 요청, 데스크탑판과 대칭).
+private val COLOR_LABEL = mapOf("red" to "1회독", "yellow" to "2회독", "green" to "3회독")
 
 /**
  * 51차: 4단계(빨주노초)→7단계 무지개(빨주노초파남보)→8단계(사용자 요청, 데스크탑판과 대칭) — 1회독을
@@ -450,8 +448,7 @@ private fun CalendarTaskRow(
                 modifier = Modifier.padding(top = Spacing.xs).horizontalScroll(rememberScrollState())
             ) {
                 listOf(
-                    "purple" to "8회독", "indigo" to "7회독", "blue" to "6회독", "green" to "5회독",
-                    "yellow" to "4회독", "orange" to "3회독", "red" to "2회독", "white" to "1회독"
+                    "green" to "3회독", "yellow" to "2회독", "red" to "1회독"
                 ).forEach { (c, label) ->
                     val stageColor = stageTextColor(c)
                     OutlinedButton(

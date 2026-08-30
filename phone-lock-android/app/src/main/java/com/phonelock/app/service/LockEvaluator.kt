@@ -141,7 +141,7 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
      *  영구 상태는 전혀 건드리지 않고 판정 시점에만 조회하므로 detectWeakeningEdit와는 접점이 없다. */
     private suspend fun isPomodoroUnlocked(group: AppGroup): Boolean =
         group.pomodoroUnlockEnabled &&
-            PomodoroSyncClient.isBreakActive(repository.fbDatabaseUrl, repository.fbApiKey, repository.fbUser)
+            PomodoroSyncClient.isBreakActive(repository.fbDatabaseUrl, repository.fbApiKey)
 
     /** isPomodoroUnlocked의 공개 버전 — 오버레이 표시처럼 "지금 뽀모도로 휴식으로 임시 해제된 상태인지"를
      *  판정 로직 밖(서비스)에서도 확인해야 할 때 쓴다. */

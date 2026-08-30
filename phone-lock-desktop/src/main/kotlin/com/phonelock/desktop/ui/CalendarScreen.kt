@@ -58,17 +58,17 @@ import java.time.LocalDate
 
 private val MONTHS_KO = arrayOf("1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월")
 private val WEEKDAYS_KO = arrayOf("일", "월", "화", "수", "목", "금", "토")
-private val COLOR_LABEL = mapOf(
-    "white" to "1회독", "red" to "2회독", "orange" to "3회독", "yellow" to "4회독", "green" to "5회독",
-    "blue" to "6회독", "indigo" to "7회독", "purple" to "8회독"
-)
+// 77차: 8단계(51차)에서 3단계(빨/노/초)로 축소(사용자 요청). 예전 색(white/orange/blue/indigo/purple)의
+// 라벨은 지웠지만 stageTextColor의 색상값 자체는 남겨둬서, 과거에 그 색으로 저장된 일정은 여전히
+// 고유한 색으로 표시된다(51차와 같은 "라벨만 바뀌는" 전례, HANDOFF.md 참고).
+private val COLOR_LABEL = mapOf("red" to "1회독", "yellow" to "2회독", "green" to "3회독")
 
 /**
  * 51차: 4단계(빨주노초)→7단계 무지개(빨주노초파남보)→8단계(사용자 요청) — 1회독을 "하얀색"으로 새로
  * 두고 기존 빨주노초파남보는 2~8회독으로 한 칸씩 밀렸다. white는 완전한 흰색(#FFFFFF)이면 이 앱의
  * 밝은 배경(라이트+그린 테마, 49차)에서 텍스트/테두리가 안 보이므로, 대신 은은한 회색조로 표현했다.
  */
-private fun stageTextColor(stage: String): Color = when (stage) {
+internal fun stageTextColor(stage: String): Color = when (stage) {
     "white" -> Color(0xFF9CA3AF)
     "red" -> Color(0xFFEF4444)
     "orange" -> Color(0xFFF97316)
@@ -80,11 +80,11 @@ private fun stageTextColor(stage: String): Color = when (stage) {
     else -> Color(0xFFAAAAAA)
 }
 
-private data class ChipColors(val bg: Color, val border: Color)
+internal data class ChipColors(val bg: Color, val border: Color)
 
 /** 웹앱 `.task-chip.{color}-task`의 배경/테두리(월 그리드 배지 전용). 배경은 accent를 옅게 탄 라이트
  *  테마용 틴트, 테두리는 accent 그대로 — stageTextColor와 같은 accent를 공유한다. */
-private fun stageChipColors(stage: String): ChipColors {
+internal fun stageChipColors(stage: String): ChipColors {
     val accent = stageTextColor(stage)
     return ChipColors(accent.copy(alpha = 0.15f), accent)
 }
@@ -96,7 +96,7 @@ private fun dowLabel(date: LocalDate): String = WEEKDAYS_KO[date.dayOfWeek.value
  * 별개로 항상 초록/빨강(`.status-O::before`/`.status-X::before`).
  */
 @Composable
-private fun TaskChip(name: String, stage: String, status: String?, modifier: Modifier = Modifier) {
+internal fun TaskChip(name: String, stage: String, status: String?, modifier: Modifier = Modifier) {
     val chip = stageChipColors(stage)
     Text(
         buildAnnotatedString {
@@ -515,8 +515,7 @@ private fun CalendarTaskRow(
                 modifier = Modifier.padding(top = Spacing.xs).horizontalScroll(rememberScrollState())
             ) {
                 listOf(
-                    "purple" to "8회독", "indigo" to "7회독", "blue" to "6회독", "green" to "5회독",
-                    "yellow" to "4회독", "orange" to "3회독", "red" to "2회독", "white" to "1회독"
+                    "green" to "3회독", "yellow" to "2회독", "red" to "1회독"
                 ).forEach { (c, label) ->
                     val stageColor = stageTextColor(c)
                     OutlinedButton(

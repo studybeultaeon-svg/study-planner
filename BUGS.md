@@ -4,6 +4,127 @@
 
 ---
 
+## Fixed(빌드/배포까지 완료, 74차) (2026-08-29~30, 74차 세션 — 사용자 제보)
+
+### 앱을 켜자마자 즉시 종료됨(크래시 루프) — 예약 알람 500개 한도 초과
+- **경위**: 74차 무전기 재설계 배포 직후 사용자가 "업데이트하니 앱이 켜지자마자 꺼진다"고 제보. 처음엔 `WalkieTalkieService`가 이제 전 사용자에게 무조건 실행되도록 바뀐 점(포그라운드 서비스 시작 제약)을 의심해 방어 코드+전역 크래시 로거(`PhoneLockApplication.kt`)를 추가했으나 재발.
+- **원인**: 사용자가 넘겨준 실제 크래시 로그에서 `IllegalStateException: Maximum limit of concurrent alarms 500 reached` 확인. `PhoneLockRepository.syncRoutinesFromFirebase()`가 원격이 더 최신이면 로컬 루틴을 전부 지우고 새 Room auto-increment ID로 재삽입하는데, 루틴 알림 예약(`RoutineAlarmScheduler`)이 이 ID를 그대로 `AlarmManager` requestCode로 써서 — 동기화 때마다 옛 ID의 예약 알람은 취소할 방법이 사라지고 새 알람만 계속 쌓여 결국 안드로이드 앱당 한도(500개)를 초과.
+- **해결**: ① `syncRoutinesFromFirebase()`가 delete+insert 전에 지금 루틴들의 알람을 먼저 명시적으로 취소(재발 방지), ② 이미 쌓인 알람을 정리하는 일회성 스윕(`RoutineAlarmScheduler.cleanupLeakedAlarmsIfNeeded`, ID 1~20000 범위 취소 시도, `AppPreferences.leakedAlarmsCleaned`로 1회만), ③ `scheduleAlarm()`을 `runCatching`으로 감싸 한도 초과 자체가 다시 발생해도 앱이 죽지 않게 방어.
+- **검증**: 컴파일/빌드/배포 완료. 실기기에서 재발 안 하는지는 다음 실행 때 확인 필요(HANDOFF.md 다음 우선순위 참고).
+- 자세한 내용은 [[CHANGELOG.md]]/[[DECISIONS.md]] 74차 참고.
+
+### 무전기: 음성/텍스트 메시지 선택 후 아무 반응 없이 조용히 실패
+- **경위**: 사용자가 "무전기 테스트하다가 아예 작동을 안 한다"고 제보 — 선택창은 뜨는데 옵션을 골라도 토스트도 안 뜨고 아무 일도 안 일어남.
+- **원인**: `WakeOptionsDialog`에서 "음성"/"텍스트" 버튼이 `onDismiss()`(깨우기 대상 정보를 완전히 초기화)를 먼저 호출한 뒤 다음 단계(녹음/텍스트 입력창)를 열고 있었음 — 그 결과 입력창은 뜨지만 "누구에게 보낼지"가 이미 사라져서, 보내기를 눌러도 대상이 없어 코드가 조용히 건너뛰던 것.
+- **해결**: 음성/텍스트로 전환하는 버튼에서는 `onDismiss()`를 호출하지 않도록 수정 — 상태(`wakeStep`)가 바뀌면 선택창은 조건부 렌더링으로 자연히 사라지므로 별도로 닫을 필요가 없었음.
+- **검증**: 컴파일 확인 후 양 플랫폼 빌드/배포 완료.
+
+### 무전기: FORCED(즉시재생) 모드에서 같은 메시지가 계속 반복 재생됨
+- **경위**: 사용자가 "무전 자동 재생 모드에서 들어온 무전이 계속 재생된다"고 제보.
+- **원인**: "재생 → 삭제" 순서였는데 삭제 요청의 HTTP 응답 코드를 확인하지 않아, 삭제가 서버에서 실패(권한 등)해도 성공으로 간주하고 넘어갔음 — 메시지가 RTDB에 계속 남아 7초마다 폴링할 때마다 다시 재생됨.
+- **해결**: "삭제 확인 → 성공했을 때만 재생" 순서로 변경(양 플랫폼) — 삭제 실패 시 이번엔 재생을 건너뛰고 다음 폴링에서 재시도.
+
+### 무전기: 삭제 버튼이 서버 실패 여부와 무관하게 항상 "성공한 것처럼" 동작
+- **원인**: 삭제 버튼이 서버 삭제 결과를 확인하지 않고 무조건 로컬 인박스 목록에서 항목을 지우고 있었음 — 서버에서 실패해도 화면상으론 지워진 것처럼 보이다가 다음 조회 때 그대로 남아있어 "삭제가 안 된다"는 혼란을 줌.
+- **해결**: 서버 삭제가 실제로 성공했을 때만 목록에서 제거하도록 수정, 실패 시 실제 원인(HTTP 상태코드+RTDB 응답 본문)을 토스트/텍스트로 노출.
+
+### 무전기: "그냥 깨우기"(넛지)가 사실상 안 오는 것처럼 느껴짐
+- **원인**: 안드로이드에서 넛지는 `GroupNudgeWorker`(WorkManager 최소 주기 15분)로만 확인했음 — 음성/텍스트 무전(7초 폴링)에 비해 훨씬 느려서 짧은 테스트 시간 안엔 거의 항상 "안 온" 것처럼 보임.
+- **해결**: `WalkieTalkieService`의 7초 폴링에 넛지 확인도 포함시켜 근접 실시간으로 개선. 기존 15분 워커는 서비스가 죽어있는 드문 경우의 보완용으로 유지.
+
+### 알림 진동 누락 + 채널 재정의 불가
+- **원인**: 무전기 메시지/모임 깨우기 알림 채널에 `enableVibration`이 없었음(기본값 false). 코드로 추가해도, 안드로이드는 알림 채널을 한 번 만들면 앱이 나중에 설정을 재정의할 수 없어 이미 생성된 채널엔 반영이 안 됨.
+- **해결**: 채널 진동 설정 추가 + `group_nudge_v2`/`walkie_message_v2`로 채널 ID를 새로 발급해 우회(61차 루틴 알림 채널과 동일 패턴). 사용자 요청에 따라 "접근성 서비스 감시"(기능적 경고)는 진동 없이 유지.
+
+---
+
+## Fixed(빌드/배포까지 완료, 73차) (2026-08-29, 73차 세션 — 사용자 제보)
+
+### 데스크탑: "모임 생성"이 항상 실패함
+- **경위**: 사용자가 "모임 생성이 안 됨"이라고 제보.
+- **원인**: 데스크탑 `SocialGroupSyncClient.kt`의 `createGroup()`이 안드로이드와 다르게 2단계로 구현돼 있었음 — 빈 body(`{}`)로 `groups`에 먼저 POST해서 `groupId`만 받아온 뒤, 별도 PUT으로 `info`(name/ownerUid/inviteCode/createdAt)를 씀. 64/68차에 강화된 `firebase-database.rules.json`의 `groups/$groupId` 쓰기 규칙(`!data.exists() && newData.child('info').child('ownerUid').val() === auth.uid`)은 첫 write의 `newData` 안에 이미 `info`가 있어야 통과하는데, 빈 body push는 이 조건을 절대 만족할 수 없어 그 시점부터 모든 모임 생성이 규칙 위반으로 거부되고 있었음. 안드로이드는 처음부터 info를 포함한 body로 한 번에 POST해서 이 버그가 없었고, 70차 실기기 검증은 "이미 만들어져 있던 모임"으로 확인해서 못 잡았던 것으로 추정.
+- **해결**: `push()` 헬퍼가 body를 받도록 확장, `createGroup()`이 초대코드를 먼저 만든 뒤 info를 포함한 body로 한 번에 push하도록 안드로이드와 동일한 패턴으로 재작성.
+- **검증**: 빌드된 jar에 수정된 코드가 실제로 포함된 것을 클래스 목록으로 확인 + 표준 절차로 실제 배포까지 완료. 사용자가 새 모임을 실제로 만들어서 되는지는 아직 최종 확인 전(다음 우선순위 참고).
+- 자세한 내용은 [[CHANGELOG.md]]/[[DECISIONS.md]] 73차 참고.
+
+---
+
+## Fixed (2026-08-28, 72차 세션 — 사용자 실사용 중 제보)
+
+### 완전히 새 계정(원격 데이터 0)에서는 루틴/캘린더/계산기가 영원히 동기화 안 됨
+- **경위**: 사용자가 새 아이디/비번 계정으로 로그인 후 "동기화가 잘 되고 있냐"고 질문 → 데스크탑 로컬 세션의 refreshToken으로 idToken을 직접 얻어 Firebase RTDB를 REST로 조회해보니 `users/{uid}` 아래 `profile`만 있고 `routines`가 없었음.
+- **원인**: `PomodoroSyncClient.kt`(안드로이드/데스크탑 둘 다)의 `readRoutines`/`readCalendarTasks`/`readCalculator` 3개 함수가 HTTP 200 + `body == "null"`(=RTDB에 그 경로 자체가 없다는 정상 응답, 신규 계정이면 항상 이렇게 옴)을 실제 네트워크 오류·파싱 실패와 똑같이 `null` 반환으로 처리하고 있었음. 이 `null`을 받는 `Repository.syncXFromFirebase()`가 `result ?: return`으로 즉시 함수를 빠져나가서, "원격이 로컬보다 오래됐으면 로컬을 원격에 올린다"는 LWW push 분기 자체에 도달하지 못했음 — 로컬에 데이터가 아무리 많아도 첫 동기화가 조용히 실패하고 다시는 시도되지 않음(에러 메시지도 없음).
+- **왜 지금까지 안 걸렸는지**: 이전까지는 모든 사용자가 Google 로그인으로 최소 한 번은 각 데이터를 원격에 올린 이력이 있었기 때문에 "원격이 완전히 비어있는" 상태 자체가 발생한 적이 없었음. 이번에 아이디/비번 로그인이 추가되면서 "로컬엔 실사용 데이터가 있는데 원격 uid는 완전히 새것"인 시나리오가 처음 생겼고, 그 순간 이 잠재 버그가 드러남.
+- **해결**: `body == "null"`일 때 `null` 대신 빈 결과 객체(모든 타임스탬프 `0L`, 빈 배열/객체)를 반환하도록 세 함수 모두 수정 — 이러면 로컬 타임스탬프가 항상 `0`보다 크므로 정상적으로 push 분기를 타게 됨. 네트워크 오류/비2xx 응답 시엔 여전히 `null`을 반환해 "오류"와 "정상적으로 비어있음"을 구분함.
+- **검증**: 데스크탑에서 실제로 앱만 재시작했더니 `users/{uid}/routines`가 Firebase에 새로 생기는 것을 REST 조회로 확인.
+- **영향 범위**: 루틴/캘린더/계산기 3개 문서 단위 LWW 동기화 전부(신규 계정에서만 발생, 기존 계정은 이미 원격에 데이터가 있어 영향 없음).
+
+---
+
+## Fixed(빌드/배포 완료, 실기기 미검증) (2026-08-27, 71차 세션 — 사용자 제보)
+
+### 안드로이드: "모임"에서 닉네임 대신 이메일/구글 실명이 표시됨
+- **경위**: 사용자가 "모임 내에서 닉네임으로 뜨지 않고 이메일로 뜬다"고 제보.
+- **원인**: 안드로이드 `SocialGroupSyncClient.kt`의 `createGroup()`/`joinGroupByCode()`가 멤버 레지스트리(`groups/{id}/members/{uid}/displayName`)를 쓸 때 `GoogleAuthManager.currentUser?.displayName ?: email`을 그대로 써서, 앱 내부 닉네임 시스템(`AccountSyncClient.myDisplayName()`, 닉네임→커스텀아이디→이메일→uid 우선순위)을 전혀 참조하지 않았음. 데스크탑은 이미 이 우선순위 로직을 쓰고 있어서 문제가 없었음(플랫폼 간 구현 불일치).
+- **해결**: 두 함수 모두 `AccountSyncClient.myDisplayName(databaseUrl, apiKey)` 호출로 교체. 기존에 이미 생성된 모임도 즉시 반영되도록 `SocialGroupMembersScreen.kt`의 멤버 표시 이름을 members 레지스트리 대신 stats(매번 최신 닉네임으로 갱신됨)의 값을 우선 쓰도록 변경.
+- **상태**: 코드 수정 + `assembleRelease` 빌드/서명/배포까지 같은 세션에서 완료(`vm-build-output/android/app-release.apk`) — 실기기 설치 확인만 남음.
+
+---
+
+## Fixed (2026-08-27, 67차 세션 — Claude 작업 중 발견)
+
+### 안드로이드: `AndroidBuilds\phone-lock-android`에 `proguard-rules.pro`가 누락돼 release 빌드가 64차에 작성한 keep 규칙 없이 R8을 돌리고 있었음
+- **경위**: HANDOFF 최우선 항목(64차, "release APK를 `assembleRelease`로 빌드해 검증")을 이어받아 실제로 빌드해봄 — 첫 `assembleRelease` 실행에서 `minifyReleaseWithR8` 단계가 `Supplied proguard configuration does not exist: C:\AndroidBuilds\phone-lock-android\app\proguard-rules.pro` 경고를 내며 진행됨(빌드 자체는 이 경고로도 성공하기 때문에 놓치기 쉬움).
+- **원인**: 64차가 OneDrive 원본에 Firebase Auth/Room 리플렉션 클래스를 보존하는 `app/proguard-rules.pro`를 새로 작성했지만, 이후 세션들(65~66차)의 소스 동기화(robocopy)가 이 신규 파일을 `AndroidBuilds\phone-lock-android`로 반입하지 않았음 — `app/build.gradle.kts`가 이 파일을 참조하도록 64차에 이미 고쳐져 있었는데도 파일 자체가 없어서, 지금까지 만들어진 release APK가 있었다면 전부 기본 `proguard-android-optimize.txt`만 적용된 채(64차가 의도한 keep 규칙 없이) 빌드됐을 것.
+- **해결**: OneDrive 원본의 `proguard-rules.pro`를 `AndroidBuilds\phone-lock-android\app\`로 복사 후 재빌드 — 경고 없이 `BUILD SUCCESSFUL`, `minifyReleaseWithR8` 정상 적용 확인.
+- **후속(같은 세션)**: `app-release-unsigned.apk`는 서명이 안 돼 실기기 설치가 불가했음 — 사용자 확인 후 release keystore를 새로 생성해 서명 설정까지 완료([[DECISIONS.md]] 67차 참고), 서명된 `app-release.apk`를 `vm-build-output/android/`에 배포. 실기기 설치/기능 검증만 남음.
+- **재발 방지**: 소스 동기화(robocopy) 후 신규/누락 파일이 있는지 `git status`나 파일 목록 비교로 한 번 더 확인할 것 — 36차의 "robocopy가 조용히 스킵" 교훈과 같은 계열의 문제.
+
+---
+
+## Fixed/문서화 (2026-08-25~26, 61차 세션 — Claude 작업 중 발견)
+
+### 데스크탑: `gradle run`으로 테스트하면 워치독이 5초마다 무한 재시작하며 좀비 `java.exe` 프로세스가 200개 넘게 쌓임
+- **경위**: Google 로그인 기능을 실제로 테스트하려고 `gradle run`으로 개발 빌드를 띄웠는데, 몇 분 뒤 시스템에 `java.exe` 프로세스가 수십~200개 넘게 계속 쌓이는 걸 발견.
+- **원인**: `Watchdog.kt`의 `exeLauncherPath()`(현재 프로세스를 실행시킨 실행파일 경로를 구해서 재시작에 쓰는 함수)가 정상 배포 환경(`PhoneLockDesktop.exe`)에서는 그 exe 경로를 정확히 반환하지만, `gradle run`으로 실행하면 이 경로가 순수 `java.exe`가 된다. `startWatchdogSupervisor()`가 5초(`SUPERVISOR_POLL_MS`)마다 감시 프로세스 생사를 확인해서 없으면 `ProcessBuilder(exe, "--watchdog").start()`로 재기동하는데, 인자 없는 `java.exe --watchdog`는 실행되자마자 즉시 죽어서 감시 프로세스가 다시 "없음"으로 판정되고 → 5초 뒤 또 재시도 → 무한 루프.
+- **해결**: 이 버그 자체는 코드를 고치지 않음(정상 배포 환경에선 발생하지 않고, `gradle run`은 개발자 전용 진입점이라 워치독이 자기 자신을 재시작할 이유가 없음) — 대신 **앞으로 데스크탑 실행/테스트는 항상 패키징된 `.exe`로만 할 것**을 원칙으로 확정. 발생한 좀비 프로세스는 `gradle --stop` + 모든 `java`/`javaw` 프로세스 강제 종료로 정리(0개로 유지되는 것 확인).
+- 자세한 배경은 [[HANDOFF.md]]/[[CHANGELOG.md]] 61차 참고.
+
+### 도구 사용 문제(앱 버그 아님): PowerShell 5.1이 BOM 없는 `.ps1`의 한글을 시스템 코드페이지로 잘못 읽어 스크립트가 조용히 깨짐
+- **경위**: 데스크탑 트레이 아이콘 생성 스크립트(`packaging/generate_icon.ps1`)에 한글 주석 + 한글 하드코딩 절대경로를 넣고 실행했더니, 하드코딩 경로는 "Illegal characters in path" 예외로 바로 드러났지만(수정 후에도) 이후 이어지는 미리보기 PNG 저장 코드가 예외 하나 없이 그냥 결과가 `$null`이 되는 형태로 조용히 깨짐 — 같은 코드를 영문 전용 파일로 옮기면 정상 동작.
+- **원인**: BOM 없이 저장된 UTF-8 `.ps1` 파일을 Windows PowerShell 5.1이 열 때, 시스템 기본 코드페이지(한국어 Windows는 CP949)로 잘못 해석 — 60차/이전 세션들이 겪은 "PowerShell이 데이터 파일을 잘못 인코딩해서 깨뜨리는" 문제와 같은 근본 원인이 이번엔 **Claude가 직접 작성한 `.ps1` 스크립트 자체**에서도 재현된 것.
+- **해결**: `generate_icon.ps1`에서 한글 주석을 전부 영문으로 교체, 하드코딩 경로도 `$PSScriptRoot` 기반 상대경로로 교체.
+- **재발 방지**: **이 프로젝트에서 새로 작성하는 `.ps1` 파일은 한글 텍스트(주석 포함)를 절대 넣지 않는다.** 경로도 하드코딩 대신 `$PSScriptRoot`나 상대경로를 쓴다. [[DECISIONS.md]] 60차(데이터 파일 관련)와는 별개로, 이번 건은 "스크립트 파일 자체"의 인코딩 문제라는 점에서 구분해서 기억할 것.
+
+### 도구/환경 문제(앱 버그 아님): OneDrive 동기화 폴더에서 직접 Gradle 빌드하면 간헐적으로 빌드 실패
+- **경위**: 이번 세션 여러 차례 `compileDebugKotlin`/`assembleDebug`/`compileKotlin`이 `mergeDebugResources`/`compileKotlin` 등에서 "Unable to delete directory"류 오류로 실패했다가, `build` 폴더를 지우고 재시도하면 대부분 성공.
+- **원인**: 프로젝트 경로가 OneDrive 동기화 대상(`OneDrive\바탕 화면\...`)이라, Gradle이 `build/` 안에 수천 개의 임시 파일을 빠르게 생성/삭제하는 동안 OneDrive 클라이언트가 그중 일부를 동기화 목적으로 잠깐 잠가버려서 생기는 간헐적 충돌.
+- **해결**: 59차 등 과거 세션에서 이미 안드로이드도 `AndroidBuilds\phone-lock-android`(OneDrive 밖 로컬 복사본)에서 빌드해왔다는 걸 재확인 — 이번 세션 후반부터 그 관행으로 복귀(robocopy로 소스만 반입 → 로컬에서 빌드 → 완성된 산출물만 OneDrive로 복사). 데스크탑은 처음부터 `C:\build\phone-lock-desktop`을 써서 이 문제가 없었음.
+- **재발 방지**: **이 프로젝트에서 Gradle 빌드(특히 `assembleDebug`/`compileKotlin`류)는 항상 OneDrive 밖의 로컬 복사본에서 실행할 것** — 소스 수정 자체는 OneDrive 원본에서 하되, 빌드 직전 로컬로 robocopy, 빌드 후 최종 산출물만 다시 OneDrive로 복사.
+
+---
+
+## Fixed (2026-08-23, 60차 세션 — Claude 작업 중 발생/직접 복구)
+
+### 데스크탑: `data.json`을 PowerShell `ConvertFrom-Json`/`ConvertTo-Json`으로 왕복 저장하면 파일이 거의 전부 유실됨
+- **경위**: "그룹 모두 꺼줘" 요청을 처리하며 `%APPDATA%\PhoneLockDesktop\data.json`을 PowerShell로 파싱(`ConvertFrom-Json`) → `groupEnabled` 필드만 고쳐서 → 재직렬화(`ConvertTo-Json -Depth 100`)해서 저장했음. 결과물이 153,812바이트 → **1,214바이트**로 쪼그라들며 그룹 8개를 포함해 계산기/캘린더/루틴/공부기록 등 거의 모든 데이터가 통째로 사라짐 — 앱을 켜면 그룹 목록이 전부 안 보이는 것도 이 때문이었을 가능성이 높음(꺼짐 표시가 아니라 데이터 자체 소실).
+- **원인**: Windows PowerShell 5.1의 `ConvertFrom-Json`/`ConvertTo-Json` 왕복은 중첩 배열(특히 원소 1개짜리 배열이 스칼라로 풀리는 등)과 깊은 구조를 안정적으로 보존하지 못하는 알려진 함정 — `-Depth 100`을 줘도 근본적으로 막히지 않음. `JsonStore.kt`의 `load()`가 파싱 실패 시 `AppData()`(빈 값)로 통째로 대체하는 구조라, 일부 구조가 깨지면 파일 전체가 사실상 초기화된 것처럼 보일 수 있음.
+- **해결**: 편집 직전에 만들어둔 백업(`data.json.backup-20260823-171911`)으로 즉시 복원 후, 이번엔 JSON을 파싱하지 않고 `"groupEnabled": true,` → `"groupEnabled": false,` 8곳만 **순수 문자열 치환**으로 수정(치환 전후 개수 일치 확인 + 파일 크기 변화가 정확히 +8바이트인 것도 확인). 복원된 파일이 유효한 JSON인지도 재확인 완료.
+- **재발 방지**: **앞으로 `data.json`처럼 앱이 직접 관리하는 저장 파일은 절대 PowerShell `ConvertFrom-Json`/`ConvertTo-Json` 왕복으로 통째로 재직렬화하지 말 것.** 특정 필드 값만 바꿀 땐 원본 텍스트 포맷을 그대로 보존하는 문자열/정규식 치환만 쓰고, 치환 전 항상 백업부터 만들 것. [[DECISIONS.md]] 60차 참고.
+- **2차 여파(파일은 고쳤는데 화면엔 안 보임)**: `Repository`가 `data: AppData`를 앱 시작 시 딱 한 번만 `JsonStore.load()`로 읽어 메모리에 들고 있는 구조(`Repository.kt`)라, 데스크탑 앱이 corruption 직후(21:07경, 워치독이 자동 재기동한 것으로 추정) 이미 "그룹 없음" 상태로 메모리에 떠 있었던 상태에서 파일만 고쳐서는 화면에 반영 안 됨 — 사용자가 "안 돌아왔는데?"로 재보고해서 발견. `PhoneLockDesktop.exe` 프로세스 3개(메인+워치독 등)를 강제 종료(`Stop-Process -Force`, JVM 셧다운훅을 우회해 메모리의 stale 상태가 파일에 다시 덮어써지는 걸 방지)했더니 `Watchdog.kt`의 자체 감시 프로세스가 수 초 내 자동 재실행하며 고쳐진 파일을 정상적으로 다시 읽어들임(재시작 후 파일 mtime/내용 불변 확인 완료). **교훈**: 이 앱처럼 실행 중 메모리에 전체 상태를 캐싱하는 구조에서 데이터 파일을 외부에서 직접 수정했을 땐, 그 시점에 앱이 이미 실행 중이었는지 항상 확인하고 필요하면 재시작까지 시켜야 실제로 반영된다.
+
+---
+
+## In Progress (2026-08-21, 58차 세션 발견, 59차에 컴파일+배포 완료)
+
+### 안드로이드/데스크탑: 루틴 스트릭 알림이 작동하지 않음(사용자 신고)
+- **상태**: In Progress — 구조적 결함 하나를 발견해 수정, 59차에 컴파일 확인 + 실제 배포(APK 두 위치 + 데스크탑 표준 절차)까지 완료. 신고된 증상의 확정 원인인지는 여전히 실기기 로그로 검증 안 됨.
+- **발견한 결함(데스크탑)**: `RoutineNotifier.tick()`이 `now.hour == dailyResetHour && now.minute == 0`처럼 "정확히 그 순간"만 비교했음 — 30초 주기 틱이 그 1분 창을 못 맞추거나(타이밍 드리프트), 그 순간 앱이 꺼져 있으면 그날은 영영 못 울리는 구조였음.
+- **해결**: 발송 시각을 dailyResetHour 정각 고정에서 하루 중 랜덤 시각으로 바꾸면서(사용자 요청, item 4), 비교도 "목표 시각을 지났고 오늘 아직 안 보냈으면"(`>=`)으로 교체 — 안드로이드 `AlarmManager` 기반 폴백만큼 안정적인 구조로 변경. 안드로이드는 애초에 `AlarmManager` 예약이라 이 유형의 결함은 없었지만 랜덤화는 동일하게 적용.
+- **다음 확인**: 실기기에서 스트릭 알림이 실제로 오는지 며칠 관찰 필요(빌드/배포는 59차에 끝났으니 이제 순수 실사용 검증만 남음). [[CHANGELOG.md]] 58~59차 참고.
+
+---
+
 ## Fixed (2026-08-14, 56차 세션)
 
 ### 안드로이드: 루틴 알림이 정시보다 약 2분 늦게 옴
@@ -86,11 +207,12 @@
 
 ---
 
-## Open (기타)
+## Fixed (문서 반영은 2026-08-15, 57차 세션 — 실제 코드 수정은 그 이전 어느 시점)
 
 ### 데스크탑: Alt-Tab으로 허용된 브라우저에 진입해서 허용 안 된 사이트를 실제로 이용 가능
-- **원인 확정(35차 세션, 코드 조사)**: `background.js`의 차단 판정은 `chrome.webNavigation.onBeforeNavigate`(새 네비게이션 발생 시)에만 걸려있다([background.js:155](phone-lock-desktop/browser-extension/background.js:155)). 공부 잠금이 켜지기 전부터 이미 로드돼 있던 차단 대상 사이트 탭으로 Alt-Tab만 해서 돌아오는 경우는 네비게이션 이벤트가 아니라서 이 리스너가 아예 발동하지 않는다. 유일한 백업은 `chrome.alarms.create("tick", { periodInMinutes: 1 })` 1분 주기 폴링뿐([background.js:181](phone-lock-desktop/browser-extension/background.js:181), [background.js:237-259](phone-lock-desktop/browser-extension/background.js:237-259))이라, 최악의 경우 최대 60초간 실제로 그대로 이용 가능하다. 데스크탑 쪽 `SiteEnforcement.kt`의 판정 로직(`isBlockedByStudyLock()` 포함) 자체는 정상 — 확장이 판정을 물어보는 시점 자체가 너무 늦게(최대 60초 뒤) 온다는 게 진짜 원인.
-- **해결 방향(미적용, 사용자 확인 후 진행 예정)**: `chrome.tabs.onActivated`/`chrome.windows.onFocusChanged` 리스너를 추가해 탭/창 포커스가 바뀌는 즉시 재검사하도록 하면 지연을 1분에서 사실상 즉시로 줄일 수 있음.
+- **원인 확정(35차 세션, 코드 조사)**: `background.js`의 차단 판정은 `chrome.webNavigation.onBeforeNavigate`(새 네비게이션 발생 시)에만 걸려있어, 공부 잠금이 켜지기 전부터 이미 로드돼 있던 차단 대상 사이트 탭으로 Alt-Tab만 해서 돌아오는 경우는 이 리스너가 발동하지 않았다. 유일한 백업은 1분 주기 tick 폴링이라 최악의 경우 최대 60초간 실제로 이용 가능했다.
+- **해결**: `background.js`에 `chrome.tabs.onActivated`/`chrome.windows.onFocusChanged` 리스너(`checkTabNow()`)가 이미 추가되어 있음을 57차 세션에서 코드 확인 — 탭 전환·창 포커스 변경 시 즉시 재검사해서 지연을 사실상 없앤다. **파일 수정 시각이 2026-08-11(41차 전후)로 확인되는데 그 이후 세션들에서 BUGS.md/HANDOFF.md가 계속 "보류/미착수"로 잘못 기록돼 있었음 — 코드는 진작 고쳐졌으나 문서 갱신이 누락된 케이스**. 재발 방지: 코드를 수정한 세션은 반드시 그 세션 종료 절차에서 BUGS.md/HANDOFF.md를 그 자리에서 갱신할 것(작업 원칙 참고).
+- **남은 것**: 브라우저 확장은 `chrome://extensions` 재로드가 필요(빌드 불필요) — 아직 재로드했는지 미확인이므로 실사용 확인은 사용자 몫.
 
 ---
 

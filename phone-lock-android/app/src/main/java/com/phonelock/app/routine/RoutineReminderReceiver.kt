@@ -36,11 +36,17 @@ class RoutineReminderReceiver : BroadcastReceiver() {
         val appContext = context.applicationContext
         ensureChannel(appContext)
         when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED -> runAsync {
-                val repository = PhoneLockRepository(appContext)
-                RoutineAlarmScheduler.rescheduleAll(appContext, repository)
-                if (AppPreferences(appContext).routineStreakNotifyEnabled) {
-                    RoutineAlarmScheduler.scheduleStreakCheck(appContext, repository.dailyResetHour)
+            Intent.ACTION_BOOT_COMPLETED -> {
+                // 재부팅되면 무전기 수신 포그라운드 서비스도 죽어있으므로 다시 띄워야 앱을 한 번도 안
+                // 연 상태에서도 백그라운드 수신이 이어진다(모임별 켜짐 여부는 서비스 폴링 안에서 따로 확인).
+                com.phonelock.app.service.WalkieTalkieService.start(appContext)
+                runAsync {
+                    val repository = PhoneLockRepository(appContext)
+                    RoutineAlarmScheduler.rescheduleAll(appContext, repository)
+                    if (AppPreferences(appContext).routineStreakNotifyEnabled) {
+                        RoutineAlarmScheduler.scheduleStreakCheck(appContext)
+                    }
+                    RoutineAlarmScheduler.scheduleGroupNudgeCheck(appContext)
                 }
             }
             RoutineAlarmScheduler.ACTION_ROUTINE_REMINDER -> {
@@ -69,12 +75,52 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                         val routines = repository.getRoutines()
                         val completed = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
                         val streak = RoutineEngine.currentStreak(routines, completed, LocalDate.now().minusDays(1))
-                        val broken = prefs.lastRoutineStreak > 0 && streak == 0
-                        notify(appContext, STREAK_NOTIFICATION_ID, "🌱 루틴 스트릭", RoutineQuotes.forStreak(streak, broken))
+                        val message: String
+                        if (streak > 0) {
+                            message = RoutineQuotes.forStreak(streak, broken = false)
+                            prefs.zeroStreakDays = 0
+                        } else {
+                            val broken = prefs.lastRoutineStreak > 0
+                            prefs.zeroStreakDays = if (broken) 0 else prefs.zeroStreakDays + 1
+                            message = RoutineQuotes.forZeroStreak(prefs.zeroStreakDays, broken)
+                        }
+                        notify(appContext, STREAK_NOTIFICATION_ID, "🌱 루틴 스트릭", message)
                         prefs.lastRoutineStreak = streak
                         prefs.lastRoutineStreakNotifyDate = today
                     }
-                    RoutineAlarmScheduler.scheduleStreakCheck(appContext, repository.dailyResetHour)
+                    RoutineAlarmScheduler.scheduleStreakCheck(appContext)
+                }
+            }
+            RoutineAlarmScheduler.ACTION_GROUP_NUDGE_CHECK -> runAsync {
+                val prefs = AppPreferences(appContext)
+                val today = LocalDate.now().toString()
+                if (prefs.lastGroupNudgeCheckDate != today) {
+                    runCatching { checkAndSendGroupNudges(appContext, prefs) }
+                    prefs.lastGroupNudgeCheckDate = today
+                }
+                RoutineAlarmScheduler.scheduleGroupNudgeCheck(appContext)
+            }
+        }
+    }
+
+    /**
+     * "무작위 알림"(77차) — 내가 속한 모임(무작위 알림을 켜둔 모임만)의 멤버들을 훑어, 오늘 예정된
+     * 루틴 중 안 한 게 있거나 오늘 캘린더 일정 중 완료(O) 안 된 게 있는 사람에게 자동으로 넛지를
+     * 보낸다. 상대가 그 항목을 공유 안 했으면(null) 판단할 데이터가 없으므로 건너뛴다.
+     */
+    private suspend fun checkAndSendGroupNudges(context: Context, prefs: AppPreferences) {
+        val repository = PhoneLockRepository(context)
+        val myUid = com.phonelock.app.service.AuthManager.currentUser?.uid ?: return
+        val today = LocalDate.now().toString()
+        repository.readMySocialGroupIds().forEach groupLoop@{ groupId ->
+            if (!prefs.randomNudgeEnabledFor(groupId)) return@groupLoop
+            val stats = repository.readSocialGroupStats(groupId)
+            stats.forEach memberLoop@{ member ->
+                if (member.uid == myUid) return@memberLoop
+                val routineIncomplete = member.routines?.any { !it.doneToday } ?: false
+                val scheduleIncomplete = member.schedule?.any { it.dateKey == today && it.status != "O" } ?: false
+                if (routineIncomplete || scheduleIncomplete) {
+                    repository.sendSocialGroupNudge(groupId, member.uid)
                 }
             }
         }

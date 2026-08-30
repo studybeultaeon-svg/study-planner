@@ -1,51 +1,62 @@
 Add-Type -AssemblyName System.Drawing
 
-# 픽셀아트 일출 아이콘 — Android ic_launcher_background.xml + ic_launcher_foreground.xml과 동일한 좌표
-$rects = @(
-    # 배경: 새벽하늘 그라데이션 (파랑 -> 주황), 9px 그리드 12줄 (108 기준)
-    @{x=0;y=0;w=108;h=9;c="#29B6F6"},
-    @{x=0;y=9;w=108;h=9;c="#4FC3F7"},
-    @{x=0;y=18;w=108;h=9;c="#81D4FA"},
-    @{x=0;y=27;w=108;h=9;c="#B3E5FC"},
-    @{x=0;y=36;w=108;h=9;c="#FFE0B2"},
-    @{x=0;y=45;w=108;h=9;c="#FFCC80"},
-    @{x=0;y=54;w=108;h=9;c="#FFB74D"},
-    @{x=0;y=63;w=108;h=9;c="#FFA726"},
-    @{x=0;y=72;w=108;h=9;c="#FF9800"},
-    @{x=0;y=81;w=108;h=9;c="#FB8C00"},
-    @{x=0;y=90;w=108;h=9;c="#F57C00"},
-    @{x=0;y=99;w=108;h=9;c="#EF6C00"},
-    # 전경: 태양 + 광선 + 언덕
-    @{x=36;y=18;w=27;h=9;c="#FFF176"},
-    @{x=27;y=27;w=45;h=9;c="#FFEE58"},
-    @{x=27;y=36;w=45;h=9;c="#FFCA28"},
-    @{x=27;y=45;w=45;h=9;c="#FFA726"},
-    @{x=36;y=54;w=27;h=9;c="#FF8F00"},
-    @{x=18;y=9;w=9;h=9;c="#FFF9C4"},
-    @{x=72;y=9;w=9;h=9;c="#FFF9C4"},
-    @{x=18;y=63;w=9;h=9;c="#FFF9C4"},
-    @{x=72;y=63;w=9;h=9;c="#FFF9C4"},
-    @{x=9;y=72;w=18;h=9;c="#1E293B"},
-    @{x=81;y=72;w=18;h=9;c="#1E293B"},
-    @{x=0;y=81;w=108;h=27;c="#1E293B"}
-)
+# Sunrise icon (smooth curves). Shares the same 108x108 coordinates/design as
+# Android ic_launcher_background.xml + ic_launcher_foreground.xml and
+# SunriseIcon.kt (tray/window icon). Replaces the old blocky pixel-art version
+# (icon remake 2026-08-26). Comments kept ASCII-only: Windows PowerShell 5.1
+# misreads UTF-8 .ps1 files without a BOM using the system codepage, which
+# silently corrupts non-ASCII text and breaks later statements.
 
 function New-IconBitmap([int]$size) {
     $bmp = New-Object System.Drawing.Bitmap $size, $size
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
-    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
     $scale = $size / 108.0
-    foreach ($r in $rects) {
-        $col = [System.Drawing.ColorTranslator]::FromHtml($r.c)
-        $brush = New-Object System.Drawing.SolidBrush $col
-        $rx = [Math]::Floor($r.x * $scale)
-        $ry = [Math]::Floor($r.y * $scale)
-        $rw = [Math]::Ceiling($r.w * $scale)
-        $rh = [Math]::Ceiling($r.h * $scale)
-        $g.FillRectangle($brush, $rx, $ry, $rw, $rh)
-        $brush.Dispose()
-    }
+
+    # Sky gradient background (sky blue -> peach -> orange)
+    $rect = New-Object System.Drawing.Rectangle 0, 0, $size, $size
+    $skyBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+        $rect,
+        [System.Drawing.ColorTranslator]::FromHtml("#4FC3F7"),
+        [System.Drawing.ColorTranslator]::FromHtml("#FB8C00"),
+        [System.Drawing.Drawing2D.LinearGradientMode]::Vertical
+    )
+    $blend = New-Object System.Drawing.Drawing2D.ColorBlend
+    $blend.Colors = @(
+        [System.Drawing.ColorTranslator]::FromHtml("#4FC3F7"),
+        [System.Drawing.ColorTranslator]::FromHtml("#FFCC80"),
+        [System.Drawing.ColorTranslator]::FromHtml("#FB8C00")
+    )
+    $blend.Positions = [float[]]@(0.0, 0.5, 1.0)
+    $skyBrush.InterpolationColors = $blend
+    $g.FillRectangle($skyBrush, $rect)
+    $skyBrush.Dispose()
+
+    # Sun (halo + disc)
+    $sunCx = 54 * $scale; $sunCy = 39 * $scale
+    $haloR = 16 * $scale; $coreR = 12 * $scale
+    $haloBrush = New-Object System.Drawing.SolidBrush([System.Drawing.ColorTranslator]::FromHtml("#FFF3E0"))
+    $g.FillEllipse($haloBrush, $sunCx - $haloR, $sunCy - $haloR, $haloR * 2, $haloR * 2)
+    $haloBrush.Dispose()
+    $coreBrush = New-Object System.Drawing.SolidBrush([System.Drawing.ColorTranslator]::FromHtml("#FFB300"))
+    $g.FillEllipse($coreBrush, $sunCx - $coreR, $sunCy - $coreR, $coreR * 2, $coreR * 2)
+    $coreBrush.Dispose()
+
+    # Hill silhouette (two rolling bumps, bezier curves - same control points as Android/Compose)
+    function P([double]$x, [double]$y) { New-Object System.Drawing.PointF (($x * $scale)), (($y * $scale)) }
+    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $path.AddLine((P 21 87), (P 21 74))
+    $path.AddBezier((P 21 74), (P 28 60), (P 40 58), (P 50 68))
+    $path.AddBezier((P 50 68), (P 58 76), (P 68 56), (P 78 64))
+    $path.AddBezier((P 78 64), (P 82 67), (P 85 70), (P 87 73))
+    $path.AddLine((P 87 73), (P 87 87))
+    $path.CloseFigure()
+    $hillBrush = New-Object System.Drawing.SolidBrush([System.Drawing.ColorTranslator]::FromHtml("#1E3A5F"))
+    $g.FillPath($hillBrush, $path)
+    $hillBrush.Dispose()
+    $path.Dispose()
+
     $g.Dispose()
     return $bmp
 }
@@ -61,7 +72,7 @@ foreach ($s in $sizes) {
     $bmp.Dispose()
 }
 
-$outPath = "C:\Users\sunae\OneDrive\바탕 화면\클로드\관리앱\phone-lock-desktop\packaging\app-icon.ico"
+$outPath = Join-Path $PSScriptRoot "app-icon.ico"
 $fs = [System.IO.File]::Create($outPath)
 $bw = New-Object System.IO.BinaryWriter($fs)
 
@@ -93,3 +104,10 @@ $bw.Close()
 $fs.Close()
 
 Write-Output "Written: $outPath"
+
+# Also save a large preview PNG
+$previewBmp = New-IconBitmap 512
+$previewPath = Join-Path $PSScriptRoot "app-icon-preview.png"
+$previewBmp.Save($previewPath, [System.Drawing.Imaging.ImageFormat]::Png)
+$previewBmp.Dispose()
+Write-Output "Written: $previewPath"

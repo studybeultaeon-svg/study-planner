@@ -10,6 +10,8 @@ import androidx.room.PrimaryKey
 data class AppGroup(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
+    /** 이 그룹이 뭘 하는 그룹인지 짧은 설명 — "모임" 공유의 "작동 중인 관리 그룹"에서 이름과 함께 보여준다. */
+    val description: String = "",
     /** 일일 사용 한도(초). null이면 미적용. */
     val dailyLimitSeconds: Int? = null,
     /** 일일 사용 한도가 적용되는 시간대(분). 둘 다 null이면 하루 종일 적용된다. */

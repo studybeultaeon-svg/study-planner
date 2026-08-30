@@ -4,6 +4,320 @@
 
 ---
 
+## 2026-08-30 (76차 세션) — "모임" 공유/공개범위 대폭 확장(모임별 설정 + 사용자별 비공개 + 공유 항목 6종) + 관리자 권한 기반 설정탭 숨김
+
+사용자 요청 5건을 양 플랫폼(안드로이드/데스크탑)에 대칭 구현. Room DB 스키마는 건드리지 않음(전부 SharedPreferences/JsonStore 로컬 설정 + 기존 `groups/{id}/stats/{uid}` RTDB 노드 필드 확장), RTDB 보안 규칙도 필드 화이트리스트가 없어 변경 불필요.
+
+**1) 관리자 권한 기반 설정탭 숨김**: 기존에 최상위 탭(관리/공부/루틴/모임)에만 적용되던 `permRoutine/permStudy/permManage/permSocial`(승인 시 관리자가 지정) 필터링을 설정 화면의 서브탭(공통/루틴/공부/관리/모임)에도 동일 적용 — "공통"은 로그아웃 등 항상 필요해서 예외. 안드로이드 `ui/SettingsScreen.kt`, 데스크탑 `ui/SettingsScreen.kt` 동일 패턴.
+
+**2) 모임별 공유 설정(전역 → 모임별)**: 62차에 앱 전체 공통이던 `shareRoutinesToGroup`/`shareStudyToGroup`/`shareStreakToGroup` 전역 토글 3개를 완전히 제거하고, 모임마다 다르게 설정하는 `GroupShareSettings`(모임ID -> 설정)로 교체 — 74차 무전기 설정을 전역→모임별로 옮긴 선례와 동일 패턴. 안드로이드는 `AppPreferences.groupShareSettingsJson`(JSON 맵), 데스크탑은 `AppData.groupShareSettings: MutableMap<String, GroupShareSettings>`. 각 모임 화면(`SocialGroupMembersScreen.kt`)에 새 "🔒 공유 설정" 버튼(안드로이드 IconButton, 데스크탑 TextButton)으로 진입하는 `GroupShareSettingsDialog`(양 플랫폼 신규 파일) 추가, 설정 화면의 "모임 공유 설정" 섹션은 안내 문구만 남김(무전기 설정 섹션과 동일 처리).
+
+**3) 항목 6종으로 확장(기존 루틴/공부/스트릭 3종 + 신규 3종)**: `shareSchedule`(오늘 캘린더 일정 목록+완료여부), `shareStudyingNow`(지금 공부/뽀모도로 중인지+업무 이름 — 로컬 타이머 상태 OR `PomodoroSyncClient.isStudyTimerActive()` 원격신호), `shareActiveGroup`(지금 실제로 나를 제한 중인 관리 그룹 이름 — `LockEvaluator.isCurrentlyRestricting()`으로 전체 그룹 순회 판정, 그룹 "이름"을 그대로 목적 설명으로 사용해 별도 필드 신설/Room 스키마 변경 회피). `SocialGroupSyncClient.MemberStats`/`pushMyStats`/`readGroupStats`에 새 필드 추가(양 플랫폼), `SocialGroupMemberDetailScreen.kt`에 "📅 오늘 일정"/"⏱️ 지금 상태"/"🗂️ 작동 중인 관리 그룹" 카드 3개 신규.
+
+**4) 모임 내 사용자별(상대방별) 공개 범위 — "모임 내 사용자 상세 설정"**: 서로 독립인 두 방향.
+   - **내 정보를 이 사람에게 숨기기**: 내 stats push에 `hiddenFromUids`(uid 목록)를 항상 함께 실어 RTDB에 올리고(공유 토글 여부와 무관 — 접근제어 메타데이터라 별도 취급), 상대 화면에서 자기 uid가 그 목록에 있으면 항목별 공유 여부와 무관하게 전체를 "비공개"로 렌더링. RTDB 필드 단위 검증 규칙이 없어 진짜 서버 측 강제는 아니고(direct REST 조회로는 우회 가능) 클라이언트가 서로 신뢰하는 소셜 기능의 성격상 이 정도 수준으로 충분하다고 판단 — DECISIONS.md 참고.
+   - **이 사람 정보를 내 화면에서 숨기기(관심없음)**: 순수 로컬 설정(`hiddenPeerUidsFor`/`setHiddenPeerUid`, RTDB 미전송), 켜면 상세화면이 그 사람 데이터를 아예 렌더링하지 않고 "숨겼습니다" 안내만 표시.
+   - 두 토글 모두 `SocialGroupMemberDetailScreen.kt`(양 플랫폼)의 새 "👤 이 사람에 대한 내 설정" 카드에 위치(자기 자신 상세페이지에는 안 뜸).
+
+**5) 컴파일 검증**: 데스크탑 `compileKotlin`, 안드로이드 `compileDebugKotlin` 둘 다 `C:\build\phone-lock-desktop`/`C:\AndroidBuilds\phone-lock-android`(OneDrive 밖 로컬 경로, robocopy 동기화 후) 기준 BUILD SUCCESSFUL 확인. 안드로이드 쪽은 이번에 `AndroidBuilds`의 `build.gradle.kts`가 OneDrive 원본과 오래 안 맞아(75차의 `buildConfig=true` 추가분 등 누락) `BuildConfig` unresolved 에러가 먼저 났었는데, gradle.kts 파일도 함께 동기화해서 해결 — src만 robocopy하는 기존 루틴에 gradle.kts류 설정 파일 동기화가 누락되기 쉽다는 점 확인.
+
+**미완료(다음 세션 우선순위)**: 실기기 배포는 하지 않음(컴파일 검증까지만) — 안드로이드 APK/데스크탑 재배포 및 실사용 검증 필요.
+
+---
+
+## 2026-08-30 (75차 세션) — 자체 업데이트 기능(GitHub Releases 기반) 신규 구현 + 실제 릴리스 파이프라인 가동
+
+**1) 자체 업데이트 신규 구현(안드로이드+데스크탑)**: 사용자 요청 — 설정탭 초기화 시각(`dailyResetHour`) 기준 "오늘"이 바뀌면 하루 1회 GitHub Releases(`studybeultaeon-svg/study-planner`, 공부앱 웹앱과 같은 저장소)를 조회해 새 버전이 있으면 화면에 "업데이트를 진행하세요" 배너를 띄우고, 버튼을 누르면 실제 다운로드/설치까지 수행한다.
+- **태그 규칙**: 안드로이드는 `android-<versionCode>`(빌드 시각 자동 증가값과 동일), 데스크탑은 `desktop-<BuildInfo.BUILD_TIMESTAMP>` — 데스크탑엔 안드로이드 versionCode 같은 자동 증가 값이 없어서, `build.gradle.kts`에 안드로이드와 같은 방식(빌드 시각)으로 `BuildInfo.kt`를 컴파일 시점에 자동 생성하는 Gradle 태스크(`generateBuildInfo`) 신규 추가.
+- **안드로이드**: `service/UpdateChecker.kt`(신규, GitHub Releases API 조회, `HttpURLConnection`+`org.json`, `PomodoroSyncClient`와 동일한 fail-safe 원칙), `ui/UpdateBanner.kt`(신규, `DownloadManager`로 APK 다운로드 후 설치 인텐트 자동 실행, "출처를 알 수 없는 앱 설치" 권한 없으면 그 설정으로 안내), `AndroidManifest.xml`에 `REQUEST_INSTALL_PACKAGES` 권한 추가, `app/build.gradle.kts`에 `buildFeatures.buildConfig = true` 추가(BuildConfig.VERSION_CODE 참조용, 이전엔 비활성화 상태였음). `PhoneLockRepository.checkForUpdateIfNeeded()`/`pendingUpdateApkUrl()`/`checkForUpdateNow()`(설정 화면 수동 확인용, 하루 1회 가드 무시) 신규, `AppMonitorAccessibilityService.tick()`에서 `applyDailyGroupResetIfNeeded()`와 같은 자리에서 호출. `MainActivity.kt`의 `PhoneLockApp` Scaffold 최상단에 배너 삽입.
+- **데스크탑**: `monitor/DesktopUpdateChecker.kt`(신규, `java.net.http.HttpClient` 사용, 안드로이드판과 대칭), `ui/UpdateBanner.kt`(신규, 설치파일을 임시폴더에 받아 `ProcessBuilder`로 실행 후 앱 자신은 종료 — 실행 중인 파일을 installer가 덮어써야 하므로). `Models.kt`/`JsonStore.kt`에 `lastUpdateCheckDate`/`updateAvailableBuildTimestamp`/`updateAvailableInstallerUrl` 필드+parse/save 추가. `Repository.checkForUpdateIfNeeded()`(네트워크 I/O는 다른 push 함수들과 같은 이유로 락 밖 `Thread`에서 수행)/`pendingUpdateInstallerUrl()`/`checkForUpdateNow(onResult)`(설정 화면 수동 확인용) 신규, `EnforcementService.tick()`에서 `applyDailyGroupResetIfNeeded()`와 같은 자리에서 호출. `MainScreen.kt` 상단(기존 확장 heartbeat 경고 배너와 같은 자리)에 배너 삽입.
+- **설정 화면**: 양 플랫폼 공통 서브탭에 "업데이트" `SectionCard` 신규 — 현재 버전 표시 + "지금 확인" 버튼(하루 1회 가드와 무관하게 즉시 조회) + 새 버전 발견 시 그 자리에 실제 업데이트 버튼이 나타남(위 `UpdateBanner` 재사용).
+
+**2) GitHub 릴리스 파이프라인 실제 가동**: 저장소는 사용자가 지정한 기존 공부앱 웹앱 저장소(`studybeultaeon-svg/study-planner`, public, 기본 브랜치 `main`) 재사용. `gh` CLI가 호스트에 없어 `winget install GitHub.cli`로 설치 후 device-code 브라우저 인증(비밀번호/토큰은 Claude가 직접 다루지 않음, 사용자가 브라우저에서 직접 승인)으로 `studybeultaeon-svg` 계정 인증 완료. 이 세션 동안 안드로이드 3회(`android-1788020793`/`1788021447`/`1788023028`), 데스크탑 3회(`desktop-1788020957`/`1788021554`/`1788022748`) 릴리스를 실제로 게시하고 GitHub API 응답 형식까지 직접 검증.
+
+**3) 빌드 환경 재확인**: 데스크탑을 OneDrive 폴더에서 직접 컴파일하면 [[BUGS.md]] "OneDrive 동기화 폴더에서 직접 Gradle 빌드" 문제가 이번에도 재현돼(`Unable to delete directory`), 기존에 있던 로컬 사본 `C:\build\phone-lock-desktop`으로 옮겨서 빌드 — 안드로이드의 `AndroidBuilds\phone-lock-android`와 동일한 역할. `HANDOFF.md`의 "실행 방법" 데스크탑 절차가 예전 세션의 임시 경로(`AndroidBuilds\phone-lock-desktop`, 존재하지 않는 JDK 경로)를 그대로 남기고 있던 걸 발견해 `C:\build\phone-lock-desktop` + 실제 사용 가능한 JDK 경로(`C:\Users\sunae\jdk21-temurin\...`)로 갱신.
+
+**4) 이 호스트 데스크탑 앱 실제 배포**: 사용자 요청으로 "데스크탑은 기존처럼 수정되면 바로 이 호스트에 반영"하는 방식으로 복귀 — 위 배포 검증 절차(프로세스 종료→동기 robocopy→jar 해시 비교→재실행) 그대로 따라 새 빌드를 `C:\Users\sunae\PhoneLockDesktopApp\`에 실제로 반영, `vm-build-output\` 수동 설치용 사본도 매번 함께 갱신.
+
+---
+
+## 2026-08-29~30 (74차 세션) — "무전기" 후속 버그 다수 수정 + 모임별 설정/TTS 전면 재설계 + 예약 알람 500개 한도 크래시 원인 규명/수정
+
+**1) 안드로이드 72~73차 누적분 빌드/배포**: 호스트에서 직접 빌드(사용자 승인) — Gradle 8.7 + Temurin JDK 21 재사용, `assembleDebug`/`assembleRelease` 모두 BUILD SUCCESSFUL. 릴리즈 빌드가 `MainActivity.kt`의 신규 `registerForActivityResult`(알림 권한) 때문에 `InvalidFragmentVersionForActivityResult` lint 오류로 실패 → `androidx.fragment:fragment-ktx:1.8.2` 명시적 의존성 추가로 해결(lint 억제 아닌 실제 버전 충돌 해결). APK 두 위치 + release 서명 확인(`CN=PhoneLock`) 완료.
+
+**2) 무전 관련 버그 다수 수정**:
+- 삭제 버튼이 서버 삭제 성공 여부와 무관하게 로컬 인박스에서 항상 항목을 지우던 버그 — 성공했을 때만 지우도록 수정.
+- 전송/삭제 실패 시 원인을 안 보여주고 "네트워크 연결을 확인해주세요" 같은 고정 문구만 뜨던 문제 — HTTP 상태코드+RTDB 응답 본문을 그대로 예외 메시지에 담아 노출하도록 변경(양 플랫폼, `SocialGroupSyncClient.sendVoiceMessage`/`deleteVoiceMessage`). 이 진단 개선으로 실제 401(Permission denied) 원인을 확정 — `firebase-database.rules.json`에 `voiceMessages`/`walkieSettings` 규칙을 추가했지만 콘솔에 아직 게시가 안 된 상태였을 가능성이 높다고 판단, 사용자에게 규칙 전체를 다시 게시하도록 안내(Claude는 Firebase 콘솔 접근 권한이 없어 직접 게시 불가).
+- FORCED(즉시재생) 모드에서 삭제가 서버에서 실패하면 같은 메시지가 폴링(7초)마다 계속 재생되던 버그 — "재생 후 삭제"에서 "삭제 확인 후 재생"으로 순서를 바꿔 삭제 실패 시 이번엔 건너뛰고 다음 폴링에서 재시도하도록 수정.
+- 재생 후 즉시 삭제 대신 24시간 유예 후 자동 정리(`listenedAtMillis` 필드, `readIncomingVoiceMessages` 조회 시 만료분 자동 삭제) + 인박스에 명시적 "삭제" 버튼 추가.
+
+**3) 무전기 아키텍처 전면 재설계(사용자 요청)**:
+- **모임별 설정**: 전역 Settings 탭의 "무전기(음성 메시지)" 섹션 완전 제거, 각 모임 화면 ⚙ 버튼에서 그 모임 전용 `GroupWalkieSettings`(켜짐/모드/볼륨/`WalkieSchedule` 리스트)를 `groups/{groupId}/walkieSettings/{myUid}`에 저장. 요일×시간대 허용 일정을 여러 개 등록 가능(관리앱 그룹과 같은 요일마스크 규칙, 다중 등록 지원이 차이점) — `GroupWalkieSettingsDialog.kt`(신규, 양 플랫폼).
+- **"깨우기"와 통합**: 기존에 따로 있던 "😴 깨우기"(넛지)와 "🎙️ 무전"(음성) 버튼을 하나의 선택창(`WakeOptionsDialog`, 양 플랫폼 `ui/components/WakeMessageDialogs.kt` 신규)으로 합쳐 "알림만 보내기 / 음성 메시지 녹음 / 텍스트 메시지(TTS)" 3택 제공.
+- **TTS 텍스트 메시지 신규**: 텍스트를 적어 보내면 상대 기기가 읽어줌. 안드로이드는 `android.speech.tts.TextToSpeech`(`TtsPlayer.kt` 신규). 데스크탑은 Windows 내장 SAPI를 PowerShell로 호출하되, **사용자(다른 모임 멤버) 입력 텍스트를 절대 PowerShell 커맨드 문자열에 직접 이어붙이지 않고**, 고정된(사용자 입력이 섞이지 않는) `speak.ps1` 스크립트를 앱 데이터 폴더에 한 번만 생성해두고 텍스트는 `-File`+`-Text` 프로세스 인자로만 전달 — PowerShell의 `param()` 바인딩은 이를 코드가 아닌 순수 데이터로만 받아들이므로 커맨드 인젝션이 불가능(`TtsPlayer.kt` 데스크탑판 신규, 코드 주석에 설계 이유 명시).
+- `VoiceMessageInfo`/전송 함수에 `textMessage` 필드 추가(오디오 대신 텍스트만 채우면 TTS 메시지), 기존 저장 구조(`voiceMessages`) 그대로 재사용.
+- 버그: `WakeOptionsDialog`에서 "음성"/"텍스트" 선택 시 `onDismiss()`(대상 정보 초기화)를 먼저 호출한 뒤 다음 단계를 열어서, 녹음/입력창은 뜨지만 보낼 대상이 이미 사라져 "보내기"를 눌러도 조용히 아무 일도 안 일어나던 버그 — `onDismiss()` 호출 순서 수정으로 해결(양 플랫폼).
+
+**4) 심각한 크래시 버그 발견/수정 — 예약 알람 500개 한도 초과**:
+- 재설계 배포 후 "앱을 켜자마자 꺼진다"는 재현 접수. 최초엔 `WalkieTalkieService`가 이제 전 사용자에게 무조건 실행되도록 바뀐 점(안드로이드 12+ 포그라운드 서비스 시작 제약 가능성)을 의심해 `runCatching` 방어 코드 + 전역 크래시 로거(`PhoneLockApplication.kt` 신규, `crash_log.txt`에 스택트레이스 기록 + 설정 화면에서 공유 가능) 추가 — 재발.
+- 사용자가 넘겨준 실제 크래시 로그에서 `IllegalStateException: Maximum limit of concurrent alarms 500 reached` 확인. 근본 원인: `PhoneLockRepository.syncRoutinesFromFirebase()`가 원격 데이터가 더 최신이면 로컬 루틴을 전부 지우고 새 Room auto-increment ID로 재삽입하는데, 루틴 알림 예약(`RoutineAlarmScheduler`)이 이 ID를 그대로 `AlarmManager` requestCode로 쓰고 있어서 — 동기화 때마다 옛 ID의 예약 알람은 취소할 방법이 영영 사라지고 새 알람만 계속 추가돼, 이 세션 동안의 잦은 재실행/동기화로 결국 안드로이드 앱당 한도(500개)를 넘겨버린 것.
+- 수정 3단: ① `syncRoutinesFromFirebase()`가 delete+insert 트랜잭션 전에 지금 있는 루틴들의 알람을 먼저 명시적으로 취소, ② 이미 쌓인 알람을 정리하는 일회성 스윕(`RoutineAlarmScheduler.cleanupLeakedAlarmsIfNeeded`, ID 1~20000 범위를 훑어 취소 시도, `AppPreferences.leakedAlarmsCleaned`로 1회만 실행), ③ `scheduleAlarm()` 자체를 `runCatching`으로 감싸 혹시 한도에 다시 걸려도 앱 전체가 죽지 않게 방어.
+
+**5) 알림 진동 전수 점검**: 무전기 메시지/모임 깨우기 알림 채널에 진동이 빠져있던 걸 발견해 `enableVibration(true)`+`vibrationPattern` 추가했으나, 안드로이드는 알림 채널을 한 번 만들면 앱이 코드로 재정의할 수 없다는 정책 때문에 이 세션 중 이미 진동 없이 만들어진 기존 채널엔 반영이 안 됨 — `group_nudge` → `group_nudge_v2`, `walkie_message` → `walkie_message_v2`로 채널 ID를 새로 발급해 우회(61차 루틴 알림 채널과 동일 패턴). 사용자 요청에 따라 "접근성 서비스 감시"(기능적 시스템 경고)는 진동 없이 유지, "사용자 참여용"(루틴/스트릭/깨우기/무전기) 알림만 진동으로 구분.
+
+**6) "그냥 깨우기"(넛지) 지연 개선**: 기존엔 `GroupNudgeWorker`(WorkManager 최소 15분 주기)로만 확인해 짧은 테스트에서는 사실상 안 오는 것처럼 보였음 — `WalkieTalkieService`의 7초 폴링 루프에 넛지 확인(`pollNudges`)도 포함시켜 음성/텍스트 메시지와 같은 주기로 근접 실시간 전달되도록 개선. 기존 15분 워커는 서비스가 죽어있는 드문 경우의 보완용으로 유지.
+
+**7) 스트릭 알림 기능 재확인**: 52차에 이미 구현된 기능(하루 중 랜덤 시각에 스트릭 응원/경고 알림)이 정상적으로 코드에 존재함을 확인 — 기본값이 꺼짐(opt-in)이라 사용자가 설정 > 루틴 탭에서 직접 켜지 않으면 동작하지 않는다는 걸 재안내.
+
+**검증**: 매 변경마다 양 플랫폼 컴파일 확인, 안드로이드 debug/release APK 여러 차례 재빌드/배포, 데스크탑 `createDistributable`+robocopy(FAILED 0)+jar 해시 확인+재실행+워치독 재활성화 반복 수행. **이 세션의 신규/변경 기능(모임별 무전기 설정, 다중 일정, TTS, 알람 누수 수정) 전부 실기기 최종 검증은 아직 진행 중** — 사용자가 순차적으로 재현/재테스트하며 여러 버그를 실시간으로 발견해 그때그때 수정한 세션.
+
+---
+
+## 2026-08-29 (73차 세션) — "무전기"(모임 강제 음성 메시지) 신규 구현 + 데스크탑 "모임 생성 실패" 버그 수정/빌드/배포
+
+**1) 버그 발견/수정: 데스크탑 "모임 생성"이 항상 실패함**
+- 사용자 신고("모임 생성이 안 됨") 조사 결과, 데스크탑 `SocialGroupSyncClient.kt`의 `createGroup()`이 안드로이드와 다른 방식으로 구현돼 있었음을 발견 — 빈 body(`{}`)로 `groups`에 먼저 POST해서 `groupId`만 받아온 뒤, 별도 PUT으로 `info`(name/ownerUid/inviteCode/createdAt)를 쓰는 2단계 방식.
+- 64/68차에 강화된 `firebase-database.rules.json`의 `groups/$groupId` 쓰기 규칙(`!data.exists() && newData.child('info').child('ownerUid').val() === auth.uid`)은 **첫 write의 newData 안에 이미 info가 있어야** 통과하는데, 빈 body push는 이 조건을 절대 만족할 수 없어 그 시점부터 모든 모임 생성이 거부되고 있었음. 안드로이드는 애초에 info를 포함한 body로 한 번에 POST해서 이 버그가 없었고, 70차 실기기 검증도 "이미 만들어져 있던 모임"으로 확인해서 못 잡았던 것으로 추정.
+- 수정: `push()` 헬퍼가 body를 받도록 확장, `createGroup()`이 초대코드를 먼저 만든 뒤 info를 포함한 body로 한 번에 push하도록 안드로이드와 동일한 패턴으로 재작성.
+
+**2) "무전기"(모임 내 강제 음성 메시지) 신규 구현**: 모임 멤버에게 음성 메시지를 보내면 수신자가 수락하지 않아도(설정에 따라) 자동 재생되는 기능 제안 → 탐색(FCM/백엔드 필요성, 기존 UI/서비스/설정 저장 패턴, 오디오 코덱 유무) → 계획 승인 → 구현까지 진행.
+- **아키텍처 결정**(자세한 배경은 DECISIONS.md 참고): FCM/Cloud Functions 백엔드 도입 대신 포그라운드 서비스+빠른 폴링으로 타협(사용자 선택), 오디오는 새 코덱 의존성 없이 표준 WAV(8kHz mono 16-bit, 최대 10초, Android `AudioRecord`/데스크탑 `javax.sound.sampled`), 저장은 새 Firebase Storage 도입 없이 base64로 기존 RTDB에.
+- RTDB `groups/{id}/voiceMessages/{targetUid}/{msgId}` 스키마(push-id 리스트, nudges와 달리 재생/확인 후 삭제) + `firebase-database.rules.json`에 규칙 신설(nudges와 동일 조건, `$msgId` 한 단계 더 중첩) — **콘솔 재적용은 아직 안 함**.
+- `SocialGroupSyncClient.kt`(양 플랫폼)에 `sendVoiceMessage`/`readIncomingVoiceMessages`/`deleteVoiceMessage` 추가, `PhoneLockRepository.kt`(안드로이드)에 얇은 pass-through 추가.
+- 새 `VoiceRecorder.kt`/`VoicePlayer.kt`(양 플랫폼) — 녹음/재생, 볼륨은 앱 설정 배율만 적용(기기 볼륨/무음은 항상 존중, 특수 스트림으로 안 뚫음).
+- 설정: `walkieReceiveEnabled`(기본 **꺼짐**, opt-in)/`walkieVolume`/`walkieMode`("FORCED" 즉시재생 vs "MESSAGE_ONLY" 메시지로 받기)/`walkieAllowedStartMinute`·`EndMinute`(허용 시간대) — Android `AppPreferences.kt`, Desktop `Models.kt`+`JsonStore.kt`(parse/serialize 둘 다)+`Repository.kt`. `SettingsScreen.kt`(양 플랫폼)에 새 SectionCard(이 프로젝트 첫 `Slider` 사용).
+- 송신 UI: `SocialGroupMemberDetailScreen.kt`(양 플랫폼)에 🎙️ 무전 버튼 + 녹음 다이얼로그(시작/정지, 최대 10초 자동종료). 안드로이드는 RECORD_AUDIO 런타임 권한 요청 플로우가 이 기능으로 처음 생김.
+- 수신: 안드로이드는 새 `WalkieTalkieService`(포그라운드 서비스, `foregroundServiceType="mediaPlayback"`, 상주 알림 1개, 7초 폴링, `walkieReceiveEnabled` 토글에 start/stop 연동) — 접근성 서비스(켜짐에만 동작)나 `GroupNudgeWorker`(WorkManager 15분 하한)에 안 얹은 이유는 DECISIONS.md 참고. 데스크탑은 `Main.kt`에 켜져 있는 동안만 7초(꺼지면 30초) 주기 별도 폴링 루프 + 새 `VoiceMessageNotifier.kt`. "즉시재생" 모드는 배너 알림+자동재생 후 삭제, "메시지로 받기" 모드는 `SocialGroupMembersScreen.kt`(양 플랫폼) 인박스에 남겨 사용자가 직접 재생.
+- 강제 재생 배너는 안드로이드 `TYPE_ACCESSIBILITY_OVERLAY`(접근성 서비스 전용이라 일반 서비스에서 못 씀) 대신 일반 알림으로 단순화 — 계획 대비 구현 단계에서 조정한 부분.
+- `AndroidManifest.xml`에 `RECORD_AUDIO`/`FOREGROUND_SERVICE_MEDIA_PLAYBACK` 퍼미션 + `WalkieTalkieService` 등록.
+
+**3) 빌드/배포**: 이 세션엔 gradle이 없어 처음엔 전부 컴파일 미검증으로 남을 뻔했으나, 사용자가 "여기서 진행해"(호스트에서 직접 빌드)를 명시적으로 요청 — 원래 VM_BUILD_HANDOFF.md 절차상 별도 VM에서 빌드해야 하는 원칙(호스트엔 실제 운영 워치독+프로덕션 Firebase가 있어 리스크)이 있었지만, 사용자가 리스크를 이해하고 진행하기로 함.
+- 호스트에 이미 캐시돼 있던 Gradle 8.7(`~/.gradle/wrapper/dists/gradle-8.7-bin`)을 발견, JDK는 Android Studio 번들 JBR 21(jpackage 없음)로 `compileKotlin`까지는 성공했으나 `createDistributable`(jpackage 필요)은 실패 — jpackage 포함 Temurin JDK 21을 새로 다운로드(`~/jdk21-temurin`)해서 해결. 참고로 시스템에 이미 있던 JDK 25는 jpackage는 있지만 Gradle 8.7의 Kotlin DSL 스크립트 컴파일러가 "25.0.2" 버전 문자열을 못 읽어 애초에 Gradle 자체가 안 돌아감.
+- `AndroidBuilds\phone-lock-desktop`에 최신 소스 robocopy 동기화(PowerShell 도구로, 기존 원칙대로) → `compileKotlin`/`createDistributable` 성공 → 빌드 산출물 jar 안에 `voiceMessages`/`VoiceRecorder`/`VoicePlayer`/`VoiceMessageNotifier` 등 새 코드가 실제로 포함된 것을 클래스 목록으로 재확인 → 표준 배포 절차(워치독 비활성화→프로세스 종료→robocopy 배포, FAILED 0 확인→jar 해시 일치 확인→재실행→워치독 재활성화) 그대로 수행, 배포 완료.
+- **안드로이드는 이번 세션에 빌드 시도 자체를 안 함 — 72차분과 함께 다음 세션 최우선 작업.**
+
+**4) [데이터] 관리앱 그룹 8개 `groupEnabled=false` 재적용(사용자 요청, 60차와 동일 원칙)**: 처음 껐을 때 `lastGroupAutoResetDate`가 아직 오늘 날짜로 안 찍혀있어서 앱 재시작 직후 42차 자동 재활성화 로직이 그대로 되살려버리는 걸 실제로 겪음 — 원인 파악 후 두 번째 시도에서 `lastGroupAutoResetDate`가 이미 오늘 날짜인 것까지 확인하고 재적용, 재시작 후에도 유지되는 것 확인. 순수 문자열 치환(+8바이트) + 백업 + Python `json` 모듈로 유효성 검증(PowerShell `ConvertFrom-Json`은 대용량 JSON 자체 파서 오류로 검증에도 안 씀, 기존 60차 교훈 재확인).
+
+---
+
+## 2026-08-28 (72차 세션) — Google 로그인 → 아이디/비밀번호 로그인 전면 교체 + "모임" 멤버 상세페이지 시각적 개편
+
+**1) 로그인 방식 전환**: Google Sign-In(Credential Manager/OAuth PKCE)을 완전히 제거하고 Firebase Authentication의 email/password 방식으로 교체 — 메인 로그인 화면이 "로그인 / 회원가입 / 게스트로 진행" 3개 선택지로 바뀜. Firebase Auth가 이메일 형식만 지원해서, 사용자가 입력하는 "아이디"를 내부적으로 가짜 이메일(`{아이디}@phonelockapp.local`)로 변환해 인증에 쓴다(화면엔 노출 안 됨) — uid 기반 기존 인프라(`AccountSyncClient`/`SocialGroupSyncClient`/`PomodoroSyncClient`, RTDB 스키마)는 전혀 안 건드림. 로그인용 아이디와 기존 "가입 신청" 단계(관리자 승인용 customId)의 아이디를 통합(사용자 확인 후 결정) — 로그인 성공 시 그 아이디를 그대로 가입 신청 아이디로 프리셋하고 화면에서 아이디 입력칸 자체를 숨김(게스트는 기존처럼 직접 입력).
+- 안드로이드: `service/GoogleAuthManager.kt` → `service/AuthManager.kt`로 교체(`signIn(id, password)`/`signUp(id, password)`/`signInGuest()`/`currentLoginId`), `androidx.credentials`/`googleid` 의존성 및 `com.google.gms.google-services` 플러그인은 유지(FirebaseAuth SDK 초기화에 필요)하되 Credential Manager/googleid 의존성 2종만 `build.gradle.kts`에서 제거. `AccountGateScreen.kt` 로그인 화면 전면 재작성.
+- 데스크탑: `monitor/GoogleAuthManager.kt` → `monitor/AuthManager.kt`로 교체 — 기존 OAuth PKCE + 로컬 브라우저 리다이렉트(RFC 8252) 전체를 제거하고 Firebase Identity Toolkit REST(`accounts:signUp`/`accounts:signInWithPassword`) 직접 호출로 대폭 단순화(브라우저 안 열림, 즉시 로그인). 세션 파일명(`google_auth.json`)은 하위 호환을 위해 유지.
+- 두 플랫폼 모두 `GoogleAuthManager` → `AuthManager` 이름 변경을 참조하는 전체 파일(약 8~9개)에 반영, "Google 로그인" 관련 문구/주석/에러 메시지를 전부 "로그인"으로 정정.
+- Firebase 콘솔의 Authentication → Sign-in method → Email/Password는 이 세션 후반에 사용자가 직접 활성화 완료(아래 "검증/배포" 참고). 기존에 Google 계정으로 이미 승인받은 사용자는 새 방식으로 로그인하면 Firebase가 **새 uid**를 발급하므로 예전 프로필/승인 상태와 연결이 끊긴다 — 재가입 신청 + 관리자 재승인이 필요하다는 점을 실사용자에게 안내할 것(현재 이 프로젝트는 1인 사용 전제라 실질 영향은 적음).
+
+**2) "모임" 멤버 상세페이지 개편**: 정보량과 시각 요소 부족 지적에 따라 확대.
+- 헤더 카드 신규 — 이니셜 아바타 원 + 닉네임 + "n분 전 갱신"(상대 시각, `updatedAt` 기준).
+- 오늘 루틴: 각 항목에 **아이콘**(`Routine.icon`)과 **시간대**(`Routine.timeSlot`, 칩 형태) 표시 추가(요청사항) — 이를 위해 `RoutineStat` 데이터 클래스에 `icon`/`timeSlot` 필드 신규 추가하고 push/read 양쪽(Firebase RTDB JSON 직렬화)에 반영, 목록을 시간순 정렬. 완료 현황 요약(n/m개, 진행 바)도 추가.
+- 오늘 공부: 기존 막대 진행률 대신 원형 게이지(Canvas `drawArc`)로 진행률을 표시, 옆에 공부 시간/진행률 텍스트 배치.
+- 스트릭: 숫자를 크게(40sp) 키우고 스트릭 일수 구간(1일 미만/3일 미만/7일 이상)에 따라 🔥 아이콘 개수가 늘어나는 시각 효과 추가.
+- 안드로이드/데스크탑 양쪽 `SocialGroupMemberDetailScreen.kt` 대칭 반영, `SocialGroupSyncClient.kt`(양쪽) `RoutineStat`에 필드 추가.
+
+**3) 첫 동기화 무한 실패 버그 발견/수정(사용자가 새 계정으로 실사용 중 "동기화가 안 된다"고 제보)**: 데스크탑 새 계정으로 실제 로그인해 Firebase RTDB를 REST로 직접 조회해보니 `profile`만 있고 `routines`가 전혀 안 올라가 있었음 — 원인은 `PomodoroSyncClient`의 `readRoutines`/`readCalendarTasks`/`readCalculator` 3개 함수가 "원격에 문서가 아직 없음"(신규 계정의 정상 상태, RTDB가 `body == "null"`을 돌려줌)과 "네트워크/파싱 오류"를 구분 못 하고 둘 다 `null`을 반환 → 호출부(`syncXFromFirebase()`)가 `result ?: return`으로 곧바로 포기해버려서 로컬에 있는 데이터를 원격에 올리는 분기(`else if (local.ts > result.ts) push`)에 아예 도달하지 못했음. 기존 사용자들은 항상 최초 1회라도 원격에 뭔가 있었기 때문에 지금까지 안 드러난 잠재 버그였고, 이번 로그인 방식 전환으로 "로컬엔 데이터가 있지만 원격은 완전히 비어있는 신규 계정" 시나리오가 처음 생기면서 발견됨. **해결**: `body == "null"`일 때 `null` 대신 빈 결과(모든 타임스탬프 `0L`)를 반환하도록 세 함수 모두 수정(안드로이드/데스크탑 양쪽, [[BUGS.md]] 참고) — 이러면 로컬이 항상 더 최신으로 판정돼 push가 정상적으로 일어난다. 수정 후 실제로 데스크탑 재시작만으로 `routines`가 Firebase에 올라가는 것을 REST 조회로 재확인함.
+
+**4) 관리자 승인 시 기능별 권한 범위 지정**: "관리자가 사용자를 허가할 때 루틴/공부/관리/모임 중 어디까지 허가할지 정할 수 있게" 요청 — `users/{uid}/profile`에 `permissions: {routine, study, manage, social}`(전부 boolean) 필드 신규. `AccountSyncClient.Permissions` 데이터클래스(양 플랫폼) 추가, `approveUser()`가 승인 시점에 이 값을 함께 기록, 이미 승인된 사용자도 관리자 패널에서 언제든 바꿀 수 있는 `updatePermissions()` 신규. 필드가 없는 옛 승인 사용자는 전부 `true`(제한 없음)로 취급해 하위호환 보장. UI는 승인 대기/승인됨 각 사용자 행에 4개 `FilterChip`(루틴/공부/관리/모임)을 인라인으로 추가하는 선에서 그침(관리자가 요청한 "복잡해지지 않게" 반영) — 별도 화면/저장 버튼 없이 칩 클릭 즉시 반영. 클라이언트 쪽은 `AppPreferences`(안드로이드)/`Repository`(데스크탑)에 `permRoutine`/`permStudy`/`permManage`/`permSocial` 캐시 필드를 추가해 `AccountGateScreen`이 매 승인 확인 때마다 갱신하고, `MainActivity`/`MainScreen`이 이 값에 따라 해당 탭 자체를 숨긴다(설정 탭은 항상 노출).
+
+**5) 계정 관리 UX 3건**: ① 게스트 로그인이 여전히 아이디 입력을 요구하던 것을 지적받아, 게스트는 닉네임만 입력하면 `GUEST`+무작위 6자를 자동 발급하도록 변경(충돌 시 최대 5회 조용히 재시도, 화면에 입력칸 자체가 없어 사용자가 재시도를 인지할 필요 없음). ② 가입 신청 화면에 "이전으로" 버튼 신규 — 로그아웃 후 로그인 화면으로 복귀. ③ 설정 화면에 "비밀번호 변경" 카드 신규(Firebase `updatePassword`/REST `accounts:update`, 데스크탑은 비밀번호 변경이 기존 refreshToken을 전부 무효화하는 Firebase 정책 때문에 응답의 새 refreshToken으로 세션을 통째로 교체해 재영속화하도록 처리) + "계정 삭제" 카드 신규(본인 전용, 확인 다이얼로그 포함 — `users/{uid}` RTDB 데이터 삭제 후 Firebase Auth 계정 자체 삭제). **한때 관리자 패널에도 "타인 계정 삭제" 버튼을 추가했으나, Firebase 정책상 관리자가 REST/클라이언트 권한으로는 남의 Firebase Auth 계정을 실제로 지울 수 없어(본인만 가능) 오해를 줄 수 있다는 사용자 판단으로 같은 세션에 다시 제거함 — 관리자는 기존 "승인취소"만 유지.** 참고로 아이디(`usernames/{customId}` 선점)는 RTDB 규칙상 삭제해도 영구히 재사용 불가 — 삭제 확인 다이얼로그에 고지.
+
+**검증/배포**: 양 플랫폼 모두 매 변경마다 `compileDebugKotlin`/`compileKotlin` BUILD SUCCESSFUL 확인 후, 안드로이드 `assembleRelease`(release keystore 서명 확인, `apksigner verify` exit 0) → `vm-build-output/android/app-release.apk` 갱신, 데스크탑은 watchdog 비활성화(사용자가 auto mode 권한 classifier 제한으로 직접 1회 실행, 이후엔 세션 내에서 계속 통과) → `createDistributable` → `C:\Users\sunae\PhoneLockDesktopApp` robocopy 배포(매번 FAILED 0) → watchdog 재활성화 → 재실행을 4~5차례 반복 완료. **사용자가 Firebase 콘솔에서 Authentication → Sign-in method → Email/Password를 직접 활성화 완료**, 데스크탑에서 실제로 새 계정 로그인/승인/동기화까지 실사용 확인함. 안드로이드는 APK 파일만 갱신된 상태로 실기기 설치는 아직.
+
+---
+
+## 2026-08-27 (71차 세션) — "모임" 안드로이드 닉네임/이메일 표시 버그 + 데스크탑 대비 밀린 디자인 반영
+
+사용자가 "모임 안에서 닉네임 대신 이메일로 뜬다"고 지적 → 짧은 기간에 데스크탑 위주로 여러 세션이 이어지며 안드로이드에 반영 안 된 부분이 누적된 것으로 파악, Explore 서브에이전트로 android/desktop 대응 파일 전수 비교 후 격차 반영.
+
+- **닉네임 대신 이메일 표시 버그 원인 확정 + 수정**: 안드로이드 `SocialGroupSyncClient.createGroup()`/`joinGroupByCode()`가 멤버 레지스트리(`groups/{id}/members/{uid}/displayName`)에 `GoogleAuthManager.currentUser?.displayName ?: email`(닉네임 시스템 미참조)을 그대로 썼던 게 원인 — 데스크탑은 이미 `myDisplayName()`(닉네임→커스텀아이디→이메일→uid 우선순위)을 쓰고 있었음. 두 함수 모두 `AccountSyncClient.myDisplayName(databaseUrl, apiKey)` 호출로 교체. 또한 기존에 이미 만들어진 모임에도 즉시 반영되도록 `SocialGroupMembersScreen.kt`의 `MemberRow` 표시 이름을 members 레지스트리 값 대신 stats(`pushMySocialStats`가 매번 `myDisplayName()`으로 최신화)의 `displayName`을 우선 사용하도록 변경 — 데스크탑은 애초에 members 레지스트리를 안 쓰고 stats만으로 렌더링해서 이 버그 자체가 없었음.
+- **비공유(shareRoutines=false) 멤버가 완료율 "0%"로 잘못 표시되던 버그 수정**: `MemberRow`에 `shareRoutines` 필드를 추가해 퍼센트 라벨을 "미공유→비공개 / 공유했지만 오늘 루틴 없음→- / 그 외→N%"로 데스크탑 `SocialGroupMembersScreen.kt`의 `percentLabel` 로직과 동일하게 분기.
+- **닉네임 설정 검증 로직 안드로이드 누락분 반영**(`SettingsScreen.kt`): 데스크탑은 1~20자 검증(빈 값/21자 이상 저장 차단), `singleLine`, 저장 중 버튼 비활성화+"저장 중..." 표시가 있었는데 안드로이드는 전부 없었음(무제한 길이 그대로 저장 가능) → 동일하게 반영, `AccountSyncClient.updateNickname()`도 데스크탑처럼 `nickname.trim()` 저장하도록 통일.
+- **모임 멤버 상세 화면(`SocialGroupMemberDetailScreen.kt`)에 "😴 깨우기" 버튼 누락**: 데스크탑은 상세 화면에서 바로 깨우기가 가능했으나 안드로이드는 목록 화면에서만 가능했음(상세 화면엔 버튼 자체가 없었음) → `TopAppBar` actions에 동일하게 추가.
+- **루틴 완료 체크 표시를 이모지(✅/⬜)에서 데스크탑과 동일한 Material `Icon(Filled.Check/Close)`로 교체**(`SocialGroupMemberDetailScreen.kt`) — 플랫폼별 이모지 폰트 렌더링 차이로 시각적 통일감이 달랐던 부분.
+- **모임 목록 "😴 깨우기" 버튼 피드백 강화**: 보낸 직후 라벨이 "보냄!"으로 바뀌는 데스크탑 동작을 안드로이드에도 추가(기존엔 Toast만 뜨고 버튼 라벨은 그대로였음).
+- **빌드/배포(같은 세션 후반)**: 사용자가 "apk 배포해" 요청 → 처음엔 Gradle/JDK 경로를 못 찾아 컴파일 미검증 상태였으나, `~/.gradle/wrapper/dists/gradle-8.7-bin`(캐시된 wrapper 배포판)과 `C:\build\jdk-temurin21\jdk-21.0.12.1+1`을 찾아내 빌드 파이프라인 재개. OneDrive → `C:\AndroidBuilds\phone-lock-android` robocopy `/MIR`(수정 5개 파일만 정확히 Newer로 반영, FAILED 0) → `assembleRelease` BUILD SUCCESSFUL(71차 신규 코드 컴파일 에러 없음 확인) → `apksigner verify`로 release keystore(`CN=PhoneLock`) 서명 확인 → `vm-build-output/android/app-release.apk` 갱신 + 사용자에게 파일 전달. 실기기 설치/기능 확인만 남음.
+- **의도적으로 손 안 댄 차이**: 데스크탑의 좌우 마스터-디테일 레이아웃, 아바타 강조 스타일(선택 시 primary 배경), 정렬 시 비공유자 위치(안드로이드: 맨 위 취급 / 데스크탑: 맨 아래 취급) 등은 플랫폼 구조 차이 또는 우열을 가리기 애매한 디자인 선택이라 이번엔 그대로 둠 — 필요하면 다음 세션에서 사용자 확인 후 통일 검토.
+
+---
+
+## 2026-08-27 (70차 세션) — 가입/승인 플로우 + 모임 + Google 로그인 실기기 검증 전부 완료(사용자 직접 확인)
+
+69차까지 코드/빌드/배포만 끝나고 남아있던 실기기 검증 항목을 사용자가 전부 직접 확인 완료 — 문서 갱신만 처리.
+
+- **Firebase 콘솔 규칙 재적용**: 68차에 재설계된 `firebase-database.rules.json`을 콘솔 Realtime Database > 규칙에 다시 붙여넣음(67차 이전 붙여넣은 버전은 구버전이었음).
+- **가입/승인 플로우 실기기 검증**: 로그인/게스트 온보딩 → 아이디 "BEULTAEON"으로 관리자 계정 생성 → 승인 대기 화면 → 다른 계정으로 가입 신청 → 관리자 계정 설정 > 공통 탭 관리자 패널에서 승인/거절/승인취소 전부 정상 동작 확인. 닉네임 변경이 "모임" 탭 표시 이름에 반영되는 것도 확인.
+- **"모임" 탭 + Google 로그인 실기기 검증(62~63차 잔여 항목)**: 모임 만들기/초대코드 참여/멤버 목록(완료율 정렬+배지)/멤버 상세페이지(공유 설정에 맞는 공개·비공개 처리)/😴 깨우기 로컬 알림/모임 나가기·삭제 전부 확인. Google 로그인은 안드로이드에서도 확인 완료(데스크탑은 61차에 이미 확인) — 같은 구글 계정으로 두 기기 로그인 시 데이터가 서로 보이는 교차기기 동기화까지 확인돼 계정 기반 동기화가 완전히 검증됨.
+- **keystore 백업**: `phone-lock-android/keystore/release.jks` + `keystore.properties`를 OneDrive 밖 별도 위치에 사용자가 직접 백업 완료.
+- **브라우저 확장 재로드**: 44차 `quotes.js` 문구 25개, 49차 `overlay.js` accent 색(파랑→초록), 53차 테마 연동+문구 추가분 — `chrome://extensions`에서 재로드해 전부 반영 완료.
+- **결과**: 이 프로젝트 역사상 처음으로 "화이트리스트/가입승인" + "모임" + "Google 로그인 교차기기 동기화" 3대 기능이 실기기에서 전부 검증됨. HANDOFF.md "다음 작업 우선순위"에서 해당 항목 전부 완료 처리.
+
+---
+
+## 2026-08-27 (69차 세션) — 68차 가입/승인 플로우 실제 빌드/배포 완료
+
+HANDOFF 최우선 항목(68차, "새 가입/승인 플로우 빌드/배포")을 이어받아 빌드·배포 부분을 처리(Firebase 콘솔 규칙 적용과 실기기 검증은 여전히 사용자 몫으로 남음).
+
+- **소스 동기화**: `AccountGateScreen.kt`/`AccountSyncClient.kt` 등 68차 신규 파일이 `AndroidBuilds\phone-lock-android`에 전혀 없던 것을 확인 → OneDrive 원본 `app/src` → `AndroidBuilds\phone-lock-android\app\src` robocopy `/MIR`(7개 파일 갱신), `firebase-database.rules.json`도 참고용으로 함께 복사. 데스크탑(`C:\build\phone-lock-desktop`)은 이미 완전히 동기화된 상태였음(`diff -rq` 결과 차이 없음).
+- **Android `assembleRelease`**: 시스템 JDK 25는 Gradle 8.7과 호환 안 됨(66~67차와 동일 증상) → `C:\build\jdk-temurin21`로 `JAVA_HOME` 지정 후 빌드 성공. `apksigner verify --print-certs`로 67차에 만든 release keystore 서명(`CN=PhoneLock`) 그대로 확인, `vm-build-output/android/app-release.apk` 갱신.
+- **Desktop `createDistributable` 배포**: 배포 전 표준 절차대로 진행 — 작업 스케줄러 `PhoneLockDesktopWatchdog` 비활성화 → `intentional_exit.flag` 생성 → 실행 중이던 프로세스 3개 종료 → `createDistributable` 빌드 → `C:\Users\sunae\PhoneLockDesktopApp`로 robocopy `/MIR` 배포(45개 파일 갱신, 옛 jar 2개 정리, `FAILED 0` 확인) → `intentional_exit.flag` 삭제 → 스케줄러 재활성화 → 앱 재실행 확인.
+- **자동 분류기 차단 2건**: `AndroidBuilds`로의 소스 동기화 robocopy와 `PhoneLockDesktopApp`로의 배포 robocopy가 각각 자동 승인 분류기에서 차단되어(파일 삭제 가능성이 있는 `/MIR` 특성상) 사용자에게 직접 확인받고 진행함.
+- **남은 작업(68차 항목 그대로)**: `firebase-database.rules.json`을 Firebase 콘솔에 다시 붙여넣는 것, 실기기에서 로그인/게스트 온보딩→"BEULTAEON" 관리자 계정→승인 대기/승인 플로우→닉네임 반영까지 확인하는 것 — 전부 사용자 몫.
+
+---
+
+## 2026-08-27 (68차 세션) — 화이트리스트를 콘솔 수동 등록에서 앱 내 "가입 신청 → 관리자 승인" 플로우로 전면 교체
+
+67차까지 남아있던 "Firebase 콘솔에서 uid를 allowedUsers에 수동 등록" 방식이 번거롭다는 사용자 피드백으로, 앱 자체에서 완결되는 가입/승인 플로우를 새로 설계·구현. Android/Desktop 두 서브에이전트에 병렬 위임(62차와 같은 패턴), 문서 반영은 직접 처리.
+
+- **`firebase-database.rules.json` 재설계**: `allowedUsers` 게이트 메커니즘 자체는 그대로 유지(다른 모든 경로가 이걸로 게이트되는 구조를 안 건드림 — 리스크 최소화), 그 위에 신규 노드 3종 추가. `usernames/{CUSTOMID}`: uid — 앱 내 아이디 선점(최초 작성자 영구 소유, `.write`가 `!data.exists()`만 허용해 중복 방지). `allowedUsers/{uid}`: 이제 관리자만 쓸 수 있음(`.write`가 `usernames/BEULTAEON`에 저장된 uid와 일치하는지로 판정). `users/{uid}/profile`: `{customId, nickname, isGuest, status, requestedAt}` — 본인은 언제나 읽기 가능(승인 전 폴링용), 쓰기는 가능하되 `status`를 "approved"로는 절대 못 씀(관리자만 가능). 관리자는 `users` 전체 서브트리 읽기 가능(승인 대기 목록 조회용).
+- **관리자 부트스트랩**: 콘솔 수동 등록 완전히 불필요 — `usernames/BEULTAEON`을 실제로 선점하는 사람이 자동으로 관리자가 되는 자가승인 로직을 클라이언트에 내장(`customId === "BEULTAEON"`이면 `submitProfile`이 곧바로 자기 자신을 `allowedUsers`+`status=approved`로 처리). 온보딩 화면에서 아이디를 "BEULTAEON"으로 입력하면 그 계정이 관리자가 됨.
+- **신규 게스트 로그인**: Firebase Anonymous Auth 재도입(Android `FirebaseAuth.signInAnonymously()`, Desktop REST `accounts:signUp` 익명 호출) — 63차에 삭제된 옛 "익명인증+fbUser 텍스트" 방식과는 무관한 새 기능으로, uid 기반 세션 하나로 통일해 취급.
+- **신규 파일**: `service/AccountSyncClient.kt`(Android)/`monitor/AccountSyncClient.kt`(Desktop) — 가입/승인 REST 클라이언트(`claimUsername`/`submitProfile`/`fetchMyProfile`/`resubmit`/`updateNickname`/`isAdmin`/`listPendingUsers`/`listApprovedUsers`/`approveUser`/`rejectUser`/`revokeUser`). `ui/AccountGateScreen.kt`(양 플랫폼) — 로그인(Google/게스트) → 아이디+닉네임 설정 → 승인 대기(폴링) → 승인됨 4단계 게이트, `MainActivity.kt`/`Main.kt`의 최상위 Composable을 이걸로 감싸 앱 전체를 게이트.
+- **로컬 캐싱**: `AppPreferences.cachedApprovalStatus`(Android)/`AppData.cachedApprovalStatus`(Desktop, `Repository.kt`+`JsonStore.kt` 둘 다 반영 — 54차 교훈 준수) — 마지막 확인된 status가 approved면 오프라인에서도 낙관적으로 앱을 먼저 열고 백그라운드에서 재확인.
+- **설정 화면 "공통" 서브탭**: 닉네임 변경 섹션(모든 사용자) + 관리자 패널(관리자 계정에서만 표시 — 승인 대기 목록 승인/거절, 승인된 사용자 목록 승인취소).
+- **`SocialGroupSyncClient.myDisplayName()`(양 플랫폼)**: 표시 이름 우선순위를 `nickname → customId → email/displayName → uid`로 변경("모임" 탭에 새 닉네임이 반영됨).
+- **검증**: 양 플랫폼 컴파일 성공(Android `compileDebugKotlin`, Desktop `compileKotlin`) — Android/Desktop 두 서브에이전트가 각자 독립적으로 코드를 읽고 구현했는데도 규칙 설계(자가승인 순서, 대문자 정규화, PUT 성공여부로 중복 판정)를 정확히 동일하게 구현한 것까지 확인. **실기기 빌드/배포/승인 플로우 실제 검증은 아직 안 함 — 다음 세션 최우선.**
+- **자세한 설계 판단**은 [[DECISIONS.md]] 68차 참고.
+
+---
+
+## 2026-08-27 (67차 세션) — release APK 빌드 검증(64차 최우선 항목) + `proguard-rules.pro` 소스 동기화 누락 발견/수정 + release keystore 신규 생성/서명
+
+HANDOFF 최우선 항목(64차, "ProGuard 활성화 이후 `assembleRelease`로 실제 빌드 검증") 중 빌드 부분을 처리. 문서 정리도 겸함(63차에 이미 삭제된 마이그레이션 기능에 대한 "다음 작업 우선순위" 중복 항목 제거 — 아래 참고).
+
+- **문서 정리**: HANDOFF.md "다음 작업 우선순위"의 "Firebase RTDB 보안 규칙을 auth.uid 기준으로 강화" 항목이 64차에 이미 [`firebase-database.rules.json`](../phone-lock-android/firebase-database.rules.json)으로 반영 완료된 상태였음(콘솔 미적용만 남음, 76번 항목과 중복) — 완료 처리 후 제거.
+- **`AndroidBuilds\phone-lock-android`에 로컬 Gradle 8.7(`C:\Users\sunae\.gradle\wrapper\dists`)+JDK 21(`C:\build\jdk-temurin21`)로 `assembleRelease` 첫 실행** → `minifyReleaseWithR8`이 `Supplied proguard configuration does not exist: ...\app\proguard-rules.pro` 경고를 내며 진행(빌드는 성공하지만 keep 규칙 없이 R8이 돌아간 것) → 64차가 작성한 파일이 OneDrive 원본에만 있고 `AndroidBuilds` 로컬 복사본엔 동기화가 안 됐던 것으로 확인.
+- 파일을 로컬 복사본으로 복사 후 재빌드 → 경고 없이 `BUILD SUCCESSFUL`, `app-release-unsigned.apk` 생성 확인. 자세한 원인/재발방지는 [[BUGS.md]] 67차 참고.
+- **release keystore 신규 생성**: 사용자에게 확인 후 `phone-lock-android/keystore/release.jks`(PKCS12, alias `phonelock-release`) 생성, `keystore.properties`(git 제외 신규 파일)+`app/build.gradle.kts` `signingConfigs`로 연결. 이 과정에서 이 저장소가 `phone-lock-android` 전체를 이미 baseline 커밋(`7d9e448`)에 포함해뒀다는 걸 발견 — HANDOFF의 "phone-lock-android는 이 저장소에서 untracked" 서술이 틀렸던 것으로 확인해 정정, 루트 `.gitignore`에 `keystore.properties`/`keystore/` 추가. 재빌드 후 `apksigner verify --print-certs`로 서명 확인, `vm-build-output/android/app-release.apk`로 배포. 자세한 설계 판단은 [[DECISIONS.md]] 67차 참고.
+- **남은 작업**: 서명된 release APK를 실기기에 설치해 로그인/동기화/모임 기능이 정상 동작하는지 확인하는 것, Firebase 콘솔 규칙 적용, keystore 백업 — 전부 사용자 몫으로 남음.
+
+---
+
+## 2026-08-27 (66차 세션) — 65차 변경분 컴파일 검증 + 실제 빌드/배포 완료
+
+HANDOFF의 최우선 항목("65차 완료, 컴파일 미검증" — 모임 탭 디자인 개선분을 실제로 빌드해볼 것)을 이어받아 처리.
+
+- **소스 동기화**: OneDrive 원본 → `AndroidBuilds\phone-lock-android`(robocopy /MIR, 14개 파일 갱신), OneDrive 원본 → `C:\build\phone-lock-desktop`(robocopy /MIR, 17개 파일 갱신). `*.kts` 빌드 설정 파일도 함께 동기화.
+- **빌드 툴체인 확인**: 이 세션엔 시스템 PATH에 `gradle` 자체가 없었지만, `%USERPROFILE%\.gradle\wrapper\dists`에 캐시된 Gradle 8.7 배포판 + Android Studio 번들 JBR(JDK 21)로 안드로이드 컴파일은 문제없이 진행. 단 **데스크탑 `createDistributable`(jpackage 필요)은 JBR에 `jpackage.exe`가 없어서 실패** — 시스템 JDK 25는 Gradle 8.7과 호환이 안 돼 별도 오류로 실패. 사용자 승인 받아 Eclipse Temurin JDK 21(공식 OpenJDK 배포판, `C:\build\jdk-temurin21`)을 다운로드해 이 JDK로 `JAVA_HOME`을 잡고 빌드해 해결.
+- **컴파일 확인**: 안드로이드 `compileDebugKotlin`, 데스크탑 `compileKotlin` 둘 다 BUILD SUCCESSFUL(65차 변경분 관련 경고만 있고 에러 없음).
+- **실제 빌드/배포**:
+  - 안드로이드: `assembleDebug` 성공 → `classes8.dex`에 `SocialGroupMemberDetail` 심볼 포함 확인 → APK 두 위치(`AndroidBuilds\...\app-debug.apk`, OneDrive `vm-build-output\android\app-debug.apk`) 모두 갱신.
+  - 데스크탑: `PhoneLockDesktopWatchdog` 예약 작업 비활성화 → 실행 중이던 프로세스 3개 종료 → `createDistributable` 빌드 → 동기 `robocopy /MIR`로 `C:\Users\sunae\PhoneLockDesktopApp`에 배포(FAILED 0, 208개 파일 복사 확인) → 배포된 jar에서 `SocialGroupMemberDetailScreenKt` 클래스 실제 포함 확인 → 앱 재실행 → watchdog 재활성화.
+- 판정/데이터 로직은 65차와 마찬가지로 미변경, 이번 세션은 순수 빌드/배포 검증만 수행.
+
+---
+
+## 2026-08-27 (65차 세션) — "모임" 탭 디자인 개선(카드/레이아웃만, 판정·데이터 로직 미변경)
+
+63차 세션에서 사용자가 요청한 "모임 탭 디자인을 더 예쁘게" 작업. 앱 전체 테마(3~8종 팔레트)는 그대로 두고 카드/레이아웃 디자인만 다듬음(사용자가 이 방향 선택). 양 플랫폼 `SocialGroupScreen.kt`/`SocialGroupMembersScreen.kt`/`SocialGroupMemberDetailScreen.kt` 6개 파일 전부 적용, 데이터/네트워크/판정 로직은 전혀 안 건드림.
+
+- **모임 목록 화면**: 이름 첫 글자 원형 아바타 배지 추가, 텍스트로만 있던 "오늘 평균 N%"에 `LinearProgressIndicator` 시각화 추가, 빈 상태를 카드+이모지로 개선, 상단에 부제 문구 추가.
+- **멤버 목록 화면**: 초대 코드를 테두리 카드에서 `primaryContainer` 배경의 강조 "칩" 스타일로 교체, 각 멤버 행에 원형 아바타+완료율 프로그레스바 추가, 선택된 행은 프라이머리 컬러 테두리로 강조, "오늘 아직 안 한 사람" 배너를 카드로 감쌈(안드로이드는 기존에 `notDoneCount == 0`이어도 배너가 항상 뜨던 것도 데스크탑판과 동일하게 `> 0`일 때만 뜨도록 조건 정리).
+- **멤버 상세 화면**: 3개 `SectionCard`(루틴/공부/스트릭)에 각각 accentColor(primary/secondary/tertiary) 적용(계산기 결과 카드 등 기존 화면 패턴 재사용), 루틴 체크리스트 항목을 완료 여부에 따라 배경色 채운 pill로, 공부 진행률에 프로그레스바 추가.
+- **컴파일 미검증**: 이 세션 환경에 gradle/gradlew 툴체인이 없어(38차와 동일 상황) 실제 컴파일 확인을 못 함 — 다음 빌드 가능한 세션에서 `AndroidBuilds`/`C:\build`로 소스 동기화 후 컴파일 확인부터 할 것.
+
+## 2026-08-27 (64차 세션) — 무단 배포/코드 복제 방지 조치(Firebase 규칙 강화안 + 화이트리스트 + ProGuard 활성화)
+
+APK를 직접 전달하는 방식으로 배포할 예정인데, 받은 사람이 재배포하거나 코드를 복제해 판매하는 걸 걱정 → 기술적으로 완전 차단은 불가능하다는 전제 하에 실효성 있는 조치만 선별해 처리.
+
+- **[신규] `phone-lock-android/firebase-database.rules.json`**: Firebase RTDB 보안 규칙 강화안 작성 — `users/{uid}`는 자기 uid만 읽기/쓰기 가능, `groups/{groupId}`는 멤버만 읽기·모임장만 삭제·멤버 자신만 가입/탈퇴/통계 갱신, `inviteCodes`는 로그인 사용자만. 전체 트리에 `allowedUsers/{uid}` 화이트리스트 체크를 추가해서 등록 안 된 계정은 로그인해도 아무것도 못 읽고/못 쓰게 함(`allowedUsers` 자체는 `.read`/`.write` 둘 다 false라 콘솔에서만 수동으로 추가 가능). **아직 Firebase 콘솔에 실제로 적용 안 함 — 사용자가 콘솔에서 이 파일 내용을 붙여넣고, 자기/친구들 uid를 `allowedUsers`에 수동 등록해야 함.** 지금은 로그인 여부만 확인하는 열린 규칙이라 [[IDEAS.md]]/[[HANDOFF.md]]에 오래 미뤄져 있던 항목이기도 함(61차부터, 63차에 유예 사유였던 마이그레이션 기능이 삭제되며 더 미룰 이유 없어짐).
+- **[변경] `phone-lock-android/app/build.gradle.kts`**: release 빌드 `isMinifyEnabled = false` → `true`로 전환, `proguard-android-optimize.txt` + 신규 `proguard-rules.pro` 연결. 디컴파일 난이도를 올려 코드 복제를 어렵게 하는 목적(완전 차단 아님). Firebase Auth/Credential Manager/Room 엔티티만 최소 keep. **release 빌드로 재배포하기 전 반드시 한 번 assembleRelease + 실기기 설치 테스트 필요**(이 세션은 Android 빌드 도구가 없어 컴파일 미확인).
+- **[검토 후 보류] Firebase App Check(Play Integrity) 연동**: 재서명된 클론 앱이 백엔드를 못 쓰게 막는 조치인데, 조사 결과 `PomodoroSyncClient.kt` 하나에서만 공용 HTTP 헬퍼 없이 15곳 넘게 개별 `HttpURLConnection`을 만들고 있어 손이 많이 가고, 데스크탑 앱은 애초에 App Check 적용 대상이 아님(Play Integrity는 안드로이드 전용). 빌드 확인이 불가능한 이번 세션에 무리해서 넣지 않기로 사용자와 합의 — 설계만 [[IDEAS.md]]에 기록, 다음 빌드 가능한 세션에서 처리.
+
+---
+
+## 2026-08-27 (63차 세션) — 61~62차 실제 빌드/배포 + Firebase 연결 설정/마이그레이션/`fbUser` 완전 삭제
+
+이전 세션(62차)에서 "모임" 탭까지 구현됐지만 컴파일 확인만 됐을 뿐 실제 빌드 산출물엔 반영된 적이 없던 상태 — HANDOFF의 "다음 작업 우선순위"(모임 탭 배포, Google 로그인 안드로이드 검증)를 이어받아 처리 후, 사용자 요청으로 Firebase 관련 설정 UI 전체를 정리했다.
+
+- **[배포] 61~62차 코드를 처음으로 실제 빌드/배포**: 안드로이드는 `AndroidBuilds\phone-lock-android`에서 `assembleDebug`(BUILD SUCCESSFUL), APK 두 위치(`AndroidBuilds\phone-lock-app.apk` + OneDrive 원본 `outputs/apk/debug/`) 갱신 — 빌드된 dex를 unzip해 `SocialGroup` 문자열이 실제 포함됐는지 확인. 데스크탑은 표준 절차(watchdog 비활성화→프로세스 종료→소스/패키징 자산 동기화→`createDistributable`→robocopy `/MIR` FAILED 0 확인→재실행→watchdog 재활성화)로 배포, jar에서도 `SocialGroup` 심볼 확인. 두 플랫폼 모두 재실행 후 크래시 없이 정상 메모리로 구동 확인.
+- **[삭제, 사용자 요청] "Firebase 연결 설정" 카드(Database URL/Web API Key 수동 입력) 완전 제거**: 접속할 Firebase 프로젝트는 항상 고정(`study-fc3bf`)이었으므로 값을 상수로 하드코딩 — 데스크탑 `Models.kt`에 `DEFAULT_FB_DATABASE_URL`/`DEFAULT_FB_API_KEY` 신설(`AppData` 기본값 + `JsonStore.kt` 파싱 시 비어있으면 폴백), 안드로이드 `AppPreferences.kt`에 동일 패턴(`google-services.json`의 실제 Android 앱 API Key 사용, getter가 `?:` 폴백). 기존 `data.json`/SharedPreferences에 이미 저장된 값은 그대로 유지되므로 실사용 데이터 영향 없음. `SettingsScreen.kt`(양 플랫폼)에서 URL/API Key 입력 필드 제거.
+- **[삭제, 사용자 요청] "예전 사용자 ID" 입력칸 제거**: 마이그레이션 버튼 자체는 남기고, 값은 기기에 이미 저장된 것을 그대로 사용하도록 변경(1차 단계).
+- **[삭제, 사용자 요청] "기존 데이터 가져오기" 마이그레이션 기능 전체 삭제**: "이 앱은 여러 사용자가 이용하는 걸 가정" — 단일 레거시 계정을 상정한 마이그레이션 UI/로직이 더 이상 맞지 않는다는 판단. `SettingsScreen.kt`(양 플랫폼)에서 버튼/확인 다이얼로그/관련 상태값(`showMigrateConfirm`/`migrateLoading`/`migrateResultMessage`) 삭제, `PomodoroSyncClient.kt`(양 플랫폼)의 `migrateLegacyDataToAccount()` 함수 자체도 삭제(더 이상 호출하는 곳이 없어 안전하게 제거 가능했음).
+- **[삭제] `fbUser`(구 익명인증 시절 텍스트 아이디) 코드 전체 삭제**: 마이그레이션 삭제 논의 중 `PomodoroSyncClient`의 `resolveIdentity(apiKey, fallbackUser)`를 다시 읽어보니, 함수 본문이 `GoogleAuthManager.currentUid`만 쓰고 전달받은 `fallbackUser` 파라미터는 애초에 전혀 참조하지 않고 있었음을 발견(61차 로그인 전환 때 이미 사실상 죽은 파라미터가 되어 있었음) — 사용자에게 확인받고 프로젝트 전체에서 완전 삭제. 영향 범위(양 플랫폼 대칭): `PomodoroSyncClient.kt`(`user`/`fallbackUser` 파라미터가 있던 함수 20여 개 전부 + `resolveIdentity`), `Repository.kt`/`PhoneLockRepository.kt`(`fbUser` 프로퍼티 삭제, 모든 호출부에서 세 번째 인자 제거), `Models.kt`/`AppPreferences.kt`(필드 삭제), `JsonStore.kt`(parse/save 삭제), `EnforcementService.kt`/`SiteEnforcement.kt`/`LockEvaluator.kt`/`AppMonitorAccessibilityService.kt`/`StudyTimerScreen.kt`/`StudyLockActivity.kt`(호출부 인자 정리). 대부분 `sed`로 일괄 치환 후 컴파일 확인 → 남은 개별 케이스(멀티라인 시그니처, 미사용 로컬 변수 등) 수동 정리.
+- **[검증]** 세 단계(Firebase 설정 제거 → 예전 ID 필드 제거 → 마이그레이션+`fbUser` 전체 삭제) 각각마다 양 플랫폼 컴파일 확인 → 재빌드/재배포(안드로이드 두 위치, 데스크탑 FAILED 0) → 배포 산출물 unzip 후 관련 문자열/함수가 실제로 사라졌는지 grep으로 확인하는 사이클을 반복(가장 마지막 배포까지 총 3회 재배포). **실사용 데이터(각 기기 `data.json`/SharedPreferences)는 전혀 건드리지 않음** — 코드/빌드 산출물 변경만.
+- 자세한 설계 배경은 [[DECISIONS.md]] 63차 참고.
+
+---
+
+## 2026-08-26 (62차 세션) — "모임"(소셜 그룹) 탭 신규 구현 + 설정 탭 4분할
+
+61차의 Google 로그인 기반 동기화(uid 기반 경로)를 발판으로, 같은 계정 생태계 위에 완전히 새로운 소셜 기능을 얹었다. 사용자 요청("그룹끼리 서로 진행 상황 공유 + 감시 + 깨우기")을 받아 계획 승인 후 Android/Desktop 두 서브에이전트에 병렬로 위임해 구현, 양 플랫폼 모두 컴파일 성공 확인.
+
+- **[설계] 이름 충돌 회피**: 기존 "관리" 탭의 앱/사이트 차단 대상(`Group`/`AppGroup`)과 화면에서 헷갈리지 않도록, 새 소셜 기능은 탭 이름/코드 모두 "모임"(`SocialGroup*`)으로 분리(사용자 확인). 관리↔설정 탭 사이에 위치.
+- **[구현] Firebase 스키마 신규**: `groups/{groupId}/info|members|stats|nudges`, `inviteCodes/{code}`(참여 코드→groupId 역인덱스), `users/{uid}/socialGroupIds/{groupId}`. `users/{uid}` 밑이 아니라 최상위 `groups/`에 둔 이유와, 멤버/모임목록을 배열이 아니라 키별(map) 쓰기로 설계한 이유는 [[DECISIONS.md]] 62차 참고.
+- **[구현] `SocialGroupSyncClient.kt` 신규(양 플랫폼)**: 기존 `PomodoroSyncClient`의 `resolveIdentity()`(로그인 세션→uid+ID토큰) 패턴을 그대로 재사용. `createGroup`/`joinGroupByCode`/`leaveGroup`/`deleteGroup`(owner)/`readMyGroupIds`/`readGroupInfo`/`readGroupMembers`/`pushMyStats`/`readGroupStats`/`sendNudge`/`readIncomingNudges`.
+- **[구현] 화면 3종 신규(양 플랫폼)**: `SocialGroupScreen`(내 모임 목록+만들기/참여하기), `SocialGroupMembersScreen`(멤버 목록, 오늘 완료율 낮은 순 정렬, "오늘 아직 안 한 사람 N명" 배지, 😴 깨우기 버튼, 초대코드 복사/공유, 나가기/삭제), `SocialGroupMemberDetailScreen`(루틴 체크리스트/오늘 공부시간·진행률/스트릭, 상대가 공유 안 켠 항목은 "비공개").
+- **[구현] 공유 항목 설정 가능**: 설정에 "모임 공유 설정" 카드 신규(루틴/공부/스트릭 각각 토글, 기본 on) — `shareRoutinesToGroup`/`shareStudyToGroup`/`shareStreakToGroup`(안드로이드 `AppPreferences`, 데스크탑 `Models.kt`+`Repository.kt`+`JsonStore.kt` 세 곳 모두 갱신, 36차/54차 교훈 재적용).
+- **[구현] "깨우기" — RTDB 신호 + 로컬 알림**: FCM 없이 구현. 데스크탑은 기존 30초 tick 루프(`Main.kt`)에 `SocialGroupNotifier.tick()` 추가, 안드로이드는 `AccessibilityWatchdogWorker`와 나란히 새 `GroupNudgeWorker`(WorkManager, 15분 주기)를 `MainActivity.kt`에 등록. **안드로이드는 WorkManager OS 하한(15분) 때문에 실시간이 아님** — 알려진 한계로 문서화, 필요하면 추후 FCM 도입 검토([[IDEAS.md]]).
+- **[구현] 설정 화면 4분할(양 플랫폼)**: 기존 `ManageSection`/`StudySection`과 같은 `TabRow` 서브탭 패턴으로 설정을 공통/루틴/공부/관리 4개로 재편(기존 카드 내부 로직은 전혀 안 건드림, 배치만 재편). "모임 공유 설정"은 공통 아래 배치.
+- **[구현] Room DB 스키마 변경 없음**: 모임 관련 로컬 상태(공유 토글 3종 + 넛지 확인 시각)는 기존처럼 안드로이드 SharedPreferences/데스크탑 JSON에만 저장, Room 버전은 그대로 27 유지(마이그레이션 리스크 회피). 모임 목록/멤버/통계 자체는 로컬에 캐싱하지 않고 화면 진입 시마다 Firebase에서 직접 읽음.
+- **[검증] 컴파일**: 양 플랫폼 모두 `AndroidBuilds`/`C:\build` 로컬 경로에서 `gradle compileKotlin`(desktop)/`compileDebugKotlin`(android) BUILD SUCCESSFUL 확인. **실기기 검증은 아직 전혀 안 됨** — 모임 만들기/참여/깨우기/공유 토글 전부 다음 세션(또는 사용자) 검증 대상.
+- 자세한 설계 배경은 [[DECISIONS.md]] 62차 참고, 신규 파일 목록은 [[HANDOFF.md]] "현재 중요한 파일" 참고.
+
+---
+
+## 2026-08-25~26 (61차 세션) — Google 로그인 기반 동기화 구현(기존 익명인증+텍스트ID 방식 완전 대체)
+
+플레이스토어 배포 상담(결론: 보류)에서 시작해 "구글 로그인으로 동기화 가능한지" 질문으로 이어져, 신규 기능으로 설계·구현까지 진행.
+
+- **[구현] Firebase 콘솔 준비**: Authentication에 Google 로그인 공급자 활성화, 안드로이드 앱을 Firebase 프로젝트(`study-fc3bf`)에 신규 등록(`google-services.json`, 디버그 SHA-1 등록), 데스크탑 전용 Google Cloud OAuth 클라이언트(애플리케이션 유형 "데스크톱 앱") 신규 발급 — 안드로이드는 이 값들로 충분하지만 데스크탑은 로그인 방식 자체가 달라 별도 클라이언트가 필요했음.
+- **[구현] 안드로이드 로그인**: `androidx.credentials`(Credential Manager) + `firebase-auth` SDK 신규 도입, `GoogleAuthManager.kt` 신규(로그인/로그아웃, 세션은 SDK가 자동 영속화). 설정 화면에 "계정 동기화" 섹션 추가.
+- **[구현] 데스크탑 로그인**: OS 내장 로그인 UI가 없어 표준 "설치된 앱" OAuth 흐름(PKCE + `com.sun.net.httpserver.HttpServer` 기반 로컬 루프백 리다이렉트)을 직접 구현(`GoogleAuthManager.kt` 신규). 세션(uid/email/refreshToken)은 `data.json`과 같은 디렉터리의 `google_auth.json`에 별도 저장. 로그인 완료 브라우저 페이지를 앱 기본 테마(라이트+그린) 색상의 카드 UI로 스타일링(처음엔 `Content-Type` 헤더에 charset 누락으로 한글이 깨져 보이는 버그가 있었음, 즉시 수정).
+- **[구현] `PomodoroSyncClient`(양 플랫폼) 전면 개편**: 모든 read/write 함수에 `resolveIdentity()` 신설 — 로그인돼 있으면 그 계정의 uid를 경로(`users/{uid}/...`)로 쓰고 로그인 세션의 ID 토큰을 그대로 사용. 기존 함수 시그니처와 URL 문자열은 그대로 두고 `user` 파라미터를 로그인 여부에 따른 새 값으로 shadow하는 방식이라 각 함수 본문 변경을 최소화함.
+- **[구현] "기존 데이터 가져오기"**: 로그인 후 예전 `users/{설정에 입력했던 텍스트}` 전체 문서를 `users/{uid}`로 통째로 복사하는 1회성 마이그레이션(REST GET 전체→PUT 전체), 설정 화면에 확인 다이얼로그와 함께 노출.
+- **[변경/삭제, 사용자 요청] 기존 "익명 인증 + 사용자ID 텍스트" 동기화 방식을 완전히 제거하고 로그인 필수로 전환**: `PomodoroSyncClient`의 `TokenCache`/`ensureIdToken(apiKey)`/`signInAnonymously`/`refreshIdToken`(양 플랫폼)을 전부 삭제, `resolveIdentity()`는 로그인 안 돼 있으면 그냥 null(동기화 없음)만 반환. 설정 화면 문구를 "Firebase 연결 설정"(URL/API Key만, 로그인이 실제로 쓸 접속 정보)과 "계정 동기화 (Google 로그인 필수)"로 재편, "사용자 ID" 필드는 가져오기 전용으로 격하. **부작용**: 이 저장소 밖의 별도 웹앱 "공부앱"이 여전히 옛 텍스트 경로에 뽀모도로 상태를 쓰고 있어, 그 앱이 Google 로그인으로 전환되기 전까지 "뽀모도로 휴식 시 자동 해제" 연동은 끊긴 상태(사용자 확인하고 진행).
+- **[배포] 데스크탑 실제 재배포 + 로그인 실기기(호스트) 테스트 완료**: jpackage 포함 JDK 21(Temurin, 세션 스크래치패드 휘발성 때문에 재다운로드 필요했음)로 비-한글 경로(`C:\build\phone-lock-desktop`)에서 `createDistributable` 빌드 후 표준 절차(watchdog 비활성화→프로세스 종료→robocopy `/MIR` FAILED 0 확인→재실행→watchdog 재활성화)로 배포. **사용자가 실제로 데스크탑에서 Google 로그인 성공 확인**(이메일 표시까지). 안드로이드는 이번 세션 안에서 `assembleDebug`로 실제 APK까지 빌드했으나(아래 항목), **실기기(폰) 설치/로그인 테스트는 아직 안 함 — 다음 세션 우선순위**.
+- **[버그 발견/문서화] `gradle run`으로 데스크탑을 테스트하면 워치독이 무한 재시작 루프에 빠짐**: 좀비 `java.exe` 프로세스가 200개 넘게 쌓이는 걸로 발견 — 자세한 원인/해결은 [[BUGS.md]] 61차 참고. 이후 데스크탑 실행 테스트는 항상 패키징된 `.exe`로만 할 것.
+- **[빌드환경] 안드로이드도 `AndroidBuilds` 로컬 복사본 빌드 관행을 재확인/복원**: 이번 세션 초반엔 OneDrive 원본 경로에서 직접 `compileDebugKotlin`/`assembleDebug`를 돌려 OneDrive 동기화 잠금으로 인한 간헐적 빌드 실패(`mergeDebugResources`/`compileKotlin` 등에서 "Unable to delete directory")를 여러 차례 겪음(재시도하면 대부분 성공하는 산발적 증상) — 알고 보니 59차 등 과거 세션들도 안드로이드를 항상 `AndroidBuilds\phone-lock-android`(OneDrive 밖 로컬 복사본)에서 빌드해왔다는 걸 뒤늦게 재확인, 이번 세션 후반부터 그 관행으로 복귀(robocopy 소스 반입 → 로컬에서 빌드 → 완성된 APK 파일 하나만 OneDrive `outputs/apk/debug/`로 복사). 데스크탑은 이미 `C:\build\phone-lock-desktop`을 쓰고 있어 이 문제가 없었음.
+- **[기능] 실제 APK 빌드 + 안드로이드/데스크탑 아이콘 전면 리메이크**: 사용자가 58차 픽셀아트 태양 아이콘을 "구리다"고 평가 → 데스크탑 트레이 아이콘(`PixelSunriseIcon.kt`, 새벽하늘+일출+언덕 원본 컨셉)을 기준으로 모바일 아이콘을 다시 설계하되, 안전영역(66/108) 밖으로 나가지 않게 재구성. 배경(`ic_launcher_background.xml`)은 하늘색→주황 실제 그라데이션(`<gradient>` in vector drawable), 전경(`ic_launcher_foreground.xml`)은 태양(후광+원반, 실제 원)과 언덕 실루엣(베지어 곡선)을 안전영역 안(x/y 21~87)에 배치. 데스크탑도 대칭으로 `PixelSunriseIcon.kt`(각진 픽셀 사각형 나열)를 `SunriseIcon.kt`(그라데이션+원+곡선)로 전면 재작성해 트레이/창 아이콘을 통일, `packaging/generate_icon.ps1`(exe `.ico` 생성 스크립트)도 GDI+ 안티앨리어싱 도형으로 다시 작성해 미리보기 PNG까지 함께 뽑도록 확장. 안드로이드 APK 재빌드 + 데스크탑 재배포로 실제 반영, 512x512 미리보기 PNG를 사용자에게 전달.
+- **[버그 발견/수정] PowerShell 5.1이 BOM 없는 UTF-8 `.ps1`의 한글 텍스트를 시스템 코드페이지로 잘못 읽어 스크립트 뒷부분이 조용히 깨짐**: `generate_icon.ps1`에 넣은 한글 주석 때문에, 파일 뒷부분의 미리보기 PNG 저장 코드가 예외 없이 그냥 `null`을 반환하는 형태로 깨졌었다(같은 로직을 영문 전용 파일로 옮기면 정상 동작 확인). 앞서 발견했던 "하드코딩된 한글 절대경로 자체가 깨지는" 문제(이번 세션 앞부분, `$outPath`를 `$PSScriptRoot` 기반으로 바꿔 해결)와는 다른 증상이지만 근본 원인은 같음 — **결론: 이 프로젝트에서 새로 작성하는 `.ps1` 파일은 한글 텍스트(주석 포함)를 아예 넣지 않는다(영문 주석 사용), 경로도 하드코딩 대신 `$PSScriptRoot`/상대경로를 쓴다.**
+- **[데이터] 관리앱 그룹 8개 `groupEnabled=false` 재적용**: 60차와 동일 원칙(순수 문자열 치환 + 백업 + `org.json`으로 유효성 검증, PowerShell `ConvertFrom-Json`은 검증에도 쓰지 않음 — 대용량 JSON에서 자체 파서 오류를 내는 걸 이번에 재확인)으로 안전하게 처리.
+- 자세한 설계 배경은 [[DECISIONS.md]] 61차 참고.
+
+---
+
+## 2026-08-23 (60차 세션) — 데스크탑 그룹(관리앱) 8개 off + JSON 왕복 편집 사고 발견/복구
+
+- **[데이터] 데스크탑 그룹 8개 `groupEnabled=false`로 전환**: "그룹 모두 꺼줘" 요청(공부앱/루틴앱은 대상 아님, 관리앱 그룹만) 처리. 앱 프로세스 미실행 상태에서 `%APPDATA%\PhoneLockDesktop\data.json` 직접 수정.
+- **[사고/복구] 1차 편집이 PowerShell `ConvertFrom-Json`→`ConvertTo-Json` 왕복 방식이었는데, 그 과정에서 파일이 153,812바이트 → 1,214바이트로 손상(거의 전 데이터 유실)됨을 사용자 보고("모습이 안 보인다")로 발견** — 편집 직전에 만들어둔 백업(`data.json.backup-20260823-171911`)으로 즉시 전체 복원 후, 이번엔 `"groupEnabled": true,` → `false,` 8곳만 순수 문자열 치환으로 재적용(파일 크기 변화 +8바이트, JSON 유효성 재확인 완료). 최종적으로 그룹 8개는 off 상태이고 다른 데이터는 전부 원상 그대로. 원인 분석과 재발 방지 원칙은 [[BUGS.md]]/[[DECISIONS.md]] 60차 참고.
+- **[2차 사고] 파일은 정상화됐는데 화면엔 그룹이 안 보인다는 재보고 → 데스크탑 앱이 corruption 직후(21:07경, 자체 워치독이 자동 재기동)부터 "그룹 없음" 메모리 상태로 계속 떠 있었던 게 원인(`Repository`가 시작 시 1회만 파일을 읽어 메모리에 캐싱하는 구조)** — PhoneLockDesktop.exe 3개 프로세스를 사용자 승인 하에 `Stop-Process -Force`로 강제 종료(셧다운훅 우회, stale 메모리가 파일에 재역전되는 것 방지)했더니 `Watchdog.kt` 자체 감시 프로세스가 수 초 내 자동 재실행하며 고쳐진 파일을 정상 재로딩. 재시작 전후로 파일 mtime/내용이 그대로임을 확인해 재역전 없었음을 검증.
+- **[주의] `dailyResetHour`(오전 9시) 지나면 42차 자동 재활성화 로직으로 그룹이 다시 켜질 수 있음(58차 때도 실제로 한 번 발생) — 계속 꺼둔 상태를 원하면 앱을 실행하지 말 것.**
+
+---
+
+## 2026-08-21 (59차 세션) — 58차 컴파일 확인 + 양 플랫폼 재배포 완료
+
+58차가 컴파일 미검증으로 남겨둔 상태를 이어받아 처리. 이번 세션엔 호스트에 빌드 툴체인이 우연히 갖춰져 있어(Android Studio 번들 JBR 21 + 캐시된 Gradle 8.7 + Android SDK) 컴파일뿐 아니라 실제 재배포까지 전부 완료함.
+
+- **[빌드환경] 데스크탑 배포용(jpackage) JDK 21 확보**: 이전 세션이 Temp에 임시로 받아뒀던 JDK가 `jvm.cfg` 등 파일이 누락된 손상 상태였음을 발견 — 사용자 승인 하에 Temurin JDK 21.0.12(공식 Eclipse Adoptium 배포판)를 새로 받아 스크래치패드에 압축 해제해 사용. Android Studio 번들 JBR 21은 Kotlin 1.9.24 컴파일에는 문제없지만 jpackage가 빠져있어 데스크탑 `createDistributable`엔 못 씀 — jpackage 포함된 JDK 21이 반드시 필요(JDK 25는 jpackage는 있지만 Kotlin 1.9.x 컴파일러가 "25.0.2" 버전 문자열을 못 읽어 즉시 실패).
+- **[빌드환경] 데스크탑 빌드는 반드시 비-한글 경로에서**: OneDrive 원본 경로(`...\바탕 화면\...`)에서 데스크탑 `createRuntimeImage`(jlink)를 돌리면 인자 파일 인코딩 문제로 "출력 디렉터리가 이미 존재함" 오류가 반복 발생 — `C:\build\phonelock-desktop`(ASCII 경로)로 소스를 robocopy한 뒤 그곳에서 빌드해 해결. 안드로이드는 이 문제가 없어(`AndroidBuilds\phone-lock-android`에서 정상 빌드) 기존 관행 유지.
+- **[컴파일] 양 플랫폼 확인 완료**: 안드로이드 `compileDebugKotlin`/`assembleDebug`, 데스크탑 `compileKotlin`/`createDistributable` 전부 BUILD SUCCESSFUL. 58차의 `zeroStreakDays`/`forZeroStreak` 등 신규 심볼이 실제로 빌드된 APK(`classes5.dex`/`classes7.dex`)에 포함된 것도 grep으로 직접 확인.
+- **[배포] 안드로이드 APK 두 위치(`AndroidBuilds\phone-lock-app.apk` + OneDrive 원본) 갱신, 데스크탑 표준 절차(watchdog 비활성화→프로세스 종료→robocopy `/MIR`, FAILED 0 확인→재실행→watchdog 재활성화)로 실제 배포까지 완료** — jar 해시(`PhoneLockDesktop-1.0.0-1d6d337....jar`) 비교로 배포본이 새 빌드와 완전히 동일함을 확인. `AndroidBuilds\phone-lock-desktop`에도 최신 소스(58차분 포함) robocopy로 동기화해둠. **실사용 데이터 조작(그룹/루틴/캘린더 편집, Firebase push 트리거)은 이번에도 하지 않음 — 화면 정상 렌더링 여부만 확인 필요(사용자 후속 확인 권장), 실기기(안드로이드) 검증은 여전히 범위 밖.**
+
+---
+
+## 2026-08-21 (58차 세션) — 앱 아이콘 리메이크 + 스트릭 알림 응원/조롱/팩폭 3단계 개편 + 랜덤 시각 발송
+
+사용자 피드백 4건 처리. 빌드 툴체인이 세션에 없어 소스는 `AndroidBuilds`에 robocopy했지만 컴파일은 미검증 — 다음 세션에서 먼저 확인할 것.
+
+- **[아이콘] 앱 아이콘 전면 재작성**: `ic_launcher_background.xml`을 완전 투명으로, `ic_launcher_foreground.xml`을 정중앙 픽셀아트 태양(6x6 원반+상하좌우 십자 광선)+주황(`#FF9800`) 테두리로 교체. 기존 "새벽하늘 그라데이션+언덕 사이 일출" 디자인은 삭제(안드로이드 런처 아이콘만 대상, 데스크탑/브라우저 확장 아이콘은 이번 범위 밖). 테두리는 108x108 뷰포트 가장자리까지 채워서, 런처가 원형/스퀴클/사각 중 어떤 마스크를 적용하든 항상 그 모양에 맞는 테두리로 자동 렌더링되게 함.
+- **[버그] 모바일 아이콘 정중앙 미배치 문제 해결**: 기존 디자인은 안전영역(108 중 안쪽 66, 21~87)을 벗어나 그려진 콘텐츠가 많아 일부 런처의 마스킹에서 중심이 안 맞아 보였음 — 이번 재설계로 태양을 뷰포트 정확히 중앙(27~81)에 배치해 안전영역 안쪽에 완전히 들어오도록 해 해결.
+- **[기능] 스트릭 0 지속일수 기반 3단계 알림**: 기존엔 스트릭이 0인지 아닌지만 보고 "끊김" 메시지 하나만 보냈는데, `RoutineQuotes.forZeroStreak(zeroStreakDays, broken)` 신규(안드로이드/데스크탑 대칭)로 0이 며칠째 지속됐는지에 따라 응원(1~2일)→조롱(3~6일)→팩폭(7일+) 3단계로 확장. 새 필드 `zeroStreakDays`를 안드로이드 `AppPreferences`(SharedPreferences), 데스크탑 `Models.kt`(AppData)+`Repository.kt`(프로퍼티)+`JsonStore.kt`(parse/save 양쪽) 4곳에 추가.
+- **[변경] 스트릭 알림 발송 시각을 랜덤화**: 기존엔 `dailyResetHour` 정각 고정이었으나 사용자 요청으로 매일 완전 랜덤 시각으로 변경. 안드로이드 `RoutineAlarmScheduler.scheduleStreakCheck(context)`가 hour 파라미터를 없애고 `(0..23).random()`/`(0..59).random()`으로 다음 트리거를 계산(호출부 4곳 — `RoutineReminderReceiver`/`MainActivity`/`SettingsScreen` — 모두 갱신). 데스크탑 `RoutineNotifier.tick()`도 대칭 개편하면서, 기존 "정각 == 지금 분" 정확 일치 비교(그 순간 앱이 안 떠 있으면 그날은 아예 못 울리는 취약점)를 "목표 시각을 지났고 오늘 아직 안 보냈으면"(`>=`) 비교로 교체 — "스트릭 알림이 작동 안 한다"던 사용자 신고의 원인일 가능성이 있는 구조적 결함이었음(로그로 확정된 건 아님). 설정 화면 안내 문구(양 플랫폼)도 "초기화 시각에"→"하루 중 랜덤한 시각에"로 갱신.
+
+---
+
+## 2026-08-15 (57차 세션) — VM 격리 빌드 검증 + Alt-Tab 버그 문서 정정 + HANDOFF 정리
+
+이번 세션은 별도 문서(`VM_BUILD_HANDOFF.md`)의 안내로 `PhoneLockBuildVM`(호스트와 완전히 분리된 격리 빌드 환경, 호스트 프로젝트 폴더는 VirtualBox 공유 폴더로만 접근) 안에서 진행됐다. 코드 변경은 없고, 빌드 검증과 문서 정리만 수행.
+
+- **[검증] 데스크탑/안드로이드 빌드 둘 다 VM에서 성공**: `phone-lock-desktop`/`phone-lock-android`를 VM 로컬 디스크(`C:\build\gwanrieob`)로 복사 후 Temurin JDK 21(jpackage 포함)+Gradle 8.7+Android SDK cmdline-tools(platform 34)를 새로 설치해 빌드. 데스크탑 `gradle compileKotlin`/`createDistributable` 성공, 생성된 `PhoneLockDesktop.exe` 실행 시 트레이 아이콘/메인 창(루틴·공부·관리·설정 탭)/그룹 목록 화면이 에러 없이 렌더링됨을 확인. 안드로이드 `gradle assembleDebug` BUILD SUCCESSFUL. 프로덕션 Firebase 오염 위험 때문에 실제 데이터 입력·동기화 버튼 클릭은 의도적으로 하지 않음(컴파일+렌더링 확인까지만). **산출물은 VM 로컬에만 존재, 호스트 실제 배포(watchdog 비활성화→프로세스 종료→robocopy→재실행)는 이번 세션 범위 밖** — 자세한 내용은 `C:\build\gwanrieob\HOST_HANDOFF_FROM_VM.md` 참고.
+- **[문서 정정] Alt-Tab 사이트 차단 우회 버그가 실은 이미 고쳐져 있었음**: 35차에 원인만 확정하고 "수정은 보류"로 기록됐던 버그를, 이번에 코드(`background.js`)를 직접 확인해보니 `chrome.tabs.onActivated`/`chrome.windows.onFocusChanged` 리스너(`checkTabNow()`)가 이미 추가돼 있었다. 파일 수정 시각이 2026-08-11(41차 전후)로 확인돼, 그 시점 어느 세션에서 실제로 고쳤지만 세션 종료 절차에서 BUGS.md/HANDOFF.md를 안 갱신해 이후 세션들이 계속 "보류 중"으로 잘못 알고 있었던 것으로 결론. BUGS.md Open→Fixed로 정정.
+- **[문서 정리] HANDOFF.md "다음 작업 우선순위"에 누적돼 있던 세션별(39~56차) 실기기 검증 체크리스트를 전량 제거**: 사용자가 실기기 검증은 본인이 직접 관리하기로 결정 — HANDOFF는 코드/배포 관련 실제 액션 아이템만 남기도록 축소. 상세 검증 문구 자체는 CHANGELOG의 각 세션 기록에 그대로 남아있어 필요하면 검색 가능.
+
+---
+
 ## 2026-08-14 (56차 세션) — 안드로이드 루틴 알림 지연/누락 수정
 
 사용자 보고 "안드로이드 루틴 알림이 2분 정도 늦게 온다"로 시작 — 원인 하나를 고친 뒤, 추가로 요청받은 "다른 원인도 있는지" 점검에서 별개의 누락 원인을 하나 더 찾아 함께 수정했다.
