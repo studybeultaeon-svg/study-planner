@@ -1,0 +1,25 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 데스크탑 일출 컨셉을 모바일 안전영역(66/108, x/y 21~87)에 맞게 재구성.
+         부드러운 원(태양)+매끄러운 곡선(언덕)만 써서 58차의 각진 픽셀아트보다 덜 난잡하게. -->
+
+    <!-- 태양 후광 -->
+    <path android:fillColor="#FFF3E0" android:pathData="M54,39 m-16,0 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0" />
+    <!-- 태양 원반 -->
+    <path android:fillColor="#FFB300" android:pathData="M54,39 m-12,0 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0" />
+
+    <!-- 언덕 실루엣(두 봉우리, 부드러운 곡선) -->
+    <path
+        android:fillColor="#1E3A5F"
+        android:pathData="
+            M21,87
+            L21,74
+            C28,60 40,58 50,68
+            C58,76 68,56 78,64
+            C82,67 85,70 87,73
+            L87,87
+            Z" />
+</vector>

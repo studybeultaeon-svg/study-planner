@@ -1,0 +1,8 @@
+<service>
+  <id>PhoneLockDesktop</id>
+  <name>PhoneLockDesktop</name>
+  <description>폰컨트롤 데스크탑 - 자기통제용 프로그램 잠금 서비스</description>
+  <executable>C:\Program Files\PhoneLockDesktop\PhoneLockDesktop.exe</executable>
+  <onfailure action="restart" delay="5 sec"/>
+  <log mode="roll"/>
+</service>

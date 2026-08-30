@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 데스크탑 트레이 아이콘(PixelSunriseIcon.kt)과 같은 컨셉의 일출 하늘을 부드러운 그라데이션으로.
+         배경 레이어는 런처 마스킹으로 가장자리가 잘려도 괜찮은 단순 색면이라 안전영역 제약이 없다. -->
+    <path android:pathData="M0,0 L108,0 L108,108 L0,108 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54" android:startY="0"
+                android:endX="54" android:endY="108"
+                android:startColor="#4FC3F7"
+                android:centerColor="#FFCC80"
+                android:centerY="0.5"
+                android:endColor="#FB8C00" />
+        </aapt:attr>
+    </path>
+</vector>

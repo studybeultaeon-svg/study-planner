@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>폰컨트롤 사이트 차단 - 설치 완료</title>
+  <style>
+    /* 데스크탑 설정의 테마 3종을 그대로 따라간다 — CSS 변수는 theme.js가 /theme API로 채운다
+       (2026-08-14). :root 기본값은 앱 기본 테마(라이트+그린). */
+    :root {
+      --bg: #FAFBF6; --panel: #FFFFFF; --text: #20261A; --muted: #6B7566;
+      --border: #D9E2CB; --accent: #8BC34A; --on-accent: #20261A;
+      --warn-bg: #FEF3C7; --warn-text: #F59E0B;
+    }
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      text-align: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    .card {
+      max-width: 480px;
+      text-align: left;
+    }
+    h1 { font-size: 24px; margin-bottom: 8px; text-align: center; }
+    p { font-size: 15px; color: var(--muted); line-height: 1.6; }
+    .warn {
+      background: var(--warn-bg);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+    }
+    .warn strong { color: var(--warn-text); }
+    ol { padding-left: 20px; }
+    li { margin-bottom: 8px; }
+    button {
+      font-size: 15px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: var(--on-accent);
+      cursor: pointer;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>설치 완료</h1>
+    <p>등록한 사이트를 지금부터 차단합니다. 다만 한 가지 알아둘 점이 있습니다.</p>
+    <div class="warn">
+      <strong>⚠ 시크릿(InPrivate) 창에서는 확장프로그램이 기본적으로 꺼져 있습니다.</strong>
+      <p style="margin-bottom:0;">
+        크롬 정책상 확장프로그램은 스스로 시크릿 모드 접근 권한을 켤 수 없고, 사용자가 직접 허용해야
+        합니다. 허용하지 않으면 시크릿 창에서는 사이트 차단이 전혀 동작하지 않습니다.
+      </p>
+    </div>
+    <p>시크릿 창에서도 차단이 동작하게 하려면:</p>
+    <ol>
+      <li>아래 버튼을 눌러 확장프로그램 상세 설정 페이지를 엽니다.</li>
+      <li>"시크릿 모드에서 허용" 토글을 켭니다.</li>
+    </ol>
+    <button id="openSettings">확장프로그램 설정 열기</button>
+  </div>
+  <script src="config.js"></script>
+  <script src="theme.js"></script>
+  <script src="onboarding.js"></script>
+</body>
+</html>
