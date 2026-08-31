@@ -894,8 +894,11 @@ fun SettingsScreen(
           if (settingsSubTab == 0) {
             SectionCard("업데이트") {
                 var checking by remember { mutableStateOf(false) }
-                var checkedOnce by remember { mutableStateOf(false) }
                 var apkUrl by remember { mutableStateOf(repository.pendingUpdateApkUrl()) }
+                // 2026-08-30: "최신 버전"과 "확인 실패"(네트워크 오류, GitHub 요청 한도 초과 등)를 구분
+                // 못 해서 실패해도 무조건 "최신 버전"으로 잘못 표시되던 문제를 고쳤다 — 이제 세 상태를
+                // 명확히 나눠 보여준다(checkedOnce 대신 lastOutcome 하나로 표현).
+                var lastOutcome by remember { mutableStateOf<PhoneLockRepository.UpdateCheckOutcome?>(null) }
                 Text(
                     "현재 버전: ${repository.currentVersionCode()} · 초기화 시각이 지나면 하루 1회 자동으로도 확인합니다.",
                     style = MaterialTheme.typography.bodySmall,
@@ -907,9 +910,10 @@ fun SettingsScreen(
                     onClick = {
                         checking = true
                         scope.launch {
-                            apkUrl = repository.checkForUpdateNow()
+                            val outcome = repository.checkForUpdateNow()
+                            lastOutcome = outcome
+                            apkUrl = (outcome as? PhoneLockRepository.UpdateCheckOutcome.Available)?.apkUrl
                             checking = false
-                            checkedOnce = true
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -918,9 +922,22 @@ fun SettingsScreen(
                     Spacer(Modifier.height(Spacing.sm))
                     UpdateBanner(url)
                 }
-                if (checkedOnce && apkUrl == null && !checking) {
-                    Spacer(Modifier.height(Spacing.xs))
-                    Text("최신 버전입니다", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!checking) {
+                    when (val outcome = lastOutcome) {
+                        is PhoneLockRepository.UpdateCheckOutcome.UpToDate -> {
+                            Spacer(Modifier.height(Spacing.xs))
+                            Text("최신 버전입니다", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        is PhoneLockRepository.UpdateCheckOutcome.Failed -> {
+                            Spacer(Modifier.height(Spacing.xs))
+                            Text(
+                                "확인 실패: ${outcome.reason} — 잠시 후 다시 시도해주세요",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        else -> {}
+                    }
                 }
             }
             Spacer(Modifier.height(Spacing.md))

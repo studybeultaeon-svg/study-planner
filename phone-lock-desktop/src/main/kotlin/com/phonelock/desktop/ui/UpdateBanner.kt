@@ -1,8 +1,9 @@
 package com.phonelock.desktop.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -14,7 +15,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.Repository
@@ -37,17 +37,16 @@ fun UpdateBanner(repository: Repository, installerUrl: String) {
     val scope = rememberCoroutineScope()
     var downloading by remember { mutableStateOf(false) }
 
+    // 2026-08-30 발견(안드로이드판과 동일): Row + SpaceBetween에 Text를 weight 없이 넣으면 문구가 길 때
+    // 옆 버튼이 밀려나 안 보일 수 있어 Column으로 바꿔 버튼이 항상 자기 줄에서 보이게 했다.
     Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primaryContainer) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
             Text(
                 if (downloading) "업데이트 다운로드 중..." else "새 버전이 있습니다. 업데이트를 진행하세요",
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
-            Button(enabled = !downloading, onClick = {
+            Spacer(Modifier.height(8.dp))
+            Button(enabled = !downloading, modifier = Modifier.fillMaxWidth(), onClick = {
                 downloading = true
                 scope.launch {
                     val ok = downloadAndRunInstaller(installerUrl)

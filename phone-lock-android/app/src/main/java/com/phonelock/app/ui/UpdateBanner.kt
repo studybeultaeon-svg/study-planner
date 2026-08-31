@@ -8,9 +8,10 @@ import android.os.Environment
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -21,7 +22,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -43,19 +43,21 @@ fun UpdateBanner(apkUrl: String) {
     val scope = rememberCoroutineScope()
     var downloading by remember { mutableStateOf(false) }
 
-    Row(
+    // 2026-08-30 발견: Row + SpaceBetween에 Text를 weight 없이 넣으면 문구가 길 때 Text가 Row 폭을
+    // 거의 다 차지해버려서 옆에 있던 버튼이 화면 밖으로 밀려나 안 보이는 문제가 있었다 — 문구가 항상
+    // 자기 줄을 다 쓰고 버튼은 그 아래 새 줄에 오도록 Column으로 바꿔서 버튼이 항상 보이게 고쳤다.
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.primaryContainer)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         Text(
             if (downloading) "업데이트 다운로드 중..." else "새 버전이 있습니다. 업데이트를 진행하세요",
             color = MaterialTheme.colorScheme.onPrimaryContainer
         )
-        Button(enabled = !downloading, onClick = {
+        Spacer(Modifier.height(8.dp))
+        Button(enabled = !downloading, modifier = Modifier.fillMaxWidth(), onClick = {
             if (!context.packageManager.canRequestPackageInstalls()) {
                 Toast.makeText(
                     context,
