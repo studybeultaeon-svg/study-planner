@@ -76,6 +76,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
     var settingsSubTab by remember { mutableIntStateOf(0) }
     var themeMode by remember { mutableStateOf(repository.themeMode) }
     var dailyResetHourText by remember { mutableStateOf(repository.dailyResetHour.toString()) }
+    var launchAtStartup by remember { mutableStateOf(com.phonelock.desktop.isLaunchAtStartupEnabled()) }
     var blockReels by remember { mutableStateOf(repository.blockReels) }
     var blockShorts by remember { mutableStateOf(repository.blockShorts) }
     var routineStreakNotifyEnabled by remember { mutableStateOf(repository.routineStreakNotifyEnabled) }
@@ -231,6 +232,19 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                                 )
                             }
                         }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    SectionCard("자동 실행") {
+                        ToggleRow(
+                            title = "컴퓨터 시작 시 자동 실행",
+                            description = "Windows 로그인 시 이 계정으로 앱이 자동으로 켜집니다.",
+                            checked = launchAtStartup,
+                            onCheckedChange = { checked ->
+                                launchAtStartup = checked
+                                com.phonelock.desktop.setLaunchAtStartupEnabled(checked)
+                            }
+                        )
                     }
                     Spacer(Modifier.height(Spacing.md))
 

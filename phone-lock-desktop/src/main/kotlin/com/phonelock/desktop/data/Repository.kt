@@ -999,7 +999,15 @@ class Repository {
     private fun nextScheduleDateKey(dateKey: String, days: Int): String =
         LocalDate.parse(dateKey).plusDays(days.toLong()).toString()
 
+    fun setCalendarTaskMultiPass(dateKey: String, ordinal: Int, enabled: Boolean) = synchronized(lock) {
+        val idx = dayGlobalIndices(dateKey).getOrNull(ordinal) ?: return@synchronized
+        data.calendarTasks[idx] = data.calendarTasks[idx].copy(multiPassEnabled = enabled)
+        persist()
+        pushCalendarToFirebase()
+    }
+
     private fun applyCalendarAutoSchedule(dateKey: String, task: CalendarTask) {
+        if (!task.multiPassEnabled) return
         val (nextColor, defaultDays) = CALENDAR_SCHEDULE[task.color] ?: return
         val days = task.nextDays?.takeIf { it >= 0 } ?: defaultDays
         val nKey = nextScheduleDateKey(dateKey, days)
@@ -1011,6 +1019,7 @@ class Repository {
     }
 
     private fun revertCalendarAutoSchedule(dateKey: String, task: CalendarTask) {
+        if (!task.multiPassEnabled) return
         val (nextColor, defaultDays) = CALENDAR_SCHEDULE[task.color] ?: return
         val days = task.nextDays?.takeIf { it >= 0 } ?: defaultDays
         val nKey = nextScheduleDateKey(dateKey, days)
@@ -1190,6 +1199,7 @@ class Repository {
                     put("nextDays", t.nextDays ?: JSONObject.NULL)
                     put("linkedCalc", t.linkedCalc ?: JSONObject.NULL)
                     put("progressStep", t.progressStep ?: JSONObject.NULL)
+                    put("multiPassEnabled", t.multiPassEnabled)
                 })
             }
             root.put(dateKey, arr)
@@ -1211,7 +1221,8 @@ class Repository {
                         status = if (t.isNull("status")) null else t.optString("status", null),
                         nextDays = if (t.has("nextDays") && !t.isNull("nextDays")) t.getInt("nextDays") else null,
                         linkedCalc = if (t.isNull("linkedCalc")) null else t.optString("linkedCalc", null),
-                        progressStep = if (t.isNull("progressStep")) null else t.optString("progressStep", null)
+                        progressStep = if (t.isNull("progressStep")) null else t.optString("progressStep", null),
+                        multiPassEnabled = t.optBoolean("multiPassEnabled", false)
                     )
                 )
             }

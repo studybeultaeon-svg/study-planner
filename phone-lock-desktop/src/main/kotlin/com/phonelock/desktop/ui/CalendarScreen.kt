@@ -145,10 +145,16 @@ fun CalendarScreen(repository: Repository) {
         Text("📅 캘린더", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(Spacing.md))
 
-        // 데스크탑 전용 좌우 분할: 왼쪽은 월 그리드(고정 높이라 스크롤 불필요), 오른쪽은 선택한 날짜의
-        // 상세 일정(별도로 스크롤) — 웹앱의 모달 대신 항상 곁에 두고 볼 수 있는 패널 형태.
-        Row(Modifier.weight(1f)) {
-            Column(Modifier.weight(1.1f).fillMaxHeight()) {
+        // 데스크탑 전용 분할: 왼쪽(넓을 땐 좌측, 좁을 땐 위쪽)은 월 그리드, 오른쪽(넓을 땐 우측, 좁을 땐
+        // 아래쪽)은 선택한 날짜의 상세 일정 — 웹앱의 모달 대신 항상 곁에 두고 볼 수 있는 패널 형태.
+        // 79차: 창이 좁아지면(다른 앱과 나란히 등) Row 그대로 유지하면 양쪽 다 뭉개지므로, 안드로이드처럼
+        // 위아래로 쌓는 ResponsiveSplit으로 교체(사용자 요청).
+        com.phonelock.desktop.ui.components.ResponsiveSplit(
+            modifier = Modifier.weight(1f),
+            leftWeight = 1.1f,
+            rightWeight = 0.9f,
+            left = {
+            Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     OutlinedButton(onClick = { if (month == 0) { month = 11; year-- } else month-- }) { Text("◀ 이전") }
                     Text("${year}년 ${MONTHS_KO[month]}", style = MaterialTheme.typography.titleLarge)
@@ -264,18 +270,18 @@ fun CalendarScreen(repository: Repository) {
                 }
                 }
             }
-
-            Spacer(Modifier.width(Spacing.md))
-
-            Column(Modifier.weight(0.9f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                val date = selectedDate
-                if (date == null) {
-                    Text("날짜를 클릭하면 그날의 일정을 확인할 수 있습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    DayDetailSection(repository = repository, date = date, onChanged = { dayRefreshTick++ })
+            },
+            right = {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    val date = selectedDate
+                    if (date == null) {
+                        Text("날짜를 클릭하면 그날의 일정을 확인할 수 있습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        DayDetailSection(repository = repository, date = date, onChanged = { dayRefreshTick++ })
+                    }
                 }
             }
-        }
+        )
     }
 }
 
@@ -477,20 +483,38 @@ private fun CalendarTaskRow(
                 }
             }
             Spacer(Modifier.width(Spacing.xs))
-            // 웹앱 .next-days-btn — 다음 회독까지 며칠 뒤인지 짧은 알약 입력. 예전엔 라벨 붙은
-            // 140dp 텍스트필드를 별도 줄에 뒀는데, 웹앱은 헤더 줄 안에 작은 칩으로 들어가 있다.
-            OutlinedTextField(
-                value = nextDaysText,
-                onValueChange = { text ->
-                    nextDaysText = text
-                    repository.setCalendarTaskNextDays(dateKey, ordinal, text.trim().toIntOrNull())
-                },
-                placeholder = { Text("⏱", style = MaterialTheme.typography.labelSmall) },
-                modifier = Modifier.width(64.dp),
-                textStyle = MaterialTheme.typography.labelSmall,
-                singleLine = true
+            // 79차: 완료(O) 시 다음 회독을 자동 생성할지 업무마다 켜고 끌 수 있는 토글(기본 off, 사용자 요청).
+            // 꺼져 있으면 아래 ⏱(nextDays) 입력은 의미가 없으므로 숨긴다.
+            Text(
+                if (task.multiPassEnabled) "🔁다회독" else "🔁off",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .background(
+                        (if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.15f),
+                        RoundedCornerShape(50)
+                    )
+                    .clickable { repository.setCalendarTaskMultiPass(dateKey, ordinal, !task.multiPassEnabled); onChanged() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             )
             Spacer(Modifier.width(Spacing.xs))
+            if (task.multiPassEnabled) {
+                // 웹앱 .next-days-btn — 다음 회독까지 며칠 뒤인지 짧은 알약 입력. 예전엔 라벨 붙은
+                // 140dp 텍스트필드를 별도 줄에 뒀는데, 웹앱은 헤더 줄 안에 작은 칩으로 들어가 있다.
+                OutlinedTextField(
+                    value = nextDaysText,
+                    onValueChange = { text ->
+                        nextDaysText = text
+                        repository.setCalendarTaskNextDays(dateKey, ordinal, text.trim().toIntOrNull())
+                    },
+                    placeholder = { Text("⏱", style = MaterialTheme.typography.labelSmall) },
+                    modifier = Modifier.width(64.dp),
+                    textStyle = MaterialTheme.typography.labelSmall,
+                    singleLine = true
+                )
+                Spacer(Modifier.width(Spacing.xs))
+            }
             val statusLabel = task.status ?: "미완"
             val statusColor = when (task.status) {
                 "O" -> Color(0xFF34D399)

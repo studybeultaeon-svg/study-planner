@@ -198,9 +198,10 @@ fun StudyTimerScreen(repository: Repository) {
         TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
         Spacer(Modifier.height(Spacing.md))
 
-        Row(Modifier.weight(1f)) {
+        // 79차: 창이 좁아지면 위아래로 쌓는 ResponsiveSplit(사용자 요청, CalendarScreen/CalculatorScreen과 동일 패턴).
+        com.phonelock.desktop.ui.components.ResponsiveSplit(modifier = Modifier.weight(1f), left = {
             // 왼쪽: 타이머 본체
-            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 // 이 기기 타이머가 꺼져 있어도 다른 기기가 재고 있으면(신선한 신호일 때만) 그 값을 그대로
                 // 미러링해서 보여준다 — 사용자 요청: 데스크탑에서 시작하면 모바일도 시작 없이 같은 숫자를 보여줄 것.
                 val remoteActive = remoteStudying || remoteResting
@@ -392,11 +393,9 @@ fun StudyTimerScreen(repository: Repository) {
                     }
                 }
             }
-
-            Spacer(Modifier.width(Spacing.md))
-
+        }, right = {
             // 오른쪽: 부가 설정 + 오늘 기록
-            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 SectionCard("🔒 공부 중 허용 프로그램") {
                     Text(
                         "공부 페이즈가 진행 중일 때만(휴식 중엔 아님) 데스크탑이 잠기고, 여기 등록한 프로그램만 열 수 있습니다.",
@@ -444,7 +443,7 @@ fun StudyTimerScreen(repository: Repository) {
                     }
                 }
             }
-        }
+        })
     }
 }
 

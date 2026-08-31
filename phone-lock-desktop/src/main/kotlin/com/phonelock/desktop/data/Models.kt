@@ -140,7 +140,9 @@ data class CalendarTask(
     val status: String? = null,
     val nextDays: Int? = null,
     val linkedCalc: String? = null,
-    val progressStep: String? = null
+    val progressStep: String? = null,
+    /** 완료(O) 시 다음 회독을 자동 생성할지(79차, 사용자 요청) — 기본 off, 켜야만 [Repository.applyCalendarAutoSchedule]이 동작한다. */
+    val multiPassEnabled: Boolean = false
 )
 
 /**

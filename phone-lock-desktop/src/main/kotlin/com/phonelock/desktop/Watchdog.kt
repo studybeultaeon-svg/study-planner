@@ -1,5 +1,7 @@
 package com.phonelock.desktop
 
+import com.sun.jna.platform.win32.Advapi32Util
+import com.sun.jna.platform.win32.WinReg
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
@@ -85,6 +87,29 @@ fun runWatchdog() {
         Thread.sleep(WATCHDOG_POLL_MS)
         if (isLockFree(mainLockFile()) && !intentionalExitFlagFile().exists() && exe != null) {
             runCatching { ProcessBuilder(exe).start() }
+        }
+    }
+}
+
+/**
+ * 설정 화면 "컴퓨터 시작 시 자동 실행" 토글용 — 위 `registerAutoStartScheduledTask()`(1분마다 재기동을
+ * 확인하는 내부 워치독 예약 작업)와는 별개로, 사용자가 켜고 끌 수 있는 일반적인 "로그인 시 자동 실행"
+ * 기능. `HKCU\...\Run` 레지스트리 값 하나로 구현 — 관리자 권한 불필요, 이 사용자 계정에만 적용된다.
+ */
+private const val AUTOSTART_RUN_KEY = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+private const val AUTOSTART_RUN_VALUE_NAME = "PhoneLockDesktop"
+
+fun isLaunchAtStartupEnabled(): Boolean = runCatching {
+    Advapi32Util.registryValueExists(WinReg.HKEY_CURRENT_USER, AUTOSTART_RUN_KEY, AUTOSTART_RUN_VALUE_NAME)
+}.getOrDefault(false)
+
+fun setLaunchAtStartupEnabled(enabled: Boolean) {
+    runCatching {
+        if (enabled) {
+            val exe = exeLauncherPath() ?: return
+            Advapi32Util.registrySetStringValue(WinReg.HKEY_CURRENT_USER, AUTOSTART_RUN_KEY, AUTOSTART_RUN_VALUE_NAME, "\"$exe\"")
+        } else if (Advapi32Util.registryValueExists(WinReg.HKEY_CURRENT_USER, AUTOSTART_RUN_KEY, AUTOSTART_RUN_VALUE_NAME)) {
+            Advapi32Util.registryDeleteValue(WinReg.HKEY_CURRENT_USER, AUTOSTART_RUN_KEY, AUTOSTART_RUN_VALUE_NAME)
         }
     }
 }

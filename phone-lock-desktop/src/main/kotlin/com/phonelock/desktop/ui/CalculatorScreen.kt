@@ -100,41 +100,45 @@ fun CalculatorScreen(repository: Repository) {
 
     Column(Modifier.fillMaxSize()) {
         Text("🧮 계산기", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(Spacing.md))
-        Row(Modifier.weight(1f)) {
-            // 왼쪽(비율 2): 업무 입력 / 저장됨 서브탭 — 웹앱 .calc-sidebar
-            Column(Modifier.weight(2f).fillMaxHeight()) {
-                TabRow(
-                    selectedTabIndex = leftTab,
-                    containerColor = MaterialTheme.colorScheme.background,
-                    contentColor = MaterialTheme.colorScheme.onBackground
-                ) {
-                    Tab(selected = leftTab == 0, onClick = { leftTab = 0 }, text = { Text("✏️ 업무 입력") })
-                    Tab(
-                        selected = leftTab == 1,
-                        onClick = { leftTab = 1; savedRefreshTick++ },
-                        text = { Text("💾 저장됨 (${repository.getCalcSaved().size})") }
-                    )
-                }
-                Box(Modifier.weight(1f)) {
-                    when (leftTab) {
-                        0 -> CalcInputTab(
-                            repository = repository,
-                            tasks = tasks,
-                            onChanged = { refreshTasks() },
-                            onCalculate = { results = tasks.map { it to CalcEngine.calculate(it.toCalcInput()) } }
+        com.phonelock.desktop.ui.components.ResponsiveSplit(
+            modifier = Modifier.weight(1f),
+            leftWeight = 2f,
+            rightWeight = 8f,
+            left = {
+                // 왼쪽(비율 2): 업무 입력 / 저장됨 서브탭 — 웹앱 .calc-sidebar
+                Column(Modifier.fillMaxSize()) {
+                    TabRow(
+                        selectedTabIndex = leftTab,
+                        containerColor = MaterialTheme.colorScheme.background,
+                        contentColor = MaterialTheme.colorScheme.onBackground
+                    ) {
+                        Tab(selected = leftTab == 0, onClick = { leftTab = 0 }, text = { Text("✏️ 업무 입력") })
+                        Tab(
+                            selected = leftTab == 1,
+                            onClick = { leftTab = 1; savedRefreshTick++ },
+                            text = { Text("💾 저장됨 (${repository.getCalcSaved().size})") }
                         )
-                        1 -> CalcSavedTab(repository = repository, refreshTick = savedRefreshTick, onChanged = { savedRefreshTick++ })
+                    }
+                    Box(Modifier.weight(1f)) {
+                        when (leftTab) {
+                            0 -> CalcInputTab(
+                                repository = repository,
+                                tasks = tasks,
+                                onChanged = { refreshTasks() },
+                                onCalculate = { results = tasks.map { it to CalcEngine.calculate(it.toCalcInput()) } }
+                            )
+                            1 -> CalcSavedTab(repository = repository, refreshTick = savedRefreshTick, onChanged = { savedRefreshTick++ })
+                        }
                     }
                 }
+            },
+            right = {
+                // 오른쪽(비율 8): 결과 — 웹앱 .calc-content, 서브탭이 아니라 항상 보이는 영역
+                Box(Modifier.fillMaxSize()) {
+                    CalcResultTab(repository = repository, results = results, onSaved = { savedRefreshTick++ })
+                }
             }
-
-            Box(Modifier.fillMaxHeight().width(1.dp).background(MaterialTheme.colorScheme.outline))
-
-            // 오른쪽(비율 8): 결과 — 웹앱 .calc-content, 서브탭이 아니라 항상 보이는 영역
-            Box(Modifier.weight(8f).fillMaxHeight()) {
-                CalcResultTab(repository = repository, results = results, onSaved = { savedRefreshTick++ })
-            }
-        }
+        )
     }
 }
 

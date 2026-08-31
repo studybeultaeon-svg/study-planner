@@ -151,7 +151,9 @@ data class CalendarTask(
     val nextDays: Int? = null,
     val linkedCalc: String? = null,
     val progressStep: String? = null,
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    /** 완료(O) 시 다음 회독을 자동 생성할지(79차, 사용자 요청) — 기본 off. */
+    val multiPassEnabled: Boolean = false
 )
 
 /**

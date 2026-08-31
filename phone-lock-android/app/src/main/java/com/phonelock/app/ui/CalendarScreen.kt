@@ -411,19 +411,37 @@ private fun CalendarTaskRow(
                 }
             }
             Spacer(Modifier.width(Spacing.xs))
-            // 웹앱 .next-days-btn — 다음 회독까지 며칠 뒤인지 짧은 알약 입력, 헤더 줄 안에 넣는다.
-            OutlinedTextField(
-                value = nextDaysText,
-                onValueChange = { text ->
-                    nextDaysText = text
-                    scope.launch { repository.setCalendarTaskNextDays(task, text.trim().toIntOrNull()) }
-                },
-                placeholder = { Text("⏱", style = MaterialTheme.typography.labelSmall) },
-                modifier = Modifier.width(64.dp),
-                textStyle = MaterialTheme.typography.labelSmall,
-                singleLine = true
+            // 79차: 완료(O) 시 다음 회독을 자동 생성할지 업무마다 켜고 끌 수 있는 토글(기본 off, 사용자 요청).
+            // 꺼져 있으면 아래 ⏱(nextDays) 입력은 의미가 없으므로 숨긴다.
+            Text(
+                if (task.multiPassEnabled) "🔁다회독" else "🔁off",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .background(
+                        (if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.15f),
+                        RoundedCornerShape(50)
+                    )
+                    .clickable { scope.launch { repository.setCalendarTaskMultiPass(task, !task.multiPassEnabled) } }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             )
             Spacer(Modifier.width(Spacing.xs))
+            if (task.multiPassEnabled) {
+                // 웹앱 .next-days-btn — 다음 회독까지 며칠 뒤인지 짧은 알약 입력, 헤더 줄 안에 넣는다.
+                OutlinedTextField(
+                    value = nextDaysText,
+                    onValueChange = { text ->
+                        nextDaysText = text
+                        scope.launch { repository.setCalendarTaskNextDays(task, text.trim().toIntOrNull()) }
+                    },
+                    placeholder = { Text("⏱", style = MaterialTheme.typography.labelSmall) },
+                    modifier = Modifier.width(64.dp),
+                    textStyle = MaterialTheme.typography.labelSmall,
+                    singleLine = true
+                )
+                Spacer(Modifier.width(Spacing.xs))
+            }
             val statusLabel = task.status ?: "미완"
             val statusColor = when (task.status) {
                 "O" -> Color(0xFF34D399)

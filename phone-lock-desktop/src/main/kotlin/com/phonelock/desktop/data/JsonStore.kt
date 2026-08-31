@@ -168,7 +168,8 @@ object JsonStore {
                     status = if (c.isNull("status")) null else c.optString("status", null),
                     nextDays = if (c.has("nextDays") && !c.isNull("nextDays")) c.getInt("nextDays") else null,
                     linkedCalc = if (c.isNull("linkedCalc")) null else c.optString("linkedCalc", null),
-                    progressStep = if (c.isNull("progressStep")) null else c.optString("progressStep", null)
+                    progressStep = if (c.isNull("progressStep")) null else c.optString("progressStep", null),
+                    multiPassEnabled = c.optBoolean("multiPassEnabled", false)
                 )
             )
         }
@@ -447,6 +448,7 @@ object JsonStore {
                 put("nextDays", c.nextDays ?: JSONObject.NULL)
                 put("linkedCalc", c.linkedCalc ?: JSONObject.NULL)
                 put("progressStep", c.progressStep ?: JSONObject.NULL)
+                put("multiPassEnabled", c.multiPassEnabled)
             })
         }
         json.put("calendarTasks", calendarTasksJson)

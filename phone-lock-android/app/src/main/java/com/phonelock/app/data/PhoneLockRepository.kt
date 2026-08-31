@@ -850,6 +850,11 @@ class PhoneLockRepository(context: Context) {
         pushCalendarToFirebase()
     }
 
+    suspend fun setCalendarTaskMultiPass(task: CalendarTask, enabled: Boolean) {
+        calendarTaskDao.update(task.copy(multiPassEnabled = enabled))
+        pushCalendarToFirebase()
+    }
+
     /** ▲▼ 순서 변경(드래그 아님 — 웹앱도 배열 스왑 버튼 방식). direction은 -1(위) 또는 +1(아래). */
     suspend fun moveCalendarTaskOrder(task: CalendarTask, direction: Int) {
         val dayTasks = calendarTaskDao.getByDate(task.dateKey)
@@ -871,6 +876,7 @@ class PhoneLockRepository(context: Context) {
         LocalDate.parse(dateKey).plusDays(days.toLong()).toString()
 
     private suspend fun applyCalendarAutoSchedule(dateKey: String, task: CalendarTask) {
+        if (!task.multiPassEnabled) return
         val (nextColor, defaultDays) = CALENDAR_SCHEDULE[task.color] ?: return
         val days = task.nextDays?.takeIf { it >= 0 } ?: defaultDays
         val nKey = nextScheduleDateKey(dateKey, days)
@@ -885,6 +891,7 @@ class PhoneLockRepository(context: Context) {
     }
 
     private suspend fun revertCalendarAutoSchedule(dateKey: String, task: CalendarTask) {
+        if (!task.multiPassEnabled) return
         val (nextColor, defaultDays) = CALENDAR_SCHEDULE[task.color] ?: return
         val days = task.nextDays?.takeIf { it >= 0 } ?: defaultDays
         val nKey = nextScheduleDateKey(dateKey, days)
@@ -1035,6 +1042,7 @@ class PhoneLockRepository(context: Context) {
                     put("nextDays", t.nextDays ?: JSONObject.NULL)
                     put("linkedCalc", t.linkedCalc ?: JSONObject.NULL)
                     put("progressStep", t.progressStep ?: JSONObject.NULL)
+                    put("multiPassEnabled", t.multiPassEnabled)
                 })
             }
             root.put(dateKey, arr)
@@ -1057,7 +1065,8 @@ class PhoneLockRepository(context: Context) {
                         nextDays = if (t.has("nextDays") && !t.isNull("nextDays")) t.getInt("nextDays") else null,
                         linkedCalc = if (t.isNull("linkedCalc")) null else t.optString("linkedCalc", null),
                         progressStep = if (t.isNull("progressStep")) null else t.optString("progressStep", null),
-                        sortOrder = i
+                        sortOrder = i,
+                        multiPassEnabled = t.optBoolean("multiPassEnabled", false)
                     )
                 )
             }

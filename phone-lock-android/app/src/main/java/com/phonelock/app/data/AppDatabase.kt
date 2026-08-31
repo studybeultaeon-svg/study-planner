@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CalcTask::class, CalcSavedItem::class, ConfirmCounter::class,
         Routine::class, RoutineLog::class
     ],
-    version = 28,
+    version = 29,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
