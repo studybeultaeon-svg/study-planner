@@ -51,6 +51,13 @@ fun UpdateBanner(repository: Repository, installerUrl: String) {
                 scope.launch {
                     val ok = downloadAndRunInstaller(installerUrl)
                     if (ok) {
+                        // 79차 버그 수정: 이 표식 없이 exitProcess(0)만 하면, 감시 프로세스(Watchdog)가
+                        // 2초 안에 "죽었다"고 보고 옛 버전 exe를 즉시 다시 띄운다 — 설치 마법사가 파일을
+                        // 덮어쓰기도 전에 옛 버전이 살아나 파일을 다시 잠그고, 그 옛 버전이 "새 버전 있음"
+                        // 배너를 또 띄우면서 업데이트를 눌러도 영원히 반복되는 버그였다("트레이 종료"와
+                        // 동일한 표식을 남겨 감시 프로세스가 되살리지 않게 한다 — Main.kt의 정식 종료
+                        // 절차와 동일 패턴, 새 버전이 켜지면 시작 시점에 이 표식이 자동으로 지워진다).
+                        runCatching { com.phonelock.desktop.intentionalExitFlagFile().createNewFile() }
                         repository.flushPendingUsage()
                         exitProcess(0)
                     }
