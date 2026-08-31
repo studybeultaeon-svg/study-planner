@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.phonelock.desktop.monitor.UsageOverlayStatus
 import kotlinx.coroutines.delay
 
@@ -36,9 +37,9 @@ private fun formatRemaining(totalSeconds: Int): String {
 }
 
 /**
- * 실행확인 통과 후 유예시간 동안 프로그램을 쓰는 중에 화면 구석에 남은 시간을 보여주는 작은 위젯.
- * 안드로이드/브라우저 확장은 전체화면 위에 pointer-events:none으로 덮지만, Compose Desktop 창은
- * 클릭까지 가로채므로 화면 전체를 덮으면 아래 프로그램을 못 쓰게 된다. 대신 구석에 작게 띄운다.
+ * 실행확인 통과 후 유예시간 동안 프로그램을 쓰는 중에 남은 시간을 보여주는 전체화면 위젯 — 안드로이드/
+ * 브라우저 확장과 동일하게 화면 전체를 덮되, Win32 클릭-통과(Main.kt의 makeClickThrough)로 아래
+ * 프로그램은 그대로 쓸 수 있다.
  */
 @Composable
 fun UsageOverlayContent(status: UsageOverlayStatus) {
@@ -76,17 +77,17 @@ fun UsageOverlayContent(status: UsageOverlayStatus) {
             .background(Color(0xFF3B322C).copy(alpha = alpha)),
         contentAlignment = Alignment.Center
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(12.dp)) {
             Text(
                 if (status.isPomodoro) "휴식 중 임시 해제" else "남은 유예시간",
                 color = Color.White,
-                style = MaterialTheme.typography.labelMedium
+                style = MaterialTheme.typography.titleLarge
             )
             Text(
                 formatRemaining(remaining),
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.headlineSmall
+                fontSize = 64.sp
             )
         }
     }

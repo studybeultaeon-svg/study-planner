@@ -11,14 +11,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
-import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
@@ -28,8 +25,12 @@ import com.phonelock.desktop.routine.DesktopNotifier
 import com.phonelock.desktop.routine.RoutineNotifier
 import com.phonelock.desktop.routine.SocialGroupNotifier
 import com.phonelock.desktop.routine.VoiceMessageNotifier
+import com.sun.jna.Native
 import com.sun.jna.platform.win32.Advapi32Util
+import com.sun.jna.platform.win32.User32
+import com.sun.jna.platform.win32.WinDef.HWND
 import com.sun.jna.platform.win32.WinReg
+import com.sun.jna.platform.win32.WinUser
 import com.phonelock.desktop.monitor.EnforcementService
 import com.phonelock.desktop.monitor.LockReason
 import com.phonelock.desktop.monitor.StudyLockStatus
@@ -79,6 +80,20 @@ private fun resolveAppPath(appName: String): File? {
         if (shortcut != null) return shortcut
     }
     return null
+}
+
+/**
+ * 사용 중 오버레이가 화면 전체를 덮으면서도 마우스 클릭은 아래 프로그램으로 그대로 전달되도록
+ * (안드로이드 접근성 오버레이/브라우저 확장의 pointer-events:none과 동등한 효과) Win32
+ * WS_EX_TRANSPARENT 확장 스타일을 추가한다. Compose Desktop 창 자체엔 이런 클릭-통과 옵션이
+ * 없어(코너 위젯으로 축소해둔 원래 이유) 네이티브 호출이 필요하다.
+ */
+private fun makeClickThrough(window: java.awt.Window) {
+    runCatching {
+        val hwnd = HWND(Native.getComponentPointer(window))
+        val exStyle = User32.INSTANCE.GetWindowLong(hwnd, WinUser.GWL_EXSTYLE)
+        User32.INSTANCE.SetWindowLong(hwnd, WinUser.GWL_EXSTYLE, exStyle or WinUser.WS_EX_LAYERED or WinUser.WS_EX_TRANSPARENT)
+    }.onFailure { e -> DebugLog.log("UsageOverlay", "클릭-통과 설정 실패: ${e.javaClass.simpleName}: ${e.message}") }
 }
 
 private data class BlockRequest(val processName: String, val reason: LockReason, val blockAttempts: Int)
@@ -305,11 +320,13 @@ private fun startApp() = application {
             alwaysOnTop = true,
             focusable = false,
             resizable = false,
-            state = rememberWindowState(
-                position = WindowPosition(Alignment.TopEnd),
-                size = DpSize(160.dp, 64.dp)
-            )
+            transparent = true,
+            state = rememberWindowState(placement = WindowPlacement.Maximized)
         ) {
+            // 안드로이드/브라우저 확장은 pointer-events:none으로 전체화면 위에 덮지만, Compose Desktop
+            // 창은 클릭까지 가로챈다 — 창 자체를 진짜 투명(transparent=true)하게 만들고 Win32
+            // WS_EX_TRANSPARENT로 클릭 통과까지 줘야 아래 프로그램을 그대로 쓸 수 있다.
+            LaunchedEffect(Unit) { makeClickThrough(window) }
             overlayStatus?.let { status -> PhoneLockTheme(palette) { UsageOverlayContent(status) } }
         }
     }
