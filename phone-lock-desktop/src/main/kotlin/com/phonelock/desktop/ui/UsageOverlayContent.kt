@@ -15,7 +15,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,13 +73,13 @@ fun UsageOverlayContent(status: UsageOverlayStatus) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF3B322C).copy(alpha = alpha)),
+            .background(MaterialTheme.colorScheme.background.copy(alpha = alpha)),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(12.dp)) {
             Text(
                 if (status.isPomodoro) "휴식 중 임시 해제" else "남은 유예시간",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 style = MaterialTheme.typography.titleLarge
             )
             Text(
