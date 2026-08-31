@@ -111,6 +111,7 @@ fun SettingsScreen(
     var blockShorts by remember { mutableStateOf(prefs.blockShorts) }
     var routineStreakNotifyEnabled by remember { mutableStateOf(prefs.routineStreakNotifyEnabled) }
     var autoDndEnabled by remember { mutableStateOf(prefs.autoDndEnabled) }
+    var defaultMultiPassEnabled by remember { mutableStateOf(prefs.defaultMultiPassEnabled) }
     var settingsSubTab by remember { mutableIntStateOf(0) }
     var notificationPolicyGranted by remember { mutableStateOf(isNotificationPolicyAccessGranted(context)) }
     var dailyResetHourText by remember { mutableStateOf(prefs.dailyResetHour.toString()) }
@@ -1052,11 +1053,21 @@ fun SettingsScreen(
           }
 
           if (settingsSubTab == 2) {
-            Text(
-                "공부 전용 설정 항목은 아직 없습니다. 필요해지면 여기에 추가됩니다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            SectionCard("캘린더 다회독 기본값") {
+                ToggleRow(
+                    title = "새 일정을 다회독으로 시작",
+                    checked = defaultMultiPassEnabled,
+                    onCheckedChange = { checked ->
+                        defaultMultiPassEnabled = checked
+                        prefs.defaultMultiPassEnabled = checked
+                    }
+                )
+                Text(
+                    "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 회독을 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
           }
 
           if (settingsSubTab == 1) {

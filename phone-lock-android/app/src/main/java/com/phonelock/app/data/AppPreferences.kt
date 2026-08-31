@@ -16,6 +16,11 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("block_shorts", false)
         set(value) = prefs.edit().putBoolean("block_shorts", value).apply()
 
+    /** 캘린더 일정을 새로 만들 때 "다회독"(완료 시 다음 회독 자동 생성) 기본값 — 기본은 off, 공부 설정에서 사용자가 변경. */
+    var defaultMultiPassEnabled: Boolean
+        get() = prefs.getBoolean("default_multi_pass_enabled", false)
+        set(value) = prefs.edit().putBoolean("default_multi_pass_enabled", value).apply()
+
     /** 공부 잠금(전체화면) 진입 시 방해금지 모드를 자동으로 켤지 — 전문가 종합분석 보고서 #13. 알림 정책
      *  접근 권한(ACCESS_NOTIFICATION_POLICY)이 없으면 이 설정이 켜져 있어도 조용히 무시된다. */
     var autoDndEnabled: Boolean

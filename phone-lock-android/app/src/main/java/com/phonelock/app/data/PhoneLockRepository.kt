@@ -828,7 +828,16 @@ class PhoneLockRepository(context: Context) {
     suspend fun addCalendarTask(dateKey: String, name: String) {
         if (name.isBlank()) return
         val nextOrder = (calendarTaskDao.getByDate(dateKey).maxOfOrNull { it.sortOrder } ?: -1) + 1
-        calendarTaskDao.insert(CalendarTask(dateKey = dateKey, name = name.trim(), color = "red", status = null, sortOrder = nextOrder))
+        calendarTaskDao.insert(
+            CalendarTask(
+                dateKey = dateKey,
+                name = name.trim(),
+                color = "red",
+                status = null,
+                sortOrder = nextOrder,
+                multiPassEnabled = preferences.defaultMultiPassEnabled
+            )
+        )
         resortCalendarDay(dateKey)
         pushCalendarToFirebase()
     }
@@ -978,7 +987,8 @@ class PhoneLockRepository(context: Context) {
         calendarTaskDao.insert(
             CalendarTask(
                 dateKey = dateKey, name = taskName, color = "red", status = null,
-                linkedCalc = calcTaskName, progressStep = (to - from + 1).toString(), sortOrder = nextOrder
+                linkedCalc = calcTaskName, progressStep = (to - from + 1).toString(), sortOrder = nextOrder,
+                multiPassEnabled = preferences.defaultMultiPassEnabled
             )
         )
         resortCalendarDay(dateKey)

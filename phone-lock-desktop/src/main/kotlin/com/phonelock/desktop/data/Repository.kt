@@ -500,6 +500,14 @@ class Repository {
             persist()
         }
 
+    /** 캘린더 새 일정을 추가할 때 "다회독" 기본값 — 기본 꺼짐, 공부 설정에서 사용자가 변경. */
+    var defaultMultiPassEnabled: Boolean
+        get() = synchronized(lock) { data.defaultMultiPassEnabled }
+        set(value) = synchronized(lock) {
+            data.defaultMultiPassEnabled = value
+            persist()
+        }
+
     /** 커스텀 테마(79차, 사용자 요청)용 배경/포인트 색 — "#RRGGBB" 문자열로 저장. themeMode가
      *  [com.phonelock.desktop.ui.theme.ThemeMode.CUSTOM]일 때만 쓰인다. */
     var customThemeBackground: String
@@ -981,7 +989,9 @@ class Repository {
 
     fun addCalendarTask(dateKey: String, name: String) = synchronized(lock) {
         if (name.isBlank()) return@synchronized
-        data.calendarTasks.add(CalendarTask(dateKey = dateKey, name = name.trim(), color = "red", status = null))
+        data.calendarTasks.add(
+            CalendarTask(dateKey = dateKey, name = name.trim(), color = "red", status = null, multiPassEnabled = data.defaultMultiPassEnabled)
+        )
         sortCalendarDay(dateKey)
         persist()
         pushCalendarToFirebase()
@@ -1153,7 +1163,8 @@ class Repository {
         data.calendarTasks.add(
             CalendarTask(
                 dateKey = dateKey, name = taskName, color = "red", status = null,
-                linkedCalc = calcTaskName, progressStep = (to - from + 1).toString()
+                linkedCalc = calcTaskName, progressStep = (to - from + 1).toString(),
+                multiPassEnabled = data.defaultMultiPassEnabled
             )
         )
         sortCalendarDay(dateKey)

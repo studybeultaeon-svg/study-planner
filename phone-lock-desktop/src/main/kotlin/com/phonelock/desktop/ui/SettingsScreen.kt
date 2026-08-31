@@ -85,6 +85,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
     // 79차(사용자 요청): "종료 확인 절차"는 관리(차단) 기능의 꼼수 방지 장치이므로 켜고 끌 수 있게 하되,
     // 켜짐→꺼짐으로 바꾸는 것 자체를 같은 회유 멘트 20개 절차로 보호한다(showExitConfirmGate).
     var exitConfirmEnabled by remember { mutableStateOf(repository.exitConfirmEnabled) }
+    var defaultMultiPassEnabled by remember { mutableStateOf(repository.defaultMultiPassEnabled) }
     var showExitConfirmGate by remember { mutableStateOf(false) }
     var dailyResetHourText by remember { mutableStateOf(repository.dailyResetHour.toString()) }
     var launchAtStartup by remember { mutableStateOf(com.phonelock.desktop.isLaunchAtStartupEnabled()) }
@@ -794,11 +795,17 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                 }
 
                 SettingsSubTab.STUDY -> {
-                    Text(
-                        "현재 공부 전용 설정 항목은 없습니다.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SectionCard("캘린더 다회독 기본값") {
+                        ToggleRow(
+                            title = "새 일정을 다회독으로 시작",
+                            description = "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 회독을 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
+                            checked = defaultMultiPassEnabled,
+                            onCheckedChange = { checked ->
+                                defaultMultiPassEnabled = checked
+                                repository.defaultMultiPassEnabled = checked
+                            }
+                        )
+                    }
                 }
 
                 SettingsSubTab.MANAGE -> {

@@ -423,7 +423,7 @@ private fun CalendarTaskRow(
                         (if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.15f),
                         RoundedCornerShape(50)
                     )
-                    .clickable { scope.launch { repository.setCalendarTaskMultiPass(task, !task.multiPassEnabled) } }
+                    .clickable { scope.launch { repository.setCalendarTaskMultiPass(task, !task.multiPassEnabled); onChanged() } }
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             )
             Spacer(Modifier.width(Spacing.xs))
