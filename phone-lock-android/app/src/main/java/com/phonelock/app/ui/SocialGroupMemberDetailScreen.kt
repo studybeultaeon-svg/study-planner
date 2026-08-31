@@ -768,8 +768,9 @@ private fun MemberStatTile(label: String, value: String, modifier: Modifier = Mo
  * "공부 - 일정표" 탭 — 라이브 TimetableScreen(할당량 계산기 업무를 요일별 목표량 표로 보여주는 화면)을
  * 그대로 옮긴다(78차). 이전엔 계산기 데이터가 모임 공유 대상이 아니라서 대신 그 주 캘린더 일정을
  * 나열하는 형태로 단순화했었는데, 사용자가 "일정표는 진짜 일정표 화면을 의미한다"고 정정해 [MemberStats.calcTasks]
- * (shareSchedule 토글에 함께 묶임)를 새로 동기화해 반영했다. linkedCalc 완료 체크(✅)는 계산기 원본에서도
- * 로컬 캘린더 연동이 있어야만 계산되는 값이라 이 읽기전용 화면에는 옮기지 않는다(라이브 화면과의 유일한 차이).
+ * (shareSchedule 토글에 함께 묶임)를 새로 동기화해 반영했다. **79차**: 라이브 화면의 빨강(미달성)/초록(달성)
+ * 색 시스템도 그대로 이식 — [MemberStats.schedule]에 함께 실려오는 linkedCalc/progressStep으로
+ * [PhoneLockRepository.isLinkedGoalAchieved]와 동일한 판정(그날 연동 완료 일정의 progressStep 합 ≥ 목표량)을 재현한다.
  */
 @Composable
 private fun MemberStudyTimetableTab(s: SocialGroupSyncClient.MemberStats) {
@@ -808,13 +809,16 @@ private fun MemberStudyTimetableTab(s: SocialGroupSyncClient.MemberStats) {
             dayTasks.forEach { t ->
                 val v = memberTimetableDayValue(t, jsDow).toDoubleOrNull() ?: 0.0
                 dayTotal += v
+                val achieved = v > 0 && memberIsLinkedGoalAchieved(s, cursor.toString(), t.name, v)
                 Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(t.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        if (v > 0) "${memberTimetableFmtDec(v)}${t.unit}" else "—",
+                        if (v > 0) "${memberTimetableFmtDec(v)}${t.unit}" + if (achieved) " ✅" else "" else "—",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (v > 0) FontWeight.Bold else FontWeight.Normal,
-                        color = if (v <= 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+                        color = if (v <= 0) MaterialTheme.colorScheme.onSurfaceVariant
+                            else if (achieved) Color(0xFF34D399)
+                            else if (isToday) Color(0xFFF87171) else MaterialTheme.colorScheme.primary
                     )
                 }
                 HorizontalDivider()
@@ -825,6 +829,15 @@ private fun MemberStudyTimetableTab(s: SocialGroupSyncClient.MemberStats) {
             }
         }
     }
+}
+
+/** [PhoneLockRepository.isLinkedGoalAchieved]와 동일 판정을 [MemberStats.schedule](동기화된 캘린더 일정)로 재현한다. */
+private fun memberIsLinkedGoalAchieved(s: SocialGroupSyncClient.MemberStats, dateKey: String, calcTaskName: String, dayQuota: Double): Boolean {
+    if (dayQuota <= 0) return false
+    val doneTotal = (s.schedule ?: emptyList())
+        .filter { it.dateKey == dateKey && it.linkedCalc == calcTaskName && it.status == "O" }
+        .sumOf { it.progressStep?.toDoubleOrNull() ?: 0.0 }
+    return doneTotal >= dayQuota
 }
 
 private fun memberTimetableDayValue(task: SocialGroupSyncClient.CalcTaskStat, jsDow: Int): String = when (jsDow) {

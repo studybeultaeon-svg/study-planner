@@ -30,8 +30,12 @@ object SocialGroupSyncClient {
     data class MemberInfo(val uid: String, val displayName: String, val joinedAt: Long)
     data class RoutineStat(val title: String, val doneToday: Boolean, val icon: String = "", val timeSlot: String? = null)
     /** [dateKey]/[color]가 있어야 모임 멤버 상세에서 실제 캘린더 미니 그리드로 그릴 수 있다(76차 확장 —
-     *  예전엔 오늘 하루치만 이름/상태로 보여줬다). */
-    data class ScheduleStat(val dateKey: String, val name: String, val status: String?, val color: String)
+     *  예전엔 오늘 하루치만 이름/상태로 보여줬다). [linkedCalc]/[progressStep]은 일정표 탭의 달성(✅) 표시용(79차,
+     *  라이브 TimetableScreen의 isLinkedGoalAchieved와 동일 판정을 여기서도 재현하기 위함). */
+    data class ScheduleStat(
+        val dateKey: String, val name: String, val status: String?, val color: String,
+        val linkedCalc: String? = null, val progressStep: String? = null
+    )
     /** 할당량 계산기 업무 하나 — 라이브 [com.phonelock.desktop.ui.TimetableScreen]과 같은 요일별 목표량 표를
      *  모임 멤버 상세에도 그대로 그리기 위해(78차) draft CalcTask에서 표시에 필요한 필드만 옮긴다. */
     data class CalcTaskStat(
@@ -480,6 +484,8 @@ object SocialGroupSyncClient {
                             put("name", t.name)
                             put("status", t.status ?: JSONObject.NULL)
                             put("color", t.color)
+                            put("linkedCalc", t.linkedCalc ?: JSONObject.NULL)
+                            put("progressStep", t.progressStep ?: JSONObject.NULL)
                         })
                     }
                 })
@@ -568,7 +574,9 @@ object SocialGroupSyncClient {
                             sc.optString("dateKey", ""),
                             sc.optString("name", ""),
                             if (sc.isNull("status")) null else sc.optString("status", null),
-                            sc.optString("color", "white")
+                            sc.optString("color", "white"),
+                            if (sc.isNull("linkedCalc")) null else sc.optString("linkedCalc", null),
+                            if (sc.isNull("progressStep")) null else sc.optString("progressStep", null)
                         )
                     }
                 } else emptyList()
