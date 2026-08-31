@@ -275,38 +275,6 @@ fun SettingsScreen(
                 .padding(Spacing.md)
         ) {
           if (settingsSubTab == 0) {
-            if (autoBackups.isNotEmpty()) {
-                SectionCard("⚠ 그룹 데이터 복구") {
-                    Text(
-                        "앱 업데이트로 로컬 데이터가 초기화됐을 때 자동으로 만들어진 백업이 있습니다. 그룹(차단 " +
-                            "대상 앱/사이트 목록)은 동기화되지 않는 데이터라 지워졌다면 이 백업에서만 복구할 수 " +
-                            "있습니다. 그룹이 이미 정상적으로 보이면 누르지 마세요(같은 그룹이 중복으로 추가됩니다).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                    val latest = autoBackups.first()
-                    Text("가장 최근 백업: ${latest.name}", style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(Spacing.sm))
-                    Button(onClick = {
-                        scope.launch {
-                            val json = runCatching { JSONObject(latest.readText()) }.getOrNull()
-                            if (json == null) {
-                                groupRestoreResult = "백업 파일을 읽지 못했습니다."
-                            } else {
-                                val count = repository.restoreGroupsFromBackup(json)
-                                groupRestoreResult = "그룹 ${count}개 복구 완료. 앱을 재시작해주세요."
-                            }
-                        }
-                    }) { Text("이 백업에서 그룹 복구") }
-                    groupRestoreResult?.let {
-                        Spacer(Modifier.height(Spacing.sm))
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-                Spacer(Modifier.height(Spacing.md))
-            }
-
             SectionCard("테마") {
                 Text(
                     "앱 전체 배경/포인트 색과 차단/실행확인 화면 강조색, 홈 화면 위젯 색까지 함께 바뀝니다.",
@@ -589,6 +557,60 @@ fun SettingsScreen(
                 )
                 Text(
                     "릴스/쇼츠 화면만 감지해서 차단합니다 (베스트 에포트 기능).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(Spacing.md))
+
+            if (autoBackups.isNotEmpty()) {
+                SectionCard("⚠ 그룹 데이터 복구") {
+                    Text(
+                        "앱 업데이트로 로컬 데이터가 초기화됐을 때 자동으로 만들어진 백업이 있습니다. 그룹(차단 " +
+                            "대상 앱/사이트 목록)은 동기화되지 않는 데이터라 지워졌다면 이 백업에서만 복구할 수 " +
+                            "있습니다. 그룹이 이미 정상적으로 보이면 누르지 마세요(같은 그룹이 중복으로 추가됩니다).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                    val latest = autoBackups.first()
+                    Text("가장 최근 백업: ${latest.name}", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(Spacing.sm))
+                    Button(onClick = {
+                        scope.launch {
+                            val json = runCatching { JSONObject(latest.readText()) }.getOrNull()
+                            if (json == null) {
+                                groupRestoreResult = "백업 파일을 읽지 못했습니다."
+                            } else {
+                                val count = repository.restoreGroupsFromBackup(json)
+                                groupRestoreResult = "그룹 ${count}개 복구 완료. 앱을 재시작해주세요."
+                            }
+                        }
+                    }) { Text("이 백업에서 그룹 복구") }
+                    groupRestoreResult?.let {
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Spacer(Modifier.height(Spacing.md))
+            }
+
+            SectionCard("백업 / 복원") {
+                Button(
+                    onClick = { backupLauncher.launch("phone_lock_backup.json") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("클라우드로 백업")
+                }
+                Spacer(Modifier.height(Spacing.sm))
+                Button(
+                    onClick = { restoreLauncher.launch(arrayOf("application/json")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("백업 파일에서 복원")
+                }
+                Text(
+                    "저장 위치 선택 창에서 구글 드라이브 등 클라우드 폴더를 직접 고를 수 있습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1027,27 +1049,6 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(Spacing.md))
 
-            SectionCard("백업 / 복원") {
-                Button(
-                    onClick = { backupLauncher.launch("phone_lock_backup.json") },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("클라우드로 백업")
-                }
-                Spacer(Modifier.height(Spacing.sm))
-                Button(
-                    onClick = { restoreLauncher.launch(arrayOf("application/json")) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("백업 파일에서 복원")
-                }
-                Text(
-                    "저장 위치 선택 창에서 구글 드라이브 등 클라우드 폴더를 직접 고를 수 있습니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(Modifier.height(Spacing.md))
           }
 
           if (settingsSubTab == 2) {
