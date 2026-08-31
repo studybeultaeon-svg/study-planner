@@ -234,24 +234,6 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                     }
                     Spacer(Modifier.height(Spacing.md))
 
-                    SectionCard("일일 사용 한도 초기화 시각") {
-                        OutlinedTextField(
-                            value = dailyResetHourText,
-                            onValueChange = { text ->
-                                dailyResetHourText = text
-                                text.toIntOrNull()?.let { if (it in 0..23) repository.dailyResetHour = it }
-                            },
-                            label = { Text("초기화 시각 (0~23시)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            "이 시각이 되면 그룹별 오늘 사용 시간이 초기화됩니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
                     SectionCard("계정 동기화 (로그인 필수)") {
                         Text(
                             "동기화(실행확인 레벨/스누즈/일일사용량/캘린더/계산기/루틴)는 이제 로그인이 있어야만 " +
@@ -716,6 +698,24 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                 }
 
                 SettingsSubTab.MANAGE -> {
+                    SectionCard("일일 사용 한도 초기화 시각") {
+                        OutlinedTextField(
+                            value = dailyResetHourText,
+                            onValueChange = { text ->
+                                dailyResetHourText = text
+                                text.toIntOrNull()?.let { if (it in 0..23) repository.dailyResetHour = it }
+                            },
+                            label = { Text("초기화 시각 (0~23시)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            "이 시각이 되면 그룹별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
                     SectionCard("릴스/쇼츠 차단") {
                         ToggleRow(
                             title = "릴스 차단 (인스타그램)",

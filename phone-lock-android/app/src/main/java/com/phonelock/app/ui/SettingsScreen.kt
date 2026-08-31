@@ -441,24 +441,6 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(Spacing.md))
 
-            SectionCard("일일 사용 한도 초기화 시각") {
-                OutlinedTextField(
-                    value = dailyResetHourText,
-                    onValueChange = { text ->
-                        dailyResetHourText = text
-                        text.toIntOrNull()?.let { if (it in 0..23) prefs.dailyResetHour = it }
-                    },
-                    label = { Text("초기화 시각 (0~23시)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    "이 시각이 되면 그룹별 오늘 사용 시간이 초기화됩니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(Modifier.height(Spacing.md))
-
             run {
                 val crashLogFile = java.io.File(context.filesDir, "crash_log.txt")
                 if (crashLogFile.exists()) {
@@ -505,6 +487,24 @@ fun SettingsScreen(
           }
 
           if (settingsSubTab == 3) {
+            SectionCard("일일 사용 한도 초기화 시각") {
+                OutlinedTextField(
+                    value = dailyResetHourText,
+                    onValueChange = { text ->
+                        dailyResetHourText = text
+                        text.toIntOrNull()?.let { if (it in 0..23) prefs.dailyResetHour = it }
+                    },
+                    label = { Text("초기화 시각 (0~23시)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "이 시각이 되면 그룹별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(Spacing.md))
+
             SectionCard("릴스/쇼츠 차단") {
                 ToggleRow(
                     title = "인스타 차단",
