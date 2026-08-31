@@ -69,7 +69,7 @@ object JsonStore {
             themeMode = json.optString("themeMode", "LIGHT_GREEN"),
             customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
-            exitConfirmEnabled = json.optBoolean("exitConfirmEnabled", true),
+            exitConfirmEnabled = json.optBoolean("exitConfirmEnabled", false),
             blockReels = json.optBoolean("blockReels", false),
             blockShorts = json.optBoolean("blockShorts", false),
             routineStreakNotifyEnabled = json.optBoolean("routineStreakNotifyEnabled", false),

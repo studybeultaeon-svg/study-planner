@@ -297,8 +297,8 @@ data class AppData(
     /** 커스텀 테마(79차)의 배경/포인트 색 — "#RRGGBB". */
     var customThemeBackground: String = "#FAFBF6",
     var customThemeAccent: String = "#8BC34A",
-    /** 앱 완전 종료 시 회유 멘트 20개 확인 절차를 거칠지(79차) — 기본 켜짐. */
-    var exitConfirmEnabled: Boolean = true,
+    /** 앱 완전 종료 시 회유 멘트 20개 확인 절차를 거칠지(79차) — 기본 꺼짐(사용자 요청). */
+    var exitConfirmEnabled: Boolean = false,
     /** "모임"(소셜 그룹)별 공유 설정 — groupId -> GroupShareSettings. 모임 가입 자체가 공유 의도이므로
      *  각 항목 기본값은 true, 설정은 각 모임 화면의 "🔒 공유 설정"에서 모임 단위로 바꾼다(74차 무전기
      *  설정을 전역→모임별로 옮긴 것과 동일한 선례). */
