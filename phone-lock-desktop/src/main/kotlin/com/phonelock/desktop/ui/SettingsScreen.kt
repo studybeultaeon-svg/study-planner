@@ -82,6 +82,10 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
     var themeMode by remember { mutableStateOf(repository.themeMode) }
     var customBgText by remember { mutableStateOf(repository.customThemeBackground) }
     var customAccentText by remember { mutableStateOf(repository.customThemeAccent) }
+    // 79차(사용자 요청): "종료 확인 절차"는 관리(차단) 기능의 꼼수 방지 장치이므로 켜고 끌 수 있게 하되,
+    // 켜짐→꺼짐으로 바꾸는 것 자체를 같은 회유 멘트 20개 절차로 보호한다(showExitConfirmGate).
+    var exitConfirmEnabled by remember { mutableStateOf(repository.exitConfirmEnabled) }
+    var showExitConfirmGate by remember { mutableStateOf(false) }
     var dailyResetHourText by remember { mutableStateOf(repository.dailyResetHour.toString()) }
     var launchAtStartup by remember { mutableStateOf(com.phonelock.desktop.isLaunchAtStartupEnabled()) }
     var blockReels by remember { mutableStateOf(repository.blockReels) }
@@ -184,6 +188,29 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                 TextButton(onClick = { pendingRoutineImportFile = null }) { Text("취소") }
             }
         )
+    }
+
+    if (showExitConfirmGate) {
+        androidx.compose.ui.window.Window(
+            onCloseRequest = { showExitConfirmGate = false },
+            title = "종료 확인 절차 끄기",
+            undecorated = true,
+            alwaysOnTop = true,
+            state = androidx.compose.ui.window.rememberWindowState(placement = androidx.compose.ui.window.WindowPlacement.Maximized)
+        ) {
+            com.phonelock.desktop.ui.theme.PhoneLockTheme(repository.currentPalette()) {
+                ExitConfirmScreen(
+                    title = "정말 종료 확인 절차를 끌까요?",
+                    finalLabel = "끄기",
+                    onConfirmExit = {
+                        exitConfirmEnabled = false
+                        repository.exitConfirmEnabled = false
+                        showExitConfirmGate = false
+                    },
+                    onCancel = { showExitConfirmGate = false }
+                )
+            }
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -789,6 +816,24 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                             "이 시각이 되면 그룹별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    SectionCard("앱 종료 확인 절차") {
+                        ToggleRow(
+                            title = "종료 시 회유 멘트 20개 확인",
+                            description = "꺼두면 트레이 \"종료\"를 눌렀을 때 이 확인 없이 바로 꺼집니다.",
+                            checked = exitConfirmEnabled,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    exitConfirmEnabled = true
+                                    repository.exitConfirmEnabled = true
+                                } else {
+                                    // 끄는 것 자체를 같은 절차로 보호 — 바로 끄지 않고 확인 게이트를 띄운다.
+                                    showExitConfirmGate = true
+                                }
+                            }
                         )
                     }
                     Spacer(Modifier.height(Spacing.md))

@@ -491,6 +491,15 @@ class Repository {
             persist()
         }
 
+    /** 앱 완전 종료 시 회유 멘트 20개 확인 절차를 거칠지(79차, 사용자 요청) — 기본 켜짐(기존 동작 유지).
+     *  이 값을 켬→끔으로 바꾸는 것 자체도 같은 절차로 보호한다(설정 화면에서 처리, [[DECISIONS.md]] 79차 참고). */
+    var exitConfirmEnabled: Boolean
+        get() = synchronized(lock) { data.exitConfirmEnabled }
+        set(value) = synchronized(lock) {
+            data.exitConfirmEnabled = value
+            persist()
+        }
+
     /** 커스텀 테마(79차, 사용자 요청)용 배경/포인트 색 — "#RRGGBB" 문자열로 저장. themeMode가
      *  [com.phonelock.desktop.ui.theme.ThemeMode.CUSTOM]일 때만 쓰인다. */
     var customThemeBackground: String

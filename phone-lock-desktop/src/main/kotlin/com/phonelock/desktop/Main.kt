@@ -178,6 +178,13 @@ private fun startApp() = application {
         }
     }
 
+    // 79차(사용자 요청): "정말 종료?" 20문항 확인 절차는 관리(차단) 기능의 꼼수 방지 장치이지 앱
+    // 전체 필수 기능은 아니라는 판단 — 설정 > 관리 탭에서 껐다면 이 확인 없이 바로 종료.
+    fun doExit() {
+        runCatching { intentionalExitFlagFile().createNewFile() }
+        repository.flushPendingUsage()
+        exitApplication()
+    }
     Tray(
         icon = SunriseIcon,
         state = trayState,
@@ -185,7 +192,7 @@ private fun startApp() = application {
         onAction = { mainWindowVisible = true },
         menu = {
             Item("열기", onClick = { mainWindowVisible = true })
-            Item("종료", onClick = { exitConfirmVisible = true })
+            Item("종료", onClick = { if (repository.exitConfirmEnabled) exitConfirmVisible = true else doExit() })
         }
     )
 
@@ -281,9 +288,8 @@ private fun startApp() = application {
             PhoneLockTheme(palette) {
                 ExitConfirmScreen(
                     onConfirmExit = {
-                        runCatching { intentionalExitFlagFile().createNewFile() }
-                        repository.flushPendingUsage()
-                        exitApplication()
+                        exitConfirmVisible = false
+                        doExit()
                     },
                     onCancel = { exitConfirmVisible = false }
                 )

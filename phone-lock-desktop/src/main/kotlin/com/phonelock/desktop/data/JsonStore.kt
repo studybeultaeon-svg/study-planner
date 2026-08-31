@@ -69,6 +69,7 @@ object JsonStore {
             themeMode = json.optString("themeMode", "LIGHT_GREEN"),
             customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
+            exitConfirmEnabled = json.optBoolean("exitConfirmEnabled", true),
             blockReels = json.optBoolean("blockReels", false),
             blockShorts = json.optBoolean("blockShorts", false),
             routineStreakNotifyEnabled = json.optBoolean("routineStreakNotifyEnabled", false),
@@ -372,6 +373,7 @@ object JsonStore {
         json.put("themeMode", data.themeMode)
         json.put("customThemeBackground", data.customThemeBackground)
         json.put("customThemeAccent", data.customThemeAccent)
+        json.put("exitConfirmEnabled", data.exitConfirmEnabled)
         json.put("routinesTs", data.routinesTs)
         json.put("lastGroupAutoResetDate", data.lastGroupAutoResetDate ?: JSONObject.NULL)
         json.put("nextRoutineId", data.nextRoutineId)
