@@ -1,5 +1,7 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -31,7 +34,9 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.monitor.AccountSyncClient
@@ -75,6 +80,8 @@ private enum class SettingsSubTab { COMMON, ROUTINE, STUDY, MANAGE, SOCIAL }
 fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
     var settingsSubTab by remember { mutableIntStateOf(0) }
     var themeMode by remember { mutableStateOf(repository.themeMode) }
+    var customBgText by remember { mutableStateOf(repository.customThemeBackground) }
+    var customAccentText by remember { mutableStateOf(repository.customThemeAccent) }
     var dailyResetHourText by remember { mutableStateOf(repository.dailyResetHour.toString()) }
     var launchAtStartup by remember { mutableStateOf(com.phonelock.desktop.isLaunchAtStartupEnabled()) }
     var blockReels by remember { mutableStateOf(repository.blockReels) }
@@ -231,6 +238,62 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                                     label = { Text(label) }
                                 )
                             }
+                        }
+                        // 79차(사용자 요청): 배경색/포인트색 두 개만 직접 골라 나만의 테마를 만드는 기능.
+                        // 나머지 색(텍스트/카드/보조색 등)은 buildCustomPalette()가 이 둘로부터 자동 계산한다.
+                        if (themeMode == com.phonelock.desktop.ui.theme.ThemeMode.CUSTOM) {
+                            Spacer(Modifier.height(Spacing.sm))
+                            val bgPreview = com.phonelock.desktop.ui.theme.parseHexColor(customBgText)
+                            val accentPreview = com.phonelock.desktop.ui.theme.parseHexColor(customAccentText)
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = customBgText,
+                                    onValueChange = { text ->
+                                        customBgText = text
+                                        if (com.phonelock.desktop.ui.theme.parseHexColor(text) != null) {
+                                            repository.customThemeBackground = text.trim()
+                                            onThemeChange(themeMode)
+                                        }
+                                    },
+                                    label = { Text("배경색") },
+                                    placeholder = { Text("#FAFBF6") },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                                Box(
+                                    Modifier.size(36.dp)
+                                        .background(bgPreview ?: Color.Gray, MaterialTheme.shapes.small)
+                                        .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                )
+                            }
+                            Spacer(Modifier.height(Spacing.sm))
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = customAccentText,
+                                    onValueChange = { text ->
+                                        customAccentText = text
+                                        if (com.phonelock.desktop.ui.theme.parseHexColor(text) != null) {
+                                            repository.customThemeAccent = text.trim()
+                                            onThemeChange(themeMode)
+                                        }
+                                    },
+                                    label = { Text("포인트색") },
+                                    placeholder = { Text("#8BC34A") },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                                Box(
+                                    Modifier.size(36.dp)
+                                        .background(accentPreview ?: Color.Gray, MaterialTheme.shapes.small)
+                                        .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                )
+                            }
+                            Spacer(Modifier.height(Spacing.xs))
+                            Text(
+                                "\"#RRGGBB\" 형식(예: #FF9800)으로 입력하세요. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                     Spacer(Modifier.height(Spacing.md))

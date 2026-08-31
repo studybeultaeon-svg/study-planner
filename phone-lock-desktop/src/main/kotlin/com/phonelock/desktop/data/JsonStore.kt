@@ -67,6 +67,8 @@ object JsonStore {
             dailyResetHour = json.optInt("dailyResetHour", 0),
             routinesTs = json.optLong("routinesTs", 0L),
             themeMode = json.optString("themeMode", "LIGHT_GREEN"),
+            customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
+            customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
             blockReels = json.optBoolean("blockReels", false),
             blockShorts = json.optBoolean("blockShorts", false),
             routineStreakNotifyEnabled = json.optBoolean("routineStreakNotifyEnabled", false),
@@ -368,6 +370,8 @@ object JsonStore {
         json.put("nextGroupId", data.nextGroupId)
         json.put("dailyResetHour", data.dailyResetHour)
         json.put("themeMode", data.themeMode)
+        json.put("customThemeBackground", data.customThemeBackground)
+        json.put("customThemeAccent", data.customThemeAccent)
         json.put("routinesTs", data.routinesTs)
         json.put("lastGroupAutoResetDate", data.lastGroupAutoResetDate ?: JSONObject.NULL)
         json.put("nextRoutineId", data.nextRoutineId)

@@ -10,16 +10,23 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -94,6 +101,8 @@ fun SettingsScreen(
     val prefs = remember { AppPreferences(context) }
 
     var themeMode by remember { mutableStateOf(prefs.themeMode) }
+    var customBgText by remember { mutableStateOf(prefs.customThemeBackground) }
+    var customAccentText by remember { mutableStateOf(prefs.customThemeAccent) }
     var accessibilityEnabled by remember { mutableStateOf(AccessibilityServiceChecker.isEnabled(context)) }
     var deviceAdminActive by remember { mutableStateOf(isDeviceAdminActive(context)) }
     var batteryOptIgnored by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
@@ -321,6 +330,62 @@ fun SettingsScreen(
                             label = { Text(label) }
                         )
                     }
+                }
+                // 79차(사용자 요청): 배경색/포인트색 두 개만 직접 골라 나만의 테마를 만드는 기능.
+                // 나머지 색은 buildCustomPalette()가 이 둘로부터 자동 계산한다(데스크탑판과 동일).
+                if (themeMode == com.phonelock.app.ui.theme.ThemeMode.CUSTOM) {
+                    Spacer(Modifier.height(Spacing.sm))
+                    val bgPreview = com.phonelock.app.ui.theme.parseHexColor(customBgText)
+                    val accentPreview = com.phonelock.app.ui.theme.parseHexColor(customAccentText)
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = customBgText,
+                            onValueChange = { text ->
+                                customBgText = text
+                                if (com.phonelock.app.ui.theme.parseHexColor(text) != null) {
+                                    prefs.customThemeBackground = text.trim()
+                                    onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                                }
+                            },
+                            label = { Text("배경색") },
+                            placeholder = { Text("#FAFBF6") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        Box(
+                            Modifier.size(36.dp)
+                                .background(bgPreview ?: Color.Gray, MaterialTheme.shapes.small)
+                                .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.sm))
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = customAccentText,
+                            onValueChange = { text ->
+                                customAccentText = text
+                                if (com.phonelock.app.ui.theme.parseHexColor(text) != null) {
+                                    prefs.customThemeAccent = text.trim()
+                                    onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                                }
+                            },
+                            label = { Text("포인트색") },
+                            placeholder = { Text("#8BC34A") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        Box(
+                            Modifier.size(36.dp)
+                                .background(accentPreview ?: Color.Gray, MaterialTheme.shapes.small)
+                                .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text(
+                        "\"#RRGGBB\" 형식(예: #FF9800)으로 입력하세요. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             Spacer(Modifier.height(Spacing.md))

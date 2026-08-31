@@ -52,9 +52,15 @@ private fun colorSchemeFor(palette: PhoneLockPalette) = if (palette.isDark) {
  * themeMode를 생략하면 기본값(라이트+그린, 49차)을 쓴다.
  */
 @Composable
-fun PhoneLockTheme(themeMode: String = ThemeMode.LIGHT_GREEN, content: @Composable () -> Unit) {
+fun PhoneLockTheme(
+    themeMode: String = ThemeMode.LIGHT_GREEN,
+    customBackground: String = "#FAFBF6",
+    customAccent: String = "#8BC34A",
+    content: @Composable () -> Unit
+) {
+    val palette = if (themeMode == ThemeMode.CUSTOM) buildCustomPalette(customBackground, customAccent) else paletteFor(themeMode)
     MaterialTheme(
-        colorScheme = colorSchemeFor(paletteFor(themeMode)),
+        colorScheme = colorSchemeFor(palette),
         shapes = PhoneLockShapes,
         typography = PhoneLockTypography,
         content = content

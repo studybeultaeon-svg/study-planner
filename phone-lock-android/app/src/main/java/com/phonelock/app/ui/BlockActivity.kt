@@ -32,7 +32,8 @@ class BlockActivity : ComponentActivity() {
         // 주지 않기 위해 "진행"(primaryLabel) 버튼은 눌러도 아무 동작을 하지 않는 장식용 버튼이고,
         // 실제로 화면을 벗어나는 동작은 "중단"(secondaryLabel, goHome)에만 걸려있다.
         setContent {
-            PhoneLockTheme(AppPreferences(applicationContext).themeMode) {
+            val prefs = AppPreferences(applicationContext)
+            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent) {
                 val title = remember { quoteForTier(blockQuoteTier(blockAttempts)) }
                 InterstitialScreen(
                     title = title,

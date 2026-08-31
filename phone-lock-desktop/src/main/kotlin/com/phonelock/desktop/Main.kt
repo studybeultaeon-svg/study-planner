@@ -127,6 +127,10 @@ fun main(args: Array<String>) {
 private fun startApp() = application {
     val repository = remember { Repository() }
     var themeMode by remember { mutableStateOf(repository.themeMode) }
+    // 79차: 커스텀 테마는 themeMode 문자열("CUSTOM")이 안 바뀌어도 색상만 바뀔 수 있어서, 그 경우도
+    // 반드시 재계산되도록 별도 카운터를 함께 key로 쓴다(SettingsScreen이 색을 바꿀 때마다 증가).
+    var themeRefreshTick by remember { mutableStateOf(0) }
+    val palette = remember(themeMode, themeRefreshTick) { repository.currentPalette() }
     var mainWindowVisible by remember { mutableStateOf(true) }
     var blockRequest by remember { mutableStateOf<BlockRequest?>(null) }
     var confirmRequest by remember { mutableStateOf<ConfirmRequest?>(null) }
@@ -191,12 +195,12 @@ private fun startApp() = application {
             title = "갓생살기종합세트",
             icon = SunriseIcon
         ) {
-            PhoneLockTheme(themeMode) {
+            PhoneLockTheme(palette) {
                 // MaterialTheme은 색상 팔레트만 정의할 뿐 실제로 캔버스를 칠하진 않는다 — 이 Surface가
                 // 없으면 MainScreen이 덮지 않는 여백(패딩 등)이 Window 기본 배경(흰색)으로 비쳐 보인다.
                 Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
                     AccountGate(repository) {
-                        MainScreen(repository, onThemeChange = { themeMode = it })
+                        MainScreen(repository, onThemeChange = { themeMode = it; themeRefreshTick++ })
                     }
                 }
             }
@@ -211,7 +215,7 @@ private fun startApp() = application {
             alwaysOnTop = true,
             state = rememberWindowState(placement = WindowPlacement.Maximized)
         ) {
-            PhoneLockTheme(themeMode) {
+            PhoneLockTheme(palette) {
                 BlockScreen(req.reason, req.blockAttempts) { blockRequest = null }
             }
         }
@@ -233,7 +237,7 @@ private fun startApp() = application {
                 window.toFront()
                 window.requestFocus()
             }
-            PhoneLockTheme(themeMode) {
+            PhoneLockTheme(palette) {
                 studyLockStatus?.let { status ->
                     StudyLockScreen(
                         status = status,
@@ -274,7 +278,7 @@ private fun startApp() = application {
             alwaysOnTop = true,
             state = rememberWindowState(placement = WindowPlacement.Maximized)
         ) {
-            PhoneLockTheme(themeMode) {
+            PhoneLockTheme(palette) {
                 ExitConfirmScreen(
                     onConfirmExit = {
                         runCatching { intentionalExitFlagFile().createNewFile() }
@@ -300,7 +304,7 @@ private fun startApp() = application {
                 size = DpSize(160.dp, 64.dp)
             )
         ) {
-            overlayStatus?.let { status -> PhoneLockTheme(themeMode) { UsageOverlayContent(status) } }
+            overlayStatus?.let { status -> PhoneLockTheme(palette) { UsageOverlayContent(status) } }
         }
     }
 
@@ -322,7 +326,7 @@ private fun startApp() = application {
                 window.toFront()
                 window.requestFocus()
             }
-            PhoneLockTheme(themeMode) {
+            PhoneLockTheme(palette) {
                 ConfirmScreen(
                     processName = req.processName,
                     waitSeconds = req.waitSeconds,

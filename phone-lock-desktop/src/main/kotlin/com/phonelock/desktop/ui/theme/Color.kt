@@ -13,6 +13,9 @@ object ThemeMode {
     const val ROSE = "ROSE"
     const val MIDNIGHT = "MIDNIGHT"
     const val FOREST = "FOREST"
+    /** 커스텀(79차, 사용자 요청) — 배경/포인트 두 색만 사용자가 고르면 나머지 팔레트 값은
+     *  [buildCustomPalette]가 자동 계산한다. 실제 두 색은 AppData.customThemeBackground/customThemeAccent. */
+    const val CUSTOM = "CUSTOM"
 }
 
 /** 팔레트 하나가 채워야 하는 색상 집합 — PhoneLockColorScheme(Theme.kt)이 그대로 매핑한다. */
@@ -210,6 +213,64 @@ val ForestPalette = PhoneLockPalette(
     outline = Color(0xFF2A3B2F)
 )
 
+/** "#RRGGBB"(또는 "RRGGBB") 문자열을 [Color]로 파싱, 실패하면 null. */
+fun parseHexColor(hex: String): Color? = runCatching {
+    val clean = hex.trim().removePrefix("#")
+    if (clean.length != 6) return null
+    Color(0xFF000000.toInt() or clean.toLong(16).toInt())
+}.getOrNull()
+
+private fun blend(a: Color, b: Color, t: Float): Color = Color(
+    red = a.red + (b.red - a.red) * t,
+    green = a.green + (b.green - a.green) * t,
+    blue = a.blue + (b.blue - a.blue) * t,
+    alpha = 1f
+)
+
+private fun luminance(c: Color): Float = 0.299f * c.red + 0.587f * c.green + 0.114f * c.blue
+
+/**
+ * 커스텀 테마(79차, 사용자 요청) — 배경색/포인트색 두 개만으로 나머지 팔레트 필드를 자동 계산한다.
+ * 배경의 명도로 라이트/다크를 판정하고, 텍스트/보조색/컨테이너색은 전부 배경↔포인트색을 섞어(blend)
+ * 만들어서 사용자가 어떤 색을 고르든 항상 읽을 수 있는 대비를 보장한다. success/warning/error는
+ * 기존 8개 팔레트가 전부 공유하는 표준값을 라이트/다크에 맞게 그대로 재사용한다.
+ */
+fun buildCustomPalette(backgroundHex: String, accentHex: String): PhoneLockPalette {
+    val background = parseHexColor(backgroundHex) ?: Color(0xFFFAFBF6)
+    val primary = parseHexColor(accentHex) ?: Color(0xFF8BC34A)
+    val isDark = luminance(background) < 0.5f
+
+    val onBackground = if (isDark) blend(background, Color.White, 0.85f) else blend(background, Color.Black, 0.85f)
+    val onPrimary = if (luminance(primary) < 0.5f) Color.White else Color.Black
+    val surface = if (isDark) blend(background, Color.White, 0.10f) else Color.White
+    val surfaceAlt = if (isDark) surface else blend(background, primary, 0.12f)
+    val primaryContainer = if (isDark) blend(background, primary, 0.35f) else blend(primary, Color.White, 0.7f)
+    val secondary = if (isDark) blend(primary, Color.White, 0.15f) else blend(primary, Color.Black, 0.2f)
+    val onSecondary = background
+    val outline = blend(onBackground, background, 0.85f)
+    val muted = blend(onBackground, background, 0.5f)
+
+    return PhoneLockPalette(
+        isDark = isDark,
+        background = background,
+        surface = surface,
+        surfaceAlt = surfaceAlt,
+        primary = primary,
+        primaryContainer = primaryContainer,
+        onPrimary = onPrimary,
+        secondary = secondary,
+        onSecondary = onSecondary,
+        success = if (isDark) Color(0xFF34D399) else Color(0xFF43A047),
+        warning = if (isDark) Color(0xFFFBBF24) else Color(0xFFF59E0B),
+        warningContainer = if (isDark) Color(0xFF3A331A) else Color(0xFFFEF3C7),
+        error = if (isDark) Color(0xFFF87171) else Color(0xFFE53935),
+        errorContainer = if (isDark) Color(0xFF3A2020) else Color(0xFFFEE2E2),
+        onBackground = onBackground,
+        muted = muted,
+        outline = outline
+    )
+}
+
 fun paletteFor(themeMode: String): PhoneLockPalette = when (themeMode) {
     ThemeMode.DARK_BLUE -> DarkBluePalette
     ThemeMode.LIGHT_ORANGE -> LightOrangePalette
@@ -230,5 +291,6 @@ val THEME_DISPLAY_NAMES: List<Pair<String, String>> = listOf(
     ThemeMode.MINT to "민트 · 틸",
     ThemeMode.ROSE to "로즈 · 핑크",
     ThemeMode.MIDNIGHT to "미드나잇 · 퍼플",
-    ThemeMode.FOREST to "포레스트 · 그린"
+    ThemeMode.FOREST to "포레스트 · 그린",
+    ThemeMode.CUSTOM to "🎨 커스텀"
 )

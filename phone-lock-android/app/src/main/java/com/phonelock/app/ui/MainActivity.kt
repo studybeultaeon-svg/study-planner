@@ -143,10 +143,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var themeMode by remember { mutableStateOf(AppPreferences(applicationContext).themeMode) }
-            PhoneLockTheme(themeMode) {
+            // 79차: 커스텀 테마는 themeMode 문자열("CUSTOM")이 안 바뀌어도 색만 바뀔 수 있어서 별도
+            // 카운터로 강제 재계산(데스크탑판 Main.kt와 동일 패턴).
+            var themeRefreshTick by remember { mutableStateOf(0) }
+            val prefs = remember(themeRefreshTick) { AppPreferences(applicationContext) }
+            PhoneLockTheme(themeMode, prefs.customThemeBackground, prefs.customThemeAccent) {
                 Surface(modifier = Modifier) {
                     AccountGate(repository) {
-                        PhoneLockApp(repository, onThemeChange = { themeMode = it })
+                        PhoneLockApp(repository, onThemeChange = { themeMode = it; themeRefreshTick++ })
                     }
                 }
             }

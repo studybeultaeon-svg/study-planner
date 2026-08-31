@@ -292,8 +292,11 @@ data class AppData(
     val routineLogs: MutableList<RoutineLog> = mutableListOf(),
     /** 루틴 전체 문서 단위 LWW 타임스탬프(51차, 캘린더의 calendarTs와 동일 패턴) — users/{user}/routines. */
     var routinesTs: Long = 0L,
-    /** 앱 전체 테마 선택(설정 화면) — ThemeMode.LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE. */
+    /** 앱 전체 테마 선택(설정 화면) — ThemeMode.LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE 등, CUSTOM이면 아래 두 값을 씀. */
     var themeMode: String = "LIGHT_GREEN",
+    /** 커스텀 테마(79차)의 배경/포인트 색 — "#RRGGBB". */
+    var customThemeBackground: String = "#FAFBF6",
+    var customThemeAccent: String = "#8BC34A",
     /** "모임"(소셜 그룹)별 공유 설정 — groupId -> GroupShareSettings. 모임 가입 자체가 공유 의도이므로
      *  각 항목 기본값은 true, 설정은 각 모임 화면의 "🔒 공유 설정"에서 모임 단위로 바꾼다(74차 무전기
      *  설정을 전역→모임별로 옮긴 것과 동일한 선례). */

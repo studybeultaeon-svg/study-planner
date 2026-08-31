@@ -92,7 +92,8 @@ class StudyLockActivity : ComponentActivity() {
         val repository = PhoneLockRepository(applicationContext)
 
         setContent {
-            PhoneLockTheme(AppPreferences(applicationContext).themeMode) {
+            val prefs = AppPreferences(applicationContext)
+            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent) {
                 StudyLockScreen(
                     allowedPackages = allowedPackages,
                     studyStartedAt = studyStartedAt,

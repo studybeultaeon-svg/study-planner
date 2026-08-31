@@ -94,6 +94,15 @@ class AppPreferences(context: Context) {
         get() = prefs.getString("theme_mode", "LIGHT_GREEN") ?: "LIGHT_GREEN"
         set(value) = prefs.edit().putString("theme_mode", value).apply()
 
+    /** 커스텀 테마(79차, 사용자 요청)용 배경/포인트 색 — "#RRGGBB" 문자열, 데스크탑판과 동일 구조. */
+    var customThemeBackground: String
+        get() = prefs.getString("custom_theme_background", "#FAFBF6") ?: "#FAFBF6"
+        set(value) = prefs.edit().putString("custom_theme_background", value).apply()
+
+    var customThemeAccent: String
+        get() = prefs.getString("custom_theme_accent", "#8BC34A") ?: "#8BC34A"
+        set(value) = prefs.edit().putString("custom_theme_accent", value).apply()
+
     /** 그룹 자동 재활성화를 마지막으로 적용한 날짜(effectiveDate 기준) — 데스크탑판 lastGroupAutoResetDate와 동일 역할. */
     var lastGroupAutoResetDate: String?
         get() = prefs.getString("last_group_auto_reset_date", null)

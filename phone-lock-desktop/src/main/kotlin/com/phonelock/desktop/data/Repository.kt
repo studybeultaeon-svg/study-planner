@@ -491,6 +491,31 @@ class Repository {
             persist()
         }
 
+    /** 커스텀 테마(79차, 사용자 요청)용 배경/포인트 색 — "#RRGGBB" 문자열로 저장. themeMode가
+     *  [com.phonelock.desktop.ui.theme.ThemeMode.CUSTOM]일 때만 쓰인다. */
+    var customThemeBackground: String
+        get() = synchronized(lock) { data.customThemeBackground }
+        set(value) = synchronized(lock) {
+            data.customThemeBackground = value
+            persist()
+        }
+
+    var customThemeAccent: String
+        get() = synchronized(lock) { data.customThemeAccent }
+        set(value) = synchronized(lock) {
+            data.customThemeAccent = value
+            persist()
+        }
+
+    /** 현재 선택된 테마의 완성된 팔레트 — CUSTOM이면 두 색으로부터 나머지를 자동 계산한다. */
+    fun currentPalette(): com.phonelock.desktop.ui.theme.PhoneLockPalette = synchronized(lock) {
+        if (data.themeMode == com.phonelock.desktop.ui.theme.ThemeMode.CUSTOM) {
+            com.phonelock.desktop.ui.theme.buildCustomPalette(data.customThemeBackground, data.customThemeAccent)
+        } else {
+            com.phonelock.desktop.ui.theme.paletteFor(data.themeMode)
+        }
+    }
+
     /** 켜져있는(groupEnabled) 관리 그룹 전체 — "모임" 공유용. 76차엔 "지금 실제로 제한 중인" 그룹만
      *  걸러 보여줬으나(isCurrentlyRestricting), 시간대가 안 맞아 당장은 제한 중이 아닌 그룹(예: 주말에만
      *  도는 그룹)도 사용자가 "그냥 다 보이게" 요청해 groupEnabled 기준으로 넓혔다. 이름/설명뿐 아니라

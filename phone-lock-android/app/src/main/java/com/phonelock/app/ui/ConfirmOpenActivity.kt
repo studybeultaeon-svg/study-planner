@@ -35,7 +35,8 @@ class ConfirmOpenActivity : ComponentActivity() {
 
         if (isSite) {
             setContent {
-                PhoneLockTheme(AppPreferences(applicationContext).themeMode) {
+                val prefs = AppPreferences(applicationContext)
+                PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent) {
                     val title = remember { quoteForTier(confirmQuoteTier(level)) }
                     InterstitialScreen(
                         title = title,
