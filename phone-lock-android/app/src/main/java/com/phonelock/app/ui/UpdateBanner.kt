@@ -42,6 +42,7 @@ fun UpdateBanner(apkUrl: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var downloading by remember { mutableStateOf(false) }
+    var progressPercent by remember { mutableStateOf(-1) }
 
     // 2026-08-30 발견: Row + SpaceBetween에 Text를 weight 없이 넣으면 문구가 길 때 Text가 Row 폭을
     // 거의 다 차지해버려서 옆에 있던 버튼이 화면 밖으로 밀려나 안 보이는 문제가 있었다 — 문구가 항상
@@ -53,7 +54,11 @@ fun UpdateBanner(apkUrl: String) {
             .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         Text(
-            if (downloading) "업데이트 다운로드 중..." else "새 버전이 있습니다. 업데이트를 진행하세요",
+            when {
+                !downloading -> "새 버전이 있습니다. 업데이트를 진행하세요"
+                progressPercent in 0..100 -> "업데이트 다운로드 중... $progressPercent%"
+                else -> "업데이트 다운로드 중..."
+            },
             color = MaterialTheme.colorScheme.onPrimaryContainer
         )
         Spacer(Modifier.height(8.dp))
@@ -73,11 +78,12 @@ fun UpdateBanner(apkUrl: String) {
                 return@Button
             }
             downloading = true
+            progressPercent = -1
             scope.launch {
-                val ok = downloadAndInstallApk(context, apkUrl)
+                val result = downloadAndInstallApk(context, apkUrl) { percent -> progressPercent = percent }
                 downloading = false
-                if (!ok) {
-                    Toast.makeText(context, "업데이트 다운로드에 실패했습니다. 잠시 후 다시 시도해주세요", Toast.LENGTH_LONG).show()
+                if (result != null) {
+                    Toast.makeText(context, "업데이트 다운로드에 실패했습니다($result). 데이터 절약 모드가 켜져 있으면 꺼보거나, 잠시 후 다시 시도해주세요", Toast.LENGTH_LONG).show()
                 }
             }
         }) {
@@ -86,27 +92,46 @@ fun UpdateBanner(apkUrl: String) {
     }
 }
 
-private suspend fun downloadAndInstallApk(context: Context, apkUrl: String): Boolean = withContext(Dispatchers.IO) {
+/** 성공하면 null, 실패하면 원인을 짧게 담은 문자열을 반환한다(예전엔 Boolean만 돌려줘서 "왜" 실패했는지
+ *  알 방법이 없었다 — 다운로드가 "다운로드 중"에서 멈춘 채 아무 반응이 없다는 제보를 받고 진단용으로 보강). */
+private suspend fun downloadAndInstallApk(
+    context: Context,
+    apkUrl: String,
+    onProgress: (Int) -> Unit
+): String? = withContext(Dispatchers.IO) {
     runCatching {
         val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(apkUrl))
             .setTitle("갓생살기종합세트 업데이트")
             .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "update.apk")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            // 데이터 절약 모드/모바일 데이터 제한 때문에 다운로드가 PAUSED 상태로 무기한 멈춰있던 게
+            // "다운로드 중"만 뜨고 아무 일도 안 일어나는 것처럼 보인 원인 중 하나로 의심돼(2026-09-01
+            // 사용자 제보) 명시적으로 허용한다.
+            .setAllowedOverMetered(true)
+            .setAllowedOverRoaming(true)
         val id = dm.enqueue(request)
 
-        var status = DownloadManager.STATUS_RUNNING
+        var status = DownloadManager.STATUS_PENDING
         var attempts = 0
-        while (status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PENDING) {
-            if (attempts++ > 300) return@runCatching false // 최대 5분(1초 간격) 대기 후 포기
+        while (status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PENDING || status == DownloadManager.STATUS_PAUSED) {
+            if (attempts++ > 300) return@runCatching "5분 초과" // 최대 5분(1초 간격) 대기 후 포기
             delay(1000)
             dm.query(DownloadManager.Query().setFilterById(id)).use { cursor ->
                 if (cursor.moveToFirst()) {
                     status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                    val total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                    val done = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                    if (total > 0) onProgress((done * 100 / total).toInt())
                 }
             }
         }
-        if (status != DownloadManager.STATUS_SUCCESSFUL) return@runCatching false
+        if (status != DownloadManager.STATUS_SUCCESSFUL) {
+            val reason = dm.query(DownloadManager.Query().setFilterById(id)).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)) else -1
+            }
+            return@runCatching "상태 $status, 사유 $reason"
+        }
 
         val uri = dm.getUriForDownloadedFile(id)
         withContext(Dispatchers.Main) {
@@ -117,6 +142,6 @@ private suspend fun downloadAndInstallApk(context: Context, apkUrl: String): Boo
                 }
             )
         }
-        true
-    }.getOrDefault(false)
+        null
+    }.getOrElse { it.message ?: "알 수 없는 오류" }
 }
