@@ -323,8 +323,13 @@ class AppMonitorAccessibilityService : AccessibilityService() {
      * maxNodes瑜????⑤쾭由ш린 ?쎈떎.
      */
     private fun containsSelectedKeyword(root: AccessibilityNodeInfo, keywords: List<String>, maxNodes: Int = 1500): Boolean {
+        val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
         val bottomBandMinY = (screenHeight * 0.88).toInt()
+        // 태블릿에서 릴스/쇼츠 차단이 전혀 안 되던 버그(78차) — 폰은 하단 탭바지만 태블릿은 화면이 넓어
+        // Instagram/YouTube가 좌(또는 우)측 세로 내비게이션 레일을 쓴다. 하단 12% 밴드만 보던 기존 조건이
+        // 이 경우 선택된 탭 노드를 계속 걸러내고 있었다 — 좌우 16% 폭의 사이드 레일 밴드도 함께 허용한다.
+        val sideBandWidth = (screenWidth * 0.16).toInt()
         val bounds = android.graphics.Rect()
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.addLast(root)
@@ -334,7 +339,9 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             visited++
             if (node.isSelected) {
                 node.getBoundsInScreen(bounds)
-                if (bounds.top >= bottomBandMinY) {
+                val inBottomBand = bounds.top >= bottomBandMinY
+                val inSideRailBand = bounds.right <= sideBandWidth || bounds.left >= screenWidth - sideBandWidth
+                if (inBottomBand || inSideRailBand) {
                     val text = node.text?.toString() ?: ""
                     val desc = node.contentDescription?.toString() ?: ""
                     if (keywords.any { text.contains(it, ignoreCase = true) || desc.contains(it, ignoreCase = true) }) {

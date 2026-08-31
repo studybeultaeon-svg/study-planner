@@ -1920,6 +1920,13 @@ class PhoneLockRepository(context: Context) {
         val scheduleStats = monthTasks.map {
             com.phonelock.app.service.SocialGroupSyncClient.ScheduleStat(it.dateKey, it.name, it.status, it.color)
         }
+        // "일정표" 탭에 캘린더 오늘 할 일이 아니라 진짜 TimetableScreen과 같은 요일별 목표량 표를
+        // 보여달라는 요청(78차) — TimetableScreen.kt와 동일 필터(이름/디데이 필수)로 draft 업무를 옮긴다.
+        val calcTaskStats = getCalcTasks().filter { it.name.isNotBlank() && it.dday.isNotBlank() }.map {
+            com.phonelock.app.service.SocialGroupSyncClient.CalcTaskStat(
+                it.name, it.unit, it.start, it.dday, it.mon, it.tue, it.wed, it.thu, it.fri, it.sat, it.sun
+            )
+        }
         // 캘린더 날짜 상세에서 "그 날 얼마나 공부했는지" 보여주려고 같은 달 범위의 공부기록을 날짜별로 합산.
         val studySecondsByDate = studyLogEntryDao.getInRange(
             firstOfMonth.minusDays(7).toString(), lastOfMonth.plusDays(7).toString()
@@ -1971,7 +1978,7 @@ class PhoneLockRepository(context: Context) {
             share.shareRoutines, share.shareStudy, share.shareStreak,
             share.shareSchedule, share.shareStudyingNow, share.shareActiveGroup,
             routineStats, studySeconds, studyProgress, streak, routineBestStreak,
-            scheduleStats, studySecondsByDate, studyingNow, studyingTaskName, activeGroups,
+            scheduleStats, calcTaskStats, studySecondsByDate, studyingNow, studyingTaskName, activeGroups,
             hiddenFromUids
         )
     }

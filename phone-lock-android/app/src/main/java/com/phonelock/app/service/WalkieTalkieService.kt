@@ -122,7 +122,7 @@ class WalkieTalkieService : Service() {
                 if (repository.deleteVoiceMessage(msg.groupId, msg.msgId).isSuccess) {
                     if (msg.textMessage.isNotBlank()) {
                         notifyBanner("${msg.fromName}님의 무전 🎙️", "읽어주는 중...")
-                        TtsPlayer.speak(applicationContext, msg.textMessage, settings.volume)
+                        TtsPlayer.speak(applicationContext, msg.textMessage, settings.volume, settings.voiceGender)
                     } else {
                         val wavBytes = runCatching { Base64.decode(msg.audioBase64, Base64.NO_WRAP) }.getOrNull()
                         if (wavBytes != null) {
