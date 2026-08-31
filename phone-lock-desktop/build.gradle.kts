@@ -65,6 +65,9 @@ compose.desktop {
             )
             windows {
                 iconFile.set(project.file("packaging/app-icon.ico"))
+                shortcut = true
+                menu = true
+                menuGroup = "PhoneLockDesktop"
             }
         }
     }
