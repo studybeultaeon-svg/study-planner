@@ -34,6 +34,9 @@ class GroupNudgeWorker(
         val context = applicationContext
         val repository = PhoneLockRepository(context)
         val prefs = AppPreferences(context)
+        // 공부 중이면 이번 실행은 건너뛴다 — lastSeen을 안 갱신하므로 다음 실행(WorkManager 주기)이나
+        // WalkieTalkieService의 더 빠른 폴링이 공부가 끝난 뒤 그대로 다시 알려준다.
+        if (com.phonelock.app.service.StudyNotificationGate.isStudying(repository)) return Result.success()
         val nudges = repository.readIncomingSocialGroupNudges()
         if (nudges.isEmpty()) return Result.success()
 

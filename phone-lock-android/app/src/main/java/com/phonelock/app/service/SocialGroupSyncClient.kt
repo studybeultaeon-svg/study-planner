@@ -44,31 +44,6 @@ object SocialGroupSyncClient {
         val fri: String, val sat: String, val sun: String
     )
 
-    /** "작동 중인 관리 그룹" 클릭 시 상세 다이얼로그로 보여줄 전체 설정 — AppGroup의 관련 필드를 그대로 옮긴다. */
-    data class ActiveGroupStat(
-        val name: String,
-        val description: String,
-        val scheduleEnabled: Boolean,
-        val scheduleStartMinute: Int?,
-        val scheduleEndMinute: Int?,
-        val scheduleDaysMask: Int,
-        val dailyLimitSeconds: Int?,
-        val dailyLimitApplyStartMinute: Int?,
-        val dailyLimitApplyEndMinute: Int?,
-        val dailyLimitDaysMask: Int,
-        val confirmEnabled: Boolean,
-        val confirmApplyStartMinute: Int?,
-        val confirmApplyEndMinute: Int?,
-        val confirmDaysMask: Int,
-        val processNames: List<String>,
-        val domains: List<String>,
-        /** "관리 - 통계" 탭용 — 데스크탑 StatsScreen.kt와 같은 4개 지표를 그룹별로 함께 옮긴다. */
-        val todayUsageSeconds: Int,
-        val confirmCountToday: Int,
-        val confirmCountYesterday: Int,
-        val recentAverageSeconds: Int
-    )
-
     data class MemberStats(
         val uid: String,
         val displayName: String,
@@ -78,7 +53,6 @@ object SocialGroupSyncClient {
         val shareStreak: Boolean,
         val shareSchedule: Boolean,
         val shareStudyingNow: Boolean,
-        val shareActiveGroup: Boolean,
         val routines: List<RoutineStat>?,
         val studyTodaySeconds: Int?,
         val studyProgressPercent: Int?,
@@ -90,7 +64,6 @@ object SocialGroupSyncClient {
         val studySecondsByDate: Map<String, Int>?,
         val studyingNow: Boolean?,
         val studyingTaskName: String?,
-        val activeGroups: List<ActiveGroupStat>?,
         /** "루틴 - 통계" 탭의 최고 스트릭 타일용. */
         val routineBestStreak: Int?,
         /** 이 사람이 "내 정보 숨기기"로 지정한 상대 uid 목록 — 이 목록에 내 uid가 있으면 위 항목을 전부 "비공개"로 취급한다. */
@@ -382,10 +355,10 @@ object SocialGroupSyncClient {
     suspend fun pushMyStats(
         databaseUrl: String?, apiKey: String?, groupId: String, displayName: String,
         shareRoutines: Boolean, shareStudy: Boolean, shareStreak: Boolean,
-        shareSchedule: Boolean, shareStudyingNow: Boolean, shareActiveGroup: Boolean,
+        shareSchedule: Boolean, shareStudyingNow: Boolean,
         routines: List<RoutineStat>, studyTodaySeconds: Int, studyProgressPercent: Int, streak: Int, routineBestStreak: Int,
         schedule: List<ScheduleStat>, calcTasks: List<CalcTaskStat>, studySecondsByDate: Map<String, Int>,
-        studyingNow: Boolean, studyingTaskName: String, activeGroups: List<ActiveGroupStat>,
+        studyingNow: Boolean, studyingTaskName: String,
         hiddenFromUids: Set<String>
     ) {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
@@ -401,7 +374,6 @@ object SocialGroupSyncClient {
                     put("shareStreak", shareStreak)
                     put("shareSchedule", shareSchedule)
                     put("shareStudyingNow", shareStudyingNow)
-                    put("shareActiveGroup", shareActiveGroup)
                     put("hiddenFromUids", org.json.JSONArray(hiddenFromUids.toList()))
                     if (shareRoutines) {
                         put("routines", org.json.JSONArray().apply {
@@ -456,34 +428,6 @@ object SocialGroupSyncClient {
                         put("studyingNow", studyingNow)
                         put("studyingTaskName", studyingTaskName)
                     }
-                    if (shareActiveGroup) {
-                        put("activeGroups", org.json.JSONArray().apply {
-                            activeGroups.forEach { g ->
-                                put(JSONObject().apply {
-                                    put("name", g.name)
-                                    put("description", g.description)
-                                    put("scheduleEnabled", g.scheduleEnabled)
-                                    put("scheduleStartMinute", g.scheduleStartMinute ?: JSONObject.NULL)
-                                    put("scheduleEndMinute", g.scheduleEndMinute ?: JSONObject.NULL)
-                                    put("scheduleDaysMask", g.scheduleDaysMask)
-                                    put("dailyLimitSeconds", g.dailyLimitSeconds ?: JSONObject.NULL)
-                                    put("dailyLimitApplyStartMinute", g.dailyLimitApplyStartMinute ?: JSONObject.NULL)
-                                    put("dailyLimitApplyEndMinute", g.dailyLimitApplyEndMinute ?: JSONObject.NULL)
-                                    put("dailyLimitDaysMask", g.dailyLimitDaysMask)
-                                    put("confirmEnabled", g.confirmEnabled)
-                                    put("confirmApplyStartMinute", g.confirmApplyStartMinute ?: JSONObject.NULL)
-                                    put("confirmApplyEndMinute", g.confirmApplyEndMinute ?: JSONObject.NULL)
-                                    put("confirmDaysMask", g.confirmDaysMask)
-                                    put("processNames", org.json.JSONArray(g.processNames))
-                                    put("domains", org.json.JSONArray(g.domains))
-                                    put("todayUsageSeconds", g.todayUsageSeconds)
-                                    put("confirmCountToday", g.confirmCountToday)
-                                    put("confirmCountYesterday", g.confirmCountYesterday)
-                                    put("recentAverageSeconds", g.recentAverageSeconds)
-                                })
-                            }
-                        })
-                    }
                 }
                 putJson(URL("$base/groups/$groupId/stats/$uid.json?auth=$token"), body)
             }
@@ -506,7 +450,6 @@ object SocialGroupSyncClient {
                     val shareStreak = s.optBoolean("shareStreak", false)
                     val shareSchedule = s.optBoolean("shareSchedule", false)
                     val shareStudyingNow = s.optBoolean("shareStudyingNow", false)
-                    val shareActiveGroup = s.optBoolean("shareActiveGroup", false)
                     val hiddenArr = s.optJSONArray("hiddenFromUids") ?: org.json.JSONArray()
                     MemberStats(
                         uid = memberUid,
@@ -517,7 +460,6 @@ object SocialGroupSyncClient {
                         shareStreak = shareStreak,
                         shareSchedule = shareSchedule,
                         shareStudyingNow = shareStudyingNow,
-                        shareActiveGroup = shareActiveGroup,
                         routines = if (shareRoutines) {
                             val arr = s.optJSONArray("routines") ?: org.json.JSONArray()
                             (0 until arr.length()).map { i ->
@@ -565,34 +507,6 @@ object SocialGroupSyncClient {
                         } else null,
                         studyingNow = if (shareStudyingNow) s.optBoolean("studyingNow", false) else null,
                         studyingTaskName = if (shareStudyingNow) s.optString("studyingTaskName", "") else null,
-                        activeGroups = if (shareActiveGroup) {
-                            val arr = s.optJSONArray("activeGroups") ?: org.json.JSONArray()
-                            (0 until arr.length()).map { i ->
-                                val g = arr.getJSONObject(i)
-                                ActiveGroupStat(
-                                    name = g.optString("name", ""),
-                                    description = g.optString("description", ""),
-                                    scheduleEnabled = g.optBoolean("scheduleEnabled", false),
-                                    scheduleStartMinute = if (g.isNull("scheduleStartMinute")) null else g.optInt("scheduleStartMinute"),
-                                    scheduleEndMinute = if (g.isNull("scheduleEndMinute")) null else g.optInt("scheduleEndMinute"),
-                                    scheduleDaysMask = g.optInt("scheduleDaysMask", 127),
-                                    dailyLimitSeconds = if (g.isNull("dailyLimitSeconds")) null else g.optInt("dailyLimitSeconds"),
-                                    dailyLimitApplyStartMinute = if (g.isNull("dailyLimitApplyStartMinute")) null else g.optInt("dailyLimitApplyStartMinute"),
-                                    dailyLimitApplyEndMinute = if (g.isNull("dailyLimitApplyEndMinute")) null else g.optInt("dailyLimitApplyEndMinute"),
-                                    dailyLimitDaysMask = g.optInt("dailyLimitDaysMask", 127),
-                                    confirmEnabled = g.optBoolean("confirmEnabled", false),
-                                    confirmApplyStartMinute = if (g.isNull("confirmApplyStartMinute")) null else g.optInt("confirmApplyStartMinute"),
-                                    confirmApplyEndMinute = if (g.isNull("confirmApplyEndMinute")) null else g.optInt("confirmApplyEndMinute"),
-                                    confirmDaysMask = g.optInt("confirmDaysMask", 127),
-                                    processNames = g.optJSONArray("processNames")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
-                                    domains = g.optJSONArray("domains")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
-                                    todayUsageSeconds = g.optInt("todayUsageSeconds", 0),
-                                    confirmCountToday = g.optInt("confirmCountToday", 0),
-                                    confirmCountYesterday = g.optInt("confirmCountYesterday", 0),
-                                    recentAverageSeconds = g.optInt("recentAverageSeconds", 0)
-                                )
-                            }
-                        } else null,
                         routineBestStreak = if (shareStreak) s.optInt("routineBestStreak", 0) else null,
                         hiddenFromUids = (0 until hiddenArr.length()).map { hiddenArr.getString(it) }.toSet()
                     )

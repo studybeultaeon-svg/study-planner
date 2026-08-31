@@ -51,6 +51,9 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     // 怨듬? ?좉툑???몄젣遺???쒖꽦 ?곹깭??붿?(寃쎄낵?쒓컙 洹쇱궗移??쒖떆?? ??鍮꾪솢?깊솕?섎㈃ 珥덇린??
     @Volatile private var studyLockStartedAt: Long? = null
 
+    // 공부 페이즈가 방금 끝났는지(true -> false 전환) 감지해 StudyNotificationGate에 쌓인 큐를 비우기 위한 상태.
+    @Volatile private var wasStudying = false
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         repository = PhoneLockRepository(applicationContext)
@@ -111,6 +114,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     private suspend fun tick() {
         repository.applyDailyGroupResetIfNeeded()
         repository.checkForUpdateIfNeeded()
+        checkStudyNotificationFlush()
         if (!tickInFlight.compareAndSet(false, true)) return
         try {
             tickInternal()
@@ -222,6 +226,15 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         if (!PomodoroSyncClient.isStudyTimerActive(url, key)) return false
         val updatedAt = PomodoroSyncClient.remoteUpdatedAtMillis(url, key)
         return updatedAt > 0 && System.currentTimeMillis() - updatedAt < REMOTE_STUDY_SIGNAL_STALE_MS
+    }
+
+    /** 공부 페이즈가 방금 끝났으면(true -> false) StudyNotificationGate에 미뤄둔 알림을 전부 다시 띄운다. */
+    private suspend fun checkStudyNotificationFlush() {
+        val studying = repository.isStudyLockActive() || isRemoteStudyTimerActive()
+        if (wasStudying && !studying) {
+            StudyNotificationGate.flushQueued(applicationContext)
+        }
+        wasStudying = studying
     }
 
     /**

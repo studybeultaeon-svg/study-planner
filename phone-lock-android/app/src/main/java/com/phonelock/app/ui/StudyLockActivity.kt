@@ -1,7 +1,5 @@
 package com.phonelock.app.ui
 
-import android.app.NotificationManager
-import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -58,33 +56,8 @@ private suspend fun isRemoteStudyTimerActive(repository: PhoneLockRepository): B
  * 버튼을 둔다.
  */
 class StudyLockActivity : ComponentActivity() {
-    // 이 화면이 방해금지 모드를 직접 켰을 때만 되돌린다 — 사용자가 원래 켜둔 방해금지는 건드리지 않는다.
-    private var dndAppliedByThisScreen = false
-
-    /** 방해금지(우선순위만) 모드 적용 — 권한이 없으면(설정 화면에서 안 켜뒀거나 정책 접근 미허용) 조용히 무시(전문가 종합분석 보고서 #13). */
-    private fun applyAutoDndIfEnabled() {
-        val prefs = AppPreferences(applicationContext)
-        if (!prefs.autoDndEnabled) return
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (!nm.isNotificationPolicyAccessGranted) return
-        if (nm.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL) {
-            nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
-            dndAppliedByThisScreen = true
-        }
-    }
-
-    private fun revertAutoDndIfApplied() {
-        if (!dndAppliedByThisScreen) return
-        dndAppliedByThisScreen = false
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (nm.isNotificationPolicyAccessGranted) {
-            nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applyAutoDndIfEnabled()
         val allowedPackages = intent.getStringArrayExtra(IntentExtras.EXTRA_STUDY_LOCK_ALLOWED_PACKAGES)?.toList() ?: emptyList()
         val studyStartedAt = intent.getLongExtra(IntentExtras.EXTRA_STUDY_LOCK_STARTED_AT, System.currentTimeMillis())
         val isPomodoroMode = intent.getBooleanExtra(IntentExtras.EXTRA_STUDY_LOCK_IS_POMODORO, false)
@@ -130,10 +103,6 @@ class StudyLockActivity : ComponentActivity() {
         finish()
     }
 
-    override fun onDestroy() {
-        revertAutoDndIfApplied()
-        super.onDestroy()
-    }
 }
 
 @Composable

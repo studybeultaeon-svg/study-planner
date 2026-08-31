@@ -533,7 +533,7 @@ fun SocialGroupMembersScreen(
             text = {
                 Column {
                     Text(
-                        "하루 중 무작위 시각에, 이 모임에서 오늘 할 일을 아직 못 한 멤버에게 이 기기가 자동으로 깨우기를 보냅니다.",
+                        "하루 중 무작위 시각에, 이 모임에서 오늘 할 일을 아직 못 한 멤버가 있으면 이 기기로 알려드립니다. 직접 확인하고 필요하면 깨우기를 보내주세요.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(Modifier.height(Spacing.sm))

@@ -1960,44 +1960,15 @@ class PhoneLockRepository(context: Context) {
             runCatching { com.phonelock.app.service.PomodoroSyncClient.remoteTaskName(fbDatabaseUrl, fbApiKey) }.getOrDefault("")
         }
 
-        // 76차: "지금 실제로 제한 중인" 그룹만 걸러 보여줬으나(isCurrentlyRestricting), 시간대가 안 맞아
-        // 당장은 제한 중이 아닌 그룹(예: 주말에만 도는 그룹)도 사용자가 "그냥 다 보이게" 요청해
-        // groupEnabled 기준으로 넓혔다(데스크탑 Repository.currentlyActiveGroupNames와 동일 패턴).
-        val allGroups = groupDao.getAllOnce()
-        val activeGroups = allGroups.filter { it.groupEnabled }.map {
-            com.phonelock.app.service.SocialGroupSyncClient.ActiveGroupStat(
-                name = it.name,
-                description = it.description,
-                scheduleEnabled = it.scheduleEnabled,
-                scheduleStartMinute = it.scheduleStartMinute,
-                scheduleEndMinute = it.scheduleEndMinute,
-                scheduleDaysMask = it.scheduleDaysMask,
-                dailyLimitSeconds = it.dailyLimitSeconds,
-                dailyLimitApplyStartMinute = it.dailyLimitApplyStartMinute,
-                dailyLimitApplyEndMinute = it.dailyLimitApplyEndMinute,
-                dailyLimitDaysMask = it.dailyLimitDaysMask,
-                confirmEnabled = it.confirmEnabled,
-                confirmApplyStartMinute = it.confirmApplyStartMinute,
-                confirmApplyEndMinute = it.confirmApplyEndMinute,
-                confirmDaysMask = it.confirmDaysMask,
-                processNames = memberDao.getMembers(it.id).map { m -> m.packageName },
-                domains = groupSiteDao.getSites(it.id).map { s -> s.domain },
-                todayUsageSeconds = getTodayUsageSeconds(it.id),
-                confirmCountToday = getConfirmCountToday(it.id),
-                confirmCountYesterday = getConfirmCountYesterday(it.id),
-                recentAverageSeconds = getRecentAverageUsageSeconds(it.id)
-            )
-        }
-
         val share = preferences.groupShareSettings(groupId)
         val hiddenFromUids = preferences.hiddenFromUidsFor(groupId)
 
         com.phonelock.app.service.SocialGroupSyncClient.pushMyStats(
             fbDatabaseUrl, fbApiKey, groupId, displayName,
             share.shareRoutines, share.shareStudy, share.shareStreak,
-            share.shareSchedule, share.shareStudyingNow, share.shareActiveGroup,
+            share.shareSchedule, share.shareStudyingNow,
             routineStats, studySeconds, studyProgress, streak, routineBestStreak,
-            scheduleStats, calcTaskStats, studySecondsByDate, studyingNow, studyingTaskName, activeGroups,
+            scheduleStats, calcTaskStats, studySecondsByDate, studyingNow, studyingTaskName,
             hiddenFromUids
         )
     }
@@ -2017,7 +1988,7 @@ class PhoneLockRepository(context: Context) {
     fun setHiddenPeerUid(groupId: String, targetUid: String, hidden: Boolean) =
         preferences.setHiddenPeerUid(groupId, targetUid, hidden)
 
-    /** "무작위 알림"(77차) — 이 모임에서 내 기기가 처지는 멤버를 자동으로 깨울지, 순수 로컬 설정. */
+    /** "무작위 알림"(77차, 81차 정정) — 이 모임에서 처지는 멤버가 있을 때 나에게 알림으로 알려줄지, 순수 로컬 설정. */
     fun randomNudgeEnabledFor(groupId: String) = preferences.randomNudgeEnabledFor(groupId)
     fun setRandomNudgeEnabled(groupId: String, enabled: Boolean) =
         preferences.setRandomNudgeEnabled(groupId, enabled)

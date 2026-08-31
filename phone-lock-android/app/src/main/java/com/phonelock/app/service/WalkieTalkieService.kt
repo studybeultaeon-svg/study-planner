@@ -89,6 +89,9 @@ class WalkieTalkieService : Service() {
      *  로그인한 모두에게 항상 짧은 주기로 도는 만큼, 같은 루프에서 넛지도 함께 확인해 근접 실시간으로
      *  알려준다(GroupNudgeWorker는 이 서비스가 죽어있는 드문 경우를 위한 보완용으로 그대로 둔다). */
     private suspend fun pollNudges(repository: PhoneLockRepository, prefs: AppPreferences) {
+        // 공부 중이면 이번 폴링은 통째로 건너뛴다 — 넛지는 서버에서 안 지워지고 lastSeen도 안 갱신되므로
+        // (StudyNotificationGate 참고), 공부가 끝난 뒤 다음 폴링(7초 후)이 그대로 다시 알려준다.
+        if (StudyNotificationGate.isStudying(repository)) return
         val myUid = com.phonelock.app.service.AuthManager.currentUser?.uid ?: return
         val nudges = repository.readIncomingSocialGroupNudges()
         if (nudges.isEmpty()) return
@@ -104,6 +107,10 @@ class WalkieTalkieService : Service() {
     }
 
     private suspend fun pollOnce(repository: PhoneLockRepository) {
+        // 공부 중이면 통째로 건너뛴다 — 메시지는 삭제하지 않는 한 서버에 그대로 남아있으므로
+        // (FORCED 모드도 재생 전 삭제라 이 시점에 건드리지 않으면 그대로 보존됨), 공부가 끝난 뒤
+        // 다음 폴링(7초 후)이 방금 도착한 메시지처럼 자연스럽게 재생/알림 처리한다.
+        if (StudyNotificationGate.isStudying(repository)) return
         val messages = repository.readIncomingVoiceMessages()
         if (messages.isEmpty()) return
         // 모임별로 설정이 다르므로, 이번 폴링에 등장한 모임들만 골라 한 번씩만 조회해둔다(같은 모임에서

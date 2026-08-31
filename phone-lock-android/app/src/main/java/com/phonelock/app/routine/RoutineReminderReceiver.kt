@@ -2,16 +2,12 @@ package com.phonelock.app.routine
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import androidx.core.app.NotificationCompat
-import com.phonelock.app.R
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.PhoneLockRepository
-import com.phonelock.app.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,6 +21,11 @@ private const val CHANNEL_ID = "routine_reminder_v2"
 private const val NOTIFICATION_ID_BASE = 20000
 private const val STREAK_NOTIFICATION_ID = 29999
 private val VIBRATE_PATTERN = longArrayOf(0, 250, 150, 250)
+
+// "무작위 알림"(처지는 멤버 정보 알림, 81차) 전용 채널 — 루틴 리마인더와 성격이 달라 사용자가 따로
+// 켜고 끌 수 있도록 별도 채널로 뒀다.
+private const val SLACKING_MEMBER_CHANNEL_ID = "group_slacking_member_v1"
+private const val SLACKING_MEMBER_NOTIFICATION_ID_BASE = 35000
 
 /**
  * 루틴 알림(52차, IDEAS.md 요청) — 부팅 후 재예약(ACTION_BOOT_COMPLETED)과 실제 알람 발화
@@ -56,9 +57,10 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                     val repository = PhoneLockRepository(appContext)
                     val routine = repository.getRoutines().find { it.id == routineId }
                     if (routine != null && routine.notifyEnabled) {
-                        notify(
-                            appContext,
+                        com.phonelock.app.service.StudyNotificationGate.showOrQueue(
+                            appContext, repository,
                             NOTIFICATION_ID_BASE + (routineId % 10000).toInt(),
+                            CHANNEL_ID,
                             if (routine.icon.isNotBlank()) "${routine.icon} ${routine.title}" else routine.title,
                             "루틴 시간이에요"
                         )
@@ -84,7 +86,9 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                             prefs.zeroStreakDays = if (broken) 0 else prefs.zeroStreakDays + 1
                             message = RoutineQuotes.forZeroStreak(prefs.zeroStreakDays, broken)
                         }
-                        notify(appContext, STREAK_NOTIFICATION_ID, "🌱 루틴 스트릭", message)
+                        com.phonelock.app.service.StudyNotificationGate.showOrQueue(
+                            appContext, repository, STREAK_NOTIFICATION_ID, CHANNEL_ID, "🌱 루틴 스트릭", message
+                        )
                         prefs.lastRoutineStreak = streak
                         prefs.lastRoutineStreakNotifyDate = today
                     }
@@ -95,7 +99,7 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                 val prefs = AppPreferences(appContext)
                 val today = LocalDate.now().toString()
                 if (prefs.lastGroupNudgeCheckDate != today) {
-                    runCatching { checkAndSendGroupNudges(appContext, prefs) }
+                    runCatching { checkAndNotifySlackingMembers(appContext, prefs) }
                     prefs.lastGroupNudgeCheckDate = today
                 }
                 RoutineAlarmScheduler.scheduleGroupNudgeCheck(appContext)
@@ -104,14 +108,21 @@ class RoutineReminderReceiver : BroadcastReceiver() {
     }
 
     /**
-     * "무작위 알림"(77차) — 내가 속한 모임(무작위 알림을 켜둔 모임만)의 멤버들을 훑어, 오늘 예정된
-     * 루틴 중 안 한 게 있거나 오늘 캘린더 일정 중 완료(O) 안 된 게 있는 사람에게 자동으로 넛지를
-     * 보낸다. 상대가 그 항목을 공유 안 했으면(null) 판단할 데이터가 없으므로 건너뛴다.
+     * "무작위 알림"(77차, 81차에 의도 정정) — 내가 속한 모임(무작위 알림을 켜둔 모임만)의 멤버들을
+     * 훑어, 오늘 예정된 루틴 중 안 한 게 있거나 오늘 캘린더 일정 중 완료(O) 안 된 게 있는 사람이
+     * 있으면 나(이 알림을 받는 사람)에게 "OO님이 아직 할 일을 안 했어요"라고만 알려준다. 실제로
+     * 깨울지는 알림을 본 내가 직접 판단해서 모임 화면에서 😴 깨우기를 눌러야 한다 — 77차 최초 구현은
+     * 대신 넛지를 자동으로 보내버렸는데, 이건 "본인이 알림을 받고 스스로 깨우러 가게" 하려던 원래
+     * 의도와 달랐다고 81차에 사용자가 바로잡았다. 상대가 그 항목을 공유 안 했으면(null) 판단할
+     * 데이터가 없으므로 건너뛴다. 일회성 알림이라 공부 중이면 [StudyNotificationGate]가 큐에 쌓아뒀다가
+     * 공부가 끝나면 다시 띄운다.
      */
-    private suspend fun checkAndSendGroupNudges(context: Context, prefs: AppPreferences) {
+    private suspend fun checkAndNotifySlackingMembers(context: Context, prefs: AppPreferences) {
         val repository = PhoneLockRepository(context)
         val myUid = com.phonelock.app.service.AuthManager.currentUser?.uid ?: return
         val today = LocalDate.now().toString()
+        ensureSlackingMemberChannel(context)
+        var index = 0
         repository.readMySocialGroupIds().forEach groupLoop@{ groupId ->
             if (!prefs.randomNudgeEnabledFor(groupId)) return@groupLoop
             val stats = repository.readSocialGroupStats(groupId)
@@ -120,7 +131,14 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                 val routineIncomplete = member.routines?.any { !it.doneToday } ?: false
                 val scheduleIncomplete = member.schedule?.any { it.dateKey == today && it.status != "O" } ?: false
                 if (routineIncomplete || scheduleIncomplete) {
-                    repository.sendSocialGroupNudge(groupId, member.uid)
+                    com.phonelock.app.service.StudyNotificationGate.showOrQueue(
+                        context, repository,
+                        SLACKING_MEMBER_NOTIFICATION_ID_BASE + index,
+                        SLACKING_MEMBER_CHANNEL_ID,
+                        "🔔 ${member.displayName}님이 아직 할 일을 안 했어요",
+                        "모임에서 확인하고, 필요하면 직접 깨워주세요"
+                    )
+                    index++
                 }
             }
         }
@@ -151,25 +169,16 @@ class RoutineReminderReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun notify(context: Context, id: Int, title: String, text: String) {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val openIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    private fun ensureSlackingMemberChannel(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (manager.getNotificationChannel(SLACKING_MEMBER_CHANNEL_ID) == null) {
+                val channel = NotificationChannel(SLACKING_MEMBER_CHANNEL_ID, "모임 무작위 알림", NotificationManager.IMPORTANCE_HIGH).apply {
+                    enableVibration(true)
+                    vibrationPattern = VIBRATE_PATTERN
+                }
+                manager.createNotificationChannel(channel)
+            }
         }
-        val pendingIntent = PendingIntent.getActivity(
-            context, id, openIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-            // Android 8 미만은 채널이 아니라 이 값들을 직접 본다 — 채널 설정과 중복이어도 안전.
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setVibrate(VIBRATE_PATTERN)
-            .build()
-        manager.notify(id, notification)
     }
 }

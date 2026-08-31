@@ -116,15 +116,15 @@ data class TimerRunState(
 data class StudyLogEntry(val dateKey: String, val taskName: String, val seconds: Int, val startedAt: Long, val note: String = "")
 
 /** 모임(소셜 그룹) 하나에 무엇을 공유할지 — 62차엔 앱 전체 공통 토글 3개였지만 75차+에 모임마다 다르게
- *  설정하도록 확장, 항목도 루틴/공부/스트릭 3종에서 오늘 일정/공부중 여부/현재 작동 중인 관리 그룹까지
- *  6종으로 확대(안드로이드 AppPreferences.GroupShareSettings와 대칭). */
+ *  설정하도록 확장, 항목도 루틴/공부/스트릭 3종에서 오늘 일정/공부중 여부까지 5종으로 확대(안드로이드
+ *  AppPreferences.GroupShareSettings와 대칭). "현재 작동 중인 관리 그룹"은 77차에 추가됐다가 81차에
+ *  완전히 제외됨(사용자 요청). */
 data class GroupShareSettings(
     val shareRoutines: Boolean = true,
     val shareStudy: Boolean = true,
     val shareStreak: Boolean = true,
     val shareSchedule: Boolean = true,
-    val shareStudyingNow: Boolean = true,
-    val shareActiveGroup: Boolean = true
+    val shareStudyingNow: Boolean = true
 )
 
 /**

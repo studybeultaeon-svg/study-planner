@@ -533,14 +533,6 @@ class Repository {
         }
     }
 
-    /** 켜져있는(groupEnabled) 관리 그룹 전체 — "모임" 공유용. 76차엔 "지금 실제로 제한 중인" 그룹만
-     *  걸러 보여줬으나(isCurrentlyRestricting), 시간대가 안 맞아 당장은 제한 중이 아닌 그룹(예: 주말에만
-     *  도는 그룹)도 사용자가 "그냥 다 보이게" 요청해 groupEnabled 기준으로 넓혔다. 이름/설명뿐 아니라
-     *  스케줄/일일한도/실행확인 설정과 차단 앱·사이트 목록까지 그대로 넘겨(SocialGroupSyncClient가
-     *  필요한 필드만 뽑아 씀) 모임 멤버 상세에서 "이 그룹이 정확히 뭘 하는지" 볼 수 있게 한다.
-     */
-    fun sharedActiveGroups(): List<Group> = getGroups().filter { it.groupEnabled }
-
     /** 모임 멤버 상세의 캘린더 날짜 상세에서 "그 날 얼마나 공부했는지"를 보여주기 위한 범위 조회. */
     fun getStudyLogInRange(fromKey: String, toKey: String): List<StudyLogEntry> = synchronized(lock) {
         data.studyLog.filter { it.dateKey in fromKey..toKey }

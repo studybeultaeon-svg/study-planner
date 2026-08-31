@@ -120,8 +120,6 @@ fun SocialGroupMemberDetailScreen(
     // 깨우기 흐름 — 알림만/음성/텍스트 중 고르는 선택창부터 시작한다("무전기"는 "😴 깨우기"의 확장이라는
     // 관점, SocialGroupMembersScreen과 같은 다이얼로그를 공유).
     var wakeStep by remember { mutableStateOf<String?>(null) }
-    // "🗂️ 관리 그룹" 항목 클릭 시 상세 설정(스케줄/일일한도/실행확인/차단 앱·사이트)을 보여줄 다이얼로그 대상.
-    var detailGroup by remember { mutableStateOf<SocialGroupSyncClient.ActiveGroupStat?>(null) }
     val recordPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -208,20 +206,20 @@ fun SocialGroupMemberDetailScreen(
                 return@Column
             }
 
-            // 77차: 이 사람의 데이터를 한 화면에 쭉 나열하던 걸, 내 앱 본체와 똑같은 탭 구조(루틴/공부/관리 +
+            // 77차: 이 사람의 데이터를 한 화면에 쭉 나열하던 걸, 내 앱 본체와 똑같은 탭 구조(루틴/공부 +
             // 각 서브탭)로 바꿔서 "내가 그 탭을 눌렀을 때 보는 화면"과 같은 형태로 클릭해서 들어가게 했다
             // (편집 기능은 전부 뺀 읽기전용 버전, 사용자 요청). 라이브 화면(RoutineScreen 등)을 직접
             // 재사용하지 않고 이 파일 안에 별도로 새로 작성했다 — 라이브 화면은 내 실제 데이터를 읽고 쓰는
             // 핵심 화면이라 그대로 재사용하면 버그 위험이 크다는 판단(사용자 확인).
+            // "관리"(차단 그룹) 정보는 81차에 공유 항목에서 완전히 제외됨 — 다른 사람이 내가 뭘 차단
+            // 중인지까지 알 필요는 없다는 판단(사용자 요청).
             var section by remember { mutableStateOf(0) }
             var routineSubTab by remember { mutableStateOf(0) }
             var studySubTab by remember { mutableStateOf(0) }
-            var manageSubTab by remember { mutableStateOf(0) }
 
             TabRow(selectedTabIndex = section) {
                 Tab(selected = section == 0, onClick = { section = 0 }, text = { Text("🌱 루틴") })
                 Tab(selected = section == 1, onClick = { section = 1 }, text = { Text("📘 공부") })
-                Tab(selected = section == 2, onClick = { section = 2 }, text = { Text("🗂️ 관리") })
             }
             Spacer(Modifier.height(Spacing.sm))
 
@@ -278,29 +276,8 @@ fun SocialGroupMemberDetailScreen(
                         else -> MemberStudyStatsTab(s)
                     }
                 }
-                else -> {
-                    TabRow(selectedTabIndex = manageSubTab) {
-                        Tab(selected = manageSubTab == 0, onClick = { manageSubTab = 0 }, text = { Text("그룹") })
-                        Tab(selected = manageSubTab == 1, onClick = { manageSubTab = 1 }, text = { Text("통계") })
-                    }
-                    Spacer(Modifier.height(Spacing.sm))
-                    val groups = s.activeGroups ?: emptyList()
-                    if (!s.shareActiveGroup) {
-                        Text("비공개", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else if (groups.isEmpty()) {
-                        Text("등록된 그룹이 없습니다.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else if (manageSubTab == 0) {
-                        MemberManageGroupsTab(groups) { detailGroup = it }
-                    } else {
-                        MemberManageStatsTab(groups) { detailGroup = it }
-                    }
-                }
             }
         }
-    }
-
-    detailGroup?.let { g ->
-        ActiveGroupDetailDialog(group = g, onDismiss = { detailGroup = null })
     }
 
     if (wakeStep == "options") {
@@ -579,77 +556,6 @@ private fun ReadOnlyMiniCalendar(
     }
 }
 
-private val MEMBER_GROUP_DAY_LABELS = listOf("월", "화", "수", "목", "금", "토", "일")
-
-private fun memberGroupMinutes(m: Int?): String = if (m == null) "" else "%02d:%02d".format(m / 60, m % 60)
-
-private fun memberGroupDaysMask(mask: Int): String {
-    if (mask == 127) return "매일"
-    val days = MEMBER_GROUP_DAY_LABELS.filterIndexed { i, _ -> (mask shr i) and 1 == 1 }
-    return if (days.isEmpty()) "없음" else days.joinToString(", ")
-}
-
-/**
- * "🗂️ 관리 그룹" 항목을 클릭하면 뜨는 상세 — 이 그룹이 어떤 방식(스케줄/일일한도/실행확인)으로,
- * 언제, 무엇(앱/사이트)을 차단하는지 전부 보여준다(77차, "그룹은 뭐하는 그룹인지"까지 보고 싶다는 요청).
- */
-@Composable
-private fun ActiveGroupDetailDialog(group: SocialGroupSyncClient.ActiveGroupStat, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(group.name) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (group.description.isNotBlank()) {
-                    Text(group.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(Spacing.md))
-                }
-                if (group.scheduleEnabled) {
-                    Text("⏰ 스케줄 차단", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "${memberGroupMinutes(group.scheduleStartMinute)} ~ ${memberGroupMinutes(group.scheduleEndMinute)} · ${memberGroupDaysMask(group.scheduleDaysMask)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                }
-                if (group.dailyLimitSeconds != null) {
-                    Text("⏳ 일일 사용한도", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "${group.dailyLimitSeconds / 60}분 · ${memberGroupMinutes(group.dailyLimitApplyStartMinute)} ~ ${memberGroupMinutes(group.dailyLimitApplyEndMinute)} · ${memberGroupDaysMask(group.dailyLimitDaysMask)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                }
-                if (group.confirmEnabled) {
-                    Text("✅ 실행 확인", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "${memberGroupMinutes(group.confirmApplyStartMinute)} ~ ${memberGroupMinutes(group.confirmApplyEndMinute)} · ${memberGroupDaysMask(group.confirmDaysMask)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                }
-                if (!group.scheduleEnabled && group.dailyLimitSeconds == null && !group.confirmEnabled) {
-                    Text("적용된 관리 종류가 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(Spacing.sm))
-                }
-                if (group.processNames.isNotEmpty()) {
-                    Text("🖥️ 차단 프로그램 (${group.processNames.size}개)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                    Text(group.processNames.joinToString(", "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(Spacing.sm))
-                }
-                if (group.domains.isNotEmpty()) {
-                    Text("🌐 차단 사이트 (${group.domains.size}개)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                    Text(group.domains.joinToString(", "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } }
-    )
-}
-
 @Composable
 private fun StreakVisual(streak: Int) {
     val flameCount = when {
@@ -896,65 +802,3 @@ private fun MemberStudyStatsTab(s: SocialGroupSyncClient.MemberStats) {
     }
 }
 
-/** "관리 - 그룹" 탭 — 그룹 이름/설명 목록, 클릭하면 [ActiveGroupDetailDialog]로 전체 설정을 보여준다. */
-@Composable
-private fun MemberManageGroupsTab(groups: List<SocialGroupSyncClient.ActiveGroupStat>, onClick: (SocialGroupSyncClient.ActiveGroupStat) -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
-        Text(
-            "그룹을 눌러 자세한 설정을 볼 수 있습니다.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(Spacing.xs))
-        groups.forEach { g ->
-            Column(Modifier.fillMaxWidth().padding(vertical = 2.dp).clickable { onClick(g) }.padding(vertical = 4.dp)) {
-                Text("• ${g.name}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                if (g.description.isNotBlank()) {
-                    Text(
-                        g.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = Spacing.md)
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** "관리 - 통계" 탭 — 라이브 StatsScreen의 오늘 사용량/한도/재확인 횟수/최근 평균을 그룹별로 옮겼다. */
-@Composable
-private fun MemberManageStatsTab(groups: List<SocialGroupSyncClient.ActiveGroupStat>, onClick: (SocialGroupSyncClient.ActiveGroupStat) -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
-        groups.forEach { g ->
-            Surface(
-                Modifier.fillMaxWidth().padding(vertical = 3.dp).clickable { onClick(g) },
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Column(Modifier.padding(Spacing.sm)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(g.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                        Text(
-                            formatSeconds(g.todayUsageSeconds) + if (g.dailyLimitSeconds != null) " / ${g.dailyLimitSeconds / 60}분" else "",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                    if (g.dailyLimitSeconds != null) {
-                        Spacer(Modifier.height(Spacing.xs))
-                        LinearProgressIndicator(
-                            progress = { (g.todayUsageSeconds.toFloat() / g.dailyLimitSeconds).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
-                        )
-                    }
-                    Spacer(Modifier.height(Spacing.xs))
-                    Text(
-                        "재확인 오늘 ${g.confirmCountToday}회 · 어제 ${g.confirmCountYesterday}회 · 최근 평균 ${formatSeconds(g.recentAverageSeconds)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}

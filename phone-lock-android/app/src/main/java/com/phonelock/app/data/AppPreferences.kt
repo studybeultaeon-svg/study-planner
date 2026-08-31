@@ -21,11 +21,37 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("default_multi_pass_enabled", false)
         set(value) = prefs.edit().putBoolean("default_multi_pass_enabled", value).apply()
 
-    /** 공부 잠금(전체화면) 진입 시 방해금지 모드를 자동으로 켤지 — 전문가 종합분석 보고서 #13. 알림 정책
-     *  접근 권한(ACCESS_NOTIFICATION_POLICY)이 없으면 이 설정이 켜져 있어도 조용히 무시된다. */
-    var autoDndEnabled: Boolean
-        get() = prefs.getBoolean("auto_dnd_enabled", false)
-        set(value) = prefs.edit().putBoolean("auto_dnd_enabled", value).apply()
+    /** 공부 페이즈 중엔 뜨지 않고 미뤄지는 알림(루틴 리마인더/스트릭) — 다시 알릴 자연스러운 계기가
+     *  없는 "일회성" 알림만 여기 쌓아둔다(모임 깨우기/무전기는 서버에 안 읽은 채로 남아있으므로 공부가
+     *  끝난 뒤 다음 폴링에서 저절로 다시 온다 — 별도 큐가 필요 없다, [com.phonelock.app.service.StudyNotificationGate] 참고). */
+    data class QueuedNotification(val id: Int, val channelId: String, val title: String, val text: String)
+
+    var queuedStudyNotificationsJson: String
+        get() = prefs.getString("queued_study_notifications_json", "[]") ?: "[]"
+        set(value) = prefs.edit().putString("queued_study_notifications_json", value).apply()
+
+    fun queuedStudyNotifications(): List<QueuedNotification> {
+        val arr = org.json.JSONArray(queuedStudyNotificationsJson)
+        return (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            QueuedNotification(o.optInt("id"), o.optString("channelId"), o.optString("title"), o.optString("text"))
+        }
+    }
+
+    fun addQueuedStudyNotification(notification: QueuedNotification) {
+        val arr = org.json.JSONArray(queuedStudyNotificationsJson)
+        arr.put(org.json.JSONObject().apply {
+            put("id", notification.id)
+            put("channelId", notification.channelId)
+            put("title", notification.title)
+            put("text", notification.text)
+        })
+        queuedStudyNotificationsJson = arr.toString()
+    }
+
+    fun clearQueuedStudyNotifications() {
+        queuedStudyNotificationsJson = "[]"
+    }
 
     /**
      * 공부앱 타이머가 "공부" 페이즈로 진행 중일 때(휴식 중엔 아님) 예외로 허용할 앱 패키지명 목록. 이 목록과
@@ -232,9 +258,7 @@ class AppPreferences(context: Context) {
         /** 오늘 캘린더 일정 목록(이름+완료여부). */
         val shareSchedule: Boolean = true,
         /** 지금 공부 중(뽀모도로 포함)인지 여부 + 업무 이름. */
-        val shareStudyingNow: Boolean = true,
-        /** 지금 실제로 나를 제한 중인 관리(차단) 그룹 이름 목록. */
-        val shareActiveGroup: Boolean = true
+        val shareStudyingNow: Boolean = true
     )
 
     /** 모임ID -> 공유 설정(JSON 객체 문자열) — nudgeLastSeenByGroupJson과 동일한 맵 저장 패턴. */
@@ -249,8 +273,7 @@ class AppPreferences(context: Context) {
             shareStudy = g.optBoolean("shareStudy", true),
             shareStreak = g.optBoolean("shareStreak", true),
             shareSchedule = g.optBoolean("shareSchedule", true),
-            shareStudyingNow = g.optBoolean("shareStudyingNow", true),
-            shareActiveGroup = g.optBoolean("shareActiveGroup", true)
+            shareStudyingNow = g.optBoolean("shareStudyingNow", true)
         )
     }
 
@@ -262,17 +285,17 @@ class AppPreferences(context: Context) {
             put("shareStreak", settings.shareStreak)
             put("shareSchedule", settings.shareSchedule)
             put("shareStudyingNow", settings.shareStudyingNow)
-            put("shareActiveGroup", settings.shareActiveGroup)
         })
         groupShareSettingsJson = json.toString()
     }
 
-    // ---- 무작위 알림(77차, 사용자 요청) — 하루 중 무작위 시각 한 번, 이 기기가 속한 모임의 멤버들을
-    // 확인해서 "오늘 해야 할 루틴/일정이 아직 남은" 사람에게 기존 넛지(😴 깨우기)와 같은 방식으로 자동
-    // 알림을 보낸다. 각 기기가 독립적으로 체크해서 보내므로(넛지가 1인 1슬롯 덮어쓰기라 중복 무해,
-    // 사용자 확인) 별도 발신자 조율은 없다. 모임마다 켜고 끌 수 있으며(기본 켜짐), 이 값은 순수 로컬
-    // 설정 — "받는 쪽" 설정인 무전기(walkieSettings, RTDB)와 달리 "이 기기가 보낼지"를 결정하므로
-    // 동기화 대상이 아니다.
+    // ---- 무작위 알림(77차, 81차에 의도 정정) — 하루 중 무작위 시각 한 번, 이 기기가 속한 모임의
+    // 멤버들을 확인해서 "오늘 해야 할 루틴/일정이 아직 남은" 사람이 있으면 나(이 기기 사용자)에게
+    // "OO님이 아직 할 일을 안 했어요" 정보성 알림을 띄운다. 넛지를 대신 자동으로 보내는 게 아니라,
+    // 알림을 받은 사람이 스스로 판단해서 모임 화면에서 직접 😴 깨우기를 누르게 하는 게 원래 의도였다
+    // (77차 최초 구현은 자동으로 넛지까지 보내버려서 81차에 바로잡음). 모임마다 켜고 끌 수 있으며
+    // (기본 켜짐), 이 값은 순수 로컬 설정 — "받는 쪽" 설정인 무전기(walkieSettings, RTDB)와 달리
+    // "이 기기가 이 모임에 대해 알림을 받을지"를 결정하므로 동기화 대상이 아니다.
     var groupRandomNudgeEnabledJson: String
         get() = prefs.getString("group_random_nudge_enabled_json", "{}") ?: "{}"
         set(value) = prefs.edit().putString("group_random_nudge_enabled_json", value).apply()

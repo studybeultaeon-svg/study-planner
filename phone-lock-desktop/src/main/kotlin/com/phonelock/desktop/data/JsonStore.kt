@@ -130,8 +130,7 @@ object JsonStore {
                 shareStudy = g.optBoolean("shareStudy", true),
                 shareStreak = g.optBoolean("shareStreak", true),
                 shareSchedule = g.optBoolean("shareSchedule", true),
-                shareStudyingNow = g.optBoolean("shareStudyingNow", true),
-                shareActiveGroup = g.optBoolean("shareActiveGroup", true)
+                shareStudyingNow = g.optBoolean("shareStudyingNow", true)
             )
         }
         val hiddenFromJson = json.optJSONObject("hiddenFromUidsByGroup") ?: JSONObject()
@@ -410,7 +409,6 @@ object JsonStore {
                 put("shareStreak", s.shareStreak)
                 put("shareSchedule", s.shareSchedule)
                 put("shareStudyingNow", s.shareStudyingNow)
-                put("shareActiveGroup", s.shareActiveGroup)
             })
         }
         json.put("groupShareSettings", groupShareJson)

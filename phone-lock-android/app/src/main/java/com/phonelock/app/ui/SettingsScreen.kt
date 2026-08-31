@@ -1,6 +1,5 @@
 package com.phonelock.app.ui
 
-import android.app.NotificationManager
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
@@ -78,11 +77,6 @@ private fun isDeviceAdminActive(context: android.content.Context): Boolean {
     return dpm.isAdminActive(PhoneLockDeviceAdminReceiver.componentName(context))
 }
 
-private fun isNotificationPolicyAccessGranted(context: android.content.Context): Boolean {
-    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    return nm.isNotificationPolicyAccessGranted
-}
-
 private fun canScheduleExactAlarms(context: android.content.Context): Boolean {
     if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return true
     val am = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
@@ -110,10 +104,8 @@ fun SettingsScreen(
     var blockReels by remember { mutableStateOf(prefs.blockReels) }
     var blockShorts by remember { mutableStateOf(prefs.blockShorts) }
     var routineStreakNotifyEnabled by remember { mutableStateOf(prefs.routineStreakNotifyEnabled) }
-    var autoDndEnabled by remember { mutableStateOf(prefs.autoDndEnabled) }
     var defaultMultiPassEnabled by remember { mutableStateOf(prefs.defaultMultiPassEnabled) }
     var settingsSubTab by remember { mutableIntStateOf(0) }
-    var notificationPolicyGranted by remember { mutableStateOf(isNotificationPolicyAccessGranted(context)) }
     var dailyResetHourText by remember { mutableStateOf(prefs.dailyResetHour.toString()) }
     var loginId by remember { mutableStateOf(AuthManager.currentLoginId) }
     var showRestoreConfirmDialog by remember { mutableStateOf(false) }
@@ -175,12 +167,6 @@ fun SettingsScreen(
         ActivityResultContracts.StartActivityForResult()
     ) {
         batteryOptIgnored = isIgnoringBatteryOptimizations(context)
-    }
-
-    val notificationPolicyLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        notificationPolicyGranted = isNotificationPolicyAccessGranted(context)
     }
 
     val exactAlarmLauncher = rememberLauncherForActivityResult(
@@ -639,39 +625,6 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-            Spacer(Modifier.height(Spacing.md))
-          }
-
-          if (settingsSubTab == 3) {
-            SectionCard("공부 잠금 중 방해금지 모드") {
-                Text(
-                    "공부 잠금 화면이 뜨는 동안 자동으로 방해금지(우선순위만) 모드를 켜고, 잠금이 풀리면 원래대로 되돌립니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                ToggleRow(
-                    title = "공부 잠금 중 방해금지 자동 적용",
-                    checked = autoDndEnabled,
-                    onCheckedChange = { checked ->
-                        autoDndEnabled = checked
-                        prefs.autoDndEnabled = checked
-                    }
-                )
-                if (autoDndEnabled && !notificationPolicyGranted) {
-                    Spacer(Modifier.height(Spacing.sm))
-                    Text(
-                        "알림 정책 접근 권한이 없어 아직 적용되지 않습니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                    Button(
-                        onClick = { notificationPolicyLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("알림 정책 접근 권한 설정 열기") }
-                }
             }
             Spacer(Modifier.height(Spacing.md))
           }

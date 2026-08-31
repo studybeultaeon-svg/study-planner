@@ -39,7 +39,6 @@ fun GroupShareSettingsDialog(
     var shareStreak by remember { mutableStateOf(initial.shareStreak) }
     var shareSchedule by remember { mutableStateOf(initial.shareSchedule) }
     var shareStudyingNow by remember { mutableStateOf(initial.shareStudyingNow) }
-    var shareActiveGroup by remember { mutableStateOf(initial.shareActiveGroup) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -57,12 +56,11 @@ fun GroupShareSettingsDialog(
                 ShareToggleRow("스트릭", null, shareStreak) { shareStreak = it }
                 ShareToggleRow("오늘 일정", "오늘 캘린더 일정 목록과 완료 여부", shareSchedule) { shareSchedule = it }
                 ShareToggleRow("공부중 여부", "지금 공부(뽀모도로 포함) 중인지와 업무 이름", shareStudyingNow) { shareStudyingNow = it }
-                ShareToggleRow("작동 중인 관리 그룹", "지금 실제로 나를 제한 중인 관리(차단) 그룹 이름", shareActiveGroup) { shareActiveGroup = it }
             }
         },
         confirmButton = {
             Button(onClick = {
-                onSave(GroupShareSettings(shareRoutines, shareStudy, shareStreak, shareSchedule, shareStudyingNow, shareActiveGroup))
+                onSave(GroupShareSettings(shareRoutines, shareStudy, shareStreak, shareSchedule, shareStudyingNow))
             }) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
