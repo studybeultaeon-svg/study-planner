@@ -32,8 +32,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -763,50 +765,76 @@ private fun MemberStatTile(label: String, value: String, modifier: Modifier = Mo
 }
 
 /**
- * "공부 - 일정표" 탭 — 라이브 TimetableScreen의 요일별 표를 옮기되, 계산기 목표량(linkedCalc)은 "모임"
- * 공유 대상이 아니라서(사용자 확인) 대신 그 주 캘린더 일정을 요일별로 나열하는 형태로 단순화했다.
+ * "공부 - 일정표" 탭 — 라이브 TimetableScreen(할당량 계산기 업무를 요일별 목표량 표로 보여주는 화면)을
+ * 그대로 옮긴다(78차). 이전엔 계산기 데이터가 모임 공유 대상이 아니라서 대신 그 주 캘린더 일정을
+ * 나열하는 형태로 단순화했었는데, 사용자가 "일정표는 진짜 일정표 화면을 의미한다"고 정정해 [MemberStats.calcTasks]
+ * (shareSchedule 토글에 함께 묶임)를 새로 동기화해 반영했다. linkedCalc 완료 체크(✅)는 계산기 원본에서도
+ * 로컬 캘린더 연동이 있어야만 계산되는 값이라 이 읽기전용 화면에는 옮기지 않는다(라이브 화면과의 유일한 차이).
  */
 @Composable
 private fun MemberStudyTimetableTab(s: SocialGroupSyncClient.MemberStats) {
-    val today = remember { LocalDate.now() }
-    val sunday = remember(today) { today.minusDays(today.dayOfWeek.value.toLong() % 7) }
-    val schedule = s.schedule ?: emptyList()
-    val tasksByDate = remember(schedule) { schedule.groupBy { it.dateKey } }
-    val weekDates = remember(sunday) { (0..6).map { sunday.plusDays(it.toLong()) } }
+    var cursor by remember { mutableStateOf(LocalDate.now()) }
+    val today = LocalDate.now()
+    val isToday = cursor == today
+    val jsDow = cursor.dayOfWeek.value % 7
     val weekdayLabels = listOf("일", "월", "화", "수", "목", "금", "토")
+    val dateLabel = "${cursor.monthValue}월 ${cursor.dayOfMonth}일 (${weekdayLabels[jsDow]})" + if (isToday) " · 오늘" else ""
+
+    val tasks = s.calcTasks ?: emptyList()
+    val dayTasks = tasks.filter { t ->
+        if (t.name.isBlank() || t.dday.isBlank()) return@filter false
+        val dday = runCatching { LocalDate.parse(t.dday) }.getOrNull() ?: return@filter false
+        val start = if (t.start.isBlank()) today else (runCatching { LocalDate.parse(t.start) }.getOrNull() ?: today)
+        !cursor.isBefore(start) && !cursor.isAfter(dday)
+    }
 
     Column(Modifier.fillMaxWidth()) {
-        weekDates.forEachIndexed { i, date ->
-            val dayTasks = tasksByDate[date.toString()].orEmpty()
-            val isToday = date == today
-            Surface(
-                Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                shape = MaterialTheme.shapes.small,
-                color = if (isToday) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface
-            ) {
-                Row(Modifier.fillMaxWidth().padding(Spacing.sm)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = { cursor = cursor.minusDays(1) }) { Text("◀") }
+            Spacer(Modifier.width(Spacing.sm))
+            Text(dateLabel, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.width(Spacing.sm))
+            OutlinedButton(onClick = { cursor = cursor.plusDays(1) }) { Text("▶") }
+        }
+        Spacer(Modifier.height(Spacing.sm))
+
+        if (dayTasks.isEmpty()) {
+            Text(
+                if (tasks.isEmpty()) "등록된 일정표 업무가 없습니다" else "이 날은 진행 중인 업무가 없습니다",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            var dayTotal = 0.0
+            dayTasks.forEach { t ->
+                val v = memberTimetableDayValue(t, jsDow).toDoubleOrNull() ?: 0.0
+                dayTotal += v
+                Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(t.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "${date.monthValue}/${date.dayOfMonth}(${weekdayLabels[i]})",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.width(72.dp)
+                        if (v > 0) "${memberTimetableFmtDec(v)}${t.unit}" else "—",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (v > 0) FontWeight.Bold else FontWeight.Normal,
+                        color = if (v <= 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
                     )
-                    if (dayTasks.isEmpty()) {
-                        Text("-", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        Column {
-                            dayTasks.forEach { t ->
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(when (t.status) { "O" -> "✅"; "X" -> "❌"; else -> "▫" }, modifier = Modifier.padding(end = Spacing.xs))
-                                    Text(t.name, style = MaterialTheme.typography.bodySmall, color = memberCalStageColor(t.color))
-                                }
-                            }
-                        }
-                    }
                 }
+                HorizontalDivider()
+            }
+            Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("합계", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(memberTimetableFmtDec(dayTotal), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             }
         }
     }
+}
+
+private fun memberTimetableDayValue(task: SocialGroupSyncClient.CalcTaskStat, jsDow: Int): String = when (jsDow) {
+    0 -> task.sun; 1 -> task.mon; 2 -> task.tue; 3 -> task.wed
+    4 -> task.thu; 5 -> task.fri; else -> task.sat
+}
+
+private fun memberTimetableFmtDec(n: Double): String {
+    val r = Math.round(n * 100) / 100.0
+    return if (r == Math.floor(r)) r.toLong().toString() else String.format(java.util.Locale.KOREA, "%.2f", r).trimEnd('0').trimEnd('.')
 }
 
 /**

@@ -224,7 +224,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                                     onClick = {
                                         playingMsgId = msg.msgId
                                         if (msg.textMessage.isNotBlank()) {
-                                            TtsPlayer.speak(msg.textMessage, walkieSettings.volume)
+                                            TtsPlayer.speak(msg.textMessage, walkieSettings.volume, walkieSettings.voiceGender)
                                             playingMsgId = null
                                         } else {
                                             val wavBytes = runCatching { Base64.getDecoder().decode(msg.audioBase64) }.getOrNull()

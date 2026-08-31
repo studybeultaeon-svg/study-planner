@@ -32,6 +32,15 @@ object SocialGroupSyncClient {
      *  예전엔 오늘 하루치만 이름/상태로 보여줬다). */
     data class ScheduleStat(val dateKey: String, val name: String, val status: String?, val color: String)
 
+    /** 할당량 계산기 업무 하나 — 라이브 [com.phonelock.app.ui.TimetableScreen]과 같은 요일별 목표량 표를
+     *  모임 멤버 상세에도 그대로 그리기 위해(78차, "오늘 할 일"이 아니라 진짜 일정표를 보고 싶다는 요청)
+     *  draft CalcTask에서 표시에 필요한 필드만 옮긴다. */
+    data class CalcTaskStat(
+        val name: String, val unit: String, val start: String, val dday: String,
+        val mon: String, val tue: String, val wed: String, val thu: String,
+        val fri: String, val sat: String, val sun: String
+    )
+
     /** "작동 중인 관리 그룹" 클릭 시 상세 다이얼로그로 보여줄 전체 설정 — AppGroup의 관련 필드를 그대로 옮긴다. */
     data class ActiveGroupStat(
         val name: String,
@@ -72,6 +81,8 @@ object SocialGroupSyncClient {
         val studyProgressPercent: Int?,
         val streak: Int?,
         val schedule: List<ScheduleStat>?,
+        /** "공부 - 일정표" 탭용 할당량 계산기 업무 목록(78차) — shareSchedule과 같이 묶인다. */
+        val calcTasks: List<CalcTaskStat>?,
         /** 캘린더 날짜 상세에서 그 날 총 공부시간을 보여주기 위한 dateKey -> 초 — shareStudy가 꺼져있으면 null/빈 맵. */
         val studySecondsByDate: Map<String, Int>?,
         val studyingNow: Boolean?,
@@ -104,7 +115,10 @@ object SocialGroupSyncClient {
         val enabled: Boolean = false,
         val mode: String = "MESSAGE_ONLY",
         val volume: Int = 70,
-        val schedules: List<WalkieSchedule> = emptyList()
+        val schedules: List<WalkieSchedule> = emptyList(),
+        /** TTS 텍스트 메시지를 읽어줄 목소리("FEMALE"/"MALE", 78차) — 받는 사람(이 기기) 기준 설정이라
+         *  음성 녹음(실제 오디오) 재생과는 무관하고, [TtsPlayer]로만 전달된다. */
+        val voiceGender: String = "FEMALE"
     )
 
     /** 모임 생성 — 이름 입력 → info 작성 + 6자리 코드 생성(충돌 시 재시도) + 나·소속목록 등록. 성공 시 새 groupId. */
@@ -367,7 +381,7 @@ object SocialGroupSyncClient {
         shareRoutines: Boolean, shareStudy: Boolean, shareStreak: Boolean,
         shareSchedule: Boolean, shareStudyingNow: Boolean, shareActiveGroup: Boolean,
         routines: List<RoutineStat>, studyTodaySeconds: Int, studyProgressPercent: Int, streak: Int, routineBestStreak: Int,
-        schedule: List<ScheduleStat>, studySecondsByDate: Map<String, Int>,
+        schedule: List<ScheduleStat>, calcTasks: List<CalcTaskStat>, studySecondsByDate: Map<String, Int>,
         studyingNow: Boolean, studyingTaskName: String, activeGroups: List<ActiveGroupStat>,
         hiddenFromUids: Set<String>
     ) {
@@ -417,6 +431,18 @@ object SocialGroupSyncClient {
                                     put("name", s.name)
                                     put("status", s.status ?: JSONObject.NULL)
                                     put("color", s.color)
+                                })
+                            }
+                        })
+                        put("calcTasks", org.json.JSONArray().apply {
+                            calcTasks.forEach { t ->
+                                put(JSONObject().apply {
+                                    put("name", t.name)
+                                    put("unit", t.unit)
+                                    put("start", t.start)
+                                    put("dday", t.dday)
+                                    put("mon", t.mon); put("tue", t.tue); put("wed", t.wed); put("thu", t.thu)
+                                    put("fri", t.fri); put("sat", t.sat); put("sun", t.sun)
                                 })
                             }
                         })
@@ -511,6 +537,18 @@ object SocialGroupSyncClient {
                                     sc.optString("name", ""),
                                     if (sc.isNull("status")) null else sc.optString("status", null),
                                     sc.optString("color", "white")
+                                )
+                            }
+                        } else null,
+                        calcTasks = if (shareSchedule) {
+                            val arr = s.optJSONArray("calcTasks") ?: org.json.JSONArray()
+                            (0 until arr.length()).map { i ->
+                                val t = arr.getJSONObject(i)
+                                CalcTaskStat(
+                                    t.optString("name", ""), t.optString("unit", ""),
+                                    t.optString("start", ""), t.optString("dday", ""),
+                                    t.optString("mon", ""), t.optString("tue", ""), t.optString("wed", ""), t.optString("thu", ""),
+                                    t.optString("fri", ""), t.optString("sat", ""), t.optString("sun", "")
                                 )
                             }
                         } else null,
@@ -671,7 +709,8 @@ object SocialGroupSyncClient {
                     enabled = json.optBoolean("enabled", false),
                     mode = json.optString("mode", "MESSAGE_ONLY"),
                     volume = json.optInt("volume", 70),
-                    schedules = schedules
+                    schedules = schedules,
+                    voiceGender = json.optString("voiceGender", "FEMALE")
                 )
             }.getOrDefault(GroupWalkieSettings())
         }
@@ -690,6 +729,7 @@ object SocialGroupSyncClient {
                     put("enabled", settings.enabled)
                     put("mode", settings.mode)
                     put("volume", settings.volume)
+                    put("voiceGender", settings.voiceGender)
                     put("schedules", org.json.JSONArray().apply {
                         settings.schedules.forEach { s ->
                             put(JSONObject().apply {

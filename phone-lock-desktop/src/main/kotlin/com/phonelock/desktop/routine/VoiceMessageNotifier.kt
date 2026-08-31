@@ -49,7 +49,7 @@ object VoiceMessageNotifier {
                         if (SocialGroupSyncClient.deleteVoiceMessage(url, key, msg.groupId, msg.msgId).isSuccess) {
                             if (msg.textMessage.isNotBlank()) {
                                 DesktopNotifier.notify("${msg.fromName}님의 무전 🎙️", "읽어주는 중...")
-                                TtsPlayer.speak(msg.textMessage, settings.volume)
+                                TtsPlayer.speak(msg.textMessage, settings.volume, settings.voiceGender)
                             } else {
                                 val wavBytes = runCatching { Base64.getDecoder().decode(msg.audioBase64) }.getOrNull()
                                 if (wavBytes != null) {

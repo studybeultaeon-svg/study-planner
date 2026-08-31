@@ -30,8 +30,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.phonelock.app.service.SocialGroupSyncClient
+import com.phonelock.app.service.TtsPlayer
 import com.phonelock.app.ui.theme.Spacing
 import kotlin.math.roundToInt
 
@@ -52,7 +54,9 @@ fun GroupWalkieSettingsDialog(
     var enabled by remember { mutableStateOf(initial.enabled) }
     var mode by remember { mutableStateOf(initial.mode) }
     var volume by remember { mutableStateOf(initial.volume) }
+    var voiceGender by remember { mutableStateOf(initial.voiceGender) }
     var schedules by remember { mutableStateOf(initial.schedules) }
+    val context = LocalContext.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -85,6 +89,23 @@ fun GroupWalkieSettingsDialog(
                         onValueChange = { volume = it.roundToInt() },
                         valueRange = 0f..100f
                     )
+                    Spacer(Modifier.height(Spacing.sm))
+                    Text("텍스트 메시지 목소리(TTS)", style = MaterialTheme.typography.bodyMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        FilterChip(
+                            selected = voiceGender == "FEMALE",
+                            onClick = { voiceGender = "FEMALE" },
+                            label = { Text("여성") }
+                        )
+                        FilterChip(
+                            selected = voiceGender == "MALE",
+                            onClick = { voiceGender = "MALE" },
+                            label = { Text("남성") }
+                        )
+                        OutlinedButton(onClick = {
+                            TtsPlayer.speak(context, "이런 목소리로 읽어드립니다", volume, voiceGender)
+                        }) { Text("미리듣기") }
+                    }
                     Spacer(Modifier.height(Spacing.md))
                     Divider()
                     Spacer(Modifier.height(Spacing.sm))
@@ -106,7 +127,7 @@ fun GroupWalkieSettingsDialog(
         },
         confirmButton = {
             Button(onClick = {
-                onSave(SocialGroupSyncClient.GroupWalkieSettings(enabled, mode, volume, schedules))
+                onSave(SocialGroupSyncClient.GroupWalkieSettings(enabled, mode, volume, schedules, voiceGender))
             }) { Text("저장") }
         },
         dismissButton = {
