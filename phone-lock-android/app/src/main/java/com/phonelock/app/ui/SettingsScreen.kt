@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.phonelock.app.R
 import com.phonelock.app.data.AppPreferences
+import com.phonelock.app.data.*
 import com.phonelock.app.data.PreMigrationBackup
 import com.phonelock.app.routine.RoutineAlarmScheduler
 import com.phonelock.app.data.PhoneLockRepository
@@ -81,6 +82,18 @@ private fun canScheduleExactAlarms(context: android.content.Context): Boolean {
     if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return true
     val am = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
     return am.canScheduleExactAlarms()
+}
+
+/** 동기화 상태 배지용 — "N분/시간/일" 형태의 짧은 상대시간(82차, §10①). */
+private fun syncElapsedLabel(atMillis: Long): String {
+    val elapsedMs = (System.currentTimeMillis() - atMillis).coerceAtLeast(0L)
+    val minutes = elapsedMs / 60_000L
+    return when {
+        minutes < 1 -> "방금"
+        minutes < 60 -> "${minutes}분"
+        minutes < 60 * 24 -> "${minutes / 60}시간"
+        else -> "${minutes / (60 * 24)}일"
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -345,6 +358,43 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(Spacing.md))
 
+            SectionCard("표시 / 진단") {
+                Text("글자 크기", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(Spacing.xs))
+                var fontScale by remember { mutableStateOf(prefs.fontScale) }
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    listOf(0.85f to "작게", 1.0f to "기본", 1.15f to "크게", 1.3f to "아주 크게").forEach { (scale, label) ->
+                        FilterChip(
+                            selected = fontScale == scale,
+                            onClick = { fontScale = scale; prefs.fontScale = scale },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(Spacing.md))
+                Text("동기화 상태", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(Spacing.xs))
+                val lastSyncAt = prefs.lastSyncSuccessAtMillis
+                val failCount = prefs.lastSyncFailCount
+                val syncStatusText = when {
+                    lastSyncAt <= 0L -> "아직 동기화 기록 없음"
+                    failCount > 0 -> "마지막 성공: ${syncElapsedLabel(lastSyncAt)} 전 · 이후 실패 ${failCount}회"
+                    else -> "마지막 성공: ${syncElapsedLabel(lastSyncAt)} 전 · 정상"
+                }
+                Text(
+                    syncStatusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (failCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                var showDebugLog by remember { mutableStateOf(false) }
+                OutlinedButton(onClick = { showDebugLog = true }) { Text("디버그 로그 보기") }
+                if (showDebugLog) {
+                    com.phonelock.app.ui.components.DebugLogDialog(onDismiss = { showDebugLog = false })
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+
             SectionCard("권한 / 백그라운드 보호") {
                 Text(
                     if (accessibilityEnabled) "접근성 서비스: 활성화됨" else "접근성 서비스: 비활성화됨",
@@ -601,6 +651,41 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            Spacer(Modifier.height(Spacing.md))
+
+            SectionCard("자동 백업 (Firebase)") {
+                var cloudBackupEnabled by remember { mutableStateOf(prefs.cloudBackupEnabled) }
+                ToggleRow(
+                    title = "매일 자동으로 클라우드에 백업",
+                    checked = cloudBackupEnabled,
+                    onCheckedChange = { checked -> cloudBackupEnabled = checked; prefs.cloudBackupEnabled = checked }
+                )
+                Text(
+                    "로그인이 필요하며, Firebase 콘솔에서 Storage를 먼저 활성화해야 동작합니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (prefs.lastCloudBackupResult.isNotBlank()) {
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text(
+                        "마지막 결과(${prefs.lastCloudBackupDate}): ${prefs.lastCloudBackupResult}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (prefs.lastCloudBackupResult.startsWith("성공")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                }
+                Spacer(Modifier.height(Spacing.sm))
+                OutlinedButton(onClick = {
+                    scope.launch {
+                        val json = repository.exportBackupJson()
+                        val result = com.phonelock.app.service.CloudBackupClient.uploadBackup(prefs.fbDatabaseUrl, json)
+                        Toast.makeText(
+                            context,
+                            if (result.isSuccess) "백업 업로드 완료" else "백업 실패: ${result.exceptionOrNull()?.message}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }) { Text("지금 클라우드에 백업") }
             }
             Spacer(Modifier.height(Spacing.md))
           }

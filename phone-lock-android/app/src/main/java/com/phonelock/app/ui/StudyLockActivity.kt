@@ -66,7 +66,7 @@ class StudyLockActivity : ComponentActivity() {
 
         setContent {
             val prefs = AppPreferences(applicationContext)
-            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent) {
+            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
                 StudyLockScreen(
                     allowedPackages = allowedPackages,
                     studyStartedAt = studyStartedAt,

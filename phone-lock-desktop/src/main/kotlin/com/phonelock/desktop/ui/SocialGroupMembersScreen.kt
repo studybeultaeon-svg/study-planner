@@ -53,26 +53,45 @@ import com.phonelock.desktop.ui.components.WakeOptionsDialog
 import com.phonelock.desktop.ui.theme.Spacing
 import java.util.Base64
 
-/** 멤버 이름 첫 글자를 원형 배지로 — 목록 판독성 개선(GroupAvatar와 같은 패턴, 파일 분리). */
+/** 멤버 이름 첫 글자를 원형 배지로 — 목록 판독성 개선(GroupAvatar와 같은 패턴, 파일 분리). 82차(§6 UX
+ *  폴리싱, 안드로이드판과 대칭): 선택 안 된 상태에선 이름 해시로 테마의 3가지 container 색상 중 하나를
+ *  고정 배정해 전원이 같은 색으로 밋밋해 보이던 걸 개선 — 선택된(highlighted) 상태는 기존처럼 primary로
+ *  그대로 둬 "지금 보고 있는 멤버"라는 신호가 색 변주에 묻히지 않게 한다. */
 @Composable
 private fun MemberAvatar(name: String, highlighted: Boolean) {
+    val trimmed = name.trim()
+    val (bg, fg) = if (highlighted) {
+        MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.onPrimary
+    } else {
+        val idx = (trimmed.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }) % 3
+        when (idx) {
+            0 -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+            1 -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+            else -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+        }
+    }
     Box(
-        modifier = Modifier.size(36.dp).clip(CircleShape).background(
-            if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
-        ),
+        modifier = Modifier.size(36.dp).clip(CircleShape).background(bg),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            name.trim().firstOrNull()?.uppercase() ?: "?",
-            style = MaterialTheme.typography.labelLarge,
-            color = if (highlighted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Text(trimmed.firstOrNull()?.uppercase() ?: "?", style = MaterialTheme.typography.labelLarge, color = fg)
     }
 }
 
 /** shareRoutines가 켜져 있고 오늘 예정 루틴이 있을 때만 완료율을 계산, 그 외엔 null(정렬 시 맨 뒤로). */
 private fun completionRatio(m: SocialGroupSyncClient.MemberStats): Double? =
     if (m.shareRoutines && m.routines.isNotEmpty()) m.routines.count { it.doneToday }.toDouble() / m.routines.size else null
+
+/** 82차(§9 "모임 주간 리더보드") — schedule에 이미 담겨오는 ±버퍼 캘린더 데이터로 최근 7일 완료율을 재집계. */
+private fun weekCompletionRatio(m: SocialGroupSyncClient.MemberStats): Double? {
+    if (!m.shareSchedule) return null
+    val today = java.time.LocalDate.now()
+    val weekAgoKey = today.minusDays(6).toString()
+    val todayKey = today.toString()
+    val weekTasks = m.schedule.filter { it.dateKey in weekAgoKey..todayKey }
+    if (weekTasks.isEmpty()) return null
+    return weekTasks.count { it.status == "O" }.toDouble() / weekTasks.size
+}
 
 /**
  * 모임 하나 진입 시 멤버 목록(마스터-디테일: 왼쪽 멤버 목록, 오른쪽 선택한 멤버의 상세) — 오늘 완료율
@@ -103,6 +122,14 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
     var showEditInfoDialog by remember { mutableStateOf(false) }
     var showMemberManageDialog by remember { mutableStateOf(false) }
     var admins by remember { mutableStateOf(emptySet<String>()) }
+    var viewWeekly by remember { mutableStateOf(false) }
+    var announcement by remember { mutableStateOf<SocialGroupSyncClient.Announcement?>(null) }
+    var showAnnouncementDialog by remember { mutableStateOf(false) }
+    var announcementInput by remember { mutableStateOf("") }
+    var groupGoal by remember { mutableStateOf<SocialGroupSyncClient.GroupGoal?>(null) }
+    var showGoalDialog by remember { mutableStateOf(false) }
+    var goalInput by remember { mutableStateOf("") }
+    var quoteStats by remember { mutableStateOf<List<SocialGroupSyncClient.QuoteStat>>(emptyList()) }
     var shareSettings by remember { mutableStateOf(repository.groupShareSettings(groupId)) }
     // 😴 깨우기 대상 — wakeTarget이 있는 동안 wakeStep("options"/"voice"/"text")에 따라 다이얼로그가 뜬다.
     var wakeTarget by remember { mutableStateOf<Pair<String, String>?>(null) } // uid to 표시이름
@@ -132,6 +159,15 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
             SocialGroupSyncClient.readIncomingVoiceMessages(url, key, listOf(groupId), myUid)
         } else emptyList()
         walkieSettings = SocialGroupSyncClient.readGroupWalkieSettings(url, key, groupId)
+        announcement = SocialGroupSyncClient.readAnnouncement(url, key, groupId)
+        groupGoal = SocialGroupSyncClient.readGoal(url, key, groupId)
+        // 82차(§11 "모임 랭킹") — 내 회유 멘트 저항률을 먼저 올리고 전체를 읽어온다.
+        val myOutcomes = repository.getAllQuoteOutcomesOnce()
+        if (myOutcomes.isNotEmpty()) {
+            val myStopRate = Math.round(myOutcomes.count { it.choice == "STOP" } * 100.0 / myOutcomes.size).toInt()
+            SocialGroupSyncClient.writeMyQuoteStat(url, key, groupId, myStopRate, myOutcomes.size)
+        }
+        quoteStats = SocialGroupSyncClient.readQuoteStats(url, key, groupId)
         loading = false
         if (selectedUid == null && myUid != null) selectedUid = myUid
     }
@@ -179,18 +215,104 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
         return
     }
 
-    val sortedStats = stats.sortedBy { completionRatio(it) ?: 1.0 }
+    if (showAnnouncementDialog) {
+        AlertDialog(
+            onDismissRequest = { showAnnouncementDialog = false },
+            title = { Text("공지 수정") },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = announcementInput,
+                    onValueChange = { announcementInput = it },
+                    placeholder = { Text("모임원에게 전할 공지를 입력하세요") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAnnouncementDialog = false
+                    Thread {
+                        SocialGroupSyncClient.writeAnnouncement(url, key, groupId, announcementInput.trim())
+                        announcement = SocialGroupSyncClient.readAnnouncement(url, key, groupId)
+                    }.start()
+                }) { Text("저장") }
+            },
+            dismissButton = { TextButton(onClick = { showAnnouncementDialog = false }) { Text("취소") } }
+        )
+    }
+
+    if (showGoalDialog) {
+        AlertDialog(
+            onDismissRequest = { showGoalDialog = false },
+            title = { Text("모임 목표 설정") },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = goalInput,
+                    onValueChange = { v -> goalInput = v.filter { it.isDigit() } },
+                    label = { Text("목표 시간(분)") },
+                    placeholder = { Text("예: 120") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val minutes = goalInput.toIntOrNull() ?: 0
+                    showGoalDialog = false
+                    if (minutes > 0) {
+                        Thread {
+                            SocialGroupSyncClient.writeGoal(url, key, groupId, minutes)
+                            groupGoal = SocialGroupSyncClient.readGoal(url, key, groupId)
+                        }.start()
+                    }
+                }) { Text("저장") }
+            },
+            dismissButton = { TextButton(onClick = { showGoalDialog = false }) { Text("취소") } }
+        )
+    }
+
+    val sortedStats = if (viewWeekly) stats.sortedBy { weekCompletionRatio(it) ?: 1.0 } else stats.sortedBy { completionRatio(it) ?: 1.0 }
     val notDoneCount = stats.count { (completionRatio(it) ?: 1.0) <= 0.0 }
     val isOwner = info?.ownerUid == myUid
     val isAdmin = isOwner || (myUid != null && myUid in admins)
     val clipboard = LocalClipboardManager.current
+    val groupGoalTodaySeconds = stats.filter { it.shareStudy }.sumOf { it.studyTodaySeconds }
 
     Row(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).fillMaxHeight().padding(Spacing.md)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onBack) { Text("< 목록") }
                 Row {
-                    TextButton(onClick = { showSettingsMenu = true }) { Text("⚙ 설정") }
+                    Box {
+                        TextButton(onClick = { showSettingsMenu = true }) { Text("⚙ 설정") }
+                        // 82차(§6 UX 폴리싱, 안드로이드판과 대칭): 밋밋한 AlertDialog 버튼 목록 대신
+                        // 버튼 바로 아래에서 펼쳐지는 앵커된 드롭다운 메뉴로.
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = showSettingsMenu,
+                            onDismissRequest = { showSettingsMenu = false }
+                        ) {
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("🔒 공유 설정") },
+                                onClick = { showSettingsMenu = false; showShareSettingsDialog = true }
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("🎙️ 무전기") },
+                                onClick = { showSettingsMenu = false; showWalkieSettingsDialog = true }
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("🔔 무작위 알림") },
+                                onClick = { showSettingsMenu = false; showRandomNudgeDialog = true }
+                            )
+                            if (isAdmin) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("✏️ 모임 이름/코드 수정") },
+                                    onClick = { showSettingsMenu = false; showEditInfoDialog = true }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("👥 멤버 관리") },
+                                    onClick = { showSettingsMenu = false; showMemberManageDialog = true }
+                                )
+                            }
+                        }
+                    }
                     if (isOwner) {
                         OutlinedButton(onClick = { showDeleteConfirm = true }) { Text("모임 삭제") }
                     } else {
@@ -286,6 +408,67 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
             }
             Spacer(Modifier.height(Spacing.sm))
 
+            // 82차(§9 "모임장 공지사항") — 있으면 항상 상단에, 관리자만 편집 가능.
+            if (announcement != null || isAdmin) {
+                Surface(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.tertiaryContainer) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("📢 공지", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                            Text(announcement?.text ?: "아직 공지가 없습니다.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                        }
+                        if (isAdmin) {
+                            TextButton(onClick = { announcementInput = announcement?.text ?: ""; showAnnouncementDialog = true }) { Text("수정") }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(Spacing.sm))
+            }
+
+            // 82차(§9 "모임 공동 목표").
+            if (groupGoal != null || isAdmin) {
+                Surface(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("🎯 모임 목표", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
+                            if (isAdmin) {
+                                TextButton(onClick = { goalInput = groupGoal?.targetMinutes?.toString() ?: ""; showGoalDialog = true }) { Text("설정") }
+                            }
+                        }
+                        if (groupGoal != null) {
+                            val targetSeconds = groupGoal!!.targetMinutes * 60
+                            val progress = if (targetSeconds > 0) (groupGoalTodaySeconds.toFloat() / targetSeconds).coerceIn(0f, 1f) else 0f
+                            Spacer(Modifier.height(Spacing.xs))
+                            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)))
+                            Spacer(Modifier.height(Spacing.xs))
+                            Text("오늘 함께 ${groupGoalTodaySeconds / 60}분 / 목표 ${groupGoal!!.targetMinutes}분", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        } else {
+                            Text("아직 목표가 없습니다.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(Spacing.sm))
+            }
+
+            // 82차(§11 "모임 랭킹") — 회유 멘트 저항률 비교(재미 요소).
+            if (quoteStats.isNotEmpty()) {
+                Surface(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
+                        Text("😤 모임 랭킹 (회유 멘트 저항률)", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.height(Spacing.xs))
+                        quoteStats.sortedByDescending { it.stopRatePercent }.forEachIndexed { idx, qs ->
+                            Text("${idx + 1}위 ${qs.displayName} — ${qs.stopRatePercent}% (${qs.totalCount}회 중)", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(Spacing.sm))
+            }
+
+            // 82차(§9 "모임 주간 리더보드") — 오늘/이번 주 토글.
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                TextButton(onClick = { viewWeekly = false }) { Text(if (!viewWeekly) "● 오늘" else "오늘") }
+                TextButton(onClick = { viewWeekly = true }) { Text(if (viewWeekly) "● 이번 주" else "이번 주") }
+            }
+
             if (notDoneCount > 0) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -304,7 +487,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
 
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 sortedStats.forEach { m ->
-                    val ratio = completionRatio(m)
+                    val ratio = if (viewWeekly) weekCompletionRatio(m) else completionRatio(m)
                     val percentLabel = if (ratio != null) "${Math.round(ratio * 100)}%" else if (m.shareRoutines) "-" else "비공개"
                     val isSelfRow = m.uid == myUid
                     val isSelected = m.uid == selectedUid
@@ -392,35 +575,6 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                 }
             }
         }
-    }
-
-    if (showSettingsMenu) {
-        AlertDialog(
-            onDismissRequest = { showSettingsMenu = false },
-            title = { Text("⚙ 모임 설정") },
-            text = {
-                Column {
-                    TextButton(onClick = { showSettingsMenu = false; showShareSettingsDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("🔒 공유 설정", modifier = Modifier.fillMaxWidth())
-                    }
-                    TextButton(onClick = { showSettingsMenu = false; showWalkieSettingsDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("🎙️ 무전기", modifier = Modifier.fillMaxWidth())
-                    }
-                    TextButton(onClick = { showSettingsMenu = false; showRandomNudgeDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("🔔 무작위 알림", modifier = Modifier.fillMaxWidth())
-                    }
-                    if (isAdmin) {
-                        TextButton(onClick = { showSettingsMenu = false; showEditInfoDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text("✏️ 모임 이름/코드 수정", modifier = Modifier.fillMaxWidth())
-                        }
-                        TextButton(onClick = { showSettingsMenu = false; showMemberManageDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text("👥 멤버 관리", modifier = Modifier.fillMaxWidth())
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showSettingsMenu = false }) { Text("닫기") } }
-        )
     }
 
     if (showEditInfoDialog) {

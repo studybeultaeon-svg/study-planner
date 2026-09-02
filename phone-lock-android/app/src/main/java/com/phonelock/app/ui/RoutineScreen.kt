@@ -36,11 +36,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.data.*
 import com.phonelock.app.data.Routine
 import com.phonelock.app.routine.RoutineEngine
 import com.phonelock.app.ui.theme.Spacing
@@ -120,7 +123,10 @@ fun RoutineScreen(repository: PhoneLockRepository) {
             // 않고) 한 화면에 들어오게 바꿨다. FilterChip 대신 여백이 작은 커스텀 칩을 써서 좁은 칸에서도
             // 요일+날짜 두 줄이 다 보인다.
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { weekOffset-- }, modifier = Modifier.width(28.dp)) { Text("◀") }
+                IconButton(
+                    onClick = { weekOffset-- },
+                    modifier = Modifier.width(28.dp).semantics { contentDescription = "이전 주" }
+                ) { Text("◀") }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     weekDates.forEachIndexed { i, d ->
                         val selected = d == selectedDate
@@ -145,7 +151,10 @@ fun RoutineScreen(repository: PhoneLockRepository) {
                         }
                     }
                 }
-                IconButton(onClick = { weekOffset++ }, modifier = Modifier.width(28.dp)) { Text("▶") }
+                IconButton(
+                    onClick = { weekOffset++ },
+                    modifier = Modifier.width(28.dp).semantics { contentDescription = "다음 주" }
+                ) { Text("▶") }
             }
             Spacer(Modifier.height(Spacing.sm))
         }
@@ -457,15 +466,19 @@ private fun RoutineRow(
                 Column {
                     Text(
                         "▲", fontSize = 10.sp,
-                        modifier = Modifier.clickable(enabled = onMoveUp != null) { onMoveUp?.invoke() }.padding(2.dp)
+                        modifier = Modifier.clickable(enabled = onMoveUp != null) { onMoveUp?.invoke() }
+                            .padding(2.dp)
+                            .semantics { contentDescription = "위로 이동" }
                     )
                     Text(
                         "▼", fontSize = 10.sp,
-                        modifier = Modifier.clickable(enabled = onMoveDown != null) { onMoveDown?.invoke() }.padding(2.dp)
+                        modifier = Modifier.clickable(enabled = onMoveDown != null) { onMoveDown?.invoke() }
+                            .padding(2.dp)
+                            .semantics { contentDescription = "아래로 이동" }
                     )
                 }
             }
-            IconButton(onClick = onEdit) { Text("✏️") }
+            IconButton(onClick = onEdit, modifier = Modifier.semantics { contentDescription = "수정" }) { Text("✏️") }
         }
     }
 }

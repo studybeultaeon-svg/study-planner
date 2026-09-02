@@ -12,6 +12,60 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("block_reels", false)
         set(value) = prefs.edit().putBoolean("block_reels", value).apply()
 
+    /** 최초 실행 시 권한 안내 온보딩을 이미 보여줬는지(82차, §6 "온보딩 권한 설명 다이얼로그") — 한 번만 표시. */
+    var onboardingShown: Boolean
+        get() = prefs.getBoolean("onboarding_shown", false)
+        set(value) = prefs.edit().putBoolean("onboarding_shown", value).apply()
+
+    // ---- 동기화 상태 대시보드(82차, 감사보고서 §10①) ----
+    /** 가장 최근에 Firebase 동기화(어느 SyncClient든)가 성공한 시각. 설정 화면 상단 배지용, 판정 로직과 무관. */
+    var lastSyncSuccessAtMillis: Long
+        get() = prefs.getLong("last_sync_success_at", 0L)
+        set(value) = prefs.edit().putLong("last_sync_success_at", value).apply()
+
+    /** 가장 최근 성공 이후 연속 실패 횟수 — 성공하면 0으로 리셋. */
+    var lastSyncFailCount: Int
+        get() = prefs.getInt("last_sync_fail_count", 0)
+        set(value) = prefs.edit().putInt("last_sync_fail_count", value).apply()
+
+    fun recordSyncSuccess() {
+        lastSyncSuccessAtMillis = System.currentTimeMillis()
+        lastSyncFailCount = 0
+    }
+
+    fun recordSyncFailure() {
+        lastSyncFailCount = lastSyncFailCount + 1
+    }
+
+    /** 글자 크기 배율(82차, §6/§9) — 0.85(작게)/1.0(기본)/1.15(크게)/1.3(아주 크게). */
+    var fontScale: Float
+        get() = prefs.getFloat("font_scale", 1.0f)
+        set(value) = prefs.edit().putFloat("font_scale", value).apply()
+
+    /** 발견된 새 릴리스의 노트(GitHub Release body) — 업데이트 배너에 "이번 업데이트 내용"으로 표시(82차). */
+    var updateAvailableReleaseNotes: String
+        get() = prefs.getString("update_available_release_notes", "") ?: ""
+        set(value) = prefs.edit().putString("update_available_release_notes", value).apply()
+
+    // ---- 자동 백업/정리(82차, §9 "자동 백업 클라우드 업로드"/"12개월 정리 자동 스케줄") ----
+    /** 매일 1회 전체 데이터를 Firebase Storage에 자동 업로드할지 — 기본 off(로그인 필요, 데이터 사용량 발생). */
+    var cloudBackupEnabled: Boolean
+        get() = prefs.getBoolean("cloud_backup_enabled", false)
+        set(value) = prefs.edit().putBoolean("cloud_backup_enabled", value).apply()
+
+    var lastCloudBackupDate: String
+        get() = prefs.getString("last_cloud_backup_date", "") ?: ""
+        set(value) = prefs.edit().putString("last_cloud_backup_date", value).apply()
+
+    var lastCloudBackupResult: String
+        get() = prefs.getString("last_cloud_backup_result", "") ?: ""
+        set(value) = prefs.edit().putString("last_cloud_backup_result", value).apply()
+
+    /** 12개월 이상 지난 통계를 자동으로 정리한 마지막 날짜 — 월 1회만 실행되게 가드. */
+    var lastAutoStatsPruneDate: String
+        get() = prefs.getString("last_auto_stats_prune_date", "") ?: ""
+        set(value) = prefs.edit().putString("last_auto_stats_prune_date", value).apply()
+
     var blockShorts: Boolean
         get() = prefs.getBoolean("block_shorts", false)
         set(value) = prefs.edit().putBoolean("block_shorts", value).apply()

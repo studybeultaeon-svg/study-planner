@@ -1,4 +1,4 @@
-package com.phonelock.app.calc
+package com.phonelock.shared.calc
 
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
@@ -7,8 +7,8 @@ import kotlin.math.roundToInt
 
 /**
  * 네이티브 계산기(3단계) 계산 로직 — 웹앱 index.html의 calculate()/simulateFinish()/
- * calcRequiredPace()/countDaysInRange()를 그대로 이식했다(데스크탑 CalcEngine.kt와 동일 로직,
- * 플랫폼 간 공유 모듈이 없어 그대로 대칭 복제). 요일 인덱스는 JS Date.getDay()와 동일하게
+ * calcRequiredPace()/countDaysInRange()를 그대로 이식했다. 82차부터 안드로이드/데스크탑이 각자
+ * 대칭 복제하던 것을 이 :shared 모듈로 통합(감사 §7). 요일 인덱스는 JS Date.getDay()와 동일하게
  * 0=일 ~ 6=토를 쓴다(LocalDate.dayOfWeek는 1=월~7=일이라 변환 필요).
  */
 object CalcEngine {

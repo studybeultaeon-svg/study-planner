@@ -10,11 +10,22 @@ group = "com.phonelock.desktop"
 version = "1.0.0"
 
 dependencies {
+    // 82차(감사 §7 ":shared"): CalcEngine/문구 등 순수 로직을 안드로이드와 공유하는 composite build 모듈.
+    implementation("com.phonelock:shared")
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation("net.java.dev.jna:jna-platform:5.14.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")
     implementation("org.json:json:20240303")
+
+    // 82차(감사 TOP20 20위, §14): LockEvaluator/ConfirmationGate 판정 로직 최소 유닛테스트용.
+    testImplementation(kotlin("test"))
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testImplementation("io.mockk:mockk:1.13.11")
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 // 안드로이드 versionCode(빌드 시각 자동 증가)와 같은 방식 — 자체 업데이트 확인(BuildInfo.BUILD_TIMESTAMP)이

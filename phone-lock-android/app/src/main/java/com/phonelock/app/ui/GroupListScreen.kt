@@ -41,6 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.phonelock.shared.PERSUASION_MESSAGES
+import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.app.data.AppGroup
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.service.AccessibilityServiceChecker

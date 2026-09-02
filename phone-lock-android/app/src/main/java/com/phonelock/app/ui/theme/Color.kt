@@ -13,6 +13,8 @@ object ThemeMode {
     const val ROSE = "ROSE"
     const val MIDNIGHT = "MIDNIGHT"
     const val FOREST = "FOREST"
+    /** 고대비(82차, 감사보고서 §6/§9 접근성 신규) — 순검정 배경+순백 텍스트, 포인트색도 최대 채도로. */
+    const val HIGH_CONTRAST = "HIGH_CONTRAST"
     /** 커스텀(79차, 사용자 요청) — 배경/포인트 두 색만 사용자가 고르면 나머지 팔레트 값은
      *  [buildCustomPalette]가 자동 계산한다. 실제 두 색은 AppPreferences.customThemeBackground/customThemeAccent. */
     const val CUSTOM = "CUSTOM"
@@ -214,6 +216,28 @@ val ForestPalette = PhoneLockPalette(
     outline = Color(0xFF2A3B2F)
 )
 
+// 고대비(82차 신규): WCAG 대비를 최우선으로 — 순검정 배경/순백 텍스트, 포인트는 시인성 높은 노랑.
+// warning/error도 배경과 최대한 멀리 떨어뜨려 색약/저시력 환경에서도 구분되게 했다.
+val HighContrastPalette = PhoneLockPalette(
+    isDark = true,
+    background = Color(0xFF000000),
+    surface = Color(0xFF000000),
+    surfaceAlt = Color(0xFF1A1A1A),
+    primary = Color(0xFFFFD600),
+    primaryContainer = Color(0xFF4D4000),
+    onPrimary = Color(0xFF000000),
+    secondary = Color(0xFF00E5FF),
+    onSecondary = Color(0xFF000000),
+    success = Color(0xFF00E676),
+    warning = Color(0xFFFFD600),
+    warningContainer = Color(0xFF4D4000),
+    error = Color(0xFFFF5252),
+    errorContainer = Color(0xFF4D0000),
+    onBackground = Color(0xFFFFFFFF),
+    muted = Color(0xFFCCCCCC),
+    outline = Color(0xFFFFFFFF)
+)
+
 /** "#RRGGBB"(또는 "RRGGBB") 문자열을 [Color]로 파싱, 실패하면 null. */
 fun parseHexColor(hex: String): Color? = runCatching {
     val clean = hex.trim().removePrefix("#")
@@ -278,6 +302,7 @@ fun paletteFor(themeMode: String): PhoneLockPalette = when (themeMode) {
     ThemeMode.ROSE -> RosePalette
     ThemeMode.MIDNIGHT -> MidnightPalette
     ThemeMode.FOREST -> ForestPalette
+    ThemeMode.HIGH_CONTRAST -> HighContrastPalette
     else -> LightGreenPalette
 }
 
@@ -291,5 +316,6 @@ val THEME_DISPLAY_NAMES: List<Pair<String, String>> = listOf(
     ThemeMode.ROSE to "로즈 · 핑크",
     ThemeMode.MIDNIGHT to "미드나잇 · 퍼플",
     ThemeMode.FOREST to "포레스트 · 그린",
+    ThemeMode.HIGH_CONTRAST to "고대비",
     ThemeMode.CUSTOM to "🎨 커스텀"
 )

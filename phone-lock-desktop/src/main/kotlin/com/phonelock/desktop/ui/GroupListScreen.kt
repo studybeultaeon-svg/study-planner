@@ -29,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import com.phonelock.shared.PERSUASION_MESSAGES
+import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.desktop.data.Group
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.monitor.LockEvaluator

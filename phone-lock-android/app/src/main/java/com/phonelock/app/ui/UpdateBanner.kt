@@ -43,6 +43,9 @@ fun UpdateBanner(apkUrl: String) {
     val scope = rememberCoroutineScope()
     var downloading by remember { mutableStateOf(false) }
     var progressPercent by remember { mutableStateOf(-1) }
+    // 82차: GitHub Release body를 그대로 "이번 업데이트 내용"으로 보여준다(신규 API 호출 없음, 이미
+    // 업데이트 확인 시점에 함께 받아 AppPreferences에 저장해둔 값을 읽기만 한다).
+    val releaseNotes = remember { com.phonelock.app.data.AppPreferences(context).updateAvailableReleaseNotes }
 
     // 2026-08-30 발견: Row + SpaceBetween에 Text를 weight 없이 넣으면 문구가 길 때 Text가 Row 폭을
     // 거의 다 차지해버려서 옆에 있던 버튼이 화면 밖으로 밀려나 안 보이는 문제가 있었다 — 문구가 항상
@@ -61,6 +64,14 @@ fun UpdateBanner(apkUrl: String) {
             },
             color = MaterialTheme.colorScheme.onPrimaryContainer
         )
+        if (!downloading && releaseNotes.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                releaseNotes.trim().take(300),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
         Spacer(Modifier.height(8.dp))
         Button(enabled = !downloading, modifier = Modifier.fillMaxWidth(), onClick = {
             if (!context.packageManager.canRequestPackageInstalls()) {

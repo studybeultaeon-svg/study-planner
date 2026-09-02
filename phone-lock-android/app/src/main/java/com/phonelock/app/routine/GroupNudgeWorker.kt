@@ -12,6 +12,7 @@ import androidx.work.WorkerParameters
 import com.phonelock.app.R
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.data.*
 import com.phonelock.app.ui.MainActivity
 
 // v2: 진동 없이 기존 채널이 이미 만들어진 기기가 많아(진동 추가 전 테스트로) 코드로 나중에 진동을 켜도

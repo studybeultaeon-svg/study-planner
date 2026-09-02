@@ -19,7 +19,7 @@ object UpdateChecker {
     private const val TAG_PREFIX = "android-"
     private const val TIMEOUT_MS = 6_000
 
-    data class LatestRelease(val versionCode: Long, val apkUrl: String)
+    data class LatestRelease(val versionCode: Long, val apkUrl: String, val releaseNotes: String = "")
 
     /** 이전엔 네트워크 실패(요청 한도 초과 등)와 "확인해보니 진짜 최신 버전"을 구분 못 하고 둘 다 null로
      *  뭉뚱그렸다 — 그래서 API가 실패해도 화면엔 "최신 버전입니다"라고 잘못 표시됐다(2026-08-30 발견).
@@ -46,7 +46,9 @@ object UpdateChecker {
                 }
                 val current = best
                 if (apkUrl != null && (current == null || versionCode > current.versionCode)) {
-                    best = LatestRelease(versionCode, apkUrl)
+                    // 82차: 업데이트 배너에 "이번 업데이트 내용"을 보여주기 위해 릴리스 노트(body)도 함께
+                    // 담아둔다 — 이미 호출 중인 API 응답에서 필드 하나만 더 읽는 것이라 신규 API 호출은 없다.
+                    best = LatestRelease(versionCode, apkUrl, release.optString("body", ""))
                 }
             }
             best

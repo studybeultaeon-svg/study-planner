@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -41,6 +42,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.phonelock.app.data.AppPreferences
+import com.phonelock.app.data.*
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.PreMigrationBackup
 import com.phonelock.app.routine.GroupNudgeWorker
@@ -114,10 +116,16 @@ class MainActivity : ComponentActivity() {
         // 항상 띄워두고, 폴링할 때마다 모임별 설정을 따로 조회해서 처리한다.
         com.phonelock.app.service.WalkieTalkieService.start(applicationContext)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        val requestNotificationPermissionIfNeeded = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        // 온보딩(82차, §6)을 이미 본 사용자는 그대로 바로 요청 — 최초 실행 사용자만 아래 다이얼로그를 먼저 본다.
+        if (AppPreferences(applicationContext).onboardingShown) {
+            requestNotificationPermissionIfNeeded()
         }
 
         // 알림 예약은 재부팅 시 초기화되므로, 부팅 리시버뿐 아니라 앱을 열 때마다도 다시 걸어준다(52차).
@@ -139,6 +147,8 @@ class MainActivity : ComponentActivity() {
             // 전역 스위치가 없음) 여기선 무조건 예약한다 — 켠 모임이 하나도 없으면 체크가 아무것도
             // 안 보낼 뿐, 알람 자체는 스트릭 알림과 같은 비용으로 하루 한 번만 돈다.
             RoutineAlarmScheduler.scheduleGroupNudgeCheck(applicationContext)
+            // 주간 요약 알림(82차) — 스트릭/무작위 알림과 같은 비용으로 매주 일요일 20시 한 번만 돈다.
+            RoutineAlarmScheduler.scheduleWeeklySummary(applicationContext)
         }
 
         setContent {
@@ -147,15 +157,48 @@ class MainActivity : ComponentActivity() {
             // 카운터로 강제 재계산(데스크탑판 Main.kt와 동일 패턴).
             var themeRefreshTick by remember { mutableStateOf(0) }
             val prefs = remember(themeRefreshTick) { AppPreferences(applicationContext) }
-            PhoneLockTheme(themeMode, prefs.customThemeBackground, prefs.customThemeAccent) {
+            var showOnboarding by remember { mutableStateOf(!AppPreferences(applicationContext).onboardingShown) }
+            PhoneLockTheme(themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
                 Surface(modifier = Modifier) {
                     AccountGate(repository) {
                         PhoneLockApp(repository, onThemeChange = { themeMode = it; themeRefreshTick++ })
                     }
                 }
+                if (showOnboarding) {
+                    OnboardingDialog(
+                        onDismiss = {
+                            AppPreferences(applicationContext).onboardingShown = true
+                            showOnboarding = false
+                            requestNotificationPermissionIfNeeded()
+                        }
+                    )
+                }
             }
         }
     }
+}
+
+/** 최초 실행 시 왜 이런 권한들이 필요한지 미리 설명 — 이후 각 권한은 실제 요청/설정 화면에서 개별적으로
+ *  요청된다(알림은 이 다이얼로그를 닫는 즉시, 접근성 서비스/오버레이는 설정 탭에서). 이 다이얼로그 자체는
+ *  아무 권한도 요청하지 않고 안내만 한다(82차, §6 "온보딩 권한 설명 다이얼로그").*/
+@Composable
+private fun OnboardingDialog(onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("시작하기 전에") },
+        text = {
+            Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                Text("이 앱이 제대로 동작하려면 다음 권한들이 필요합니다.")
+                Text("• 알림 — 루틴/스트릭/모임 알림을 보내려면 필요합니다.")
+                Text("• 접근성 서비스 — 차단 대상 앱이 켜졌는지 감지하려면 필요합니다(설정 탭에서 별도로 켤 수 있습니다).")
+                Text("• 다른 앱 위에 표시 — 차단 중 남은 시간 오버레이를 보여주려면 필요합니다(설정 탭에서 별도로 켤 수 있습니다).")
+                Text("접근성 서비스와 오버레이 권한은 나중에 설정 탭에서 언제든 켤 수 있습니다.")
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("확인") }
+        }
+    )
 }
 
 @Composable
@@ -168,6 +211,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
     LaunchedEffect(Unit) {
         repository.checkForUpdateIfNeeded()
         pendingUpdateApkUrl = repository.pendingUpdateApkUrl()
+        repository.runDailyMaintenanceIfNeeded()
     }
 
     Scaffold(

@@ -136,6 +136,13 @@ interface StudyLogEntryDao {
 
     @Query("DELETE FROM study_log_entry WHERE dateKey < :cutoffDate")
     suspend fun deleteBefore(cutoffDate: String): Int
+
+    /** 전체 데이터 내보내기(82차, §9) 전용 — 백업 파일에 공부 기록 전체를 포함시키기 위함. */
+    @Query("SELECT * FROM study_log_entry")
+    suspend fun getAllOnce(): List<StudyLogEntry>
+
+    @Query("DELETE FROM study_log_entry")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -247,4 +254,16 @@ interface RoutineLogDao {
 
     @Query("DELETE FROM routine_log")
     suspend fun deleteAll()
+}
+
+@Dao
+interface QuoteOutcomeDao {
+    @Insert
+    suspend fun insert(outcome: QuoteOutcome)
+
+    @Query("SELECT * FROM quote_outcome")
+    suspend fun getAllOnce(): List<QuoteOutcome>
+
+    @Query("DELETE FROM quote_outcome WHERE timestampMillis < :cutoffMillis")
+    suspend fun deleteBefore(cutoffMillis: Long): Int
 }

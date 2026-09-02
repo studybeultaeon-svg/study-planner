@@ -11,7 +11,7 @@ import com.phonelock.app.data.GroupSite
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.ui.BlockActivity
 import com.phonelock.app.ui.ConfirmOpenActivity
-import com.phonelock.app.ui.MOTIVATIONAL_QUOTES
+import com.phonelock.shared.MOTIVATIONAL_QUOTES
 import com.phonelock.app.ui.StudyLockActivity
 import com.phonelock.app.ui.theme.paletteFor
 import androidx.compose.ui.graphics.toArgb

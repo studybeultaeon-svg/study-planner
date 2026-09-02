@@ -278,6 +278,115 @@ object SocialGroupSyncClient {
         }
     }
 
+    /** "모임 랭킹"(82차, §11 창의적 기능) — 회유 멘트에 "중단"(저항)한 비율을 모임원끼리 비교. */
+    data class QuoteStat(val uid: String, val displayName: String, val stopRatePercent: Int, val totalCount: Int)
+
+    suspend fun writeMyQuoteStat(databaseUrl: String?, apiKey: String?, groupId: String, displayName: String, stopRatePercent: Int, totalCount: Int) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, uid) = resolveIdentity(apiKey) ?: return@runCatching
+                val base = databaseUrl.trimEnd('/')
+                putJson(
+                    URL("$base/groups/$groupId/quoteStats/$uid.json?auth=$token"),
+                    JSONObject().apply {
+                        put("displayName", displayName); put("stopRatePercent", stopRatePercent)
+                        put("totalCount", totalCount); put("updatedAt", System.currentTimeMillis())
+                    }
+                )
+            }
+        }
+    }
+
+    suspend fun readQuoteStats(databaseUrl: String?, apiKey: String?, groupId: String): List<QuoteStat> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return emptyList()
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, _) = resolveIdentity(apiKey) ?: return@runCatching emptyList()
+                val base = databaseUrl.trimEnd('/')
+                val text = getRaw(URL("$base/groups/$groupId/quoteStats.json?auth=$token"))
+                if (text.isNullOrBlank() || text == "null") return@runCatching emptyList()
+                val json = JSONObject(text)
+                json.keys().asSequence().mapNotNull { uid ->
+                    val s = json.optJSONObject(uid) ?: return@mapNotNull null
+                    QuoteStat(uid, s.optString("displayName", uid), s.optInt("stopRatePercent", 0), s.optInt("totalCount", 0))
+                }.toList()
+            }.getOrDefault(emptyList())
+        }
+    }
+
+    /** 모임장 공지사항(82차, §9). */
+    data class Announcement(val text: String, val updatedAt: Long, val updatedByName: String)
+
+    suspend fun readAnnouncement(databaseUrl: String?, apiKey: String?, groupId: String): Announcement? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, _) = resolveIdentity(apiKey) ?: return@runCatching null
+                val base = databaseUrl.trimEnd('/')
+                val text = getRaw(URL("$base/groups/$groupId/announcement.json?auth=$token"))
+                if (text.isNullOrBlank() || text == "null") return@runCatching null
+                val json = JSONObject(text)
+                val body = json.optString("text", "")
+                if (body.isBlank()) return@runCatching null
+                Announcement(body, json.optLong("updatedAt", 0L), json.optString("updatedByName", ""))
+            }.getOrNull()
+        }
+    }
+
+    /** 공지 작성/수정(모임장·관리자만 — RTDB 규칙이 실제 권한을 강제한다). */
+    suspend fun writeAnnouncement(databaseUrl: String?, apiKey: String?, groupId: String, text: String, updatedByName: String): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+                val base = databaseUrl.trimEnd('/')
+                putJson(
+                    URL("$base/groups/$groupId/announcement.json?auth=$token"),
+                    JSONObject().apply { put("text", text.trim()); put("updatedAt", System.currentTimeMillis()); put("updatedByName", updatedByName) }
+                )
+            }
+        }
+    }
+
+    /** 모임 공동 목표(82차, §9) — 관리자가 이번 기간(주간 고정) 목표 공부시간(분)을 정하면, 멤버 전원의
+     *  studyTodaySeconds 합산으로 진행바를 보여준다(전원이 공유 켠 값만 합산 가능, 서버 집계 없음). */
+    data class GroupGoal(val targetMinutes: Int, val updatedAt: Long)
+
+    suspend fun readGoal(databaseUrl: String?, apiKey: String?, groupId: String): GroupGoal? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, _) = resolveIdentity(apiKey) ?: return@runCatching null
+                val base = databaseUrl.trimEnd('/')
+                val text = getRaw(URL("$base/groups/$groupId/goal.json?auth=$token"))
+                if (text.isNullOrBlank() || text == "null") return@runCatching null
+                val json = JSONObject(text)
+                val target = json.optInt("targetMinutes", 0)
+                if (target <= 0) return@runCatching null
+                GroupGoal(target, json.optLong("updatedAt", 0L))
+            }.getOrNull()
+        }
+    }
+
+    suspend fun writeGoal(databaseUrl: String?, apiKey: String?, groupId: String, targetMinutes: Int): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+                val base = databaseUrl.trimEnd('/')
+                putJson(
+                    URL("$base/groups/$groupId/goal.json?auth=$token"),
+                    JSONObject().apply { put("targetMinutes", targetMinutes); put("updatedAt", System.currentTimeMillis()) }
+                )
+            }
+        }
+    }
+
     /** 초대 코드 재발급(모임장/관리자만) — 새 코드 생성 + inviteCodes 등록 + info.inviteCode 갱신 + 옛 코드 삭제. */
     suspend fun regenerateInviteCode(databaseUrl: String?, apiKey: String?, groupId: String): Result<String> {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {

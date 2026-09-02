@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -56,8 +57,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.phonelock.app.calc.CalcEngine
+import com.phonelock.shared.calc.CalcEngine
 import com.phonelock.app.data.CalcSavedItem
+import com.phonelock.app.data.*
 import com.phonelock.app.data.CalcTask
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.ui.components.SectionCard
@@ -201,6 +203,8 @@ private fun CalcTaskCard(
         mutableStateOf(mapOf(0 to task.sun, 1 to task.mon, 2 to task.tue, 3 to task.wed, 4 to task.thu, 5 to task.fri, 6 to task.sat))
     }
     var holidaysText by remember(task.id) { mutableStateOf(task.holidaysCsv) }
+    var autoGenEnabled by remember(task.id) { mutableStateOf(task.autoGenEnabled) }
+    var autoGenBatchSizeText by remember(task.id) { mutableStateOf(if (task.autoGenBatchSize > 0) task.autoGenBatchSize.toString() else "") }
 
     fun persist() {
         val d = dayValues.value
@@ -208,7 +212,8 @@ private fun CalcTaskCard(
             task.copy(
                 name = name, qty = qty, unit = unit, progress = progress, start = start, dday = dday,
                 mon = d[1] ?: "", tue = d[2] ?: "", wed = d[3] ?: "", thu = d[4] ?: "", fri = d[5] ?: "", sat = d[6] ?: "", sun = d[0] ?: "",
-                holidaysCsv = CalcEngine.parseHolidaysInput(holidaysText).joinToString(",")
+                holidaysCsv = CalcEngine.parseHolidaysInput(holidaysText).joinToString(","),
+                autoGenEnabled = autoGenEnabled, autoGenBatchSize = autoGenBatchSizeText.toIntOrNull() ?: 0
             )
         )
     }
@@ -268,6 +273,26 @@ private fun CalcTaskCard(
                 label = { Text("휴일 제외 날짜 (쉼표로 구분, 예: 2026-01-01,2026-01-05)") },
                 modifier = Modifier.fillMaxWidth(), singleLine = true
             )
+            Spacer(Modifier.height(Spacing.xs))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = autoGenEnabled, onCheckedChange = { autoGenEnabled = it; persist() })
+                Spacer(Modifier.width(Spacing.xs))
+                Text("캘린더 일정 자동 생성", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            }
+            if (autoGenEnabled) {
+                Spacer(Modifier.height(Spacing.xs))
+                OutlinedTextField(
+                    value = autoGenBatchSizeText,
+                    onValueChange = { v -> autoGenBatchSizeText = v.filter { it.isDigit() }; persist() },
+                    label = { Text("한 번에 만들 배치 크기 (${unit.ifBlank { "단위" }})") },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true
+                )
+                Text(
+                    "완료 체크할 때마다 다음날에 \"업무명 N~M$unit\" 일정을 자동으로 만들고, 할당량 연동도 그대로 이어집니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

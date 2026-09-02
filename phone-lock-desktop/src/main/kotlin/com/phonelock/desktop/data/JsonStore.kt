@@ -71,6 +71,10 @@ object JsonStore {
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
             exitConfirmEnabled = json.optBoolean("exitConfirmEnabled", false),
             defaultMultiPassEnabled = json.optBoolean("defaultMultiPassEnabled", false),
+            cloudBackupEnabled = json.optBoolean("cloudBackupEnabled", false),
+            lastCloudBackupDate = json.optString("lastCloudBackupDate", ""),
+            lastCloudBackupResult = json.optString("lastCloudBackupResult", ""),
+            lastAutoStatsPruneDate = json.optString("lastAutoStatsPruneDate", ""),
             blockReels = json.optBoolean("blockReels", false),
             blockShorts = json.optBoolean("blockShorts", false),
             routineStreakNotifyEnabled = json.optBoolean("routineStreakNotifyEnabled", false),
@@ -155,7 +159,21 @@ object JsonStore {
                     taskName = s.optString("taskName", ""),
                     seconds = s.optInt("seconds", 0),
                     startedAt = s.optLong("startedAt", 0L),
-                    note = s.optString("note", "")
+                    note = s.optString("note", ""),
+                    tag = s.optString("tag", "")
+                )
+            )
+        }
+
+        val quoteOutcomesJson = json.optJSONArray("quoteOutcomes") ?: JSONArray()
+        for (i in 0 until quoteOutcomesJson.length()) {
+            val q = quoteOutcomesJson.getJSONObject(i)
+            data.quoteOutcomes.add(
+                QuoteOutcome(
+                    tier = q.optInt("tier", 0),
+                    quoteText = q.optString("quoteText", ""),
+                    choice = q.optString("choice", ""),
+                    timestampMillis = q.optLong("timestampMillis", 0L)
                 )
             )
         }
@@ -188,7 +206,8 @@ object JsonStore {
                     mon = c.optString("mon", ""), tue = c.optString("tue", ""), wed = c.optString("wed", ""),
                     thu = c.optString("thu", ""), fri = c.optString("fri", ""), sat = c.optString("sat", ""), sun = c.optString("sun", ""),
                     holidays = (0 until holidaysArr.length()).map { holidaysArr.getString(it) },
-                    modifiedAt = c.optString("modifiedAt", ""), modifiedAtTs = c.optLong("modifiedAtTs", 0L)
+                    modifiedAt = c.optString("modifiedAt", ""), modifiedAtTs = c.optLong("modifiedAtTs", 0L),
+                    autoGenEnabled = c.optBoolean("autoGenEnabled", false), autoGenBatchSize = c.optInt("autoGenBatchSize", 0)
                 )
             )
         }
@@ -300,7 +319,8 @@ object JsonStore {
                     blockAttemptDate = g.optString("blockAttemptDate", ""),
                     blockAttemptCount = g.optInt("blockAttemptCount", 0),
                     processNames = processNames,
-                    domains = domains
+                    domains = domains,
+                    selfMessageText = g.optString("selfMessageText", "")
                 )
             )
         }
@@ -366,6 +386,9 @@ object JsonStore {
         file.writeText(toJsonObject(data).toString(2))
     }
 
+    /** 클라우드 자동 백업(82차)용 — 파일 없이 전체 데이터를 JSON 문자열로만 필요할 때. */
+    fun exportToJsonString(data: AppData): String = toJsonObject(data).toString(2)
+
     private fun toJsonObject(data: AppData): JSONObject {
         val json = JSONObject()
         json.put("nextGroupId", data.nextGroupId)
@@ -375,6 +398,10 @@ object JsonStore {
         json.put("customThemeAccent", data.customThemeAccent)
         json.put("exitConfirmEnabled", data.exitConfirmEnabled)
         json.put("defaultMultiPassEnabled", data.defaultMultiPassEnabled)
+        json.put("cloudBackupEnabled", data.cloudBackupEnabled)
+        json.put("lastCloudBackupDate", data.lastCloudBackupDate)
+        json.put("lastCloudBackupResult", data.lastCloudBackupResult)
+        json.put("lastAutoStatsPruneDate", data.lastAutoStatsPruneDate)
         json.put("routinesTs", data.routinesTs)
         json.put("lastGroupAutoResetDate", data.lastGroupAutoResetDate ?: JSONObject.NULL)
         json.put("nextRoutineId", data.nextRoutineId)
@@ -439,9 +466,18 @@ object JsonStore {
                 put("seconds", s.seconds)
                 put("startedAt", s.startedAt)
                 put("note", s.note)
+                put("tag", s.tag)
             })
         }
         json.put("studyLog", studyLogJson)
+
+        val quoteOutcomesJson = JSONArray()
+        data.quoteOutcomes.forEach { q ->
+            quoteOutcomesJson.put(JSONObject().apply {
+                put("tier", q.tier); put("quoteText", q.quoteText); put("choice", q.choice); put("timestampMillis", q.timestampMillis)
+            })
+        }
+        json.put("quoteOutcomes", quoteOutcomesJson)
 
         json.put("calendarTs", data.calendarTs)
         val calendarTasksJson = JSONArray()
@@ -469,6 +505,7 @@ object JsonStore {
                 put("fri", c.fri); put("sat", c.sat); put("sun", c.sun)
                 put("holidays", JSONArray(c.holidays))
                 put("modifiedAt", c.modifiedAt); put("modifiedAtTs", c.modifiedAtTs)
+                put("autoGenEnabled", c.autoGenEnabled); put("autoGenBatchSize", c.autoGenBatchSize)
             })
         }
         json.put("calcTasks", calcTasksJson)
@@ -539,6 +576,7 @@ object JsonStore {
             gj.put("blockAttemptCount", g.blockAttemptCount)
             gj.put("processNames", JSONArray(g.processNames))
             gj.put("domains", JSONArray(g.domains))
+            gj.put("selfMessageText", g.selfMessageText)
             groupsJson.put(gj)
         }
         json.put("groups", groupsJson)

@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.net.URLDecoder
+import java.security.MessageDigest
 
 /**
  * 브라우저 확장프로그램이 사이트 차단 여부를 물어보는 로컬 전용 HTTP API.
@@ -93,8 +94,8 @@ class LocalApiServer(private val repository: Repository) {
     /** /confirm, /tick처럼 상태를 바꾸는 요청에 대해서만 검사한다: POST 메서드 + 올바른 토큰 헤더. */
     private fun isAuthorizedStateChange(exchange: HttpExchange): Boolean {
         if (!exchange.requestMethod.equals("POST", ignoreCase = true)) return false
-        val token = exchange.requestHeaders.getFirst("X-PhoneLock-Token")
-        return token != null && token == ApiToken.value
+        val token = exchange.requestHeaders.getFirst("X-PhoneLock-Token") ?: return false
+        return MessageDigest.isEqual(token.toByteArray(Charsets.UTF_8), ApiToken.value.toByteArray(Charsets.UTF_8))
     }
 
     private fun respondCheckResult(exchange: HttpExchange, result: CheckResult) {

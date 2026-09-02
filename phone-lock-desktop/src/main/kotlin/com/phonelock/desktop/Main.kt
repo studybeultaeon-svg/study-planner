@@ -20,11 +20,13 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import com.phonelock.desktop.data.DebugLog
+import com.phonelock.desktop.data.*
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.routine.DesktopNotifier
 import com.phonelock.desktop.routine.RoutineNotifier
 import com.phonelock.desktop.routine.SocialGroupNotifier
 import com.phonelock.desktop.routine.VoiceMessageNotifier
+import com.phonelock.desktop.routine.WeeklySummaryNotifier
 import com.sun.jna.Native
 import com.sun.jna.platform.win32.Advapi32Util
 import com.sun.jna.platform.win32.User32
@@ -173,22 +175,24 @@ private fun startApp() = application {
     }
 
     val trayState = rememberTrayState()
+    // 82차(감사 후속): 예전엔 30초/7초 주기 루프 2개가 각자 따로 돌았다 — 하나의 7초 티커로 합치고,
+    // 30초 주기 작업은 누적 경과시간으로 4번에 1번(≈30초)만 실행해 기존 주기를 그대로 유지한다.
+    // "무전기"(VoiceMessageNotifier)는 켜짐/모드/일정이 모임마다 달라 전역 스위치가 없으므로 매번 돌리고,
+    // 어느 모임에서도 안 켜져 있으면 실질적으로 아무 일도 하지 않는다.
     LaunchedEffect(trayState) {
         DesktopNotifier.trayState = trayState
-        // 안드로이드는 AlarmManager로 정확히 예약하지만 데스크탑엔 그런 API가 없어 30초 주기로 직접 비교한다(52차).
-        while (true) {
-            RoutineNotifier.tick(repository)
-            SocialGroupNotifier.tick(repository)
-            delay(30_000)
-        }
-    }
-
-    // "무전기" — 켜짐/모드/일정이 모임마다 다를 수 있어(그룹 설정 화면에서 관리) 전역 플래그 없이 항상
-    // 짧은 주기로 폴링한다. VoiceMessageNotifier.tick()이 매 폴링마다 모임별 설정을 따로 조회해서
-    // 처리하므로, 어느 모임에서도 안 켜져 있으면 실질적으로 아무 일도 하지 않는다.
-    LaunchedEffect(Unit) {
+        var msSinceSlowTick = 0L
         while (true) {
             VoiceMessageNotifier.tick(repository)
+            msSinceSlowTick += 7_000L
+            // 안드로이드는 AlarmManager로 정확히 예약하지만 데스크탑엔 그런 API가 없어 직접 경과시간을 비교한다(52차).
+            if (msSinceSlowTick >= 30_000L) {
+                msSinceSlowTick = 0L
+                RoutineNotifier.tick(repository)
+                SocialGroupNotifier.tick(repository)
+                runCatching { WeeklySummaryNotifier.tick(repository) } // 82차: 매주 일요일 20시, 내부적으로 날짜 가드됨
+                runCatching { repository.runDailyMaintenanceIfNeeded() } // 82차: 12개월 정리+클라우드 백업 자동화, 내부적으로 날짜 가드됨
+            }
             delay(7_000L)
         }
     }
@@ -354,6 +358,8 @@ private fun startApp() = application {
                     processName = req.processName,
                     waitSeconds = req.waitSeconds,
                     level = remember(req.groupId) { repository.getGroup(req.groupId)?.let { repository.getCurrentLevel(it) } ?: 0 },
+                    repository = repository,
+                    groupId = req.groupId,
                     onYes = {
                         req.result.complete(true)
                         confirmRequest = null

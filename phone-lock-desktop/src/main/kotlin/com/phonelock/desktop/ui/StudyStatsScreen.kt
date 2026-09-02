@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.CalendarTask
+import com.phonelock.desktop.data.*
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.theme.Spacing
@@ -47,10 +48,12 @@ private data class DayStat(val date: LocalDate, val cnt: Int, val done: Int)
 @Composable
 fun StudyStatsScreen(repository: Repository) {
     var allTasks by remember { mutableStateOf(emptyList<CalendarTask>()) }
+    var allStudyLog by remember { mutableStateOf(emptyList<com.phonelock.desktop.data.StudyLogEntry>()) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { repository.syncCalendarFromFirebase() }
         allTasks = repository.getAllCalendarTasks()
+        allStudyLog = repository.getAllStudyLogOnce()
     }
 
     if (allTasks.isEmpty()) {
@@ -174,6 +177,71 @@ fun StudyStatsScreen(repository: Repository) {
                         )
                     }
                 }
+            }
+        }
+
+        // 82차(§9 "포모도로 세션 태그"): 태그별 누적 공부시간.
+        val taggedSeconds = allStudyLog.filter { it.tag.isNotBlank() }.groupBy { it.tag }.mapValues { (_, v) -> v.sumOf { it.seconds } }
+        if (taggedSeconds.isNotEmpty()) {
+            Spacer(Modifier.height(Spacing.md))
+            SectionCard("태그별 누적 공부시간") {
+                val maxTagSeconds = maxOf(1, taggedSeconds.values.max())
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    taggedSeconds.entries.sortedByDescending { it.value }.forEach { (tag, seconds) ->
+                        Column {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(tag, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                Text(formatHmsLog(seconds.toLong()), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Spacer(Modifier.height(2.dp))
+                            val widthFraction = (seconds.toFloat() / maxTagSeconds).coerceIn(0.03f, 1f)
+                            Row(
+                                Modifier.fillMaxWidth(widthFraction).height(8.dp)
+                                    .background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small)
+                            ) {}
+                        }
+                    }
+                }
+            }
+        }
+
+        // 82차(§9 "일정표-계산기 진행량 그래프"): 계산기 연동 일정의 최근 30일 목표 대비 실제 완료량.
+        val linkedByTask = allTasks.filter { it.linkedCalc != null }.groupBy { it.linkedCalc!! }
+        if (linkedByTask.isNotEmpty()) {
+            Spacer(Modifier.height(Spacing.md))
+            linkedByTask.forEach { (calcName, tasks) ->
+                val byDateForTask = tasks.groupBy { it.dateKey }
+                val series = (0 until 30).map { i ->
+                    val d = today.minusDays((29 - i).toLong())
+                    val dayTasks = byDateForTask[d.toString()] ?: emptyList()
+                    val target = dayTasks.sumOf { it.progressStep?.toDoubleOrNull() ?: 0.0 }
+                    val done = dayTasks.filter { it.status == "O" }.sumOf { it.progressStep?.toDoubleOrNull() ?: 0.0 }
+                    d to (target to done)
+                }
+                val maxAmount = maxOf(1.0, series.maxOf { it.second.first })
+                SectionCard("$calcName 진행량 (최근 30일)") {
+                    Row(Modifier.fillMaxWidth().height(70.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        series.forEach { (d, pair) ->
+                            val (target, done) = pair
+                            val achieved = target > 0 && done >= target
+                            val barColor = when {
+                                target <= 0 -> MaterialTheme.colorScheme.outlineVariant
+                                achieved -> Color(0xFF34D399)
+                                done > 0 -> Color(0xFFFBBF24)
+                                else -> Color(0xFFF87171)
+                            }
+                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Column(Modifier.fillMaxWidth().height(50.dp), verticalArrangement = Arrangement.Bottom) {
+                                    val heightPct = (target / maxAmount).toFloat().coerceIn(if (target > 0) 0.08f else 0.03f, 1f)
+                                    Row(Modifier.fillMaxWidth().height((50 * heightPct).dp).background(barColor)) {}
+                                }
+                                Spacer(Modifier.height(2.dp))
+                                Text("${d.dayOfMonth}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(Spacing.sm))
             }
         }
     }

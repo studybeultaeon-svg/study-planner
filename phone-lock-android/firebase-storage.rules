@@ -1,0 +1,15 @@
+// 클라우드 자동 백업(82차, HANDOFF "전체 데이터 내보내기"/"자동 백업 클라우드 업로드" 참고)용 Storage 규칙.
+// backups/{uid}/{timestamp}.json 경로만 쓰며, 파일 소유자 본인만 읽고/쓸 수 있다.
+// 배포는 Firebase 콘솔 또는 CLI(`firebase deploy --only storage`)로 사용자가 직접 수행할 것 —
+// 이 저장소엔 배포 자동화가 없다(DECISIONS.md 82차 참고).
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /backups/{uid}/{fileName} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

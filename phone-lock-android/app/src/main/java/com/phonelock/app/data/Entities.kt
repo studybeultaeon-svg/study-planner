@@ -78,7 +78,10 @@ data class AppGroup(
     /** 잠김(스케줄/일일한도) 화면 조롱 문구 강도용 — 오늘 이 그룹을 열려고 시도한 횟수/날짜.
      *  dailyResetHour 기준 "오늘"이 바뀌면 0으로 리셋(snoozeUsedDate/snoozeUsedCount와 같은 패턴). */
     val blockAttemptDate: String = "",
-    val blockAttemptCount: Int = 0
+    val blockAttemptCount: Int = 0,
+    /** "미래의 나에게" 예약 메시지(82차, §11 창의적 기능) — 지금의 내가 남긴 문구를 이 그룹이 잠길 때
+     *  회유 멘트 대신/함께 보여준다. 비어있으면 기존처럼 랜덤 문구만 표시. 순수 로컬 텍스트, 동기화 안 함. */
+    val selfMessageText: String = ""
 )
 
 @Entity(tableName = "group_member", primaryKeys = ["groupId", "packageName"])
@@ -131,7 +134,9 @@ data class StudyLogEntry(
     val taskName: String,
     val seconds: Int,
     val startedAt: Long,
-    val note: String = ""
+    val note: String = "",
+    /** 포모도로 세션 태그(82차, §9 "포모도로 세션 태그") — 과목 등 자유 입력, 통계 탭에서 태그별 집계에 사용. */
+    val tag: String = ""
 )
 
 /**
@@ -177,7 +182,11 @@ data class CalcTask(
     val holidaysCsv: String = "",
     val modifiedAt: String = "",
     val modifiedAtTs: Long = 0L,
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    /** 캘린더 일정 자동 생성 on/off(82차, 사용자 지정 스펙) — 켜면 연동 일정을 완료할 때마다 다음 배치를 자동으로 만든다. */
+    val autoGenEnabled: Boolean = false,
+    /** 자동 생성 배치 크기(예: 10을 넣으면 "51~60쪽"처럼 10단위씩 다음 일정을 만든다). */
+    val autoGenBatchSize: Int = 0
 )
 
 /**
@@ -239,4 +248,19 @@ data class Routine(
 data class RoutineLog(
     val routineId: Long,
     val dateKey: String
+)
+
+/**
+ * 회유 멘트 성공률 통계(82차, §9/§11) — 재확인/차단 화면에서 어떤 문구가 뜬 상태에서 사용자가
+ * "진행"(자기통제 실패, 앱을 열기로 함)/"중단"(자기통제 성공, 포기)을 골랐는지 순수 기록. 판정
+ * 로직(ConfirmationGate)과 무관 — 이미 결정된 선택을 로깅만 한다.
+ */
+@Entity(tableName = "quote_outcome")
+data class QuoteOutcome(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val tier: Int,
+    val quoteText: String,
+    /** "PROCEED"(진행, 굴복) | "STOP"(중단, 저항). */
+    val choice: String,
+    val timestampMillis: Long
 )

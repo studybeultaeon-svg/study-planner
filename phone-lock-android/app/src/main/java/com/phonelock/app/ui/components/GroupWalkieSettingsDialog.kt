@@ -31,6 +31,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.phonelock.app.service.SocialGroupSyncClient
 import com.phonelock.app.service.TtsPlayer
@@ -161,7 +163,10 @@ private fun WalkieScheduleRow(
                     )
                 }
             }
-            IconButton(onClick = onDelete) { Text("✕") }
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.semantics { contentDescription = "일정 삭제" }
+            ) { Text("✕") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             OutlinedTextField(

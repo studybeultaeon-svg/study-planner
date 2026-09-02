@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.phonelock.app.data.AppPreferences
+import com.phonelock.app.data.*
 import com.phonelock.app.data.CalcTask
 import com.phonelock.app.data.CalendarTask
 import com.phonelock.app.data.PhoneLockRepository
@@ -77,7 +78,7 @@ private const val REMOTE_STALE_MS = 20 * 60 * 1000L
  * 동일한 색 규칙(공부=파랑/휴식=초록, 타이머 숫자는 실행 중이면 항상 파랑, 전환 버튼은 파랑 틴트
  * 아웃라인)을 대칭으로 유지한다.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun StudyTimerScreen(repository: PhoneLockRepository) {
     var run by remember { mutableStateOf(repository.getTimerRun()) }
@@ -100,6 +101,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     var tickCount by remember { mutableStateOf(0) }
     var showStopNoteDialog by remember { mutableStateOf(false) }
     var stopNoteText by remember { mutableStateOf("") }
+    var stopTagText by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     fun refreshLog() {
@@ -167,14 +169,32 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                         placeholder = { Text("예: 3장까지 풀었다, 집중이 잘 됐다") },
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(Modifier.height(Spacing.sm))
+                    OutlinedTextField(
+                        value = stopTagText,
+                        onValueChange = { stopTagText = it },
+                        label = { Text("태그(과목 등, 선택)") },
+                        placeholder = { Text("예: 수학, 영어") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    val recentTags = todayLog.map { it.tag }.filter { it.isNotBlank() }.distinct()
+                    if (recentTags.isNotEmpty()) {
+                        Spacer(Modifier.height(Spacing.xs))
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                            recentTags.forEach { t ->
+                                androidx.compose.material3.AssistChip(onClick = { stopTagText = t }, label = { Text(t) })
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    repository.timerStop(stopNoteText.trim())
+                    repository.timerStop(stopNoteText.trim(), stopTagText.trim())
                     run = repository.getTimerRun()
                     refreshLog()
                     stopNoteText = ""
+                    stopTagText = ""
                     showStopNoteDialog = false
                 }) { Text("정지") }
             },
@@ -414,8 +434,8 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                 val byTask = todayLog.groupBy { it.taskName }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     byTask.entries.sortedByDescending { (_, entries) -> entries.sumOf { it.seconds } }.forEach { (name, entries) ->
-                        val lastNote = entries.maxByOrNull { it.startedAt }?.note.orEmpty()
-                        StudyLogRow(name = name, seconds = entries.sumOf { it.seconds }.toLong(), note = lastNote)
+                        val lastEntry = entries.maxByOrNull { it.startedAt }
+                        StudyLogRow(name = name, seconds = entries.sumOf { it.seconds }.toLong(), note = lastEntry?.note.orEmpty(), tag = lastEntry?.tag.orEmpty())
                     }
                     StudyLogRow(name = "합계", seconds = todayLog.sumOf { it.seconds }.toLong(), isTotal = true)
                 }
@@ -508,7 +528,7 @@ private fun PomoToggleButton(checked: Boolean, onClick: () -> Unit) {
 
 /** 웹앱 .study-log-row — 카드형 행, 합계 행은 파랑 틴트로 강조. note가 있으면 이름 아래 회고를 작게 덧붙인다. */
 @Composable
-internal fun StudyLogRow(name: String, seconds: Long, isTotal: Boolean = false, note: String = "") {
+internal fun StudyLogRow(name: String, seconds: Long, isTotal: Boolean = false, note: String = "", tag: String = "") {
     val accent = MaterialTheme.colorScheme.primary
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -522,7 +542,14 @@ internal fun StudyLogRow(name: String, seconds: Long, isTotal: Boolean = false, 
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    if (tag.isNotBlank()) {
+                        Surface(shape = RoundedCornerShape(50), color = accent.copy(alpha = 0.12f)) {
+                            Text(tag, style = MaterialTheme.typography.labelSmall, color = accent, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                        }
+                    }
+                }
                 Text(formatHmsLog(seconds), style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, color = accent)
             }
             if (note.isNotBlank()) {

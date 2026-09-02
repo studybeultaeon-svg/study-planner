@@ -33,12 +33,15 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.*
 import com.phonelock.desktop.monitor.AccountSyncClient
 import com.phonelock.desktop.monitor.AuthManager
 import com.phonelock.desktop.ui.components.SectionCard
@@ -662,6 +665,41 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                                 pickOpenFile("설정/그룹 가져오기")?.let { file -> pendingImportFile = file }
                             }) { Text("📥 가져오기") }
                         }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    SectionCard("자동 백업 (Firebase)") {
+                        var cloudBackupEnabled by remember { mutableStateOf(repository.cloudBackupEnabled) }
+                        ToggleRow(
+                            title = "매일 자동으로 클라우드에 백업",
+                            checked = cloudBackupEnabled,
+                            onCheckedChange = { checked ->
+                                cloudBackupEnabled = checked
+                                repository.cloudBackupEnabled = checked
+                            }
+                        )
+                        Text(
+                            "로그인이 필요하며, Firebase 콘솔에서 Storage를 먼저 활성화해야 동작합니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        var lastResultText by remember { mutableStateOf(repository.lastCloudBackupResult) }
+                        if (lastResultText.isNotBlank()) {
+                            Spacer(Modifier.height(Spacing.xs))
+                            Text(
+                                lastResultText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (lastResultText.contains("성공")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Spacer(Modifier.height(Spacing.sm))
+                        val scope = rememberCoroutineScope()
+                        Button(onClick = {
+                            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                val result = repository.uploadCloudBackupNow()
+                                lastResultText = if (result.isSuccess) "성공 (${result.getOrNull()})" else "실패: ${result.exceptionOrNull()?.message}"
+                            }
+                        }) { Text("지금 클라우드에 백업") }
                     }
                     Spacer(Modifier.height(Spacing.md))
 

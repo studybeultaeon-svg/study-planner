@@ -6,6 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.remember
+import com.phonelock.shared.blockQuoteTier
+import com.phonelock.shared.quoteForTier
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.service.IntentExtras
 import com.phonelock.app.service.LockReason
@@ -33,7 +35,7 @@ class BlockActivity : ComponentActivity() {
         // 실제로 화면을 벗어나는 동작은 "중단"(secondaryLabel, goHome)에만 걸려있다.
         setContent {
             val prefs = AppPreferences(applicationContext)
-            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent) {
+            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
                 val title = remember { quoteForTier(blockQuoteTier(blockAttempts)) }
                 InterstitialScreen(
                     title = title,

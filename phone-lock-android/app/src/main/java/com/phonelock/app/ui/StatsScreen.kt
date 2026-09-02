@@ -46,6 +46,7 @@ private const val ANOMALY_MULTIPLIER = 1.5
 @Composable
 fun StatsScreen(repository: PhoneLockRepository) {
     var rows by remember { mutableStateOf(emptyList<GroupUsage>()) }
+    var quoteOutcomes by remember { mutableStateOf(emptyList<com.phonelock.app.data.QuoteOutcome>()) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -76,6 +77,11 @@ fun StatsScreen(repository: PhoneLockRepository) {
             }
             delay(2000)
         }
+    }
+
+    // 82차(§9/§11 "회유 멘트 성공률 통계") — 목록처럼 자주 갱신될 필요 없어 1회만 로드.
+    LaunchedEffect(Unit) {
+        quoteOutcomes = repository.getAllQuoteOutcomesOnce()
     }
 
     Scaffold(
@@ -123,7 +129,49 @@ fun StatsScreen(repository: PhoneLockRepository) {
                     }
                     Spacer(Modifier.height(Spacing.md))
                 }
+                if (quoteOutcomes.isNotEmpty()) {
+                    item {
+                        Text("회유 멘트 성공률", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text(
+                            "문구가 뜬 상태에서 \"중단\"(저항)을 고른 비율입니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        val overallStop = quoteOutcomes.count { it.choice == "STOP" }
+                        val overallRate = Math.round(overallStop * 100.0 / quoteOutcomes.size).toInt()
+                        Text("전체: ${overallRate}% (${overallStop}/${quoteOutcomes.size})", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.height(Spacing.sm))
+                        val byTier = quoteOutcomes.groupBy { it.tier }.toSortedMap()
+                        byTier.forEach { (tier, outcomes) ->
+                            val stopCount = outcomes.count { it.choice == "STOP" }
+                            val rate = Math.round(stopCount * 100.0 / outcomes.size).toInt()
+                            Text(
+                                "${tierLabel(tier)}: ${rate}% (${stopCount}/${outcomes.size})",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.height(Spacing.sm))
+                        val hardestQuotes = quoteOutcomes.groupBy { it.quoteText }
+                            .filter { (_, v) -> v.size >= 2 }
+                            .mapValues { (_, v) -> v.count { it.choice == "PROCEED" } * 100.0 / v.size }
+                            .toList().sortedByDescending { it.second }.take(3)
+                        if (hardestQuotes.isNotEmpty()) {
+                            Text("가장 많이 굴복한 문구", style = MaterialTheme.typography.labelMedium)
+                            hardestQuotes.forEach { (quote, rate) ->
+                                Text("\"$quote\" — ${Math.round(rate)}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Spacer(Modifier.height(Spacing.md))
+                    }
+                }
             }
         }
     }
+}
+
+private fun tierLabel(tier: Int): String = when (tier) {
+    0 -> "순한"; 1 -> "중간"; 2 -> "매운"; 3 -> "독한"; else -> "극한"
 }

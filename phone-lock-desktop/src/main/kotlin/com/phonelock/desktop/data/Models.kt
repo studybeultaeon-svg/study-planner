@@ -76,8 +76,13 @@ data class Group(
     val blockAttemptDate: String = "",
     val blockAttemptCount: Int = 0,
     val processNames: List<String> = emptyList(),
-    val domains: List<String> = emptyList()
+    val domains: List<String> = emptyList(),
+    /** "미래의 나에게" 예약 메시지(82차, §11, 안드로이드판과 대칭) — 순수 로컬 텍스트, 동기화 안 함. */
+    val selfMessageText: String = ""
 )
+
+/** 회유 멘트 성공률 통계(82차, §9/§11, 안드로이드판과 대칭) — 판정 로직과 무관한 순수 로컬 기록. */
+data class QuoteOutcome(val tier: Int, val quoteText: String, val choice: String, val timestampMillis: Long)
 
 data class UsageRecord(val groupId: Long, val date: String, val usedSeconds: Int)
 
@@ -113,7 +118,7 @@ data class TimerRunState(
     val breakExtraUsed: Boolean = false
 )
 
-data class StudyLogEntry(val dateKey: String, val taskName: String, val seconds: Int, val startedAt: Long, val note: String = "")
+data class StudyLogEntry(val dateKey: String, val taskName: String, val seconds: Int, val startedAt: Long, val note: String = "", val tag: String = "")
 
 /** 모임(소셜 그룹) 하나에 무엇을 공유할지 — 62차엔 앱 전체 공통 토글 3개였지만 75차+에 모임마다 다르게
  *  설정하도록 확장, 항목도 루틴/공부/스트릭 3종에서 오늘 일정/공부중 여부까지 5종으로 확대(안드로이드
@@ -162,7 +167,11 @@ data class CalcTask(
     val fri: String = "", val sat: String = "", val sun: String = "",
     val holidays: List<String> = emptyList(),
     val modifiedAt: String = "",
-    val modifiedAtTs: Long = 0L
+    val modifiedAtTs: Long = 0L,
+    /** 캘린더 일정 자동 생성 on/off(82차, 사용자 지정 스펙, 안드로이드판과 대칭) — 켜면 연동 일정을 완료할 때마다 다음 배치를 자동으로 만든다. */
+    val autoGenEnabled: Boolean = false,
+    /** 자동 생성 배치 크기. */
+    val autoGenBatchSize: Int = 0
 )
 
 /**
@@ -257,6 +266,8 @@ data class AppData(
     /** 타이머 시작 전 "뽀모도로 모드" 토글의 마지막 선택값(탭을 이동했다 돌아와도 유지). */
     var pomodoroModeEnabled: Boolean = false,
     val studyLog: MutableList<StudyLogEntry> = mutableListOf(),
+    /** 회유 멘트 성공률 통계(82차, §9/§11). */
+    val quoteOutcomes: MutableList<QuoteOutcome> = mutableListOf(),
     /** 공부 잠금 중 예외로 허용할 프로그램 실행파일명(이전엔 웹앱 타이머 탭 → Firebase에서만 관리했음). */
     var studyLockAllowedApps: MutableList<String> = mutableListOf(),
     /** 공부 잠금 중 예외로 허용할 사이트(도메인) — 안드로이드와 Firebase로 공유. */
@@ -301,6 +312,11 @@ data class AppData(
     var exitConfirmEnabled: Boolean = false,
     /** 캘린더 새 일정을 추가할 때 "다회독"(완료 시 다음 회독 자동 생성) 기본값 — 기본 꺼짐, 공부 설정에서 사용자가 변경. */
     var defaultMultiPassEnabled: Boolean = false,
+    // ---- 자동 백업/정리(82차, §9, 안드로이드판과 대칭) ----
+    var cloudBackupEnabled: Boolean = false,
+    var lastCloudBackupDate: String = "",
+    var lastCloudBackupResult: String = "",
+    var lastAutoStatsPruneDate: String = "",
     /** "모임"(소셜 그룹)별 공유 설정 — groupId -> GroupShareSettings. 모임 가입 자체가 공유 의도이므로
      *  각 항목 기본값은 true, 설정은 각 모임 화면의 "🔒 공유 설정"에서 모임 단위로 바꾼다(74차 무전기
      *  설정을 전역→모임별로 옮긴 것과 동일한 선례). */

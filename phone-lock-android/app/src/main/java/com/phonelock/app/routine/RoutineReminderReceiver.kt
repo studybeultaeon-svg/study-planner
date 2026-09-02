@@ -6,8 +6,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.phonelock.shared.routine.RoutineQuotes
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.data.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,6 +28,10 @@ private val VIBRATE_PATTERN = longArrayOf(0, 250, 150, 250)
 // 켜고 끌 수 있도록 별도 채널로 뒀다.
 private const val SLACKING_MEMBER_CHANNEL_ID = "group_slacking_member_v1"
 private const val SLACKING_MEMBER_NOTIFICATION_ID_BASE = 35000
+
+// 주간 요약 알림(82차, §9) 전용 채널.
+private const val WEEKLY_SUMMARY_CHANNEL_ID = "weekly_summary_v1"
+private const val WEEKLY_SUMMARY_NOTIFICATION_ID = 39999
 
 /**
  * 루틴 알림(52차, IDEAS.md 요청) — 부팅 후 재예약(ACTION_BOOT_COMPLETED)과 실제 알람 발화
@@ -48,6 +54,7 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                         RoutineAlarmScheduler.scheduleStreakCheck(appContext)
                     }
                     RoutineAlarmScheduler.scheduleGroupNudgeCheck(appContext)
+                    RoutineAlarmScheduler.scheduleWeeklySummary(appContext)
                 }
             }
             RoutineAlarmScheduler.ACTION_ROUTINE_REMINDER -> {
@@ -104,7 +111,54 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                 }
                 RoutineAlarmScheduler.scheduleGroupNudgeCheck(appContext)
             }
+            RoutineAlarmScheduler.ACTION_WEEKLY_SUMMARY -> runAsync {
+                runCatching { sendWeeklySummary(appContext) }
+                RoutineAlarmScheduler.scheduleWeeklySummary(appContext)
+            }
         }
+    }
+
+    /**
+     * 주간 요약 알림(82차, §9) — 이번 주(오늘 포함 최근 7일) 루틴 완료율/공부 총 시간/계산기 평균 진척도를
+     * 한 알림으로 요약한다. 새 집계 로직 없이 이미 있는 함수만 조합(판정 로직과 무관, 순수 통계).
+     */
+    private suspend fun sendWeeklySummary(context: Context) {
+        val repository = PhoneLockRepository(context)
+        ensureWeeklySummaryChannel(context)
+        val today = LocalDate.now()
+        val weekAgo = today.minusDays(6)
+
+        val routines = repository.getRoutines()
+        val completed = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
+        var scheduledCount = 0
+        var doneCount = 0
+        for (i in 0..6) {
+            val d = weekAgo.plusDays(i.toLong())
+            routines.filter { RoutineEngine.isScheduledOn(it, d) }.forEach { r ->
+                scheduledCount++
+                if (d.toString() in (completed[r.id] ?: emptySet())) doneCount++
+            }
+        }
+        val routineRate = if (scheduledCount > 0) Math.round(doneCount * 100.0 / scheduledCount).toInt() else 0
+
+        val studySeconds = repository.getAllStudyLogOnce()
+            .filter { it.dateKey in weekAgo.toString()..today.toString() }
+            .sumOf { it.seconds }
+        val studyHours = studySeconds / 3600.0
+
+        val calcTasks = repository.getCalcTasks().filter { it.qty.toDoubleOrNull()?.let { q -> q > 0 } == true }
+        val avgCalcProgress = if (calcTasks.isNotEmpty()) {
+            calcTasks.map { ((it.progress.toDoubleOrNull() ?: 0.0) / (it.qty.toDoubleOrNull() ?: 1.0) * 100).coerceIn(0.0, 100.0) }.average()
+        } else null
+
+        val message = buildString {
+            append("루틴 완료율 $routineRate%($doneCount/$scheduledCount)")
+            append(" · 공부 %.1f시간".format(studyHours))
+            if (avgCalcProgress != null) append(" · 계산기 평균 진척도 ${Math.round(avgCalcProgress)}%")
+        }
+        com.phonelock.app.service.StudyNotificationGate.showOrQueue(
+            context, repository, WEEKLY_SUMMARY_NOTIFICATION_ID, WEEKLY_SUMMARY_CHANNEL_ID, "📅 이번 주 요약", message
+        )
     }
 
     /**
@@ -161,6 +215,19 @@ class RoutineReminderReceiver : BroadcastReceiver() {
             if (manager.getNotificationChannel(CHANNEL_ID) == null) {
                 // IMPORTANCE_HIGH라야 화면 위에 플로팅(헤드업)으로 뜬다 — DEFAULT는 알림창에만 조용히 쌓인다.
                 val channel = NotificationChannel(CHANNEL_ID, "루틴 알림", NotificationManager.IMPORTANCE_HIGH).apply {
+                    enableVibration(true)
+                    vibrationPattern = VIBRATE_PATTERN
+                }
+                manager.createNotificationChannel(channel)
+            }
+        }
+    }
+
+    private fun ensureWeeklySummaryChannel(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (manager.getNotificationChannel(WEEKLY_SUMMARY_CHANNEL_ID) == null) {
+                val channel = NotificationChannel(WEEKLY_SUMMARY_CHANNEL_ID, "주간 요약", NotificationManager.IMPORTANCE_DEFAULT).apply {
                     enableVibration(true)
                     vibrationPattern = VIBRATE_PATTERN
                 }

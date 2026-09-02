@@ -1,6 +1,7 @@
 package com.phonelock.desktop.monitor
 
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.*
 import com.phonelock.desktop.routine.RoutineEngine
 import org.json.JSONArray
 import org.json.JSONObject
@@ -314,6 +315,94 @@ object SocialGroupSyncClient {
             val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
             val base = databaseUrl.trimEnd('/')
             put(base, "groups/$groupId/info/name", token, JSONObject.quote(newName.trim()))
+        }
+    }
+
+    /** "모임 랭킹"(82차, §11, 안드로이드판과 대칭) — 회유 멘트 저항률을 모임원끼리 비교. */
+    data class QuoteStat(val uid: String, val displayName: String, val stopRatePercent: Int, val totalCount: Int)
+
+    fun writeMyQuoteStat(databaseUrl: String?, apiKey: String?, groupId: String, stopRatePercent: Int, totalCount: Int) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
+        runCatching {
+            val (token, uid) = resolveIdentity(apiKey) ?: return@runCatching
+            val base = databaseUrl.trimEnd('/')
+            val body = JSONObject().apply {
+                put("displayName", myDisplayName(databaseUrl, apiKey)); put("stopRatePercent", stopRatePercent)
+                put("totalCount", totalCount); put("updatedAt", System.currentTimeMillis())
+            }
+            put(base, "groups/$groupId/quoteStats/$uid", token, body.toString())
+        }
+    }
+
+    fun readQuoteStats(databaseUrl: String?, apiKey: String?, groupId: String): List<QuoteStat> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return emptyList()
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: return@runCatching emptyList()
+            val base = databaseUrl.trimEnd('/')
+            val text = get(base, "groups/$groupId/quoteStats", token)
+            if (text.isNullOrBlank() || text == "null") return@runCatching emptyList()
+            val json = JSONObject(text)
+            json.keys().asSequence().mapNotNull { uid ->
+                val s = json.optJSONObject(uid) ?: return@mapNotNull null
+                QuoteStat(uid, s.optString("displayName", uid), s.optInt("stopRatePercent", 0), s.optInt("totalCount", 0))
+            }.toList()
+        }.getOrDefault(emptyList())
+    }
+
+    /** 모임장 공지사항(82차, §9, 안드로이드판과 대칭). */
+    data class Announcement(val text: String, val updatedAt: Long, val updatedByName: String)
+
+    fun readAnnouncement(databaseUrl: String?, apiKey: String?, groupId: String): Announcement? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: return@runCatching null
+            val base = databaseUrl.trimEnd('/')
+            val text = get(base, "groups/$groupId/announcement", token)
+            if (text.isNullOrBlank() || text == "null") return@runCatching null
+            val json = JSONObject(text)
+            val body = json.optString("text", "")
+            if (body.isBlank()) return@runCatching null
+            Announcement(body, json.optLong("updatedAt", 0L), json.optString("updatedByName", ""))
+        }.getOrNull()
+    }
+
+    fun writeAnnouncement(databaseUrl: String?, apiKey: String?, groupId: String, text: String): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+            val base = databaseUrl.trimEnd('/')
+            val body = JSONObject().apply {
+                put("text", text.trim()); put("updatedAt", System.currentTimeMillis())
+                put("updatedByName", myDisplayName(databaseUrl, apiKey))
+            }
+            put(base, "groups/$groupId/announcement", token, body.toString())
+        }
+    }
+
+    /** 모임 공동 목표(82차, §9, 안드로이드판과 대칭). */
+    data class GroupGoal(val targetMinutes: Int, val updatedAt: Long)
+
+    fun readGoal(databaseUrl: String?, apiKey: String?, groupId: String): GroupGoal? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: return@runCatching null
+            val base = databaseUrl.trimEnd('/')
+            val text = get(base, "groups/$groupId/goal", token)
+            if (text.isNullOrBlank() || text == "null") return@runCatching null
+            val json = JSONObject(text)
+            val target = json.optInt("targetMinutes", 0)
+            if (target <= 0) return@runCatching null
+            GroupGoal(target, json.optLong("updatedAt", 0L))
+        }.getOrNull()
+    }
+
+    fun writeGoal(databaseUrl: String?, apiKey: String?, groupId: String, targetMinutes: Int): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+            val base = databaseUrl.trimEnd('/')
+            val body = JSONObject().apply { put("targetMinutes", targetMinutes); put("updatedAt", System.currentTimeMillis()) }
+            put(base, "groups/$groupId/goal", token, body.toString())
         }
     }
 

@@ -15,7 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import com.phonelock.app.ui.randomPersuasionStepDelaysMs
+import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.app.ui.theme.Spacing
 import kotlinx.coroutines.delay
 

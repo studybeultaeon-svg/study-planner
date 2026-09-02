@@ -8,6 +8,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalWindowInfo
+import com.phonelock.shared.PERSUASION_MESSAGES
+import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.desktop.ui.components.WatchAndWaitScreen
 import kotlinx.coroutines.delay
 

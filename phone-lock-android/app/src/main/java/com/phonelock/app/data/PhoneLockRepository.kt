@@ -16,7 +16,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** 일일 사용 한도의 "오늘" 날짜를 계산한다. resetHour 이전이면 아직 전날로 취급한다. */
-private fun effectiveDate(resetHour: Int, now: LocalDateTime = LocalDateTime.now()): LocalDate =
+internal fun effectiveDate(resetHour: Int, now: LocalDateTime = LocalDateTime.now()): LocalDate =
     if (now.hour < resetHour) now.toLocalDate().minusDays(1) else now.toLocalDate()
 
 /** Firebase 일일 사용시간 동기화(`dailyUsage/{date}/{그룹}/{device}`)에서 이 기기를 가리키는 키. */
@@ -38,21 +38,22 @@ data class TimerRunState(
 )
 
 class PhoneLockRepository(context: Context) {
-    private val appContext = context.applicationContext
-    private val db = AppDatabase.getInstance(context)
+    internal val appContext = context.applicationContext
+    internal val db = AppDatabase.getInstance(context)
     private val groupDao = db.appGroupDao()
     private val memberDao = db.groupMemberDao()
-    private val usageDao = db.usageRecordDao()
+    internal val usageDao = db.usageRecordDao()
     private val groupSiteDao = db.groupSiteDao()
     private val confirmEscalationDao = db.confirmEscalationDao()
-    private val confirmCounterDao = db.confirmCounterDao()
-    private val studyLogEntryDao = db.studyLogEntryDao()
-    private val calendarTaskDao = db.calendarTaskDao()
-    private val calcTaskDao = db.calcTaskDao()
-    private val calcSavedItemDao = db.calcSavedItemDao()
-    private val routineDao = db.routineDao()
-    private val routineLogDao = db.routineLogDao()
-    private val preferences = AppPreferences(context)
+    internal val confirmCounterDao = db.confirmCounterDao()
+    internal val studyLogEntryDao = db.studyLogEntryDao()
+    internal val calendarTaskDao = db.calendarTaskDao()
+    internal val calcTaskDao = db.calcTaskDao()
+    internal val calcSavedItemDao = db.calcSavedItemDao()
+    internal val routineDao = db.routineDao()
+    internal val routineLogDao = db.routineLogDao()
+    private val quoteOutcomeDao = db.quoteOutcomeDao()
+    internal val preferences = AppPreferences(context)
 
     // 겹치는 그룹 중 "지금 실제로 제한 중인" 그룹을 우선하는 데 쓴다. LockEvaluator는 이 repository의
     // 공개 함수만 호출하므로 지연 초기화로 만들어도 순환 문제가 없다.
@@ -113,7 +114,7 @@ class PhoneLockRepository(context: Context) {
     // 그룹 일정 off-패널티 취소/완료 기록처럼, 호출한 화면(Composable)이 사라지는 바로 그 순간에도
     // 반드시 끝까지 실행되어야 하는 쓰기 작업을 위한 스코프. 화면의 rememberCoroutineScope를 쓰면
     // 화면이 사라질 때 그 스코프도 함께 취소되어 쓰기가 유실될 수 있어, repository 자체 수명에 묶는다.
-    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun updateGroupFireAndForget(group: AppGroup) {
         ioScope.launch { groupDao.update(group) }
@@ -156,11 +157,40 @@ class PhoneLockRepository(context: Context) {
         if (latest != null && latest.versionCode > BuildConfig.VERSION_CODE) {
             preferences.updateAvailableVersionCode = latest.versionCode
             preferences.updateAvailableApkUrl = latest.apkUrl
+            preferences.updateAvailableReleaseNotes = latest.releaseNotes
         } else if (result.isSuccess) {
             // 확인엔 성공했고 정말 최신 버전일 때만 지워야 한다 — 확인 자체가 실패했으면(네트워크/요청
             // 한도 등) 이전에 남아있던 "업데이트 있음" 상태를 함부로 지우지 않는다.
             preferences.updateAvailableVersionCode = 0L
             preferences.updateAvailableApkUrl = null
+        }
+    }
+
+    /**
+     * 자동 백업/정리(82차, §9) — 하루 1회(dailyResetHour 기준 "오늘"이 바뀔 때) 실행되는 유지보수 묶음.
+     * `checkForUpdateIfNeeded`/`applyDailyGroupResetIfNeeded`와 동일한 lastXxxDate 가드 패턴.
+     * 1) 12개월 이상 지난 통계 자동 정리(이미 있는 [pruneOldStats] 재사용, 월 1회만).
+     * 2) 클라우드 자동 백업 켜져 있으면 [exportBackupJson] 결과를 Firebase Storage에 업로드.
+     * 두 작업 모두 실패해도 예외를 던지지 않는다(호출부가 화면 진입 경로라 여기서 죽으면 안 됨).
+     */
+    suspend fun runDailyMaintenanceIfNeeded() {
+        val today = effectiveDate(dailyResetHour).toString()
+
+        val lastPrune = preferences.lastAutoStatsPruneDate
+        val prevPruneRunLongAgo = lastPrune.isBlank() ||
+            runCatching { java.time.temporal.ChronoUnit.DAYS.between(LocalDate.parse(lastPrune), LocalDate.parse(today)) >= 30 }.getOrDefault(true)
+        if (prevPruneRunLongAgo) {
+            runCatching { pruneOldStats(12) }
+            preferences.lastAutoStatsPruneDate = today
+        }
+
+        if (preferences.cloudBackupEnabled && preferences.lastCloudBackupDate != today) {
+            val result = runCatching {
+                val json = exportBackupJson()
+                com.phonelock.app.service.CloudBackupClient.uploadBackup(fbDatabaseUrl, json).getOrThrow()
+            }
+            preferences.lastCloudBackupDate = today
+            preferences.lastCloudBackupResult = if (result.isSuccess) "성공 (${result.getOrNull()})" else "실패: ${result.exceptionOrNull()?.message}"
         }
     }
 
@@ -191,6 +221,7 @@ class PhoneLockRepository(context: Context) {
         return if (latest != null && latest.versionCode > BuildConfig.VERSION_CODE) {
             preferences.updateAvailableVersionCode = latest.versionCode
             preferences.updateAvailableApkUrl = latest.apkUrl
+            preferences.updateAvailableReleaseNotes = latest.releaseNotes
             UpdateCheckOutcome.Available(latest.apkUrl)
         } else if (result.isSuccess) {
             preferences.updateAvailableVersionCode = 0L
@@ -613,6 +644,21 @@ class PhoneLockRepository(context: Context) {
         }
     }
 
+    /**
+     * 회유 멘트 성공률 통계(82차, §9/§11) — 재확인/차단 화면에서 어떤 문구·단계에서 "진행"(굴복)/"중단"(저항)을
+     * 골랐는지 순수 로깅. 판정 로직과 무관, Activity의 onPrimary/onSecondary에서 fire-and-forget으로 호출.
+     */
+    fun recordQuoteOutcomeFireAndForget(tier: Int, quoteText: String, proceeded: Boolean) {
+        ioScope.launch {
+            quoteOutcomeDao.insert(
+                QuoteOutcome(tier = tier, quoteText = quoteText, choice = if (proceeded) "PROCEED" else "STOP", timestampMillis = System.currentTimeMillis())
+            )
+        }
+    }
+
+    /** 통계 화면용 — 전체 회유 멘트 선택 기록. */
+    suspend fun getAllQuoteOutcomesOnce(): List<QuoteOutcome> = quoteOutcomeDao.getAllOnce()
+
     // ---- 네이티브 공부 타이머(1단계) ----
     // 로컬(AppPreferences)이 유일한 source of truth. Firebase엔 페이즈 전환 시점에만 크로스디바이스
     // 신호로 write한다 — DECISIONS.md 참고. 이 기기 자신의 공부 잠금 판정은 더 이상 Firebase를
@@ -693,11 +739,14 @@ class PhoneLockRepository(context: Context) {
     /** 타이머가 "오늘 캘린더 일정"을 고를 때 쓰는 오늘 날짜 키 — 사용시간 기록과 같은 dailyResetHour 기준. */
     fun todayCalendarDateKey(): String = effectiveDate(preferences.dailyResetHour).toString()
 
-    private fun addStudyLogEntry(taskName: String, seconds: Int, startedAt: Long, note: String = "") {
+    /** 통계 탭 태그별 집계용(82차, §9) — 전체 공부 기록. */
+    suspend fun getAllStudyLogOnce(): List<StudyLogEntry> = studyLogEntryDao.getAllOnce()
+
+    private fun addStudyLogEntry(taskName: String, seconds: Int, startedAt: Long, note: String = "", tag: String = "") {
         if (seconds <= 0) return
         val today = effectiveDate(preferences.dailyResetHour).toString()
         ioScope.launch {
-            studyLogEntryDao.insert(StudyLogEntry(dateKey = today, taskName = taskName.ifBlank { "이름 없는 공부" }, seconds = seconds, startedAt = startedAt, note = note))
+            studyLogEntryDao.insert(StudyLogEntry(dateKey = today, taskName = taskName.ifBlank { "이름 없는 공부" }, seconds = seconds, startedAt = startedAt, note = note, tag = tag))
             pushStudyLogToFirebase(today)
         }
     }
@@ -708,7 +757,7 @@ class PhoneLockRepository(context: Context) {
         val json = JSONArray()
         entries.forEach { e ->
             json.put(JSONObject().apply {
-                put("taskName", e.taskName); put("seconds", e.seconds); put("startedAt", e.startedAt); put("note", e.note)
+                put("taskName", e.taskName); put("seconds", e.seconds); put("startedAt", e.startedAt); put("note", e.note); put("tag", e.tag)
             })
         }
         com.phonelock.app.service.PomodoroSyncClient.writeStudyLogForDate(fbDatabaseUrl, fbApiKey, dateKey, DAILY_USAGE_DEVICE, json)
@@ -726,7 +775,7 @@ class PhoneLockRepository(context: Context) {
             val arr = remote.optJSONArray(device) ?: return@forEach
             for (i in 0 until arr.length()) {
                 val obj = arr.optJSONObject(i) ?: continue
-                others.add(StudyLogEntry(dateKey = dateKey, taskName = obj.optString("taskName", ""), seconds = obj.optInt("seconds", 0), startedAt = obj.optLong("startedAt", 0L), note = obj.optString("note", "")))
+                others.add(StudyLogEntry(dateKey = dateKey, taskName = obj.optString("taskName", ""), seconds = obj.optInt("seconds", 0), startedAt = obj.optLong("startedAt", 0L), note = obj.optString("note", ""), tag = obj.optString("tag", "")))
             }
         }
         remoteStudyLogCache = remoteStudyLogCache + (dateKey to others)
@@ -741,12 +790,13 @@ class PhoneLockRepository(context: Context) {
         writeTimerRun(TimerRunState(taskName, mode, "study", now, phaseEndAt, cycleCount = 0, breakExtraUsed = false))
     }
 
-    /** 타이머를 정지하고, 진행 중이던 공부 페이즈의 경과시간을 기록에 적립한다. note는 사용자가 남긴 짧은 회고(선택). */
-    fun timerStop(note: String = "") {
+    /** 타이머를 정지하고, 진행 중이던 공부 페이즈의 경과시간을 기록에 적립한다. note는 사용자가 남긴 짧은 회고(선택),
+     *  tag는 과목 등 자유 입력 태그(82차, §9 "포모도로 세션 태그", 선택). */
+    fun timerStop(note: String = "", tag: String = "") {
         val run = getTimerRun() ?: return
         if (run.phase == "study") {
             val elapsed = ((System.currentTimeMillis() - run.phaseStartedAt) / 1000L).toInt()
-            addStudyLogEntry(run.taskName, elapsed, run.phaseStartedAt, note)
+            addStudyLogEntry(run.taskName, elapsed, run.phaseStartedAt, note, tag)
         }
         writeTimerRun(null)
     }
@@ -780,759 +830,6 @@ class PhoneLockRepository(context: Context) {
 
     fun isTimerPomodoroMode(): Boolean = getTimerRun()?.mode == "pomodoro"
 
-    // ---- 네이티브 캘린더(2단계) ----
-    // 웹앱 index.html의 calTasks[dateKey][]를 그대로 이식. Room엔 배열 순서 개념이 없어 sortOrder
-    // 정수 필드로 같은 dateKey 안에서의 표시 순서를 관리한다. Firebase는 데스크탑과 동일하게
-    // users/{user}/calendar 경로에 { tasks:{dateKey:[...]}, _ts } 전체문서 단위 LWW로 동기화한다.
-
-    // 77차: 8단계(51차, 데스크탑판과 대칭)에서 다시 3단계(빨/노/초)로 축소(사용자 요청). 저장된 기존
-    // color 값(white/orange/blue/indigo/purple)은 그대로 두되(51차와 같은 전례: "라벨만 바뀐다")
-    // 새로 고르거나 자동 생성되는 회독은 이 3색만 쓴다.
-    private val CALENDAR_COLOR_ORDER = mapOf(
-        "green" to 0, "yellow" to 1, "red" to 2
-    )
-
-    /**
-     * color -> (다음 회독 color, 기본 간격일수). green(3회독)은 종단이라 매핑 없음. 데스크탑판과 대칭.
-     * 사용자 지정값 — 1회독(만든 날)부터 누적 0/3/7일차: red(1회독, 0일)→yellow(2회독, +3일)→
-     * green(3회독, 1회독 기준 +7일 = yellow 기준 +4일).
-     */
-    private val CALENDAR_SCHEDULE = mapOf(
-        "red" to ("yellow" to 3),
-        "yellow" to ("green" to 4)
-    )
-
-    private val koreanCollator = java.text.Collator.getInstance(java.util.Locale.KOREAN)
-
-    private var calendarTs: Long
-        get() = preferences.calendarTs
-        set(value) { preferences.calendarTs = value }
-
-    suspend fun getCalendarTasks(dateKey: String): List<CalendarTask> = calendarTaskDao.getByDate(dateKey)
-
-    /** 월 그리드 렌더용 — [fromKey, toKey] 범위(양 끝 포함)의 모든 일정. */
-    suspend fun getCalendarTasksInRange(fromKey: String, toKey: String): List<CalendarTask> =
-        calendarTaskDao.getByDateRange(fromKey, toKey)
-
-    /** 통계(5단계) 화면용 — 날짜 범위 없이 전체 일정. */
-    suspend fun getAllCalendarTasksOnce(): List<CalendarTask> = calendarTaskDao.getAllOnce()
-
-    private suspend fun resortCalendarDay(dateKey: String) {
-        val sorted = calendarTaskDao.getByDate(dateKey).sortedWith(
-            compareBy<CalendarTask> { CALENDAR_COLOR_ORDER[it.color] ?: 99 }
-                .thenComparator { a, b -> koreanCollator.compare(a.name, b.name) }
-        )
-        sorted.forEachIndexed { i, t -> if (t.sortOrder != i) calendarTaskDao.update(t.copy(sortOrder = i)) }
-    }
-
-    suspend fun addCalendarTask(dateKey: String, name: String) {
-        if (name.isBlank()) return
-        val nextOrder = (calendarTaskDao.getByDate(dateKey).maxOfOrNull { it.sortOrder } ?: -1) + 1
-        calendarTaskDao.insert(
-            CalendarTask(
-                dateKey = dateKey,
-                name = name.trim(),
-                color = "red",
-                status = null,
-                sortOrder = nextOrder,
-                multiPassEnabled = preferences.defaultMultiPassEnabled
-            )
-        )
-        resortCalendarDay(dateKey)
-        pushCalendarToFirebase()
-    }
-
-    suspend fun renameCalendarTask(task: CalendarTask, newName: String) {
-        if (newName.isBlank()) return
-        calendarTaskDao.update(task.copy(name = newName.trim()))
-        pushCalendarToFirebase()
-    }
-
-    suspend fun recolorCalendarTask(task: CalendarTask, newColor: String) {
-        calendarTaskDao.update(task.copy(color = newColor))
-        resortCalendarDay(task.dateKey)
-        pushCalendarToFirebase()
-    }
-
-    suspend fun setCalendarTaskNextDays(task: CalendarTask, nextDays: Int?) {
-        calendarTaskDao.update(task.copy(nextDays = nextDays))
-        pushCalendarToFirebase()
-    }
-
-    suspend fun setCalendarTaskMultiPass(task: CalendarTask, enabled: Boolean) {
-        calendarTaskDao.update(task.copy(multiPassEnabled = enabled))
-        pushCalendarToFirebase()
-    }
-
-    /** ▲▼ 순서 변경(드래그 아님 — 웹앱도 배열 스왑 버튼 방식). direction은 -1(위) 또는 +1(아래). */
-    suspend fun moveCalendarTaskOrder(task: CalendarTask, direction: Int) {
-        val dayTasks = calendarTaskDao.getByDate(task.dateKey)
-        val idx = dayTasks.indexOfFirst { it.id == task.id }
-        val targetIdx = idx + direction
-        if (idx < 0 || targetIdx !in dayTasks.indices) return
-        val a = dayTasks[idx]; val b = dayTasks[targetIdx]
-        calendarTaskDao.update(a.copy(sortOrder = b.sortOrder))
-        calendarTaskDao.update(b.copy(sortOrder = a.sortOrder))
-        pushCalendarToFirebase()
-    }
-
-    suspend fun deleteCalendarTask(task: CalendarTask) {
-        calendarTaskDao.delete(task)
-        pushCalendarToFirebase()
-    }
-
-    private fun nextScheduleDateKey(dateKey: String, days: Int): String =
-        LocalDate.parse(dateKey).plusDays(days.toLong()).toString()
-
-    private suspend fun applyCalendarAutoSchedule(dateKey: String, task: CalendarTask) {
-        if (!task.multiPassEnabled) return
-        val (nextColor, defaultDays) = CALENDAR_SCHEDULE[task.color] ?: return
-        val days = task.nextDays?.takeIf { it >= 0 } ?: defaultDays
-        val nKey = nextScheduleDateKey(dateKey, days)
-        val existing = calendarTaskDao.getByDate(nKey)
-        val exists = existing.any { it.name == task.name && it.color == nextColor }
-        if (!exists) {
-            val nextOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
-            calendarTaskDao.insert(
-                CalendarTask(dateKey = nKey, name = task.name, color = nextColor, status = null, nextDays = task.nextDays, sortOrder = nextOrder)
-            )
-        }
-    }
-
-    private suspend fun revertCalendarAutoSchedule(dateKey: String, task: CalendarTask) {
-        if (!task.multiPassEnabled) return
-        val (nextColor, defaultDays) = CALENDAR_SCHEDULE[task.color] ?: return
-        val days = task.nextDays?.takeIf { it >= 0 } ?: defaultDays
-        val nKey = nextScheduleDateKey(dateKey, days)
-        val target = calendarTaskDao.getByDate(nKey).firstOrNull { it.name == task.name && it.color == nextColor && it.status == null }
-        if (target != null) calendarTaskDao.delete(target)
-    }
-
-    /** 미완료(X) 처리 시 다음날로 같은 업무를 그대로 복사(원본은 유지, "복사" 기능과 동일한 필드 이식). */
-    private suspend fun applyIncompleteCarryOver(dateKey: String, task: CalendarTask) {
-        val nKey = nextScheduleDateKey(dateKey, 1)
-        val existing = calendarTaskDao.getByDate(nKey)
-        val exists = existing.any { it.name == task.name && it.color == task.color && it.status == null }
-        if (!exists) {
-            val nextOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
-            calendarTaskDao.insert(task.copy(id = 0, dateKey = nKey, status = null, sortOrder = nextOrder))
-        }
-    }
-
-    private suspend fun revertIncompleteCarryOver(dateKey: String, task: CalendarTask) {
-        val nKey = nextScheduleDateKey(dateKey, 1)
-        val target = calendarTaskDao.getByDate(nKey).firstOrNull { it.name == task.name && it.color == task.color && it.status == null }
-        if (target != null) calendarTaskDao.delete(target)
-    }
-
-    /**
-     * 완료(O)/미완료(X) 토글 — 웹앱 renderModalActions의 완료/미완료 버튼과 동일한 규칙: 이미 같은
-     * 상태면 취소(null로 되돌림), 아니면 기존 O/X의 부작용(자동생성된 다음 회독/다음날 복사)을 먼저
-     * 되돌린 뒤 새 상태를 적용한다. targetStatus에 O를 주면 완료 처리(자동으로 다음 회독 생성), X를
-     * 주면 미완료 처리(자동으로 다음날에 같은 업무 복사, 원본은 그대로 남김 — 35차 세션 신규).
-     */
-    suspend fun setCalendarTaskStatus(task: CalendarTask, targetStatus: String) {
-        if (task.status == "O") revertCalendarAutoSchedule(task.dateKey, task)
-        if (task.status == "X") revertIncompleteCarryOver(task.dateKey, task)
-        if (task.status == targetStatus) {
-            // 완료 취소 — 계산기 연동 항목이었다면(1회독=red일 때만 최초 반영했으므로 그때만) 진행량을 되돌린다.
-            if (task.status == "O" && task.linkedCalc != null && task.color == "red") {
-                adjustLinkedCalcProgress(task.linkedCalc, -linkedProgressAmount(task))
-            }
-            calendarTaskDao.update(task.copy(status = null))
-        } else {
-            val updated = task.copy(status = targetStatus)
-            calendarTaskDao.update(updated)
-            if (targetStatus == "O") {
-                applyCalendarAutoSchedule(task.dateKey, updated)
-                if (updated.linkedCalc != null && updated.color == "red") {
-                    adjustLinkedCalcProgress(updated.linkedCalc, linkedProgressAmount(updated))
-                }
-            }
-            if (targetStatus == "X") applyIncompleteCarryOver(task.dateKey, updated)
-        }
-        pushCalendarToFirebase()
-    }
-
-    // ══════════════════════════════════════════════════════
-    // 계산기 연동(캘린더↔계산기, 웹앱 addLinkedTasksFromModal/deductCalcQty/isCalTaskLinkedDone 이식,
-    // 51차 신규, 데스크탑판과 대칭) — 계산기 업무의 특정 범위를 캘린더 일정으로 만들어두면, 완료 체크할
-    // 때 그 업무의 progress에 자동으로 더해진다(체크 해제하면 되돌림).
-    // ══════════════════════════════════════════════════════
-
-    private fun linkedProgressAmount(task: CalendarTask): Double =
-        task.progressStep?.toDoubleOrNull()?.takeIf { it > 0 } ?: 1.0
-
-    private fun formatCalcNumber(n: Double): String {
-        val r = Math.round(n * 100) / 100.0
-        return if (r == Math.floor(r)) r.toLong().toString() else r.toString().trimEnd('0').trimEnd('.')
-    }
-
-    private suspend fun adjustLinkedCalcProgress(calcTaskName: String, delta: Double) {
-        val t = calcTaskDao.getAll().find { it.name == calcTaskName } ?: return
-        val newProgress = ((t.progress.toDoubleOrNull() ?: 0.0) + delta).coerceAtLeast(0.0)
-        calcTaskDao.update(t.copy(progress = formatCalcNumber(newProgress), modifiedAt = nowLabel(), modifiedAtTs = System.currentTimeMillis()))
-        pushCalcTasksAndSaved()
-    }
-
-    /** 계산기 업무의 [from, to] 범위를 이 날짜의 캘린더 일정으로 새로 만든다(예: "국어 51~60쪽"). */
-    suspend fun addLinkedCalendarTask(dateKey: String, calcTaskName: String, from: Int, to: Int) {
-        if (from > to || from < 1) return
-        val calcTask = calcTaskDao.getAll().find { it.name == calcTaskName } ?: return
-        val unit = calcTask.unit.trim()
-        val taskName = "$calcTaskName $from~$to$unit"
-        val existing = calendarTaskDao.getByDate(dateKey)
-        if (existing.any { it.name == taskName }) return
-        val nextOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
-        calendarTaskDao.insert(
-            CalendarTask(
-                dateKey = dateKey, name = taskName, color = "red", status = null,
-                linkedCalc = calcTaskName, progressStep = (to - from + 1).toString(), sortOrder = nextOrder,
-                multiPassEnabled = preferences.defaultMultiPassEnabled
-            )
-        )
-        resortCalendarDay(dateKey)
-        pushCalendarToFirebase()
-    }
-
-    /** 그 날짜에 calcTaskName과 연동된, 완료(O) 처리된 일정들의 progressStep 합이 dayQuota 이상이면 달성. */
-    suspend fun isLinkedGoalAchieved(dateKey: String, calcTaskName: String, dayQuota: Double): Boolean {
-        if (dayQuota <= 0) return false
-        val doneTotal = calendarTaskDao.getByDate(dateKey)
-            .filter { it.linkedCalc == calcTaskName && it.status == "O" }
-            .sumOf { it.progressStep?.toDoubleOrNull() ?: 0.0 }
-        return doneTotal >= dayQuota
-    }
-
-    /** 이동: 대상 날짜로 옮기고 nextDays/linkedCalc/progressStep은 버린다(웹앱 moveCalTask 경로와 동일 동작). */
-    suspend fun moveCalendarTaskToDate(task: CalendarTask, targetDateKey: String) {
-        calendarTaskDao.delete(task)
-        val existing = calendarTaskDao.getByDate(targetDateKey)
-        val nextOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
-        calendarTaskDao.insert(CalendarTask(dateKey = targetDateKey, name = task.name, color = task.color, status = task.status, sortOrder = nextOrder))
-        resortCalendarDay(targetDateKey)
-        pushCalendarToFirebase()
-    }
-
-    /** 복사: 상태는 초기화(null)하고 nextDays 등 부가 필드는 그대로 옮긴다. 원본은 유지. */
-    suspend fun copyCalendarTaskToDate(task: CalendarTask, targetDateKey: String) {
-        val existing = calendarTaskDao.getByDate(targetDateKey)
-        val nextOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
-        calendarTaskDao.insert(task.copy(id = 0, dateKey = targetDateKey, status = null, sortOrder = nextOrder))
-        resortCalendarDay(targetDateKey)
-        pushCalendarToFirebase()
-    }
-
-    /**
-     * 오늘 기준 monthsAgo개월 이전의 사용시간/재확인 카운터/공부기록을 영구 삭제한다(되돌리기 없음,
-     * 데스크탑판과 대칭 — 전문가 종합분석 보고서 #21). 삭제된 레코드 수 반환.
-     */
-    suspend fun pruneOldStats(monthsAgo: Int = 12): Int {
-        val cutoff = effectiveDate(dailyResetHour).minusMonths(monthsAgo.toLong()).toString()
-        return usageDao.deleteBefore(cutoff) + confirmCounterDao.deleteBefore(cutoff) + studyLogEntryDao.deleteBefore(cutoff)
-    }
-
-    /** 오늘 기준 6개월 이전 일정을 영구 삭제(되돌리기 없음, 웹앱 confirmArchiveOldCalTasks와 동일). 삭제된 항목 수 반환. */
-    suspend fun archiveOldCalendarTasks(): Int {
-        val cutoffKey = LocalDate.now().minusMonths(6).toString()
-        val removed = calendarTaskDao.deleteBefore(cutoffKey)
-        if (removed > 0) pushCalendarToFirebase()
-        return removed
-    }
-
-    private fun calendarTasksToJson(tasks: List<CalendarTask>): JSONObject {
-        val root = JSONObject()
-        tasks.groupBy { it.dateKey }.forEach { (dateKey, dayTasks) ->
-            val arr = JSONArray()
-            dayTasks.sortedBy { it.sortOrder }.forEach { t ->
-                arr.put(JSONObject().apply {
-                    put("name", t.name)
-                    put("color", t.color)
-                    put("status", t.status ?: JSONObject.NULL)
-                    put("nextDays", t.nextDays ?: JSONObject.NULL)
-                    put("linkedCalc", t.linkedCalc ?: JSONObject.NULL)
-                    put("progressStep", t.progressStep ?: JSONObject.NULL)
-                    put("multiPassEnabled", t.multiPassEnabled)
-                })
-            }
-            root.put(dateKey, arr)
-        }
-        return root
-    }
-
-    private fun calendarTasksFromJson(root: JSONObject): List<CalendarTask> {
-        val list = mutableListOf<CalendarTask>()
-        root.keys().forEach { dateKey ->
-            val arr = root.optJSONArray(dateKey) ?: JSONArray()
-            for (i in 0 until arr.length()) {
-                val t = arr.getJSONObject(i)
-                list.add(
-                    CalendarTask(
-                        dateKey = dateKey,
-                        name = t.optString("name", ""),
-                        color = t.optString("color", "white"),
-                        status = if (t.isNull("status")) null else t.optString("status", null),
-                        nextDays = if (t.has("nextDays") && !t.isNull("nextDays")) t.getInt("nextDays") else null,
-                        linkedCalc = if (t.isNull("linkedCalc")) null else t.optString("linkedCalc", null),
-                        progressStep = if (t.isNull("progressStep")) null else t.optString("progressStep", null),
-                        sortOrder = i,
-                        multiPassEnabled = t.optBoolean("multiPassEnabled", false)
-                    )
-                )
-            }
-        }
-        return list
-    }
-
-    /** 변경 직후 fire-and-forget으로 Firebase에 전체 캘린더 문서를 올린다. */
-    private fun pushCalendarToFirebase() {
-        val ts = System.currentTimeMillis()
-        calendarTs = ts
-        ioScope.launch {
-            val tasksJson = calendarTasksToJson(calendarTaskDao.getAllOnce())
-            com.phonelock.app.service.PomodoroSyncClient.writeCalendarTasks(fbDatabaseUrl, fbApiKey, tasksJson, ts)
-        }
-    }
-
-    /**
-     * 캘린더 화면 진입 시 호출 — 원격이 로컬보다 최신이면(문서 단위 LWW) 로컬을 덮어쓰고, 로컬이 더
-     * 최신이면 반대로 원격에 푸시한다.
-     */
-    suspend fun syncCalendarFromFirebase() {
-        val result = com.phonelock.app.service.PomodoroSyncClient.readCalendarTasks(fbDatabaseUrl, fbApiKey) ?: return
-        if (result.ts > calendarTs) {
-            val tasks = calendarTasksFromJson(result.tasksJson)
-            // delete+insert를 하나의 트랜잭션으로 묶는다 — 따로 실행하면 그 사이 프로세스가 죽었을 때
-            // 로컬 캘린더가 빈 상태로 남을 수 있다(importBackupJson()은 이미 트랜잭션으로 처리 중).
-            db.withTransaction {
-                calendarTaskDao.deleteAll()
-                tasks.forEach { calendarTaskDao.insert(it) }
-            }
-            calendarTs = result.ts
-        } else if (calendarTs > result.ts) {
-            pushCalendarToFirebase()
-        }
-    }
-
-    // ══════════════════════════════════════════════════════
-    // 네이티브 계산기(3단계) — 데스크탑 Repository의 계산기 섹션과 동일 로직/동일 Firebase 스키마.
-    // draft(calcTaskDao)/저장됨(calcSavedItemDao)/폴더 트리는 각자 독립 LWW 타임스탬프를 쓴다.
-    // Room에는 배열 재정렬 개념이 없어 CalendarTask와 마찬가지로 sortOrder 필드로 순서를 관리한다.
-    // ══════════════════════════════════════════════════════
-
-    private fun encodeHolidays(list: List<String>): String = list.joinToString(",")
-    private fun decodeHolidays(csv: String): List<String> = if (csv.isBlank()) emptyList() else csv.split(",")
-    private fun encodeFolderPath(path: List<String>?): String = path?.joinToString("|") ?: ""
-    private fun decodeFolderPath(csv: String): List<String>? = if (csv.isBlank()) null else csv.split("|")
-
-    private var calcTasksTs: Long
-        get() = preferences.calcTasksTs
-        set(value) { preferences.calcTasksTs = value }
-    private var calcSavedTs: Long
-        get() = preferences.calcSavedTs
-        set(value) { preferences.calcSavedTs = value }
-    private var calcFolderTs: Long
-        get() = preferences.calcFolderTs
-        set(value) { preferences.calcFolderTs = value }
-    private var calcFolderOrderTs: Long
-        get() = preferences.calcFolderOrderTs
-        set(value) { preferences.calcFolderOrderTs = value }
-
-    private fun getCalcFolderPathsLocal(): MutableList<List<String>> {
-        val arr = JSONArray(preferences.calcFolderPathsJson)
-        return (0 until arr.length()).map { i -> val p = arr.getJSONArray(i); (0 until p.length()).map { p.getString(it) } }.toMutableList()
-    }
-    private fun saveCalcFolderPathsLocal(paths: List<List<String>>) {
-        val arr = JSONArray(); paths.forEach { arr.put(JSONArray(it)) }
-        preferences.calcFolderPathsJson = arr.toString()
-    }
-    private fun getCalcFolderOrderLocal(): MutableMap<String, MutableList<String>> {
-        val obj = JSONObject(preferences.calcFolderOrderJson)
-        val map = mutableMapOf<String, MutableList<String>>()
-        obj.keys().forEach { k -> val arr = obj.getJSONArray(k); map[k] = (0 until arr.length()).map { arr.getString(it) }.toMutableList() }
-        return map
-    }
-    private fun saveCalcFolderOrderLocal(order: Map<String, List<String>>) {
-        val obj = JSONObject(); order.forEach { (k, v) -> obj.put(k, JSONArray(v)) }
-        preferences.calcFolderOrderJson = obj.toString()
-    }
-    private fun calcPathToOrderKey(path: List<String>): String = if (path.isEmpty()) "__root__" else path.joinToString("|")
-
-    private fun getCalcFolderCollapsedLocal(): MutableSet<String> {
-        val arr = JSONArray(preferences.calcFolderCollapsedJson)
-        return (0 until arr.length()).map { arr.getString(it) }.toMutableSet()
-    }
-    private fun saveCalcFolderCollapsedLocal(set: Set<String>) {
-        preferences.calcFolderCollapsedJson = JSONArray(set.toList()).toString()
-    }
-
-    /** 폴더 접기 상태(기기 로컬, Firebase 미동기화) — 기본값 false(펼침)로 기존 동작을 유지한다. */
-    fun isCalcFolderCollapsed(path: List<String>): Boolean = calcPathToOrderKey(path) in getCalcFolderCollapsedLocal()
-
-    fun toggleCalcFolderCollapsed(path: List<String>) {
-        val key = calcPathToOrderKey(path)
-        val set = getCalcFolderCollapsedLocal()
-        if (!set.add(key)) set.remove(key)
-        saveCalcFolderCollapsedLocal(set)
-    }
-
-    suspend fun getCalcTasks(): List<CalcTask> = calcTaskDao.getAll()
-
-    suspend fun addCalcTask() {
-        val nextOrder = (calcTaskDao.getAll().maxOfOrNull { it.sortOrder } ?: -1) + 1
-        calcTaskDao.insert(CalcTask(sortOrder = nextOrder))
-        calcTasksTs = System.currentTimeMillis()
-        pushCalcTasksAndSaved()
-    }
-
-    suspend fun updateCalcTask(task: CalcTask) {
-        calcTaskDao.update(task.copy(modifiedAt = nowLabel(), modifiedAtTs = System.currentTimeMillis()))
-        calcTasksTs = System.currentTimeMillis()
-        pushCalcTasksAndSaved()
-    }
-
-    suspend fun removeCalcTask(task: CalcTask) {
-        calcTaskDao.delete(task)
-        calcTasksTs = System.currentTimeMillis()
-        pushCalcTasksAndSaved()
-    }
-
-    suspend fun moveCalcTaskOrder(task: CalcTask, direction: Int) {
-        val all = calcTaskDao.getAll()
-        val idx = all.indexOfFirst { it.id == task.id }
-        val target = idx + direction
-        if (idx < 0 || target !in all.indices) return
-        val a = all[idx]; val b = all[target]
-        calcTaskDao.update(a.copy(sortOrder = b.sortOrder))
-        calcTaskDao.update(b.copy(sortOrder = a.sortOrder))
-        calcTasksTs = System.currentTimeMillis()
-        pushCalcTasksAndSaved()
-    }
-
-    /** 입력 초기화 — 웹앱 confirmReset과 동일하게 draft만 지우고 저장 항목은 유지한다. */
-    suspend fun resetCalcTasks() {
-        calcTaskDao.deleteAll()
-        calcTaskDao.insert(CalcTask(sortOrder = 0))
-        calcTasksTs = System.currentTimeMillis()
-        pushCalcTasksAndSaved()
-    }
-
-    suspend fun getCalcSaved(): List<CalcSavedItem> = calcSavedItemDao.getAll()
-
-    /** 계산 결과 저장 — 같은 이름이 이미 있으면 덮어쓰고(폴더 위치 유지), 없으면 추가(웹앱 saveOneResult와 동일). */
-    suspend fun saveCalcResult(task: CalcTask, result: com.phonelock.app.calc.CalcEngine.CalcResult) {
-        val t = nowLabel()
-        val all = calcSavedItemDao.getAll()
-        val existing = all.find { it.name == result.name }
-        val nextOrder = (all.maxOfOrNull { it.sortOrder } ?: -1) + 1
-        val item = CalcSavedItem(
-            id = existing?.id ?: 0,
-            name = result.name, qty = result.qty, unit = result.unit, progress = result.progress,
-            start = task.start, dday = task.dday,
-            mon = task.mon, tue = task.tue, wed = task.wed, thu = task.thu, fri = task.fri, sat = task.sat, sun = task.sun,
-            holidaysCsv = task.holidaysCsv,
-            savedAt = existing?.savedAt ?: t, modifiedAt = t,
-            folderPathCsv = existing?.folderPathCsv ?: "",
-            sortOrder = existing?.sortOrder ?: nextOrder
-        )
-        if (existing != null) calcSavedItemDao.update(item) else calcSavedItemDao.insert(item)
-        calcSavedTs = System.currentTimeMillis()
-        pushCalcTasksAndSaved()
-    }
-
-    private fun fmtCalcNumber(n: Double): String = if (n == 0.0) "" else if (n == n.toLong().toDouble()) n.toLong().toString() else n.toString()
-
-    /** 저장 항목을 입력(draft) 목록에 새 카드로 추가(웹앱 loadSavedItem). */
-    suspend fun loadCalcSavedItemAsDraft(item: CalcSavedItem) {
-        val nextOrder = (calcTaskDao.getAll().maxOfOrNull { it.sortOrder } ?: -1) + 1
-        calcTaskDao.insert(
-            CalcTask(
-                name = item.name, qty = fmtCalcNumber(item.qty), unit = item.unit, progress = fmtCalcNumber(item.progress),
-                start = item.start, dday = item.dday,
-                mon = item.mon, tue = item.tue, wed = item.wed, thu = item.thu, fri = item.fri, sat = item.sat, sun = item.sun,
-                holidaysCsv = item.holidaysCsv, sortOrder = nextOrder
-            )
-        )
-        calcTasksTs = System.currentTimeMillis()
-        pushCalcTasksAndSaved()
-    }
-
-    suspend fun deleteCalcSavedItem(item: CalcSavedItem) {
-        calcSavedItemDao.delete(item)
-        calcSavedTs = System.currentTimeMillis()
-        pushCalcTasksAndSaved()
-    }
-
-    suspend fun moveCalcSavedItem(item: CalcSavedItem, direction: Int) {
-        val all = calcSavedItemDao.getAll()
-        val idx = all.indexOfFirst { it.id == item.id }
-        val target = idx + direction
-        if (idx < 0 || target !in all.indices) return
-        val a = all[idx]; val b = all[target]
-        calcSavedItemDao.update(a.copy(sortOrder = b.sortOrder))
-        calcSavedItemDao.update(b.copy(sortOrder = a.sortOrder))
-        calcSavedTs = System.currentTimeMillis()
-        pushCalcTasksAndSaved()
-    }
-
-    suspend fun clearAllCalcSaved() {
-        calcSavedItemDao.deleteAll()
-        calcSavedTs = System.currentTimeMillis()
-        pushCalcTasksAndSaved()
-    }
-
-    suspend fun moveCalcSavedItemToFolder(item: CalcSavedItem, folderPath: List<String>?) {
-        calcSavedItemDao.update(item.copy(folderPathCsv = encodeFolderPath(folderPath?.takeIf { it.isNotEmpty() })))
-        calcSavedTs = System.currentTimeMillis()
-        pushCalcTasksAndSaved()
-    }
-
-    fun getCalcFolderPaths(): List<List<String>> = getCalcFolderPathsLocal()
-
-    /** 부모 경로 밑 하위 폴더 이름을 저장된 순서대로 반환, 순서에 없는 새 폴더는 뒤에 붙인다. */
-    fun getCalcSubfolderNames(parentPath: List<String>): List<String> {
-        val allNames = getCalcFolderPathsLocal().filter {
-            it.size == parentPath.size + 1 && it.subList(0, parentPath.size) == parentPath
-        }.map { it.last() }.distinct()
-        val order = getCalcFolderOrderLocal()[calcPathToOrderKey(parentPath)] ?: emptyList()
-        val existing = order.filter { it in allNames }
-        val added = allNames.filter { it !in existing }
-        return existing + added
-    }
-
-    fun createCalcFolder(parentPath: List<String>, name: String): Boolean {
-        val trimmed = name.trim()
-        if (trimmed.isEmpty()) return false
-        val newPath = parentPath + trimmed
-        val paths = getCalcFolderPathsLocal()
-        if (paths.any { it == newPath }) return false
-        paths.add(newPath)
-        saveCalcFolderPathsLocal(paths)
-        calcFolderTs = System.currentTimeMillis()
-        pushCalcFolders()
-        return true
-    }
-
-    suspend fun renameCalcFolder(path: List<String>, newName: String): Boolean {
-        val trimmed = newName.trim()
-        if (trimmed.isEmpty() || path.isEmpty()) return false
-        val newPath = path.dropLast(1) + trimmed
-        val paths = getCalcFolderPathsLocal()
-        if (paths.any { it == newPath }) return false
-        for (i in paths.indices) {
-            val p = paths[i]
-            if (p.size >= path.size && p.subList(0, path.size) == path) paths[i] = newPath + p.subList(path.size, p.size)
-        }
-        saveCalcFolderPathsLocal(paths)
-        calcSavedItemDao.getAll().forEach { item ->
-            val fp = decodeFolderPath(item.folderPathCsv) ?: return@forEach
-            if (fp.size >= path.size && fp.subList(0, path.size) == path) {
-                calcSavedItemDao.update(item.copy(folderPathCsv = encodeFolderPath(newPath + fp.subList(path.size, fp.size))))
-            }
-        }
-        val order = getCalcFolderOrderLocal()
-        val parentOrderKey = calcPathToOrderKey(path.dropLast(1))
-        order[parentOrderKey]?.let { list -> val idx = list.indexOf(path.last()); if (idx >= 0) list[idx] = trimmed }
-        val oldSubKey = calcPathToOrderKey(path); val newSubKey = calcPathToOrderKey(newPath)
-        order.remove(oldSubKey)?.let { order[newSubKey] = it }
-        saveCalcFolderOrderLocal(order)
-        calcFolderTs = System.currentTimeMillis()
-        calcFolderOrderTs = System.currentTimeMillis()
-        pushCalcFolders()
-        return true
-    }
-
-    /** 폴더와 하위 폴더를 삭제하고, 안에 있던 항목은 상위 폴더(또는 미분류)로 이동시킨다. */
-    suspend fun deleteCalcFolder(path: List<String>) {
-        if (path.isEmpty()) return
-        val parentPath = path.dropLast(1)
-        calcSavedItemDao.getAll().forEach { item ->
-            val fp = decodeFolderPath(item.folderPathCsv) ?: return@forEach
-            if (fp.size >= path.size && fp.subList(0, path.size) == path) {
-                calcSavedItemDao.update(item.copy(folderPathCsv = encodeFolderPath(parentPath.takeIf { it.isNotEmpty() })))
-            }
-        }
-        val paths = getCalcFolderPathsLocal()
-        paths.removeAll { it.size >= path.size && it.subList(0, path.size) == path }
-        saveCalcFolderPathsLocal(paths)
-        val order = getCalcFolderOrderLocal()
-        order[calcPathToOrderKey(parentPath)]?.remove(path.last())
-        order.remove(calcPathToOrderKey(path))
-        saveCalcFolderOrderLocal(order)
-        calcFolderTs = System.currentTimeMillis()
-        calcFolderOrderTs = System.currentTimeMillis()
-        pushCalcFolders()
-    }
-
-    fun moveCalcFolderOrder(parentPath: List<String>, name: String, direction: Int) {
-        val orderKey = calcPathToOrderKey(parentPath)
-        val allNames = getCalcFolderPathsLocal().filter {
-            it.size == parentPath.size + 1 && it.subList(0, parentPath.size) == parentPath
-        }.map { it.last() }.distinct()
-        val order = getCalcFolderOrderLocal()
-        val current = (order[orderKey] ?: emptyList()).filter { it in allNames }
-        val list = (current + allNames.filter { it !in current }).toMutableList()
-        val idx = list.indexOf(name); val target = idx + direction
-        if (idx < 0 || target !in list.indices) return
-        val tmp = list[idx]; list[idx] = list[target]; list[target] = tmp
-        order[orderKey] = list
-        saveCalcFolderOrderLocal(order)
-        calcFolderOrderTs = System.currentTimeMillis()
-        pushCalcFolders()
-    }
-
-    /**
-     * calcSaved 항목이 참조하는 폴더 경로(및 조상 경로)가 폴더 목록에 없으면 채워 넣는다. 데스크탑판과
-     * 동일한 보정(healCalcFolderPaths) — 웹앱에서 만들어진 레거시 데이터가 savedFolderTree 없이
-     * 항목의 folderPath만 가진 채로 동기화되면 항목엔 폴더 이름이 표시돼도 폴더 트리엔 그 폴더가
-     * 아예 안 뜨는 문제가 생긴다.
-     */
-    private suspend fun healCalcFolderPaths(): Boolean {
-        val paths = getCalcFolderPathsLocal()
-        var changed = false
-        calcSavedItemDao.getAll().forEach { item ->
-            val fp = decodeFolderPath(item.folderPathCsv) ?: return@forEach
-            for (i in 1..fp.size) {
-                val prefix = fp.subList(0, i)
-                if (paths.none { it == prefix }) {
-                    paths.add(prefix)
-                    changed = true
-                }
-            }
-        }
-        if (changed) saveCalcFolderPathsLocal(paths)
-        return changed
-    }
-
-    private fun nowLabel(): String {
-        val ts = java.time.LocalDateTime.now()
-        return "%d/%d %02d:%02d".format(ts.monthValue, ts.dayOfMonth, ts.hour, ts.minute)
-    }
-
-    private fun calcTaskToJson(t: CalcTask): JSONObject = JSONObject().apply {
-        put("name", t.name); put("qty", t.qty); put("unit", t.unit); put("progress", t.progress)
-        put("start", t.start); put("dday", t.dday)
-        put("mon", t.mon); put("tue", t.tue); put("wed", t.wed); put("thu", t.thu)
-        put("fri", t.fri); put("sat", t.sat); put("sun", t.sun)
-        put("holidays", JSONArray(decodeHolidays(t.holidaysCsv)))
-        put("modifiedAt", t.modifiedAt); put("modifiedAtTs", t.modifiedAtTs)
-    }
-
-    private fun calcTaskFromJson(t: JSONObject, order: Int): CalcTask {
-        val holidaysArr = t.optJSONArray("holidays") ?: JSONArray()
-        return CalcTask(
-            name = t.optString("name", ""), qty = t.optString("qty", ""), unit = t.optString("unit", ""),
-            progress = t.optString("progress", ""), start = t.optString("start", ""), dday = t.optString("dday", ""),
-            mon = t.optString("mon", ""), tue = t.optString("tue", ""), wed = t.optString("wed", ""),
-            thu = t.optString("thu", ""), fri = t.optString("fri", ""), sat = t.optString("sat", ""), sun = t.optString("sun", ""),
-            holidaysCsv = encodeHolidays((0 until holidaysArr.length()).map { holidaysArr.getString(it) }),
-            modifiedAt = t.optString("modifiedAt", ""), modifiedAtTs = t.optLong("modifiedAtTs", 0L), sortOrder = order
-        )
-    }
-
-    private fun calcSavedToJson(s: CalcSavedItem): JSONObject = JSONObject().apply {
-        put("name", s.name); put("qty", s.qty); put("unit", s.unit); put("progress", s.progress)
-        put("start", s.start); put("dday", s.dday)
-        put("mon", s.mon); put("tue", s.tue); put("wed", s.wed); put("thu", s.thu)
-        put("fri", s.fri); put("sat", s.sat); put("sun", s.sun)
-        put("holidays", JSONArray(decodeHolidays(s.holidaysCsv)))
-        put("savedAt", s.savedAt); put("modifiedAt", s.modifiedAt)
-        put("folderPath", decodeFolderPath(s.folderPathCsv)?.let { JSONArray(it) } ?: JSONObject.NULL)
-    }
-
-    private fun calcSavedFromJson(s: JSONObject, order: Int): CalcSavedItem {
-        val holidaysArr = s.optJSONArray("holidays") ?: JSONArray()
-        val folderPathArr = s.optJSONArray("folderPath")
-        val folderPath = folderPathArr?.let { arr -> (0 until arr.length()).map { arr.getString(it) } }
-        return CalcSavedItem(
-            name = s.optString("name", ""), qty = s.optDouble("qty", 0.0), unit = s.optString("unit", ""),
-            progress = s.optDouble("progress", 0.0), start = s.optString("start", ""), dday = s.optString("dday", ""),
-            mon = s.optString("mon", ""), tue = s.optString("tue", ""), wed = s.optString("wed", ""),
-            thu = s.optString("thu", ""), fri = s.optString("fri", ""), sat = s.optString("sat", ""), sun = s.optString("sun", ""),
-            holidaysCsv = encodeHolidays((0 until holidaysArr.length()).map { holidaysArr.getString(it) }),
-            savedAt = s.optString("savedAt", ""), modifiedAt = s.optString("modifiedAt", ""),
-            folderPathCsv = encodeFolderPath(folderPath), sortOrder = order
-        )
-    }
-
-    private fun pushCalcTasksAndSaved() {
-        ioScope.launch {
-            val tasksJson = JSONArray().also { arr -> calcTaskDao.getAll().forEach { arr.put(calcTaskToJson(it)) } }
-            val savedJson = JSONArray().also { arr -> calcSavedItemDao.getAll().forEach { arr.put(calcSavedToJson(it)) } }
-            com.phonelock.app.service.PomodoroSyncClient.writeCalcTasksAndSaved(
-                fbDatabaseUrl, fbApiKey, tasksJson, calcTasksTs, savedJson, calcSavedTs
-            )
-        }
-    }
-
-    private fun pushCalcFolders() {
-        val paths = getCalcFolderPathsLocal()
-        val order = getCalcFolderOrderLocal()
-        val folderTs = calcFolderTs; val folderOrderTs = calcFolderOrderTs
-        ioScope.launch {
-            com.phonelock.app.service.PomodoroSyncClient.writeCalcFolders(fbDatabaseUrl, fbApiKey, paths, folderTs, order, folderOrderTs)
-        }
-    }
-
-    /**
-     * 계산기 탭 진입 시 호출 — draft/저장됨/폴더 세 구간을 각자 독립적으로 LWW 비교한다(웹앱
-     * subscribeCalcData와 동일한 3단 비교, 다만 실시간 구독이 아니라 진입 시 1회 동기화 — 데스크탑/
-     * 캘린더와 같은 단순화, DECISIONS.md 참고).
-     */
-    suspend fun syncCalculatorFromFirebase() {
-        val result = com.phonelock.app.service.PomodoroSyncClient.readCalculator(fbDatabaseUrl, fbApiKey) ?: return
-
-        // delete+insert를 트랜잭션으로 묶는다 — 그 사이 프로세스가 죽으면 로컬이 빈 상태로 남을 수 있음(캘린더와 동일 수정).
-        if (result.tasksTs > calcTasksTs) {
-            db.withTransaction {
-                calcTaskDao.deleteAll()
-                for (i in 0 until result.tasksJson.length()) calcTaskDao.insert(calcTaskFromJson(result.tasksJson.getJSONObject(i), i))
-            }
-            calcTasksTs = result.tasksTs
-        } else if (calcTasksTs > result.tasksTs) {
-            pushCalcTasksAndSaved()
-        }
-
-        if (result.savedTs > calcSavedTs) {
-            db.withTransaction {
-                calcSavedItemDao.deleteAll()
-                for (i in 0 until result.savedJson.length()) calcSavedItemDao.insert(calcSavedFromJson(result.savedJson.getJSONObject(i), i))
-            }
-            calcSavedTs = result.savedTs
-        } else if (calcSavedTs > result.savedTs && result.tasksTs <= calcTasksTs) {
-            pushCalcTasksAndSaved()
-        }
-
-        var foldersChanged = false
-        if (result.folderTs > calcFolderTs) {
-            val paths = mutableListOf<List<String>>()
-            for (i in 0 until result.folderPathsJson.length()) {
-                val p = result.folderPathsJson.getJSONArray(i)
-                paths.add((0 until p.length()).map { p.getString(it) })
-            }
-            saveCalcFolderPathsLocal(paths)
-            calcFolderTs = result.folderTs
-            foldersChanged = true
-        }
-        if (result.folderOrderTs > calcFolderOrderTs) {
-            val order = mutableMapOf<String, MutableList<String>>()
-            result.folderOrderJson.keys().forEach { k ->
-                val arr = result.folderOrderJson.optJSONArray(k) ?: JSONArray()
-                order[k] = (0 until arr.length()).map { arr.getString(it) }.toMutableList()
-            }
-            saveCalcFolderOrderLocal(order)
-            calcFolderOrderTs = result.folderOrderTs
-            foldersChanged = true
-        }
-        if (!foldersChanged && (calcFolderTs > result.folderTs || calcFolderOrderTs > result.folderOrderTs)) {
-            pushCalcFolders()
-        }
-
-        if (healCalcFolderPaths()) {
-            calcFolderTs = System.currentTimeMillis()
-            pushCalcFolders()
-        }
-    }
 
     private fun normalizeDomain(domain: String): String = domain.trim().lowercase()
 
@@ -1575,6 +872,26 @@ class PhoneLockRepository(context: Context) {
 
         val root = JSONObject()
         root.put("groups", groupsJson)
+
+        // 82차(§9 "전체 데이터 내보내기"): 원래는 그룹/멤버/사이트만 담던 백업에 캘린더/계산기/루틴/
+        // 공부기록까지 포함시킨다. 각 테이블은 이미 있는 Firebase 동기화용 직렬화 함수를 그대로 재사용 —
+        // 새 포맷을 만들지 않고 기존 스키마와 통일한다.
+        root.put("calendar", calendarTasksToJson(calendarTaskDao.getAllOnce()))
+        root.put("calcTasks", JSONArray().also { arr -> calcTaskDao.getAll().forEach { arr.put(calcTaskToJson(it)) } })
+        root.put("calcSaved", JSONArray().also { arr -> calcSavedItemDao.getAll().forEach { arr.put(calcSavedToJson(it)) } })
+        val (routinesJson, routineLogsJson) = routinesToJson(routineDao.getAll(), routineLogDao.getAllOnce())
+        root.put("routines", routinesJson)
+        root.put("routineLogs", routineLogsJson)
+        root.put("studyLog", JSONArray().also { arr ->
+            studyLogEntryDao.getAllOnce().forEach { e ->
+                arr.put(JSONObject().apply {
+                    put("dateKey", e.dateKey); put("taskName", e.taskName); put("seconds", e.seconds)
+                    put("startedAt", e.startedAt); put("note", e.note); put("tag", e.tag)
+                })
+            }
+        })
+        root.put("exportedAt", System.currentTimeMillis())
+
         return root.toString(2)
     }
 
@@ -1584,6 +901,38 @@ class PhoneLockRepository(context: Context) {
         // 묶어서, 도중에(그룹별 파싱 등) 예외가 나더라도 이미 지운 데이터가 롤백되게 한다.
         val root = JSONObject(json)
         val groupsJson = root.optJSONArray("groups") ?: JSONArray()
+
+        // 82차(§9 "전체 데이터 내보내기"): 캘린더/계산기/루틴/공부기록은 옛 백업 파일엔 없을 수 있으므로
+        // 키가 있을 때만 되돌린다(구버전 백업과 하위 호환).
+        val hasCalendar = root.has("calendar")
+        val hasCalc = root.has("calcTasks") || root.has("calcSaved")
+        val hasRoutines = root.has("routines")
+        val hasStudyLog = root.has("studyLog")
+        val calendarTasks = if (hasCalendar) calendarTasksFromJson(root.getJSONObject("calendar")) else emptyList()
+        val calcTasksList = if (root.has("calcTasks")) {
+            val arr = root.getJSONArray("calcTasks")
+            (0 until arr.length()).map { i -> calcTaskFromJson(arr.getJSONObject(i), i) }
+        } else emptyList()
+        val calcSavedList = if (root.has("calcSaved")) {
+            val arr = root.getJSONArray("calcSaved")
+            (0 until arr.length()).map { i -> calcSavedFromJson(arr.getJSONObject(i), i) }
+        } else emptyList()
+        val (newRoutines, logRefs) = if (hasRoutines) {
+            routinesFromJson(root.getJSONArray("routines"), root.optJSONArray("routineLogs") ?: JSONArray())
+        } else emptyList<Routine>() to emptyList()
+        val studyLogEntries = if (hasStudyLog) {
+            val arr = root.getJSONArray("studyLog")
+            (0 until arr.length()).map { i ->
+                val e = arr.getJSONObject(i)
+                StudyLogEntry(
+                    dateKey = e.optString("dateKey", ""), taskName = e.optString("taskName", ""),
+                    seconds = e.optInt("seconds", 0), startedAt = e.optLong("startedAt", 0L), note = e.optString("note", ""),
+                    tag = e.optString("tag", "")
+                )
+            }
+        } else emptyList()
+
+        val oldRoutines = if (hasRoutines) routineDao.getAll() else emptyList()
 
         db.withTransaction {
             memberDao.deleteAllMembers()
@@ -1628,426 +977,41 @@ class PhoneLockRepository(context: Context) {
                     groupSiteDao.insert(GroupSite(groupId, sitesJson.getString(j)))
                 }
             }
-        }
-    }
 
-    // ══════════════════════════════════════════════════════
-    // 루틴앱 v1(47차 설계, DECISIONS.md 참고) — Routine 하나로 체크리스트/습관/일과표 통합.
-    // 51차: 캘린더와 동일한 "전체 문서 단위 LWW"로 Firebase 동기화 추가(users/{user}/routines,
-    // 데스크탑판과 대칭).
-    // ══════════════════════════════════════════════════════
-
-    private var routinesTs: Long
-        get() = preferences.routinesTs
-        set(value) { preferences.routinesTs = value }
-
-    fun observeRoutines(): Flow<List<Routine>> = routineDao.observeAll()
-
-    suspend fun getRoutines(): List<Routine> = routineDao.getAll()
-
-    suspend fun addRoutine(routine: Routine) {
-        val nextOrder = (routineDao.getAll().maxOfOrNull { it.sortOrder } ?: -1) + 1
-        val toInsert = routine.copy(sortOrder = nextOrder)
-        val newId = routineDao.insert(toInsert)
-        com.phonelock.app.routine.RoutineAlarmScheduler.scheduleNext(appContext, toInsert.copy(id = newId))
-        pushRoutinesToFirebase()
-        refreshRoutineWidget()
-    }
-
-    suspend fun updateRoutine(routine: Routine) {
-        routineDao.update(routine)
-        com.phonelock.app.routine.RoutineAlarmScheduler.scheduleNext(appContext, routine)
-        pushRoutinesToFirebase()
-        refreshRoutineWidget()
-    }
-
-    suspend fun deleteRoutine(routine: Routine) {
-        routineDao.delete(routine)
-        routineLogDao.deleteForRoutine(routine.id)
-        com.phonelock.app.routine.RoutineAlarmScheduler.cancel(appContext, routine.id)
-        pushRoutinesToFirebase()
-        refreshRoutineWidget()
-    }
-
-    suspend fun moveRoutineOrder(routine: Routine, direction: Int) {
-        val all = routineDao.getAll()
-        val idx = all.indexOfFirst { it.id == routine.id }
-        val target = idx + direction
-        if (idx < 0 || target !in all.indices) return
-        val a = all[idx]; val b = all[target]
-        routineDao.update(a.copy(sortOrder = b.sortOrder))
-        routineDao.update(b.copy(sortOrder = a.sortOrder))
-        pushRoutinesToFirebase()
-        refreshRoutineWidget()
-    }
-
-    /** 특정 두 루틴의 sortOrder를 직접 맞바꾼다 — "오늘" 탭에서 시간대 미지정 루틴끼리의 ▲/▼ 순서
-     *  버튼용(데스크탑판과 대칭, moveRoutineOrder는 전역 인접 스왑이라 시간대 지정 루틴과 뒤섞일 수 있음). */
-    suspend fun swapRoutineOrder(idA: Long, idB: Long) {
-        val a = routineDao.getById(idA) ?: return
-        val b = routineDao.getById(idB) ?: return
-        routineDao.update(a.copy(sortOrder = b.sortOrder))
-        routineDao.update(b.copy(sortOrder = a.sortOrder))
-        pushRoutinesToFirebase()
-        refreshRoutineWidget()
-    }
-
-    suspend fun copyRoutine(routine: Routine) {
-        val nextOrder = (routineDao.getAll().maxOfOrNull { it.sortOrder } ?: -1) + 1
-        val toInsert = routine.copy(id = 0, title = "${routine.title} (복사본)", sortOrder = nextOrder, archived = false)
-        val newId = routineDao.insert(toInsert)
-        com.phonelock.app.routine.RoutineAlarmScheduler.scheduleNext(appContext, toInsert.copy(id = newId))
-        pushRoutinesToFirebase()
-        refreshRoutineWidget()
-    }
-
-    suspend fun getRoutineLogsForDate(dateKey: String): List<RoutineLog> = routineLogDao.getByDate(dateKey)
-
-    suspend fun isRoutineCompleted(routineId: Long, dateKey: String): Boolean =
-        routineLogDao.getByDate(dateKey).any { it.routineId == routineId }
-
-    /** 날짜 하나에 대한 완료 체크를 토글한다(존재하면 삭제=미완료, 없으면 추가=완료). */
-    suspend fun toggleRoutineLog(routineId: Long, dateKey: String) {
-        if (routineLogDao.getByDate(dateKey).any { it.routineId == routineId }) {
-            routineLogDao.delete(routineId, dateKey)
-        } else {
-            routineLogDao.insert(RoutineLog(routineId, dateKey))
-        }
-        pushRoutinesToFirebase()
-        refreshRoutineWidget()
-    }
-
-    /** RoutineEngine.currentStreak에 넘길 완료 날짜 집합. */
-    suspend fun getRoutineCompletedDateKeys(routineId: Long): Set<String> =
-        routineLogDao.getByRoutine(routineId).map { it.dateKey }.toSet()
-
-    /**
-     * 루틴/로그를 Firebase JSON 배열 2개로 변환한다. 기기별 로컬(Room 자동증가) id를 그대로 실어보내면
-     * 다른 기기의 id 체계와 충돌하므로(캘린더가 dateKey+배열순서로 식별하는 것과 같은 이유), routines
-     * 배열 안에서의 인덱스를 로그가 참조하는 "routineIndex"로 쓴다 — 실제 id는 반입하는 쪽에서 새로 배정.
-     */
-    private fun routinesToJson(routines: List<Routine>, logs: List<RoutineLog>): Pair<JSONArray, JSONArray> {
-        val sorted = routines.sortedBy { it.sortOrder }
-        val indexById = sorted.mapIndexed { idx, r -> r.id to idx }.toMap()
-        val routinesArr = JSONArray()
-        sorted.forEach { r ->
-            routinesArr.put(JSONObject().apply {
-                put("title", r.title)
-                put("icon", r.icon)
-                put("timeSlot", r.timeSlot ?: JSONObject.NULL)
-                put("daysMask", r.daysMask)
-                put("trackStreak", r.trackStreak)
-                put("defenseType", r.defenseType)
-                put("defenseCount", r.defenseCount)
-                put("sortOrder", r.sortOrder)
-                put("archived", r.archived)
-                put("notifyEnabled", r.notifyEnabled)
-                put("startDate", r.startDate ?: JSONObject.NULL)
-                put("endDate", r.endDate ?: JSONObject.NULL)
-            })
-        }
-        val logsArr = JSONArray()
-        logs.forEach { log ->
-            val idx = indexById[log.routineId] ?: return@forEach
-            logsArr.put(JSONObject().apply {
-                put("routineIndex", idx)
-                put("dateKey", log.dateKey)
-            })
-        }
-        return routinesArr to logsArr
-    }
-
-    /** JSON 배열 2개(routines, routineLogs)를 로컬 Routine/RoutineLog로 되돌린다 — 새 로컬 id는 insert 시 Room이 자동 배정. */
-    private fun routinesFromJson(routinesJson: JSONArray, logsJson: JSONArray): Pair<List<Routine>, List<Pair<Int, String>>> {
-        val newRoutines = mutableListOf<Routine>()
-        for (i in 0 until routinesJson.length()) {
-            val r = routinesJson.getJSONObject(i)
-            newRoutines.add(
-                Routine(
-                    title = r.optString("title", ""),
-                    icon = r.optString("icon", ""),
-                    timeSlot = if (r.isNull("timeSlot")) null else r.optString("timeSlot", null),
-                    daysMask = r.optInt("daysMask", 127),
-                    trackStreak = r.optBoolean("trackStreak", false),
-                    defenseType = r.optString("defenseType", "NONE"),
-                    defenseCount = r.optInt("defenseCount", 0),
-                    sortOrder = r.optInt("sortOrder", i),
-                    archived = r.optBoolean("archived", false),
-                    notifyEnabled = r.optBoolean("notifyEnabled", false),
-                    startDate = if (r.isNull("startDate")) null else r.optString("startDate", null),
-                    endDate = if (r.isNull("endDate")) null else r.optString("endDate", null)
-                )
-            )
-        }
-        val logRefs = mutableListOf<Pair<Int, String>>()
-        for (i in 0 until logsJson.length()) {
-            val l = logsJson.getJSONObject(i)
-            val idx = l.optInt("routineIndex", -1)
-            if (idx !in newRoutines.indices) continue
-            logRefs.add(idx to l.optString("dateKey", ""))
-        }
-        return newRoutines to logRefs
-    }
-
-    /** 루틴 파일 내보내기(사용자 요청, 2026-08-14) — Firebase 동기화 문서와 동일한 스키마를 그대로 재사용. */
-    suspend fun exportRoutinesBackupJson(): String {
-        val (routinesArr, logsArr) = routinesToJson(routineDao.getAll(), routineLogDao.getAllOnce())
-        val root = JSONObject()
-        root.put("routines", routinesArr)
-        root.put("routineLogs", logsArr)
-        return root.toString(2)
-    }
-
-    /** 루틴 파일 가져오기 — 현재 루틴/로그를 파일 내용으로 전체 대체한다(syncRoutinesFromFirebase의 반입 로직과 동일). */
-    suspend fun importRoutinesBackupJson(json: String) {
-        val root = JSONObject(json)
-        val (newRoutines, logRefs) = routinesFromJson(
-            root.optJSONArray("routines") ?: JSONArray(),
-            root.optJSONArray("routineLogs") ?: JSONArray()
-        )
-        db.withTransaction {
-            routineLogDao.deleteAll()
-            routineDao.deleteAll()
-            val newIds = newRoutines.map { routineDao.insert(it) }
-            logRefs.forEach { (idx, dateKey) -> routineLogDao.insert(RoutineLog(newIds[idx], dateKey)) }
-        }
-        pushRoutinesToFirebase()
-        refreshRoutineWidget()
-        com.phonelock.app.routine.RoutineAlarmScheduler.rescheduleAll(appContext, this)
-    }
-
-    /** 홈 화면 위젯(51차, 사용자 요청)이 있으면 최신 상태로 다시 그리게 한다 — 없으면 조용히 아무 일도 안 함. */
-    private fun refreshRoutineWidget() {
-        com.phonelock.app.widget.RoutineWidgetProvider.updateAll(appContext)
-    }
-
-    /** 변경 직후 fire-and-forget으로 Firebase에 전체 루틴 문서를 올린다. */
-    private fun pushRoutinesToFirebase() {
-        val ts = System.currentTimeMillis()
-        routinesTs = ts
-        ioScope.launch {
-            val (routinesArr, logsArr) = routinesToJson(routineDao.getAll(), routineLogDao.getAllOnce())
-            com.phonelock.app.service.PomodoroSyncClient.writeRoutines(fbDatabaseUrl, fbApiKey, routinesArr, logsArr, ts)
-        }
-    }
-
-    /**
-     * 루틴 화면 진입 시 호출 — 원격이 로컬보다 최신이면(문서 단위 LWW) 로컬을 덮어쓰고, 로컬이 더
-     * 최신이면 반대로 원격에 푸시한다.
-     */
-    suspend fun syncRoutinesFromFirebase() {
-        val result = com.phonelock.app.service.PomodoroSyncClient.readRoutines(fbDatabaseUrl, fbApiKey) ?: return
-        if (result.ts > routinesTs) {
-            val (newRoutines, logRefs) = routinesFromJson(result.routinesJson, result.logsJson)
-            // Room auto-increment ID라 delete+insert하면 새 루틴들이 전부 새 ID를 받는다 — 이 ID를
-            // requestCode로 쓰는 예약 알람(RoutineAlarmScheduler)이 그대로 두면 옛 ID의 알람은 절대
-            // 취소될 길이 없어 동기화 때마다 계속 쌓인다(안드로이드 앱당 예약 알람 500개 한도에 걸려
-            // 실제로 크래시 루프가 났던 원인, 2026-08-30). 지우기 전에 지금 있는 루틴들의 알람부터 먼저
-            // 취소해서 이 누수를 막는다.
-            val oldRoutines = routineDao.getAll()
-            // delete+insert를 하나의 트랜잭션으로 묶는다 — 캘린더 동기화와 동일한 이유(도중에 죽어도 빈 상태로 안 남게).
-            db.withTransaction {
+            if (hasCalendar) {
+                calendarTaskDao.deleteAll()
+                calendarTasks.forEach { calendarTaskDao.insert(it) }
+            }
+            if (hasCalc) {
+                calcTaskDao.deleteAll()
+                calcTasksList.forEach { calcTaskDao.insert(it) }
+                calcSavedItemDao.deleteAll()
+                calcSavedList.forEach { calcSavedItemDao.insert(it) }
+            }
+            if (hasRoutines) {
                 routineLogDao.deleteAll()
                 routineDao.deleteAll()
                 val newIds = newRoutines.map { routineDao.insert(it) }
-                logRefs.forEach { (idx, dateKey) ->
-                    routineLogDao.insert(RoutineLog(newIds[idx], dateKey))
-                }
+                logRefs.forEach { (idx, dateKey) -> routineLogDao.insert(RoutineLog(newIds[idx], dateKey)) }
             }
+            if (hasStudyLog) {
+                studyLogEntryDao.deleteAll()
+                studyLogEntries.forEach { studyLogEntryDao.insert(it) }
+            }
+        }
+
+        if (hasRoutines) {
             oldRoutines.forEach { com.phonelock.app.routine.RoutineAlarmScheduler.cancel(appContext, it.id) }
-            routinesTs = result.ts
             refreshRoutineWidget()
             com.phonelock.app.routine.RoutineAlarmScheduler.rescheduleAll(appContext, this)
-        } else if (routinesTs > result.ts) {
-            pushRoutinesToFirebase()
         }
+        if (hasCalendar) pushCalendarToFirebase()
+        if (hasCalc) pushCalcTasksAndSaved()
+        if (hasRoutines) pushRoutinesToFirebase()
     }
 
-    // ══════════════════════════════════════════════════════
-    // "모임"(소셜 그룹, 계획 dynamic-shimmying-map.md) — SocialGroupSyncClient의 얇은 pass-through.
-    // groups/{id}/... 데이터는 로컬에 캐싱/영속화하지 않고 화면 진입 시마다 Firebase에서 직접 읽는다
-    // (여러 사용자가 실시간으로 공유하는 데이터라 캐싱해도 이득이 적고 구현만 복잡해짐).
-    // ══════════════════════════════════════════════════════
-
-    suspend fun createSocialGroup(name: String) =
-        com.phonelock.app.service.SocialGroupSyncClient.createGroup(fbDatabaseUrl, fbApiKey, name)
-
-    suspend fun joinSocialGroup(code: String) =
-        com.phonelock.app.service.SocialGroupSyncClient.joinGroupByCode(fbDatabaseUrl, fbApiKey, code)
-
-    suspend fun leaveSocialGroup(groupId: String) =
-        com.phonelock.app.service.SocialGroupSyncClient.leaveGroup(fbDatabaseUrl, fbApiKey, groupId)
-
-    suspend fun deleteSocialGroup(groupId: String) =
-        com.phonelock.app.service.SocialGroupSyncClient.deleteGroup(fbDatabaseUrl, fbApiKey, groupId)
-
-    suspend fun readMySocialGroupIds() =
-        com.phonelock.app.service.SocialGroupSyncClient.readMyGroupIds(fbDatabaseUrl, fbApiKey)
-
-    suspend fun readSocialGroupInfo(groupId: String) =
-        com.phonelock.app.service.SocialGroupSyncClient.readGroupInfo(fbDatabaseUrl, fbApiKey, groupId)
-
-    suspend fun readSocialGroupMembers(groupId: String) =
-        com.phonelock.app.service.SocialGroupSyncClient.readGroupMembers(fbDatabaseUrl, fbApiKey, groupId)
-
-    /** 77차: 관리자/모임장 시스템 — 관리자 목록 조회, 승격/해제(모임장만), 멤버 내쫓기, 이름/코드 수정(모임장·관리자). */
-    suspend fun readSocialGroupAdmins(groupId: String) =
-        com.phonelock.app.service.SocialGroupSyncClient.readGroupAdmins(fbDatabaseUrl, fbApiKey, groupId)
-    suspend fun setSocialGroupAdmin(groupId: String, targetUid: String, isAdmin: Boolean) =
-        com.phonelock.app.service.SocialGroupSyncClient.setGroupAdmin(fbDatabaseUrl, fbApiKey, groupId, targetUid, isAdmin)
-    suspend fun kickSocialGroupMember(groupId: String, targetUid: String) =
-        com.phonelock.app.service.SocialGroupSyncClient.kickMember(fbDatabaseUrl, fbApiKey, groupId, targetUid)
-    suspend fun updateSocialGroupName(groupId: String, newName: String) =
-        com.phonelock.app.service.SocialGroupSyncClient.updateGroupName(fbDatabaseUrl, fbApiKey, groupId, newName)
-    suspend fun regenerateSocialGroupInviteCode(groupId: String) =
-        com.phonelock.app.service.SocialGroupSyncClient.regenerateInviteCode(fbDatabaseUrl, fbApiKey, groupId)
-
-    suspend fun readSocialGroupStats(groupId: String) =
-        com.phonelock.app.service.SocialGroupSyncClient.readGroupStats(fbDatabaseUrl, fbApiKey, groupId)
-
-    /**
-     * 내 루틴(오늘 예정분+완료여부)/공부시간·진행률/스트릭/오늘 일정/공부중 여부/현재 작동 중인 관리 그룹을
-     * 계산해 이 모임에 올린다. 설정에서 끈 항목은 SocialGroupSyncClient가 아예 필드 생략하고 쓰므로,
-     * 여기선 계산만 해서 넘긴다. 공유 설정은 62차의 앱 전체 공통 토글에서 75차+에 모임별 설정
-     * (`preferences.groupShareSettings(groupId)`)으로 바뀌었다.
-     */
-    suspend fun pushMySocialStats(groupId: String) {
-        val displayName = com.phonelock.app.service.AccountSyncClient.myDisplayName(fbDatabaseUrl, fbApiKey)
-        val today = LocalDate.now()
-        val todayKey = today.toString()
-        val routines = routineDao.getAll()
-        val completed = routines.associate { it.id to getRoutineCompletedDateKeys(it.id) }
-        val scheduledToday = routines.filter { com.phonelock.app.routine.RoutineEngine.isScheduledOn(it, today) }
-        val routineStats = scheduledToday.map {
-            com.phonelock.app.service.SocialGroupSyncClient.RoutineStat(
-                it.title, todayKey in (completed[it.id] ?: emptySet()), it.icon, it.timeSlot
-            )
-        }
-        val studySeconds = getTodayStudyLog().sumOf { it.seconds }
-        val calTasksToday = calendarTaskDao.getByDate(todayCalendarDateKey())
-        val studyProgress = if (calTasksToday.isNotEmpty()) {
-            Math.round(calTasksToday.count { it.status == "O" } * 100.0 / calTasksToday.size).toInt()
-        } else 0
-        val streak = com.phonelock.app.routine.RoutineEngine.currentStreak(routines, completed, today)
-        val routineBestStreak = com.phonelock.app.routine.RoutineEngine.bestStreak(routines, completed, today)
-        // 오늘 하루치만 이름/상태로 보여주던 걸 76차에 실제 캘린더 미니 그리드로 바꾸면서, 이 달 전체
-        // (달력 그리드가 앞뒤로 걸치는 주까지 포함해 ±7일 버퍼) 일정을 통째로 올린다 — 데스크탑
-        // CalendarScreen.refresh()와 동일한 조회 범위 패턴.
-        val firstOfMonth = today.withDayOfMonth(1)
-        val lastOfMonth = firstOfMonth.plusMonths(1).minusDays(1)
-        val monthTasks = getCalendarTasksInRange(firstOfMonth.minusDays(7).toString(), lastOfMonth.plusDays(7).toString())
-        val scheduleStats = monthTasks.map {
-            com.phonelock.app.service.SocialGroupSyncClient.ScheduleStat(it.dateKey, it.name, it.status, it.color, it.linkedCalc, it.progressStep)
-        }
-        // "일정표" 탭에 캘린더 오늘 할 일이 아니라 진짜 TimetableScreen과 같은 요일별 목표량 표를
-        // 보여달라는 요청(78차) — TimetableScreen.kt와 동일 필터(이름/디데이 필수)로 draft 업무를 옮긴다.
-        val calcTaskStats = getCalcTasks().filter { it.name.isNotBlank() && it.dday.isNotBlank() }.map {
-            com.phonelock.app.service.SocialGroupSyncClient.CalcTaskStat(
-                it.name, it.unit, it.start, it.dday, it.mon, it.tue, it.wed, it.thu, it.fri, it.sat, it.sun
-            )
-        }
-        // 캘린더 날짜 상세에서 "그 날 얼마나 공부했는지" 보여주려고 같은 달 범위의 공부기록을 날짜별로 합산.
-        val studySecondsByDate = studyLogEntryDao.getInRange(
-            firstOfMonth.minusDays(7).toString(), lastOfMonth.plusDays(7).toString()
-        ).groupBy { it.dateKey }.mapValues { (_, entries) -> entries.sumOf { it.seconds } }
-
-        val localStudying = preferences.timerPhase == "study" && preferences.timerPhaseStartedAt > 0L
-        val remoteStudying = runCatching {
-            com.phonelock.app.service.PomodoroSyncClient.isStudyTimerActive(fbDatabaseUrl, fbApiKey)
-        }.getOrDefault(false)
-        val studyingNow = localStudying || remoteStudying
-        val studyingTaskName = if (localStudying) preferences.timerTaskName else {
-            runCatching { com.phonelock.app.service.PomodoroSyncClient.remoteTaskName(fbDatabaseUrl, fbApiKey) }.getOrDefault("")
-        }
-
-        val share = preferences.groupShareSettings(groupId)
-        val hiddenFromUids = preferences.hiddenFromUidsFor(groupId)
-
-        com.phonelock.app.service.SocialGroupSyncClient.pushMyStats(
-            fbDatabaseUrl, fbApiKey, groupId, displayName,
-            share.shareRoutines, share.shareStudy, share.shareStreak,
-            share.shareSchedule, share.shareStudyingNow,
-            routineStats, studySeconds, studyProgress, streak, routineBestStreak,
-            scheduleStats, calcTaskStats, studySecondsByDate, studyingNow, studyingTaskName,
-            hiddenFromUids
-        )
-    }
-
-    /** "모임" 공유 설정/사용자별 비공개 설정 — 전부 로컬 SharedPreferences, UI는 이 창구로만 접근한다. */
-    fun groupShareSettings(groupId: String) = preferences.groupShareSettings(groupId)
-    fun setGroupShareSettings(groupId: String, settings: AppPreferences.GroupShareSettings) =
-        preferences.setGroupShareSettings(groupId, settings)
-
-    /** 특정 상대에게 내 정보 전체를 숨길지 — 다음 [pushMySocialStats] 때 RTDB에 반영된다. */
-    fun hiddenFromUidsFor(groupId: String) = preferences.hiddenFromUidsFor(groupId)
-    fun setHiddenFromUid(groupId: String, targetUid: String, hidden: Boolean) =
-        preferences.setHiddenFromUid(groupId, targetUid, hidden)
-
-    /** 특정 상대의 정보를 내 화면에서만 안 보이게 할지 — 순수 로컬 표시 설정, 서버엔 안 올라간다. */
-    fun hiddenPeerUidsFor(groupId: String) = preferences.hiddenPeerUidsFor(groupId)
-    fun setHiddenPeerUid(groupId: String, targetUid: String, hidden: Boolean) =
-        preferences.setHiddenPeerUid(groupId, targetUid, hidden)
-
-    /** "무작위 알림"(77차, 81차 정정) — 이 모임에서 처지는 멤버가 있을 때 나에게 알림으로 알려줄지, 순수 로컬 설정. */
-    fun randomNudgeEnabledFor(groupId: String) = preferences.randomNudgeEnabledFor(groupId)
-    fun setRandomNudgeEnabled(groupId: String, enabled: Boolean) =
-        preferences.setRandomNudgeEnabled(groupId, enabled)
-
-    suspend fun sendSocialGroupNudge(groupId: String, targetUid: String) {
-        val fromName = com.phonelock.app.service.AccountSyncClient.myDisplayName(fbDatabaseUrl, fbApiKey)
-        com.phonelock.app.service.SocialGroupSyncClient.sendNudge(fbDatabaseUrl, fbApiKey, groupId, targetUid, fromName)
-    }
-
-    /** 내가 속한 모든 모임에서 나에게 온 새 넛지를 읽는다(마지막 확인 시각은 [AppPreferences]에 있음). */
-    suspend fun readIncomingSocialGroupNudges(): List<com.phonelock.app.service.SocialGroupSyncClient.NudgeInfo> {
-        val groupIds = readMySocialGroupIds()
-        return com.phonelock.app.service.SocialGroupSyncClient.readIncomingNudges(
-            fbDatabaseUrl, fbApiKey, groupIds, preferences.nudgeLastSeenByGroup()
-        )
-    }
-
-    fun markSocialGroupNudgeSeen(groupId: String, atMillis: Long) {
-        preferences.setNudgeLastSeen(groupId, atMillis)
-    }
-
-    /** 무전(강제 음성 메시지) 보내기. */
-    suspend fun sendVoiceMessage(groupId: String, targetUid: String, audioBase64: String, durationMs: Long): Result<Unit> {
-        val fromName = com.phonelock.app.service.AccountSyncClient.myDisplayName(fbDatabaseUrl, fbApiKey)
-        return com.phonelock.app.service.SocialGroupSyncClient.sendVoiceMessage(
-            fbDatabaseUrl, fbApiKey, groupId, targetUid, fromName, audioBase64, durationMs
-        )
-    }
-
-    /** 무전(텍스트 메시지, 상대 기기에서 TTS로 읽어줌) 보내기. */
-    suspend fun sendTextMessage(groupId: String, targetUid: String, textMessage: String): Result<Unit> {
-        val fromName = com.phonelock.app.service.AccountSyncClient.myDisplayName(fbDatabaseUrl, fbApiKey)
-        return com.phonelock.app.service.SocialGroupSyncClient.sendTextMessage(
-            fbDatabaseUrl, fbApiKey, groupId, targetUid, fromName, textMessage
-        )
-    }
-
-    /** 이 모임에서 내가 무전기를 어떻게 받을지(모임마다 다르게 설정 가능). */
-    suspend fun readGroupWalkieSettings(groupId: String): com.phonelock.app.service.SocialGroupSyncClient.GroupWalkieSettings {
-        return com.phonelock.app.service.SocialGroupSyncClient.readGroupWalkieSettings(fbDatabaseUrl, fbApiKey, groupId)
-    }
-
-    suspend fun writeGroupWalkieSettings(groupId: String, settings: com.phonelock.app.service.SocialGroupSyncClient.GroupWalkieSettings): Result<Unit> {
-        return com.phonelock.app.service.SocialGroupSyncClient.writeGroupWalkieSettings(fbDatabaseUrl, fbApiKey, groupId, settings)
-    }
-
-    /** 내가 속한 모든 모임에서 나에게 온 무전 메시지 전부(재생/확인 후 [deleteVoiceMessage]로 지울 것). */
-    suspend fun readIncomingVoiceMessages(): List<com.phonelock.app.service.SocialGroupSyncClient.VoiceMessageInfo> {
-        val groupIds = readMySocialGroupIds()
-        return com.phonelock.app.service.SocialGroupSyncClient.readIncomingVoiceMessages(fbDatabaseUrl, fbApiKey, groupIds)
-    }
-
-    /** 실패 시 실제 원인(상태코드/응답 본문)이 담긴 예외를 돌려준다 — 자동재생 후 삭제처럼 "지워진 게
-     *  확인돼야 재생해도 된다"는 호출부도 `result.isSuccess`로 판단할 수 있다. */
-    suspend fun deleteVoiceMessage(groupId: String, msgId: String): Result<Unit> {
-        return com.phonelock.app.service.SocialGroupSyncClient.deleteVoiceMessage(fbDatabaseUrl, fbApiKey, groupId, msgId)
-    }
-
-    suspend fun markVoiceMessageListened(groupId: String, msg: com.phonelock.app.service.SocialGroupSyncClient.VoiceMessageInfo) {
-        com.phonelock.app.service.SocialGroupSyncClient.markVoiceMessageListened(fbDatabaseUrl, fbApiKey, groupId, msg)
-    }
+    // "모임"(소셜 그룹)/캘린더/계산기/루틴 관련 함수는 각각 PhoneLockRepository.Social.kt/
+    // PhoneLockRepository.Calendar.kt/PhoneLockRepository.Calc.kt/PhoneLockRepository.Routine.kt로
+    // 분리됨(82차, DECISIONS.md 참고). 이 파일엔 그룹/멤버/사이트/실행확인/공부타이머/전체 백업처럼
+    // 여러 섹션에 걸친(cross-cutting) 함수만 남아있다.
 }

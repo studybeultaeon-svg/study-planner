@@ -51,6 +51,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.phonelock.app.data.AppGroup
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.service.LockEvaluator
+import com.phonelock.shared.PERSUASION_MESSAGES
 import com.phonelock.app.ui.components.DurationFieldsRow
 import com.phonelock.app.ui.components.PersuasionStepper
 import com.phonelock.app.ui.components.SectionCard
@@ -110,6 +111,7 @@ fun GroupEditScreen(
 
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
+    var selfMessageText by remember { mutableStateOf("") }
     var scheduleEnabled by remember { mutableStateOf(false) }
     var dailyLimitEnabled by remember { mutableStateOf(false) }
     var dailyLimitHoursText by remember { mutableStateOf("") }
@@ -208,6 +210,7 @@ fun GroupEditScreen(
             repository.getGroup(groupId)?.let { group ->
                 name = group.name
                 description = group.description
+                selfMessageText = group.selfMessageText
                 scheduleEnabled = group.scheduleEnabled
                 dailyLimitEnabled = group.dailyLimitSeconds != null
                 val (dh, dm, ds) = secondsToHmsText(group.dailyLimitSeconds ?: 0)
@@ -332,6 +335,7 @@ fun GroupEditScreen(
                                         id = groupId ?: 0,
                                         name = name.ifBlank { "이름 없는 그룹" },
                                         description = description,
+                                        selfMessageText = selfMessageText,
                                         dailyLimitSeconds = if (dailyLimitEnabled) {
                                             hmsTextToSeconds(dailyLimitHoursText, dailyLimitMinutesText, dailyLimitSecondsText)
                                         } else {
@@ -451,6 +455,14 @@ fun GroupEditScreen(
                         value = description,
                         onValueChange = { description = it },
                         label = { Text("설명 (선택, \"모임\"에 이 그룹 이름과 함께 표시됩니다)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                    OutlinedTextField(
+                        value = selfMessageText,
+                        onValueChange = { selfMessageText = it },
+                        label = { Text("미래의 나에게 (선택, 이 그룹이 잠길 때 문구와 함께 보여줍니다)") },
+                        placeholder = { Text("예: 오늘 밤 11시 이후엔 진짜 그만 봐. 내일 시험이야.") },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
