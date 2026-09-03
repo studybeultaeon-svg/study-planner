@@ -5,14 +5,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.platform.Font
 
 /**
- * 앱 전체 폰트(83차, 사용자 요청). Gothic A1 → Pretendard → 여러 후보 비교 후 **카페24 써라운드**로
- * 정착. "글자가 깨져 보인다"는 지적을 받아 원인을 찾아보니 두 가지였다 — (1) 이 폰트의 OS/2
- * usWeightClass가 실제로는 700(Bold)인데 [FontWeight.Normal]로 등록해서 요청 굵기와 실제 얼굴이
- * 안 맞았고("볼드 빼봐" 요청을 문자 그대로 처리한 게 오히려 문제였음), (2) `.ttf`(TrueType glyf
- * 힌팅)가 Skia 렌더러와 잘 안 맞아 작은 크기에서 획이 뭉개졌다 — CFF 외곽선을 쓰는 `.otf`로 바꿔서
- * 해결. 이 폰트는 애초에 Bold 한 벌짜리 얼굴이므로 [FontWeight.Bold]로 정확히 등록한다(굵기 자체를
- * 없애는 게 아니라 이 폰트의 정체를 있는 그대로 알려주는 것).
+ * 앱 전체 폰트(84차, 사용자 요청). 카페24 써라운드 → **에이투지체(A2z) SemiBold**로 교체
+ * (noonnu.cc/font_page/1778, OFL, 상업적 사용/재배포 가능). 9단계 굵기 패밀리 중 SemiBold(OS/2
+ * usWeightClass=600) 한 파일만 받아 등록했으므로 [FontWeight.W600]으로 정확히 맞춘다(굵기 불일치 시
+ * Skia가 합성 굵기를 만들어 글자가 깨져 보이는 문제는 카페24 써라운드 적용 때 이미 겪었다 —
+ * [PhoneLockTypography] 참고). `.otf`(CFF 외곽선)로 통일해 이전 폰트와 동일한 렌더링 안정성을 유지한다.
  */
 val AppFontFamily: FontFamily = FontFamily(
-    Font("font/Cafe24Ssurround.otf", FontWeight.Bold)
+    Font("font/A2zSemiBold.otf", FontWeight.W600)
 )

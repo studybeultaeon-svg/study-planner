@@ -21,7 +21,9 @@ private val koreanCollator = java.text.Collator.getInstance(java.util.Locale.KOR
 /** 신규/자동생성 CalendarTask.color에 쓸 하위호환 라벨(안드로이드판과 동일 규칙). */
 private fun legacyColorLabel(passIndex: Int, passTotal: Int): String = when {
     passIndex <= 0 -> "red"
-    passTotal <= 3 && passIndex == 1 -> "yellow"
+    // 85차: 최소 회독 수가 2로 내려가면서 passTotal==2일 때의 index1은 "중간"이 아니라 마지막(초록)이다
+    // — 3단계(정확히 total==3)일 때만 index1을 "yellow"로 본다(안드로이드판과 대칭).
+    passTotal == 3 && passIndex == 1 -> "yellow"
     passIndex >= passTotal - 1 -> "green"
     else -> "pass$passIndex"
 }
@@ -257,12 +259,17 @@ fun Repository.addLinkedCalendarTask(dateKey: String, calcTaskName: String, from
     val unit = calcTask.unit.trim()
     val taskName = "$calcTaskName $from~$to$unit"
     if (data.calendarTasks.any { it.dateKey == dateKey && it.name == taskName }) return@synchronized
+    // 85차: 업무별 "다회독 사용" 토글이 OFF면 캘린더 연동 시 passCount를 무시하고 단회독(1회독)으로만
+    // 만든다(안드로이드판과 대칭) — 자동 다음 회독 생성(multiPassEnabled)도 회독이 1개뿐이면 의미가
+    // 없으므로 함께 끈다.
     data.calendarTasks.add(
         CalendarTask(
             dateKey = dateKey, name = taskName, color = "red", status = null,
             linkedCalc = calcTaskName, progressStep = (to - from + 1).toString(),
-            multiPassEnabled = data.defaultMultiPassEnabled,
-            passIndex = 0, passTotal = calcTask.passCount, passIntervalsCsv = calcTask.passIntervalsCsv
+            multiPassEnabled = calcTask.multiPassUsageEnabled && data.defaultMultiPassEnabled,
+            passIndex = 0,
+            passTotal = if (calcTask.multiPassUsageEnabled) calcTask.passCount else 1,
+            passIntervalsCsv = calcTask.passIntervalsCsv
         )
     )
     sortCalendarDay(dateKey)

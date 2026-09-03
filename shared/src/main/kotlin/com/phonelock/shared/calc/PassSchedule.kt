@@ -1,12 +1,13 @@
 package com.phonelock.shared.calc
 
 /**
- * 다회독(여러 번 반복 학습) 스케줄 계산 — 업무마다 회독 수(3~8)와 회독별 간격(일수)을 다르게
- * 설정할 수 있게 하면서, 색상은 빨강(회독1)→초록(마지막 회독)으로 자연스럽게 그라데이션되도록
- * 계산한다. CalcEngine.jsDow(0=일~6=토)를 그대로 재사용.
+ * 다회독(여러 번 반복 학습) 스케줄 계산 — 업무마다 회독 수(2~8, 85차: 최소 3→2로 완화)와 회독별
+ * 간격(일수)을 다르게 설정할 수 있게 하면서, 색상은 빨강(회독1)→초록(마지막 회독)으로 자연스럽게
+ * 그라데이션되도록 계산한다(2회독이면 중간 앵커 없이 빨강→초록만). CalcEngine.jsDow(0=일~6=토)를
+ * 그대로 재사용.
  */
 object PassSchedule {
-    const val MIN_PASS_COUNT = 3
+    const val MIN_PASS_COUNT = 2
     const val MAX_PASS_COUNT = 8
     const val DEFAULT_PASS_COUNT = 3
     const val DEFAULT_INTERVAL_DAYS = 3

@@ -2,6 +2,10 @@ package com.phonelock.app.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -116,6 +120,7 @@ fun StudyStatsScreen(repository: PhoneLockRepository) {
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val collapsedCalcNames = remember { mutableStateOf(setOf<String>()) }
 
     Column(Modifier.fillMaxSize().padding(Spacing.md).verticalScroll(rememberScrollState())) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -241,43 +246,66 @@ fun StudyStatsScreen(repository: PhoneLockRepository) {
         }
 
         // 82차(§9 "일정표-계산기 진행량 그래프"): 계산기 연동 일정의 최근 30일 목표 대비 실제 완료량.
+        // 85차: 과목(계산기 업무)별 상세 통계를 한 번에 접었다 펼 수 있게 요청 — 계산기 입력 탭의
+        // "모두 펴기/모두 접기"와 같은 패턴(collapsedKeys Set), 여기선 id 대신 calcName으로 키를 잡는다.
         val linkedByTaskAndDate = allTasks.filter { it.linkedCalc != null }.groupBy { it.linkedCalc!! }
         if (linkedByTaskAndDate.isNotEmpty()) {
             Spacer(Modifier.height(Spacing.md))
-            Text("계산기 연동 진행량 (최근 30일)", style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("계산기 연동 진행량 (최근 30일)", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    androidx.compose.material3.TextButton(onClick = { collapsedCalcNames.value = emptySet() }) { Text("모두 펴기") }
+                    androidx.compose.material3.TextButton(onClick = { collapsedCalcNames.value = linkedByTaskAndDate.keys.toSet() }) { Text("모두 접기") }
+                }
+            }
             Spacer(Modifier.height(Spacing.sm))
             linkedByTaskAndDate.forEach { (calcName, tasks) ->
-                val byDateForTask = tasks.groupBy { it.dateKey }
-                val series = (0 until 30).map { i ->
-                    val d = today.minusDays((29 - i).toLong())
-                    val dayTasks = byDateForTask[d.toString()] ?: emptyList()
-                    val target = dayTasks.sumOf { it.progressStep?.toDoubleOrNull() ?: 0.0 }
-                    val done = dayTasks.filter { it.status == "O" }.sumOf { it.progressStep?.toDoubleOrNull() ?: 0.0 }
-                    d to (target to done)
-                }
-                val maxAmount = maxOf(1.0, series.maxOf { it.second.first })
-                Text(calcName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(4.dp))
+                val collapsed = calcName in collapsedCalcNames.value
                 Row(
-                    Modifier.fillMaxWidth().height(70.dp).horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    Modifier.fillMaxWidth().clickable {
+                        collapsedCalcNames.value = if (collapsed) collapsedCalcNames.value - calcName else collapsedCalcNames.value + calcName
+                    },
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    series.forEach { (d, pair) ->
-                        val (target, done) = pair
-                        val achieved = target > 0 && done >= target
-                        val barColor = when {
-                            target <= 0 -> MaterialTheme.colorScheme.outlineVariant
-                            achieved -> Color(0xFF34D399)
-                            done > 0 -> Color(0xFFFBBF24)
-                            else -> Color(0xFFF87171)
-                        }
-                        Column(Modifier.width(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Column(Modifier.fillMaxWidth().height(50.dp), verticalArrangement = Arrangement.Bottom) {
-                                val heightPct = (target / maxAmount).toFloat().coerceIn(if (target > 0) 0.08f else 0.03f, 1f)
-                                Row(Modifier.fillMaxWidth().height((50 * heightPct).dp).background(barColor)) {}
+                    com.phonelock.app.ui.components.IconChip(
+                        if (collapsed) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown,
+                        onClick = { collapsedCalcNames.value = if (collapsed) collapsedCalcNames.value - calcName else collapsedCalcNames.value + calcName }
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(calcName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                }
+                if (!collapsed) {
+                    val byDateForTask = tasks.groupBy { it.dateKey }
+                    val series = (0 until 30).map { i ->
+                        val d = today.minusDays((29 - i).toLong())
+                        val dayTasks = byDateForTask[d.toString()] ?: emptyList()
+                        val target = dayTasks.sumOf { it.progressStep?.toDoubleOrNull() ?: 0.0 }
+                        val done = dayTasks.filter { it.status == "O" }.sumOf { it.progressStep?.toDoubleOrNull() ?: 0.0 }
+                        d to (target to done)
+                    }
+                    val maxAmount = maxOf(1.0, series.maxOf { it.second.first })
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        Modifier.fillMaxWidth().height(70.dp).horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        series.forEach { (d, pair) ->
+                            val (target, done) = pair
+                            val achieved = target > 0 && done >= target
+                            val barColor = when {
+                                target <= 0 -> MaterialTheme.colorScheme.outlineVariant
+                                achieved -> Color(0xFF34D399)
+                                done > 0 -> Color(0xFFFBBF24)
+                                else -> Color(0xFFF87171)
                             }
-                            Spacer(Modifier.height(2.dp))
-                            Text("${d.dayOfMonth}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Column(Modifier.width(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Column(Modifier.fillMaxWidth().height(50.dp), verticalArrangement = Arrangement.Bottom) {
+                                    val heightPct = (target / maxAmount).toFloat().coerceIn(if (target > 0) 0.08f else 0.03f, 1f)
+                                    Row(Modifier.fillMaxWidth().height((50 * heightPct).dp).background(barColor)) {}
+                                }
+                                Spacer(Modifier.height(2.dp))
+                                Text("${d.dayOfMonth}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }

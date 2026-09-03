@@ -71,7 +71,9 @@ import com.phonelock.app.ui.theme.Spacing
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-private val DAY_ORDER = listOf(0, 1, 2, 3, 4, 5, 6)
+// 85차(사용자 요청): 일요일이 맨 앞이던 순서를 월~일로 변경 — dayValues 맵 키(0=일~6=토, CalcEngine.jsDow와
+// 동일)는 그대로 두고, 화면에 훑는 순서만 이 리스트로 바꾼다.
+private val DAY_ORDER = listOf(1, 2, 3, 4, 5, 6, 0)
 private val DAY_LABELS = arrayOf("일", "월", "화", "수", "목", "금", "토")
 
 /**
@@ -227,6 +229,7 @@ private fun CalcTaskCard(
     var passIntervals by remember(task.id) {
         mutableStateOf(com.phonelock.shared.calc.PassSchedule.parsePassIntervals(task.passIntervalsCsv, task.passCount))
     }
+    var multiPassUsageEnabled by remember(task.id) { mutableStateOf(task.multiPassUsageEnabled) }
 
     fun persist() {
         val d = dayValues.value
@@ -235,7 +238,8 @@ private fun CalcTaskCard(
                 name = name, qty = qty, unit = unit, progress = progress, start = start, dday = dday,
                 mon = d[1] ?: "", tue = d[2] ?: "", wed = d[3] ?: "", thu = d[4] ?: "", fri = d[5] ?: "", sat = d[6] ?: "", sun = d[0] ?: "",
                 holidaysCsv = CalcEngine.parseHolidaysInput(holidaysText).joinToString(","),
-                passCount = passCount, passIntervalsCsv = passIntervals.joinToString(",")
+                passCount = passCount, passIntervalsCsv = passIntervals.joinToString(","),
+                multiPassUsageEnabled = multiPassUsageEnabled
             )
         )
     }
@@ -294,15 +298,19 @@ private fun CalcTaskCard(
             Spacer(Modifier.height(Spacing.sm))
 
             CalcFieldGroupHeader("📆", "요일별 목표")
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // 85차: 요일별 목표도 화살표로 조절 가능하게 요청, 한 줄에 7칸 모두 들어가야 한다는 요청도
+            // 함께 받아 FlowRow(줄바꿈) 대신 weight(1f) Row로 되돌렸다 — Row는 절대 줄바꿈하지 않고
+            // 대신 칸을 균등하게 눌러 좁히므로 "한 줄에 다 들어간다"는 요구를 구조적으로 보장한다.
+            // 화살표 칩 자체도 더 작게(16dp/11dp) 줄여 좁은 칸에서도 숫자가 가려지지 않게 했다.
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 DAY_ORDER.forEach { d ->
-                    // 7칸으로 나뉘어 폭이 아주 좁아 화살표를 넣으면 숫자 자체가 안 보인다(83차 발견) — 여기만 화살표 생략.
                     com.phonelock.app.ui.components.NumberStepperField(
                         value = dayValues.value[d] ?: "",
                         onValueChange = { v -> dayValues.value = dayValues.value.toMutableMap().apply { put(d, v) }; persist() },
                         label = DAY_LABELS[d],
-                        showStepper = false,
                         centerValue = true,
+                        stepperSize = 16.dp,
+                        stepperIconSize = 11.dp,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -321,49 +329,69 @@ private fun CalcTaskCard(
             Spacer(Modifier.height(Spacing.sm))
 
             CalcFieldGroupHeader("🔁", "다회독 설정")
-            Text(
-                "이 업무를 캘린더에 연동할 때 몇 회독으로 만들지",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(Spacing.xs))
-            com.phonelock.app.ui.components.NumberStepperField(
-                value = passCount.toString(),
-                onValueChange = { text ->
-                    val newCount = (text.toIntOrNull() ?: passCount)
-                        .coerceIn(com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT, com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT)
-                    passCount = newCount
-                    passIntervals = com.phonelock.shared.calc.PassSchedule.parsePassIntervals(passIntervals.joinToString(","), newCount)
-                    persist()
-                },
-                label = "회독 수",
-                min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
-                max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
-                modifier = Modifier.width(160.dp)
-            )
-            Spacer(Modifier.height(Spacing.xs))
-            Text("회독별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(2.dp))
-            // 회독 수가 늘어나면(최대 8이면 간격칸 7개) 고정 Row는 화면 폭을 넘어가 찌부러진다(83차 발견) —
-            // FlowRow로 넘치면 자동 줄바꿈, 칸 자체 폭도 줄여서 한 줄에 더 많이 들어가게 함.
-            androidx.compose.foundation.layout.FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-            ) {
-                passIntervals.forEachIndexed { i, days ->
-                    com.phonelock.app.ui.components.NumberStepperField(
-                        value = days.toString(),
-                        onValueChange = { text ->
-                            val newDays = (text.toIntOrNull() ?: days).coerceIn(1, 90)
-                            passIntervals = passIntervals.toMutableList().also { it[i] = newDays }
-                            persist()
-                        },
-                        label = "${i + 1}→${i + 2}회독",
-                        min = 1, max = 90,
-                        centerValue = true,
-                        modifier = Modifier.width(100.dp)
-                    )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "다회독 사용",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                androidx.compose.material3.Switch(
+                    checked = multiPassUsageEnabled,
+                    onCheckedChange = { multiPassUsageEnabled = it; persist() }
+                )
+            }
+            if (multiPassUsageEnabled) {
+                Spacer(Modifier.height(Spacing.xs))
+                Text(
+                    "이 업무를 캘린더에 연동할 때 몇 회독으로 만들지",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.xs))
+                com.phonelock.app.ui.components.NumberStepperField(
+                    value = passCount.toString(),
+                    onValueChange = { text ->
+                        val newCount = (text.toIntOrNull() ?: passCount)
+                            .coerceIn(com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT, com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT)
+                        passCount = newCount
+                        passIntervals = com.phonelock.shared.calc.PassSchedule.parsePassIntervals(passIntervals.joinToString(","), newCount)
+                        persist()
+                    },
+                    label = "회독 수",
+                    min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
+                    max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
+                    modifier = Modifier.width(160.dp)
+                )
+                Spacer(Modifier.height(Spacing.xs))
+                Text("회독별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(2.dp))
+                // 회독 수가 늘어나면(최대 8이면 간격칸 7개) 고정 Row는 화면 폭을 넘어가 찌부러진다(83차 발견) —
+                // FlowRow로 넘치면 자동 줄바꿈, 칸 자체 폭도 줄여서 한 줄에 더 많이 들어가게 함.
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                ) {
+                    passIntervals.forEachIndexed { i, days ->
+                        com.phonelock.app.ui.components.NumberStepperField(
+                            value = days.toString(),
+                            onValueChange = { text ->
+                                val newDays = (text.toIntOrNull() ?: days).coerceIn(1, 90)
+                                passIntervals = passIntervals.toMutableList().also { it[i] = newDays }
+                                persist()
+                            },
+                            label = "${i + 1}→${i + 2}회독",
+                            min = 1, max = 90,
+                            centerValue = true,
+                            modifier = Modifier.width(100.dp)
+                        )
+                    }
                 }
+            } else {
+                Spacer(Modifier.height(Spacing.xs))
+                Text(
+                    "캘린더에 연동하면 1회독(단회독)만 생성됩니다",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             Spacer(Modifier.height(Spacing.xs))
         }

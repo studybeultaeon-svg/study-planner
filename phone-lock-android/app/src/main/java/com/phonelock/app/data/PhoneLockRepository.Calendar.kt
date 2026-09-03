@@ -27,7 +27,9 @@ private val koreanCollator = java.text.Collator.getInstance(java.util.Locale.KOR
  *  "pass{N}"으로 표시용 문자열만 채운다(실제 판정은 passIndex/passTotal 기준). */
 private fun legacyColorLabel(passIndex: Int, passTotal: Int): String = when {
     passIndex <= 0 -> "red"
-    passTotal <= 3 && passIndex == 1 -> "yellow"
+    // 85차: 최소 회독 수가 2로 내려가면서 passTotal==2일 때의 index1은 "중간"이 아니라 마지막(초록)이다
+    // — 3단계(정확히 total==3)일 때만 index1을 "yellow"로 본다(83차 이전엔 최소가 3이라 <=3으로 충분했음).
+    passTotal == 3 && passIndex == 1 -> "yellow"
     passIndex >= passTotal - 1 -> "green"
     else -> "pass$passIndex"
 }
@@ -241,12 +243,16 @@ suspend fun PhoneLockRepository.addLinkedCalendarTask(dateKey: String, calcTaskN
     val existing = calendarTaskDao.getByDate(dateKey)
     if (existing.any { it.name == taskName }) return
     val nextOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
+    // 85차: 업무별 "다회독 사용" 토글이 OFF면 캘린더 연동 시 passCount를 무시하고 단회독(1회독)으로만
+    // 만든다 — 자동 다음 회독 생성(multiPassEnabled)도 회독이 1개뿐이면 의미가 없으므로 함께 끈다.
     calendarTaskDao.insert(
         CalendarTask(
             dateKey = dateKey, name = taskName, color = "red", status = null,
             linkedCalc = calcTaskName, progressStep = (to - from + 1).toString(), sortOrder = nextOrder,
-            multiPassEnabled = preferences.defaultMultiPassEnabled,
-            passIndex = 0, passTotal = calcTask.passCount, passIntervalsCsv = calcTask.passIntervalsCsv
+            multiPassEnabled = calcTask.multiPassUsageEnabled && preferences.defaultMultiPassEnabled,
+            passIndex = 0,
+            passTotal = if (calcTask.multiPassUsageEnabled) calcTask.passCount else 1,
+            passIntervalsCsv = calcTask.passIntervalsCsv
         )
     )
     resortCalendarDay(dateKey)

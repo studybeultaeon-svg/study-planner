@@ -215,7 +215,8 @@ object JsonStore {
                     modifiedAt = c.optString("modifiedAt", ""), modifiedAtTs = c.optLong("modifiedAtTs", 0L),
                     autoGenEnabled = c.optBoolean("autoGenEnabled", false), autoGenBatchSize = c.optInt("autoGenBatchSize", 0),
                     passCount = c.optInt("passCount", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT),
-                    passIntervalsCsv = c.optString("passIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV)
+                    passIntervalsCsv = c.optString("passIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV),
+                    multiPassUsageEnabled = c.optBoolean("multiPassUsageEnabled", true)
                 )
             )
         }
@@ -501,6 +502,7 @@ object JsonStore {
                 put("linkedCalc", c.linkedCalc ?: JSONObject.NULL)
                 put("progressStep", c.progressStep ?: JSONObject.NULL)
                 put("multiPassEnabled", c.multiPassEnabled)
+                put("passIndex", c.passIndex); put("passTotal", c.passTotal); put("passIntervalsCsv", c.passIntervalsCsv)
             })
         }
         json.put("calendarTasks", calendarTasksJson)
@@ -516,6 +518,8 @@ object JsonStore {
                 put("holidays", JSONArray(c.holidays))
                 put("modifiedAt", c.modifiedAt); put("modifiedAtTs", c.modifiedAtTs)
                 put("autoGenEnabled", c.autoGenEnabled); put("autoGenBatchSize", c.autoGenBatchSize)
+                put("passCount", c.passCount); put("passIntervalsCsv", c.passIntervalsCsv)
+                put("multiPassUsageEnabled", c.multiPassUsageEnabled)
             })
         }
         json.put("calcTasks", calcTasksJson)

@@ -274,6 +274,7 @@ fun Repository.calcTaskToJson(t: CalcTask): JSONObject = JSONObject().apply {
     put("modifiedAt", t.modifiedAt); put("modifiedAtTs", t.modifiedAtTs)
     put("autoGenEnabled", t.autoGenEnabled); put("autoGenBatchSize", t.autoGenBatchSize)
     put("passCount", t.passCount); put("passIntervalsCsv", t.passIntervalsCsv)
+    put("multiPassUsageEnabled", t.multiPassUsageEnabled)
 }
 
 fun Repository.calcTaskFromJson(t: JSONObject): CalcTask {
@@ -287,7 +288,8 @@ fun Repository.calcTaskFromJson(t: JSONObject): CalcTask {
         modifiedAt = t.optString("modifiedAt", ""), modifiedAtTs = t.optLong("modifiedAtTs", 0L),
         autoGenEnabled = t.optBoolean("autoGenEnabled", false), autoGenBatchSize = t.optInt("autoGenBatchSize", 0),
         passCount = t.optInt("passCount", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT),
-        passIntervalsCsv = t.optString("passIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV)
+        passIntervalsCsv = t.optString("passIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV),
+        multiPassUsageEnabled = t.optBoolean("multiPassUsageEnabled", true)
     )
 }
 

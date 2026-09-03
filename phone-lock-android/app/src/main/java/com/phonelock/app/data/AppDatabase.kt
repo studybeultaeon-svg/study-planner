@@ -23,7 +23,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // 83차: v34(다회독 상세화) — calc_task에 passCount/passIntervalsCsv, calendar_task에
     // passIndex/passTotal/passIntervalsCsv 추가. 기존 색상(red/yellow/green) 기준으로 passIndex를
     // 역산해 채워 넣어 진행 중이던 회독 상태를 보존한다(MIGRATION_33_34 참고).
-    version = 34,
+    // 85차: v35 — calc_task에 multiPassUsageEnabled(다회독 ON/OFF, 기본 true로 기존 동작 유지) 추가.
+    version = 35,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -93,6 +94,11 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("UPDATE calendar_task SET passIndex = 2 WHERE color = 'green'")
             }
         }
+        private val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE calc_task ADD COLUMN multiPassUsageEnabled INTEGER NOT NULL DEFAULT 1")
+            }
+        }
 
         fun getInstance(context: Context): AppDatabase =
             instance ?: synchronized(this) {
@@ -102,7 +108,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "phone_lock.db"
                 ).addMigrations(
                     MIGRATION_27_28, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
-                    MIGRATION_33_34
+                    MIGRATION_33_34, MIGRATION_34_35
                 )
                     .fallbackToDestructiveMigration().build().also { instance = it }
             }

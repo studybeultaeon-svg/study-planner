@@ -183,7 +183,10 @@ data class CalcTask(
     /** 다회독 상세화(83차) — 이 업무를 캘린더에 연동할 때 몇 회독으로 만들지(3~8). */
     val passCount: Int = com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT,
     /** 회독 간 간격(일수) CSV, 길이 = passCount-1. */
-    val passIntervalsCsv: String = com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV
+    val passIntervalsCsv: String = com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV,
+    /** 다회독 사용 여부(85차, 사용자 요청, 안드로이드판과 대칭) — OFF면 캘린더 연동 시 passCount를
+     *  무시하고 단회독(1회독)만 생성한다. */
+    val multiPassUsageEnabled: Boolean = true
 )
 
 /**

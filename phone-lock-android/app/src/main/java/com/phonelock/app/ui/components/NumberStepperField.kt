@@ -40,7 +40,9 @@ fun NumberStepperField(
     max: Int = Int.MAX_VALUE,
     step: Int = 1,
     showStepper: Boolean = true,
-    centerValue: Boolean = false
+    centerValue: Boolean = false,
+    stepperSize: androidx.compose.ui.unit.Dp = 20.dp,
+    stepperIconSize: androidx.compose.ui.unit.Dp = 14.dp
 ) {
     fun bump(delta: Int) {
         val current = value.toDoubleOrNull()?.toInt() ?: 0
@@ -60,9 +62,9 @@ fun NumberStepperField(
         trailingIcon = if (!showStepper) null else {
             {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    IconChip(Icons.Filled.KeyboardArrowUp, onClick = { bump(step) })
+                    IconChip(Icons.Filled.KeyboardArrowUp, size = stepperSize, iconSize = stepperIconSize, onClick = { bump(step) })
                     Spacer(Modifier.size(3.dp))
-                    IconChip(Icons.Filled.KeyboardArrowDown, onClick = { bump(-step) })
+                    IconChip(Icons.Filled.KeyboardArrowDown, size = stepperSize, iconSize = stepperIconSize, onClick = { bump(-step) })
                 }
             }
         }

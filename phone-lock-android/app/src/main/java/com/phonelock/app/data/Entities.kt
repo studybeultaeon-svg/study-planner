@@ -200,7 +200,10 @@ data class CalcTask(
     /** 다회독 상세화(83차) — 이 업무를 캘린더에 연동할 때 몇 회독으로 만들지(3~8). */
     val passCount: Int = PassSchedule.DEFAULT_PASS_COUNT,
     /** 회독 간 간격(일수) CSV, 길이 = passCount-1. */
-    val passIntervalsCsv: String = PassSchedule.DEFAULT_INTERVALS_CSV
+    val passIntervalsCsv: String = PassSchedule.DEFAULT_INTERVALS_CSV,
+    /** 다회독 사용 여부(85차, 사용자 요청) — OFF면 캘린더 연동 시 passCount를 무시하고 단회독(1회독)만
+     *  생성한다. 기존 데이터는 true가 기본값이라 이전처럼 passCount 그대로 다회독으로 연동된다. */
+    val multiPassUsageEnabled: Boolean = true
 )
 
 /**
