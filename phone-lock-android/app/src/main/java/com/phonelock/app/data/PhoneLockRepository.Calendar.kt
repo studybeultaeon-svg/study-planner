@@ -1,6 +1,7 @@
 package com.phonelock.app.data
 
 import androidx.room.withTransaction
+import com.phonelock.shared.calc.PassSchedule
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import org.json.JSONArray
@@ -15,24 +16,28 @@ import org.json.JSONObject
  * 단위 LWW로 동기화한다.
  */
 
-// 77차: 8단계(51차, 데스크탑판과 대칭)에서 다시 3단계(빨/노/초)로 축소(사용자 요청). 저장된 기존
-// color 값(white/orange/blue/indigo/purple)은 그대로 두되(51차와 같은 전례: "라벨만 바뀐다")
-// 새로 고르거나 자동 생성되는 회독은 이 3색만 쓴다.
-private val CALENDAR_COLOR_ORDER = mapOf(
-    "green" to 0, "yellow" to 1, "red" to 2
-)
-
-/**
- * color -> (다음 회독 color, 기본 간격일수). green(3회독)은 종단이라 매핑 없음. 데스크탑판과 대칭.
- * 사용자 지정값 — 1회독(만든 날)부터 누적 0/3/7일차: red(1회독, 0일)→yellow(2회독, +3일)→
- * green(3회독, 1회독 기준 +7일 = yellow 기준 +4일).
- */
-private val CALENDAR_SCHEDULE = mapOf(
-    "red" to ("yellow" to 3),
-    "yellow" to ("green" to 4)
-)
-
+// 83차(다회독 상세화): 회독 진행은 이제 CalendarTask.passIndex/passTotal/passIntervalsCsv가
+// 원천이다(업무마다 3~8회독 + 회독별 간격을 자유 설정). 과거 3단계(빨/노/초) 고정 스케줄은
+// passTotal==3인 기본 케이스와 동치라 자연히 하위호환된다 — color 문자열은 레거시 코드가 여전히
+// "red"(=passIndex 0) 비교에 쓰므로 표시용 라벨로만 남겨둔다(legacyColorLabel 참고).
 private val koreanCollator = java.text.Collator.getInstance(java.util.Locale.KOREAN)
+
+/** 신규/자동생성 CalendarTask.color에 쓸 하위호환 라벨. passIndex==0은 항상 "red"(기존 코드가 이 값으로
+ *  "1회독 최초 생성"을 판정하므로 반드시 유지), 그 외엔 3단계 기존 이름을 최대한 재사용하고 4단계 이상은
+ *  "pass{N}"으로 표시용 문자열만 채운다(실제 판정은 passIndex/passTotal 기준). */
+private fun legacyColorLabel(passIndex: Int, passTotal: Int): String = when {
+    passIndex <= 0 -> "red"
+    passTotal <= 3 && passIndex == 1 -> "yellow"
+    passIndex >= passTotal - 1 -> "green"
+    else -> "pass$passIndex"
+}
+
+/** Firebase 등 외부에서 온 레거시 데이터(passIndex/passTotal 없음)의 color 문자열로부터 회독 위치를 추론. */
+private fun inferPassIndexFromColor(color: String): Int = when (color) {
+    "yellow" -> 1
+    "green" -> 2
+    else -> 0
+}
 
 var PhoneLockRepository.calendarTs: Long
     get() = preferences.calendarTs
@@ -49,7 +54,7 @@ suspend fun PhoneLockRepository.getAllCalendarTasksOnce(): List<CalendarTask> = 
 
 suspend fun PhoneLockRepository.resortCalendarDay(dateKey: String) {
     val sorted = calendarTaskDao.getByDate(dateKey).sortedWith(
-        compareBy<CalendarTask> { CALENDAR_COLOR_ORDER[it.color] ?: 99 }
+        compareBy<CalendarTask> { it.passTotal - 1 - it.passIndex }
             .thenComparator { a, b -> koreanCollator.compare(a.name, b.name) }
     )
     sorted.forEachIndexed { i, t -> if (t.sortOrder != i) calendarTaskDao.update(t.copy(sortOrder = i)) }
@@ -58,6 +63,7 @@ suspend fun PhoneLockRepository.resortCalendarDay(dateKey: String) {
 suspend fun PhoneLockRepository.addCalendarTask(dateKey: String, name: String) {
     if (name.isBlank()) return
     val nextOrder = (calendarTaskDao.getByDate(dateKey).maxOfOrNull { it.sortOrder } ?: -1) + 1
+    val passTotal = preferences.defaultPassCount
     calendarTaskDao.insert(
         CalendarTask(
             dateKey = dateKey,
@@ -65,7 +71,10 @@ suspend fun PhoneLockRepository.addCalendarTask(dateKey: String, name: String) {
             color = "red",
             status = null,
             sortOrder = nextOrder,
-            multiPassEnabled = preferences.defaultMultiPassEnabled
+            multiPassEnabled = preferences.defaultMultiPassEnabled,
+            passIndex = 0,
+            passTotal = passTotal,
+            passIntervalsCsv = preferences.defaultPassIntervalsCsv
         )
     )
     resortCalendarDay(dateKey)
@@ -80,6 +89,14 @@ suspend fun PhoneLockRepository.renameCalendarTask(task: CalendarTask, newName: 
 
 suspend fun PhoneLockRepository.recolorCalendarTask(task: CalendarTask, newColor: String) {
     calendarTaskDao.update(task.copy(color = newColor))
+    resortCalendarDay(task.dateKey)
+    pushCalendarToFirebase()
+}
+
+/** 회독 수동 선택(83차) — 이 시리즈의 회독 수(passTotal)는 그대로 두고 현재 회독 위치(passIndex)만 직접 지정. */
+suspend fun PhoneLockRepository.setCalendarTaskPassIndex(task: CalendarTask, newIndex: Int) {
+    val clamped = newIndex.coerceIn(0, (task.passTotal - 1).coerceAtLeast(0))
+    calendarTaskDao.update(task.copy(passIndex = clamped, color = legacyColorLabel(clamped, task.passTotal)))
     resortCalendarDay(task.dateKey)
     pushCalendarToFirebase()
 }
@@ -116,25 +133,35 @@ fun PhoneLockRepository.nextScheduleDateKey(dateKey: String, days: Int): String 
 
 suspend fun PhoneLockRepository.applyCalendarAutoSchedule(dateKey: String, task: CalendarTask) {
     if (!task.multiPassEnabled) return
-    val (nextColor, defaultDays) = CALENDAR_SCHEDULE[task.color] ?: return
+    val nextIndex = task.passIndex + 1
+    if (nextIndex >= task.passTotal) return
+    val intervals = PassSchedule.parsePassIntervals(task.passIntervalsCsv, task.passTotal)
+    val defaultDays = intervals.getOrElse(task.passIndex) { PassSchedule.DEFAULT_INTERVAL_DAYS }
     val days = task.nextDays?.takeIf { it >= 0 } ?: defaultDays
     val nKey = nextScheduleDateKey(dateKey, days)
     val existing = calendarTaskDao.getByDate(nKey)
-    val exists = existing.any { it.name == task.name && it.color == nextColor }
+    val exists = existing.any { it.name == task.name && it.passIndex == nextIndex }
     if (!exists) {
         val nextOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
         calendarTaskDao.insert(
-            CalendarTask(dateKey = nKey, name = task.name, color = nextColor, status = null, nextDays = task.nextDays, sortOrder = nextOrder)
+            CalendarTask(
+                dateKey = nKey, name = task.name, color = legacyColorLabel(nextIndex, task.passTotal), status = null,
+                nextDays = task.nextDays, sortOrder = nextOrder,
+                passIndex = nextIndex, passTotal = task.passTotal, passIntervalsCsv = task.passIntervalsCsv
+            )
         )
     }
 }
 
 suspend fun PhoneLockRepository.revertCalendarAutoSchedule(dateKey: String, task: CalendarTask) {
     if (!task.multiPassEnabled) return
-    val (nextColor, defaultDays) = CALENDAR_SCHEDULE[task.color] ?: return
+    val nextIndex = task.passIndex + 1
+    if (nextIndex >= task.passTotal) return
+    val intervals = PassSchedule.parsePassIntervals(task.passIntervalsCsv, task.passTotal)
+    val defaultDays = intervals.getOrElse(task.passIndex) { PassSchedule.DEFAULT_INTERVAL_DAYS }
     val days = task.nextDays?.takeIf { it >= 0 } ?: defaultDays
     val nKey = nextScheduleDateKey(dateKey, days)
-    val target = calendarTaskDao.getByDate(nKey).firstOrNull { it.name == task.name && it.color == nextColor && it.status == null }
+    val target = calendarTaskDao.getByDate(nKey).firstOrNull { it.name == task.name && it.passIndex == nextIndex && it.status == null }
     if (target != null) calendarTaskDao.delete(target)
 }
 
@@ -177,7 +204,6 @@ suspend fun PhoneLockRepository.setCalendarTaskStatus(task: CalendarTask, target
             applyCalendarAutoSchedule(task.dateKey, updated)
             if (updated.linkedCalc != null && updated.color == "red") {
                 adjustLinkedCalcProgress(updated.linkedCalc, linkedProgressAmount(updated))
-                maybeAutoGenerateNextLinkedTask(updated.linkedCalc, updated.dateKey)
             }
         }
         if (targetStatus == "X") applyIncompleteCarryOver(task.dateKey, updated)
@@ -219,29 +245,12 @@ suspend fun PhoneLockRepository.addLinkedCalendarTask(dateKey: String, calcTaskN
         CalendarTask(
             dateKey = dateKey, name = taskName, color = "red", status = null,
             linkedCalc = calcTaskName, progressStep = (to - from + 1).toString(), sortOrder = nextOrder,
-            multiPassEnabled = preferences.defaultMultiPassEnabled
+            multiPassEnabled = preferences.defaultMultiPassEnabled,
+            passIndex = 0, passTotal = calcTask.passCount, passIntervalsCsv = calcTask.passIntervalsCsv
         )
     )
     resortCalendarDay(dateKey)
     pushCalendarToFirebase()
-}
-
-/**
- * 캘린더 일정 자동 생성(82차, 사용자 지정 스펙) — 계산기 업무의 `autoGenEnabled`가 켜져 있으면,
- * 연동 일정을 완료(O)할 때마다 다음날에 다음 배치("이름 N~M단위" 형식, [addLinkedCalendarTask]를
- * 그대로 재사용해 할당량 연동도 자동으로 유지됨)를 자동으로 만든다. 진행량(progress)이 이미
- * [adjustLinkedCalcProgress]로 갱신된 뒤 호출되므로, progress를 그대로 "다음 시작점"으로 쓴다.
- */
-suspend fun PhoneLockRepository.maybeAutoGenerateNextLinkedTask(calcTaskName: String, dateKey: String) {
-    val calcTask = calcTaskDao.getAll().find { it.name == calcTaskName } ?: return
-    if (!calcTask.autoGenEnabled || calcTask.autoGenBatchSize <= 0) return
-    val total = calcTask.qty.toDoubleOrNull() ?: return
-    val done = calcTask.progress.toDoubleOrNull() ?: 0.0
-    if (done >= total) return // 이미 목표 전체를 달성했으면 더 만들 게 없음
-    val from = done.toInt() + 1
-    val to = (from + calcTask.autoGenBatchSize - 1).coerceAtMost(total.toInt())
-    if (from > to) return
-    addLinkedCalendarTask(nextScheduleDateKey(dateKey, 1), calcTaskName, from, to)
 }
 
 /** 그 날짜에 calcTaskName과 연동된, 완료(O) 처리된 일정들의 progressStep 합이 dayQuota 이상이면 달성. */
@@ -302,6 +311,9 @@ fun PhoneLockRepository.calendarTasksToJson(tasks: List<CalendarTask>): JSONObje
                 put("linkedCalc", t.linkedCalc ?: JSONObject.NULL)
                 put("progressStep", t.progressStep ?: JSONObject.NULL)
                 put("multiPassEnabled", t.multiPassEnabled)
+                put("passIndex", t.passIndex)
+                put("passTotal", t.passTotal)
+                put("passIntervalsCsv", t.passIntervalsCsv)
             })
         }
         root.put(dateKey, arr)
@@ -315,17 +327,21 @@ fun PhoneLockRepository.calendarTasksFromJson(root: JSONObject): List<CalendarTa
         val arr = root.optJSONArray(dateKey) ?: JSONArray()
         for (i in 0 until arr.length()) {
             val t = arr.getJSONObject(i)
+            val color = t.optString("color", "white")
             list.add(
                 CalendarTask(
                     dateKey = dateKey,
                     name = t.optString("name", ""),
-                    color = t.optString("color", "white"),
+                    color = color,
                     status = if (t.isNull("status")) null else t.optString("status", null),
                     nextDays = if (t.has("nextDays") && !t.isNull("nextDays")) t.getInt("nextDays") else null,
                     linkedCalc = if (t.isNull("linkedCalc")) null else t.optString("linkedCalc", null),
                     progressStep = if (t.isNull("progressStep")) null else t.optString("progressStep", null),
                     sortOrder = i,
-                    multiPassEnabled = t.optBoolean("multiPassEnabled", false)
+                    multiPassEnabled = t.optBoolean("multiPassEnabled", false),
+                    passIndex = if (t.has("passIndex")) t.optInt("passIndex", 0) else inferPassIndexFromColor(color),
+                    passTotal = t.optInt("passTotal", 3),
+                    passIntervalsCsv = t.optString("passIntervalsCsv", PassSchedule.DEFAULT_INTERVALS_CSV)
                 )
             )
         }

@@ -2,6 +2,7 @@ package com.phonelock.app.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.phonelock.shared.calc.PassSchedule
 
 /**
  * scheduleDaysMask: bit 0 = 월요일 ... bit 6 = 일요일. 기본값 127 = 매일.
@@ -141,8 +142,11 @@ data class StudyLogEntry(
 
 /**
  * 네이티브 캘린더(2단계)의 날짜별 일정 한 건. 웹앱 index.html의 calTasks[dateKey][] 항목을 그대로 이식.
- * color는 51차에 8단계 무지개로 확장됨(white=1회독~purple=8회독, DECISIONS.md 참고). sortOrder는 Room에
- * 배열 순서 개념이 없어 대신 쓰는 정수 순번(같은 dateKey 안에서만 의미 있음).
+ * color는 현재 red/yellow/green 3단계로 축소돼 있음(과거 8단계 무지개 서술은 낡은 기록이었음) — 다회독
+ * 상세화(83차)부터는 passIndex/passTotal/passIntervalsCsv가 실제 회독 진행/색상 렌더링의 원천이고,
+ * color는 passTotal==3인 기본 케이스의 하위호환 라벨로만 계속 쓰인다(레거시 코드가 "red"/"yellow"/
+ * "green" 문자열을 직접 비교하는 곳이 많아 필드 자체는 유지). sortOrder는 Room에 배열 순서 개념이 없어
+ * 대신 쓰는 정수 순번(같은 dateKey 안에서만 의미 있음).
  * linkedCalc/progressStep은 계산기 연동용 필드(51차에 UI 추가) — linkedCalc는 연결된 계산기 업무 이름,
  * progressStep은 이 일정을 완료하면 그 업무 progress에 더해질 양(예: "51~60쪽" → "10").
  */
@@ -158,7 +162,13 @@ data class CalendarTask(
     val progressStep: String? = null,
     val sortOrder: Int = 0,
     /** 완료(O) 시 다음 회독을 자동 생성할지(79차, 사용자 요청) — 기본 off. */
-    val multiPassEnabled: Boolean = false
+    val multiPassEnabled: Boolean = false,
+    /** 이 시리즈에서 0-based 현재 회독 번호(83차, 다회독 상세화). 레거시 데이터는 마이그레이션에서 color 기준으로 채움. */
+    val passIndex: Int = 0,
+    /** 이 시리즈의 총 회독 수(3~8). */
+    val passTotal: Int = 3,
+    /** 회독 간 간격(일수) CSV, 길이 = passTotal-1. 생성 시점 CalcTask/설정 기본값에서 복사되어 다음 회독까지 그대로 이어짐. */
+    val passIntervalsCsv: String = PassSchedule.DEFAULT_INTERVALS_CSV
 )
 
 /**
@@ -186,7 +196,11 @@ data class CalcTask(
     /** 캘린더 일정 자동 생성 on/off(82차, 사용자 지정 스펙) — 켜면 연동 일정을 완료할 때마다 다음 배치를 자동으로 만든다. */
     val autoGenEnabled: Boolean = false,
     /** 자동 생성 배치 크기(예: 10을 넣으면 "51~60쪽"처럼 10단위씩 다음 일정을 만든다). */
-    val autoGenBatchSize: Int = 0
+    val autoGenBatchSize: Int = 0,
+    /** 다회독 상세화(83차) — 이 업무를 캘린더에 연동할 때 몇 회독으로 만들지(3~8). */
+    val passCount: Int = PassSchedule.DEFAULT_PASS_COUNT,
+    /** 회독 간 간격(일수) CSV, 길이 = passCount-1. */
+    val passIntervalsCsv: String = PassSchedule.DEFAULT_INTERVALS_CSV
 )
 
 /**

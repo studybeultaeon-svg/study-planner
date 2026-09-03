@@ -3,6 +3,8 @@ package com.phonelock.app.ui
 import android.content.Intent
 import android.util.Base64
 import android.widget.Toast
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -392,7 +394,15 @@ fun SocialGroupMembersScreen(
                                             // 유예시간(24시간) 동안은 남겨두고, 지나면 다음 조회 때 자동으로 지워진다.
                                             scope.launch { repository.markVoiceMessageListened(msg.groupId, msg) }
                                         }
-                                    ) { Text(if (playingMsgId == msg.msgId) "재생 중" else "▶ 재생") }
+                                    ) {
+                                        if (playingMsgId != msg.msgId) {
+                                            androidx.compose.material3.Icon(
+                                                Icons.Filled.PlayArrow, contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Text(if (playingMsgId == msg.msgId) "재생 중" else "재생")
+                                    }
                                     Spacer(Modifier.width(Spacing.xs))
                                     OutlinedButton(onClick = {
                                         scope.launch {

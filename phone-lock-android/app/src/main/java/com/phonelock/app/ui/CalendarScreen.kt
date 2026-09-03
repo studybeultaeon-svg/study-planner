@@ -3,6 +3,11 @@ package com.phonelock.app.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -55,13 +61,12 @@ import java.time.LocalDate
 
 private val MONTHS_KO = arrayOf("1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월")
 private val WEEKDAYS_KO = arrayOf("일", "월", "화", "수", "목", "금", "토")
-// 77차: 8단계(51차)에서 3단계(빨/노/초)로 축소(사용자 요청, 데스크탑판과 대칭).
-private val COLOR_LABEL = mapOf("red" to "1회독", "yellow" to "2회독", "green" to "3회독")
 
 /**
- * 51차: 4단계(빨주노초)→7단계 무지개(빨주노초파남보)→8단계(사용자 요청, 데스크탑판과 대칭) — 1회독을
- * "하얀색"으로 새로 두고 기존 빨주노초파남보는 2~8회독으로 한 칸씩 밀렸다. white는 완전한 흰색이면
- * 이 앱의 밝은 배경(라이트+그린 테마, 49차)에서 안 보이므로 은은한 회색조로 표현했다.
+ * 51차: 4단계(빨주노초)→7단계 무지개→8단계→77차 3단계(빨/노/초)로 축소를 거쳐, 83차(다회독 상세화)부터는
+ * 업무마다 회독 수(3~8)가 달라질 수 있어 고정 색상표 대신 passIndex/passTotal 기반 빨강→초록 그라데이션
+ * ([com.phonelock.shared.calc.PassSchedule.passColor])을 쓴다. 레거시 color 문자열만 있는 경우를 위한
+ * 폴백만 이 함수에 남겨둔다.
  */
 private fun stageTextColor(stage: String): Color = when (stage) {
     "white" -> Color(0xFF9CA3AF)
@@ -74,6 +79,9 @@ private fun stageTextColor(stage: String): Color = when (stage) {
     "purple" -> Color(0xFFA855F7)
     else -> Color(0xFFAAAAAA)
 }
+
+private fun passColor(task: CalendarTask): Color = Color(com.phonelock.shared.calc.PassSchedule.passColor(task.passIndex, task.passTotal))
+private fun passLabel(task: CalendarTask): String = "${task.passIndex + 1}회독"
 
 private fun dowLabel(date: LocalDate): String = WEEKDAYS_KO[date.dayOfWeek.value % 7]
 
@@ -102,106 +110,157 @@ fun CalendarScreen(repository: PhoneLockRepository) {
         dayRefreshTick++
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.md)) {
-        Text("📅 캘린더", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(Spacing.md))
-
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            OutlinedButton(onClick = { if (month == 0) { month = 11; year-- } else month-- }) { Text("◀ 이전") }
-            Text("${year}년 ${MONTHS_KO[month]}", style = MaterialTheme.typography.titleMedium)
-            OutlinedButton(onClick = { if (month == 11) { month = 0; year++ } else month++ }) { Text("다음 ▶") }
-        }
-        Spacer(Modifier.height(Spacing.sm))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = {
-                scope.launch {
-                    repository.archiveOldCalendarTasks()
-                    dayRefreshTick++
-                }
-            }) { Text("🧹 오래된 일정 정리") }
-        }
-
-        Row(Modifier.fillMaxWidth()) {
-            WEEKDAYS_KO.forEachIndexed { i, d ->
-                val c = when (i) { 0 -> Color(0xFFF87171); 6 -> Color(0xFF6B9FFF); else -> MaterialTheme.colorScheme.onSurface }
-                Text(d, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium, color = c)
-            }
-        }
-
-        val firstOfMonth = LocalDate.of(year, month + 1, 1)
-        val firstDow = firstOfMonth.dayOfWeek.value % 7
-        val daysInMonth = firstOfMonth.lengthOfMonth()
-        val rows = (firstDow + daysInMonth + 6) / 7
-        val today = LocalDate.now()
-        val tasksByDate = monthTasks.groupBy { it.dateKey }
-
-        for (row in 0 until rows) {
-            Row(Modifier.fillMaxWidth()) {
-                for (col in 0 until 7) {
-                    val dayNum = row * 7 + col - firstDow + 1
-                    if (dayNum in 1..daysInMonth) {
-                        val date = LocalDate.of(year, month + 1, dayNum)
-                        val key = date.toString()
-                        val dayTasks = tasksByDate[key].orEmpty()
-                        val isToday = date == today
-                        val isSelected = selectedDate == date
-                        // 웹앱 .day-cell.today는 셀 전체가 아니라 날짜 숫자만 원형 배지로 강조한다.
-                        Box(
-                            Modifier.weight(1f).padding(1.dp).height(56.dp)
-                                .border(
-                                    if (isSelected) 2.dp else 1.dp,
-                                    if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                    MaterialTheme.shapes.small
-                                )
-                                .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent, MaterialTheme.shapes.small)
-                                .clickable { selectedDate = date }
-                                .padding(2.dp)
-                        ) {
-                            Column {
-                                val dayNumColor = when {
-                                    isToday -> MaterialTheme.colorScheme.onPrimary
-                                    date.dayOfWeek == java.time.DayOfWeek.SUNDAY -> Color(0xFFF87171)
-                                    date.dayOfWeek == java.time.DayOfWeek.SATURDAY -> Color(0xFF6B9FFF)
-                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                                Box(
-                                    Modifier.size(18.dp).background(if (isToday) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("$dayNum", style = MaterialTheme.typography.labelSmall, color = dayNumColor, fontWeight = FontWeight.Bold)
-                                }
-                                if (dayTasks.isNotEmpty()) {
-                                    val doneCount = dayTasks.count { it.status == "O" }
-                                    val badgeColor = when {
-                                        doneCount == dayTasks.size -> Color(0xFF34D399)
-                                        doneCount > 0 -> Color(0xFFFBBF24)
-                                        else -> Color(0xFFF87171)
-                                    }
-                                    Text(
-                                        "${dayTasks.size}개",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = badgeColor,
-                                        modifier = Modifier
-                                            .background(badgeColor.copy(alpha = 0.18f), MaterialTheme.shapes.extraSmall)
-                                            .padding(horizontal = 3.dp)
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        Box(Modifier.weight(1f).padding(1.dp).height(56.dp))
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(Spacing.md))
-
+    val dayDetail: @Composable () -> Unit = {
         val date = selectedDate
         if (date == null) {
             Text("날짜를 눌러 그날의 일정을 확인하세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             DayDetailSection(repository = repository, date = date, onChanged = { dayRefreshTick++ })
+        }
+    }
+
+    if (com.phonelock.app.ui.components.isTabletWidth()) {
+        // 83차: 태블릿은 데스크탑 CalendarScreen.kt와 같은 좌(월 그리드)/우(날짜 상세) 분할.
+        Column(Modifier.fillMaxSize().padding(Spacing.md)) {
+            Text("📅 캘린더", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(Spacing.md))
+            com.phonelock.app.ui.components.ResponsiveSplit(
+                modifier = Modifier.weight(1f),
+                left = {
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        CalendarMonthGrid(
+                            year = year, month = month, selectedDate = selectedDate, monthTasks = monthTasks,
+                            onPrevMonth = { if (month == 0) { month = 11; year-- } else month-- },
+                            onNextMonth = { if (month == 11) { month = 0; year++ } else month++ },
+                            onSelectDate = { selectedDate = it },
+                            onArchive = { scope.launch { repository.archiveOldCalendarTasks(); dayRefreshTick++ } }
+                        )
+                    }
+                },
+                right = {
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { dayDetail() }
+                }
+            )
+        }
+        return
+    }
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.md)) {
+        Text("📅 캘린더", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(Spacing.md))
+
+        CalendarMonthGrid(
+            year = year, month = month, selectedDate = selectedDate, monthTasks = monthTasks,
+            onPrevMonth = { if (month == 0) { month = 11; year-- } else month-- },
+            onNextMonth = { if (month == 11) { month = 0; year++ } else month++ },
+            onSelectDate = { selectedDate = it },
+            onArchive = { scope.launch { repository.archiveOldCalendarTasks(); dayRefreshTick++ } }
+        )
+
+        Spacer(Modifier.height(Spacing.md))
+        dayDetail()
+    }
+}
+
+/** 월 이동 헤더 + 오래된 일정 정리 + 요일 헤더 + 날짜 그리드(83차: 태블릿/폰 공용으로 추출). */
+@Composable
+private fun CalendarMonthGrid(
+    year: Int,
+    month: Int,
+    selectedDate: LocalDate?,
+    monthTasks: List<CalendarTask>,
+    onPrevMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onSelectDate: (LocalDate) -> Unit,
+    onArchive: () -> Unit
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        OutlinedButton(onClick = onPrevMonth) {
+            Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text("이전")
+        }
+        Text("${year}년 ${MONTHS_KO[month]}", style = MaterialTheme.typography.titleMedium)
+        OutlinedButton(onClick = onNextMonth) {
+            Text("다음")
+            Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
+        }
+    }
+    Spacer(Modifier.height(Spacing.sm))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        TextButton(onClick = onArchive) { Text("🧹 오래된 일정 정리") }
+    }
+
+    Row(Modifier.fillMaxWidth()) {
+        WEEKDAYS_KO.forEachIndexed { i, d ->
+            val c = when (i) { 0 -> Color(0xFFF87171); 6 -> Color(0xFF6B9FFF); else -> MaterialTheme.colorScheme.onSurface }
+            Text(d, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium, color = c)
+        }
+    }
+
+    val firstOfMonth = LocalDate.of(year, month + 1, 1)
+    val firstDow = firstOfMonth.dayOfWeek.value % 7
+    val daysInMonth = firstOfMonth.lengthOfMonth()
+    val rows = (firstDow + daysInMonth + 6) / 7
+    val today = LocalDate.now()
+    val tasksByDate = monthTasks.groupBy { it.dateKey }
+
+    for (row in 0 until rows) {
+        Row(Modifier.fillMaxWidth()) {
+            for (col in 0 until 7) {
+                val dayNum = row * 7 + col - firstDow + 1
+                if (dayNum in 1..daysInMonth) {
+                    val date = LocalDate.of(year, month + 1, dayNum)
+                    val key = date.toString()
+                    val dayTasks = tasksByDate[key].orEmpty()
+                    val isToday = date == today
+                    val isSelected = selectedDate == date
+                    // 웹앱 .day-cell.today는 셀 전체가 아니라 날짜 숫자만 원형 배지로 강조한다.
+                    Box(
+                        Modifier.weight(1f).padding(1.dp).height(56.dp)
+                            .border(
+                                if (isSelected) 2.dp else 1.dp,
+                                if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                MaterialTheme.shapes.small
+                            )
+                            .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent, MaterialTheme.shapes.small)
+                            .clickable { onSelectDate(date) }
+                            .padding(2.dp)
+                    ) {
+                        Column {
+                            val dayNumColor = when {
+                                isToday -> MaterialTheme.colorScheme.onPrimary
+                                date.dayOfWeek == java.time.DayOfWeek.SUNDAY -> Color(0xFFF87171)
+                                date.dayOfWeek == java.time.DayOfWeek.SATURDAY -> Color(0xFF6B9FFF)
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Box(
+                                Modifier.size(18.dp).background(if (isToday) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("$dayNum", style = MaterialTheme.typography.labelSmall, color = dayNumColor, fontWeight = FontWeight.Bold)
+                            }
+                            if (dayTasks.isNotEmpty()) {
+                                val doneCount = dayTasks.count { it.status == "O" }
+                                val badgeColor = when {
+                                    doneCount == dayTasks.size -> Color(0xFF34D399)
+                                    doneCount > 0 -> Color(0xFFFBBF24)
+                                    else -> Color(0xFFF87171)
+                                }
+                                Text(
+                                    "${dayTasks.size}개",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = badgeColor,
+                                    modifier = Modifier
+                                        .background(badgeColor.copy(alpha = 0.18f), MaterialTheme.shapes.extraSmall)
+                                        .padding(horizontal = 3.dp)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Box(Modifier.weight(1f).padding(1.dp).height(56.dp))
+                }
+            }
         }
     }
 }
@@ -379,16 +438,18 @@ private fun CalendarTaskRow(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column {
-                Text("▲", fontSize = 10.sp, modifier = Modifier.clickable(enabled = !isFirst) {
-                    scope.launch { repository.moveCalendarTaskOrder(task, -1); onChanged() }
-                }.padding(2.dp))
-                Text("▼", fontSize = 10.sp, modifier = Modifier.clickable(enabled = !isLast) {
-                    scope.launch { repository.moveCalendarTaskOrder(task, 1); onChanged() }
-                }.padding(2.dp))
+                com.phonelock.app.ui.components.IconChip(
+                    Icons.Filled.KeyboardArrowUp, enabled = !isFirst,
+                    onClick = { scope.launch { repository.moveCalendarTaskOrder(task, -1); onChanged() } }
+                )
+                com.phonelock.app.ui.components.IconChip(
+                    Icons.Filled.KeyboardArrowDown, enabled = !isLast,
+                    onClick = { scope.launch { repository.moveCalendarTaskOrder(task, 1); onChanged() } }
+                )
             }
             Spacer(Modifier.width(Spacing.xs))
             if (editingName) {
-                Box(Modifier.size(10.dp).background(stageTextColor(task.color), CircleShape))
+                Box(Modifier.size(10.dp).background(passColor(task), CircleShape))
                 Spacer(Modifier.width(Spacing.xs))
                 OutlinedTextField(
                     value = nameText,
@@ -403,10 +464,10 @@ private fun CalendarTaskRow(
                         task.name,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = stageTextColor(task.color)
+                        color = passColor(task)
                     )
                     // 이름 아래 회독 라벨 옆 빈 공간에 이 업무를 실제로 잰 시간을 붙여 보여준다.
-                    val metaLine = COLOR_LABEL[task.color] ?: ""
+                    val metaLine = passLabel(task)
                     val timeLine = if (loggedSeconds != null && loggedSeconds > 0) " · ⏱ ${formatHmsLog(loggedSeconds.toLong())}" else ""
                     Text("$metaLine$timeLine", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -462,22 +523,21 @@ private fun CalendarTaskRow(
         }
 
         if (showColorPicker) {
+            // 83차: 회독 수가 업무마다 다를 수 있으므로(3~8) 고정 3개가 아니라 task.passTotal만큼 보여준다.
             Row(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
                 modifier = Modifier.padding(top = Spacing.xs).horizontalScroll(rememberScrollState())
             ) {
-                listOf(
-                    "green" to "3회독", "yellow" to "2회독", "red" to "1회독"
-                ).forEach { (c, label) ->
-                    val stageColor = stageTextColor(c)
+                (task.passTotal - 1 downTo 0).forEach { idx ->
+                    val stageColor = Color(com.phonelock.shared.calc.PassSchedule.passColor(idx, task.passTotal))
                     OutlinedButton(
                         onClick = {
-                            scope.launch { repository.recolorCalendarTask(task, c); showColorPicker = false; onChanged() }
+                            scope.launch { repository.setCalendarTaskPassIndex(task, idx); showColorPicker = false; onChanged() }
                         },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = stageColor),
                         border = BorderStroke(1.dp, stageColor.copy(alpha = 0.5f))
-                    ) { Text(label, style = MaterialTheme.typography.labelSmall) }
+                    ) { Text("${idx + 1}회독", style = MaterialTheme.typography.labelSmall) }
                 }
             }
         }

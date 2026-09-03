@@ -3,6 +3,11 @@ package com.phonelock.app.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -126,7 +131,7 @@ fun RoutineScreen(repository: PhoneLockRepository) {
                 IconButton(
                     onClick = { weekOffset-- },
                     modifier = Modifier.width(28.dp).semantics { contentDescription = "이전 주" }
-                ) { Text("◀") }
+                ) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null) }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     weekDates.forEachIndexed { i, d ->
                         val selected = d == selectedDate
@@ -154,7 +159,7 @@ fun RoutineScreen(repository: PhoneLockRepository) {
                 IconButton(
                     onClick = { weekOffset++ },
                     modifier = Modifier.width(28.dp).semantics { contentDescription = "다음 주" }
-                ) { Text("▶") }
+                ) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null) }
             }
             Spacer(Modifier.height(Spacing.sm))
         }
@@ -464,17 +469,17 @@ private fun RoutineRow(
             }
             if (onMoveUp != null || onMoveDown != null) {
                 Column {
-                    Text(
-                        "▲", fontSize = 10.sp,
-                        modifier = Modifier.clickable(enabled = onMoveUp != null) { onMoveUp?.invoke() }
-                            .padding(2.dp)
-                            .semantics { contentDescription = "위로 이동" }
+                    com.phonelock.app.ui.components.IconChip(
+                        Icons.Filled.KeyboardArrowUp,
+                        enabled = onMoveUp != null,
+                        contentDescription = "위로 이동",
+                        onClick = { onMoveUp?.invoke() }
                     )
-                    Text(
-                        "▼", fontSize = 10.sp,
-                        modifier = Modifier.clickable(enabled = onMoveDown != null) { onMoveDown?.invoke() }
-                            .padding(2.dp)
-                            .semantics { contentDescription = "아래로 이동" }
+                    com.phonelock.app.ui.components.IconChip(
+                        Icons.Filled.KeyboardArrowDown,
+                        enabled = onMoveDown != null,
+                        contentDescription = "아래로 이동",
+                        onClick = { onMoveDown?.invoke() }
                     )
                 }
             }

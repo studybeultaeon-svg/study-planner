@@ -1,5 +1,6 @@
 package com.phonelock.desktop.data
 
+import com.phonelock.shared.calc.PassSchedule
 import java.time.LocalDate
 import org.json.JSONArray
 import org.json.JSONObject
@@ -12,24 +13,25 @@ import org.json.JSONObject
  * 갖고, 같은 dateKey를 가진 항목들의 리스트 내 상대 순서를 "그 날짜 안에서의 표시 순서"로 취급한다.
  */
 
-// 77차: 8단계(하양~보라, 51차)에서 다시 3단계(빨/노/초)로 축소(사용자 요청). 저장된 기존 color 값은
-// 그대로 두되(51차와 같은 전례: "라벨 매핑만 바뀌어 과거 일정은 다른 회독 번호로 보인다") 새로 고르거나
-// 자동 생성되는 회독은 이 3색만 쓴다. 가장 진행된 단계가 0(정렬 시 위/먼저 보임).
-private val CALENDAR_COLOR_ORDER = mapOf(
-    "green" to 0, "yellow" to 1, "red" to 2
-)
-
-/**
- * color -> (다음 회독 color, 기본 간격일수). green(3회독)은 종단이라 매핑 없음.
- * 사용자 지정값 — 1회독(만든 날)부터 누적 0/3/7일차: red(1회독, 0일)→yellow(2회독, +3일)→
- * green(3회독, 1회독 기준 +7일 = yellow 기준 +4일).
- */
-private val CALENDAR_SCHEDULE = mapOf(
-    "red" to ("yellow" to 3),
-    "yellow" to ("green" to 4)
-)
-
+// 83차(다회독 상세화): 회독 진행은 이제 CalendarTask.passIndex/passTotal/passIntervalsCsv가
+// 원천이다(업무마다 3~8회독 + 회독별 간격을 자유 설정, 안드로이드판과 대칭). 과거 3단계(빨/노/초) 고정
+// 스케줄은 passTotal==3인 기본 케이스와 동치라 자연히 하위호환된다.
 private val koreanCollator = java.text.Collator.getInstance(java.util.Locale.KOREAN)
+
+/** 신규/자동생성 CalendarTask.color에 쓸 하위호환 라벨(안드로이드판과 동일 규칙). */
+private fun legacyColorLabel(passIndex: Int, passTotal: Int): String = when {
+    passIndex <= 0 -> "red"
+    passTotal <= 3 && passIndex == 1 -> "yellow"
+    passIndex >= passTotal - 1 -> "green"
+    else -> "pass$passIndex"
+}
+
+/** Firebase 등 레거시 데이터(passIndex/passTotal 없음)의 color 문자열로부터 회독 위치를 추론. */
+internal fun inferPassIndexFromColor(color: String): Int = when (color) {
+    "yellow" -> 1
+    "green" -> 2
+    else -> 0
+}
 
 fun Repository.getCalendarTasks(dateKey: String): List<CalendarTask> = synchronized(lock) {
     data.calendarTasks.filter { it.dateKey == dateKey }
@@ -50,7 +52,7 @@ fun Repository.sortCalendarDay(dateKey: String) {
     val indices = dayGlobalIndices(dateKey)
     if (indices.size < 2) return
     val sorted = indices.map { data.calendarTasks[it] }.sortedWith(
-        compareBy<CalendarTask> { CALENDAR_COLOR_ORDER[it.color] ?: 99 }
+        compareBy<CalendarTask> { it.passTotal - 1 - it.passIndex }
             .thenComparator { a, b -> koreanCollator.compare(a.name, b.name) }
     )
     indices.forEachIndexed { i, globalIdx -> data.calendarTasks[globalIdx] = sorted[i] }
@@ -59,7 +61,11 @@ fun Repository.sortCalendarDay(dateKey: String) {
 fun Repository.addCalendarTask(dateKey: String, name: String) = synchronized(lock) {
     if (name.isBlank()) return@synchronized
     data.calendarTasks.add(
-        CalendarTask(dateKey = dateKey, name = name.trim(), color = "red", status = null, multiPassEnabled = data.defaultMultiPassEnabled)
+        CalendarTask(
+            dateKey = dateKey, name = name.trim(), color = "red", status = null,
+            multiPassEnabled = data.defaultMultiPassEnabled,
+            passIndex = 0, passTotal = data.defaultPassCount, passIntervalsCsv = data.defaultPassIntervalsCsv
+        )
     )
     sortCalendarDay(dateKey)
     persist()
@@ -77,6 +83,17 @@ fun Repository.renameCalendarTask(dateKey: String, ordinal: Int, newName: String
 fun Repository.recolorCalendarTask(dateKey: String, ordinal: Int, newColor: String) = synchronized(lock) {
     val idx = dayGlobalIndices(dateKey).getOrNull(ordinal) ?: return@synchronized
     data.calendarTasks[idx] = data.calendarTasks[idx].copy(color = newColor)
+    sortCalendarDay(dateKey)
+    persist()
+    pushCalendarToFirebase()
+}
+
+/** 회독 수동 선택(83차) — 이 시리즈의 회독 수(passTotal)는 그대로 두고 현재 회독 위치(passIndex)만 직접 지정. */
+fun Repository.setCalendarTaskPassIndex(dateKey: String, ordinal: Int, newIndex: Int) = synchronized(lock) {
+    val idx = dayGlobalIndices(dateKey).getOrNull(ordinal) ?: return@synchronized
+    val task = data.calendarTasks[idx]
+    val clamped = newIndex.coerceIn(0, (task.passTotal - 1).coerceAtLeast(0))
+    data.calendarTasks[idx] = task.copy(passIndex = clamped, color = legacyColorLabel(clamped, task.passTotal))
     sortCalendarDay(dateKey)
     persist()
     pushCalendarToFirebase()
@@ -121,23 +138,34 @@ fun Repository.setCalendarTaskMultiPass(dateKey: String, ordinal: Int, enabled: 
 
 fun Repository.applyCalendarAutoSchedule(dateKey: String, task: CalendarTask) {
     if (!task.multiPassEnabled) return
-    val (nextColor, defaultDays) = CALENDAR_SCHEDULE[task.color] ?: return
+    val nextIndex = task.passIndex + 1
+    if (nextIndex >= task.passTotal) return
+    val intervals = PassSchedule.parsePassIntervals(task.passIntervalsCsv, task.passTotal)
+    val defaultDays = intervals.getOrElse(task.passIndex) { PassSchedule.DEFAULT_INTERVAL_DAYS }
     val days = task.nextDays?.takeIf { it >= 0 } ?: defaultDays
     val nKey = nextScheduleDateKey(dateKey, days)
-    val exists = data.calendarTasks.any { it.dateKey == nKey && it.name == task.name && it.color == nextColor }
+    val exists = data.calendarTasks.any { it.dateKey == nKey && it.name == task.name && it.passIndex == nextIndex }
     if (!exists) {
-        data.calendarTasks.add(CalendarTask(dateKey = nKey, name = task.name, color = nextColor, status = null, nextDays = task.nextDays))
+        data.calendarTasks.add(
+            CalendarTask(
+                dateKey = nKey, name = task.name, color = legacyColorLabel(nextIndex, task.passTotal), status = null,
+                nextDays = task.nextDays, passIndex = nextIndex, passTotal = task.passTotal, passIntervalsCsv = task.passIntervalsCsv
+            )
+        )
         sortCalendarDay(nKey)
     }
 }
 
 fun Repository.revertCalendarAutoSchedule(dateKey: String, task: CalendarTask) {
     if (!task.multiPassEnabled) return
-    val (nextColor, defaultDays) = CALENDAR_SCHEDULE[task.color] ?: return
+    val nextIndex = task.passIndex + 1
+    if (nextIndex >= task.passTotal) return
+    val intervals = PassSchedule.parsePassIntervals(task.passIntervalsCsv, task.passTotal)
+    val defaultDays = intervals.getOrElse(task.passIndex) { PassSchedule.DEFAULT_INTERVAL_DAYS }
     val days = task.nextDays?.takeIf { it >= 0 } ?: defaultDays
     val nKey = nextScheduleDateKey(dateKey, days)
     val removeIdx = data.calendarTasks.indexOfFirst {
-        it.dateKey == nKey && it.name == task.name && it.color == nextColor && it.status == null
+        it.dateKey == nKey && it.name == task.name && it.passIndex == nextIndex && it.status == null
     }
     if (removeIdx >= 0) data.calendarTasks.removeAt(removeIdx)
 }
@@ -184,7 +212,6 @@ fun Repository.setCalendarTaskStatus(dateKey: String, ordinal: Int, targetStatus
             applyCalendarAutoSchedule(dateKey, updated)
             if (updated.linkedCalc != null && updated.color == "red") {
                 adjustLinkedCalcProgress(updated.linkedCalc, linkedProgressAmount(updated))
-                maybeAutoGenerateNextLinkedTask(updated.linkedCalc, dateKey)
             }
         }
         if (targetStatus == "X") applyIncompleteCarryOver(dateKey, updated)
@@ -234,29 +261,13 @@ fun Repository.addLinkedCalendarTask(dateKey: String, calcTaskName: String, from
         CalendarTask(
             dateKey = dateKey, name = taskName, color = "red", status = null,
             linkedCalc = calcTaskName, progressStep = (to - from + 1).toString(),
-            multiPassEnabled = data.defaultMultiPassEnabled
+            multiPassEnabled = data.defaultMultiPassEnabled,
+            passIndex = 0, passTotal = calcTask.passCount, passIntervalsCsv = calcTask.passIntervalsCsv
         )
     )
     sortCalendarDay(dateKey)
     persist()
     pushCalendarToFirebase()
-}
-
-/**
- * 캘린더 일정 자동 생성(82차, 사용자 지정 스펙, 안드로이드판과 대칭) — 계산기 업무의 `autoGenEnabled`가
- * 켜져 있으면, 연동 일정을 완료(O)할 때마다 다음날에 다음 배치("이름 N~M단위" 형식, [addLinkedCalendarTask]를
- * 그대로 재사용해 할당량 연동도 자동으로 유지됨)를 자동으로 만든다.
- */
-fun Repository.maybeAutoGenerateNextLinkedTask(calcTaskName: String, dateKey: String) {
-    val calcTask = data.calcTasks.find { it.name == calcTaskName } ?: return
-    if (!calcTask.autoGenEnabled || calcTask.autoGenBatchSize <= 0) return
-    val total = calcTask.qty.toDoubleOrNull() ?: return
-    val done = calcTask.progress.toDoubleOrNull() ?: 0.0
-    if (done >= total) return
-    val from = done.toInt() + 1
-    val to = (from + calcTask.autoGenBatchSize - 1).coerceAtMost(total.toInt())
-    if (from > to) return
-    addLinkedCalendarTask(nextScheduleDateKey(dateKey, 1), calcTaskName, from, to)
 }
 
 /**
@@ -355,6 +366,9 @@ fun Repository.calendarTasksToJson(): JSONObject {
                 put("linkedCalc", t.linkedCalc ?: JSONObject.NULL)
                 put("progressStep", t.progressStep ?: JSONObject.NULL)
                 put("multiPassEnabled", t.multiPassEnabled)
+                put("passIndex", t.passIndex)
+                put("passTotal", t.passTotal)
+                put("passIntervalsCsv", t.passIntervalsCsv)
             })
         }
         root.put(dateKey, arr)
@@ -368,16 +382,20 @@ fun Repository.calendarTasksFromJson(root: JSONObject): MutableList<CalendarTask
         val arr = root.optJSONArray(dateKey) ?: JSONArray()
         for (i in 0 until arr.length()) {
             val t = arr.getJSONObject(i)
+            val color = t.optString("color", "white")
             list.add(
                 CalendarTask(
                     dateKey = dateKey,
                     name = t.optString("name", ""),
-                    color = t.optString("color", "white"),
+                    color = color,
                     status = if (t.isNull("status")) null else t.optString("status", null),
                     nextDays = if (t.has("nextDays") && !t.isNull("nextDays")) t.getInt("nextDays") else null,
                     linkedCalc = if (t.isNull("linkedCalc")) null else t.optString("linkedCalc", null),
                     progressStep = if (t.isNull("progressStep")) null else t.optString("progressStep", null),
-                    multiPassEnabled = t.optBoolean("multiPassEnabled", false)
+                    multiPassEnabled = t.optBoolean("multiPassEnabled", false),
+                    passIndex = if (t.has("passIndex")) t.optInt("passIndex", 0) else inferPassIndexFromColor(color),
+                    passTotal = t.optInt("passTotal", 3),
+                    passIntervalsCsv = t.optString("passIntervalsCsv", PassSchedule.DEFAULT_INTERVALS_CSV)
                 )
             )
         }

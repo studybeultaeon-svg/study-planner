@@ -3,6 +3,11 @@ package com.phonelock.desktop.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -114,7 +119,7 @@ fun RoutineScreen(repository: Repository) {
             val sunday = currentSunday.plusWeeks(weekOffset.toLong())
             val weekDates = (0..6).map { sunday.plusDays(it.toLong()) }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                IconButton(onClick = { weekOffset-- }) { Text("◀") }
+                IconButton(onClick = { weekOffset-- }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전 주") }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     weekDates.forEachIndexed { i, d ->
                         FilterChip(
@@ -129,7 +134,7 @@ fun RoutineScreen(repository: Repository) {
                         )
                     }
                 }
-                IconButton(onClick = { weekOffset++ }) { Text("▶") }
+                IconButton(onClick = { weekOffset++ }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음 주") }
             }
             Spacer(Modifier.height(Spacing.sm))
         }
@@ -439,13 +444,15 @@ private fun RoutineRow(
             }
             if (onMoveUp != null || onMoveDown != null) {
                 Column {
-                    Text(
-                        "▲", fontSize = 10.sp,
-                        modifier = Modifier.clickable(enabled = onMoveUp != null) { onMoveUp?.invoke() }.padding(2.dp)
+                    com.phonelock.desktop.ui.components.IconChip(
+                        Icons.Filled.KeyboardArrowUp,
+                        enabled = onMoveUp != null,
+                        onClick = { onMoveUp?.invoke() }
                     )
-                    Text(
-                        "▼", fontSize = 10.sp,
-                        modifier = Modifier.clickable(enabled = onMoveDown != null) { onMoveDown?.invoke() }.padding(2.dp)
+                    com.phonelock.desktop.ui.components.IconChip(
+                        Icons.Filled.KeyboardArrowDown,
+                        enabled = onMoveDown != null,
+                        onClick = { onMoveDown?.invoke() }
                     )
                 }
             }

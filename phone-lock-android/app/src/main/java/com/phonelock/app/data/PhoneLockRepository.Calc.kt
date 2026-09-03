@@ -311,6 +311,7 @@ fun PhoneLockRepository.calcTaskToJson(t: CalcTask): JSONObject = JSONObject().a
     put("holidays", JSONArray(decodeHolidays(t.holidaysCsv)))
     put("modifiedAt", t.modifiedAt); put("modifiedAtTs", t.modifiedAtTs)
     put("autoGenEnabled", t.autoGenEnabled); put("autoGenBatchSize", t.autoGenBatchSize)
+    put("passCount", t.passCount); put("passIntervalsCsv", t.passIntervalsCsv)
 }
 
 fun PhoneLockRepository.calcTaskFromJson(t: JSONObject, order: Int): CalcTask {
@@ -322,7 +323,9 @@ fun PhoneLockRepository.calcTaskFromJson(t: JSONObject, order: Int): CalcTask {
         thu = t.optString("thu", ""), fri = t.optString("fri", ""), sat = t.optString("sat", ""), sun = t.optString("sun", ""),
         holidaysCsv = encodeHolidays((0 until holidaysArr.length()).map { holidaysArr.getString(it) }),
         modifiedAt = t.optString("modifiedAt", ""), modifiedAtTs = t.optLong("modifiedAtTs", 0L), sortOrder = order,
-        autoGenEnabled = t.optBoolean("autoGenEnabled", false), autoGenBatchSize = t.optInt("autoGenBatchSize", 0)
+        autoGenEnabled = t.optBoolean("autoGenEnabled", false), autoGenBatchSize = t.optInt("autoGenBatchSize", 0),
+        passCount = t.optInt("passCount", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT),
+        passIntervalsCsv = t.optString("passIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV)
     )
 }
 

@@ -75,6 +75,17 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("default_multi_pass_enabled", false)
         set(value) = prefs.edit().putBoolean("default_multi_pass_enabled", value).apply()
 
+    /** 계산기 연동이 아닌, 캘린더에서 직접 추가하는 일정의 기본 회독 수(3~8)·회독별 간격(83차, 다회독 상세화). */
+    var defaultPassCount: Int
+        get() = prefs.getInt("default_pass_count", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT)
+            .coerceIn(com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT, com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT)
+        set(value) = prefs.edit().putInt("default_pass_count", value).apply()
+
+    var defaultPassIntervalsCsv: String
+        get() = prefs.getString("default_pass_intervals_csv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV)
+            ?: com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV
+        set(value) = prefs.edit().putString("default_pass_intervals_csv", value).apply()
+
     /** 공부 페이즈 중엔 뜨지 않고 미뤄지는 알림(루틴 리마인더/스트릭) — 다시 알릴 자연스러운 계기가
      *  없는 "일회성" 알림만 여기 쌓아둔다(모임 깨우기/무전기는 서버에 안 읽은 채로 남아있으므로 공부가
      *  끝난 뒤 다음 폴링에서 저절로 다시 온다 — 별도 큐가 필요 없다, [com.phonelock.app.service.StudyNotificationGate] 참고). */

@@ -71,6 +71,8 @@ object JsonStore {
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
             exitConfirmEnabled = json.optBoolean("exitConfirmEnabled", false),
             defaultMultiPassEnabled = json.optBoolean("defaultMultiPassEnabled", false),
+            defaultPassCount = json.optInt("defaultPassCount", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT),
+            defaultPassIntervalsCsv = json.optString("defaultPassIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV),
             cloudBackupEnabled = json.optBoolean("cloudBackupEnabled", false),
             lastCloudBackupDate = json.optString("lastCloudBackupDate", ""),
             lastCloudBackupResult = json.optString("lastCloudBackupResult", ""),
@@ -181,16 +183,20 @@ object JsonStore {
         val calendarTasksJson = json.optJSONArray("calendarTasks") ?: JSONArray()
         for (i in 0 until calendarTasksJson.length()) {
             val c = calendarTasksJson.getJSONObject(i)
+            val color = c.optString("color", "white")
             data.calendarTasks.add(
                 CalendarTask(
                     dateKey = c.getString("dateKey"),
                     name = c.optString("name", ""),
-                    color = c.optString("color", "white"),
+                    color = color,
                     status = if (c.isNull("status")) null else c.optString("status", null),
                     nextDays = if (c.has("nextDays") && !c.isNull("nextDays")) c.getInt("nextDays") else null,
                     linkedCalc = if (c.isNull("linkedCalc")) null else c.optString("linkedCalc", null),
                     progressStep = if (c.isNull("progressStep")) null else c.optString("progressStep", null),
-                    multiPassEnabled = c.optBoolean("multiPassEnabled", false)
+                    multiPassEnabled = c.optBoolean("multiPassEnabled", false),
+                    passIndex = if (c.has("passIndex")) c.optInt("passIndex", 0) else inferPassIndexFromColor(color),
+                    passTotal = c.optInt("passTotal", 3),
+                    passIntervalsCsv = c.optString("passIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV)
                 )
             )
         }
@@ -207,7 +213,9 @@ object JsonStore {
                     thu = c.optString("thu", ""), fri = c.optString("fri", ""), sat = c.optString("sat", ""), sun = c.optString("sun", ""),
                     holidays = (0 until holidaysArr.length()).map { holidaysArr.getString(it) },
                     modifiedAt = c.optString("modifiedAt", ""), modifiedAtTs = c.optLong("modifiedAtTs", 0L),
-                    autoGenEnabled = c.optBoolean("autoGenEnabled", false), autoGenBatchSize = c.optInt("autoGenBatchSize", 0)
+                    autoGenEnabled = c.optBoolean("autoGenEnabled", false), autoGenBatchSize = c.optInt("autoGenBatchSize", 0),
+                    passCount = c.optInt("passCount", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT),
+                    passIntervalsCsv = c.optString("passIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV)
                 )
             )
         }
@@ -398,6 +406,8 @@ object JsonStore {
         json.put("customThemeAccent", data.customThemeAccent)
         json.put("exitConfirmEnabled", data.exitConfirmEnabled)
         json.put("defaultMultiPassEnabled", data.defaultMultiPassEnabled)
+        json.put("defaultPassCount", data.defaultPassCount)
+        json.put("defaultPassIntervalsCsv", data.defaultPassIntervalsCsv)
         json.put("cloudBackupEnabled", data.cloudBackupEnabled)
         json.put("lastCloudBackupDate", data.lastCloudBackupDate)
         json.put("lastCloudBackupResult", data.lastCloudBackupResult)

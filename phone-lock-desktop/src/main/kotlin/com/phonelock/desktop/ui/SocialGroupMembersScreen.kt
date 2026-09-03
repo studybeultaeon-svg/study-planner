@@ -2,6 +2,8 @@ package com.phonelock.desktop.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -362,7 +364,15 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                                             SocialGroupSyncClient.markVoiceMessageListened(url, key, msg.groupId, msg)
                                         }.start()
                                     }
-                                ) { Text(if (playingMsgId == msg.msgId) "재생 중" else "▶ 재생") }
+                                ) {
+                                    if (playingMsgId != msg.msgId) {
+                                        androidx.compose.material3.Icon(
+                                            Icons.Filled.PlayArrow, contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Text(if (playingMsgId == msg.msgId) "재생 중" else "재생")
+                                }
                                 TextButton(onClick = {
                                     voiceDeleteError = null
                                     Thread {

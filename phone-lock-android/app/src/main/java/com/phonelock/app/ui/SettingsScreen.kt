@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.platform.LocalContext
 import com.phonelock.app.R
 import com.phonelock.app.data.AppPreferences
@@ -118,6 +119,10 @@ fun SettingsScreen(
     var blockShorts by remember { mutableStateOf(prefs.blockShorts) }
     var routineStreakNotifyEnabled by remember { mutableStateOf(prefs.routineStreakNotifyEnabled) }
     var defaultMultiPassEnabled by remember { mutableStateOf(prefs.defaultMultiPassEnabled) }
+    var defaultPassCount by remember { mutableStateOf(prefs.defaultPassCount) }
+    var defaultPassIntervals by remember {
+        mutableStateOf(com.phonelock.shared.calc.PassSchedule.parsePassIntervals(prefs.defaultPassIntervalsCsv, prefs.defaultPassCount))
+    }
     var settingsSubTab by remember { mutableIntStateOf(0) }
     var dailyResetHourText by remember { mutableStateOf(prefs.dailyResetHour.toString()) }
     var loginId by remember { mutableStateOf(AuthManager.currentLoginId) }
@@ -1105,6 +1110,48 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(Modifier.height(Spacing.sm))
+                Text(
+                    "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 회독 수/간격입니다 " +
+                        "(계산기 업무는 업무별로 각 업무 입력 카드에서 따로 설정).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.xs))
+                com.phonelock.app.ui.components.NumberStepperField(
+                    label = "기본 회독 수",
+                    value = defaultPassCount.toString(),
+                    onValueChange = { text ->
+                        val newCount = (text.toIntOrNull() ?: defaultPassCount)
+                            .coerceIn(com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT, com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT)
+                        defaultPassCount = newCount
+                        prefs.defaultPassCount = newCount
+                        defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.defaultPassIntervals(newCount)
+                        prefs.defaultPassIntervalsCsv = defaultPassIntervals.joinToString(",")
+                    },
+                    min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
+                    max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
+                    modifier = Modifier.width(160.dp)
+                )
+                Spacer(Modifier.height(Spacing.xs))
+                Text("회독별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    defaultPassIntervals.forEachIndexed { i, days ->
+                        com.phonelock.app.ui.components.NumberStepperField(
+                            label = "${i + 1}→${i + 2}회독",
+                            value = days.toString(),
+                            onValueChange = { text ->
+                                val newDays = (text.toIntOrNull() ?: days).coerceIn(1, 90)
+                                val updated = defaultPassIntervals.toMutableList().also { it[i] = newDays }
+                                defaultPassIntervals = updated
+                                prefs.defaultPassIntervalsCsv = updated.joinToString(",")
+                            },
+                            min = 1,
+                            max = 90,
+                            modifier = Modifier.width(140.dp)
+                        )
+                    }
+                }
             }
           }
 

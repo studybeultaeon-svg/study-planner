@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.NavigationBar
@@ -214,36 +215,16 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
         repository.runDailyMaintenanceIfNeeded()
     }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                val backStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = backStackEntry?.destination
+    // 83차: 태블릿(sw600dp 이상)은 하단 NavigationBar 대신 데스크탑 MainScreen.kt와 같은 좌측
+    // NavigationRail로 — 탭 구성/동작은 동일하고 배치만 옆으로 옮긴다. 폰은 기존 Scaffold 그대로 유지.
+    val isTablet = com.phonelock.app.ui.components.isTabletWidth()
 
-                tabs.forEach { tab ->
-                    NavigationBarItem(
-                        selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true,
-                        onClick = {
-                            navController.navigate(tab.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = { Text(tab.emoji) },
-                        label = { Text(tab.label) }
-                    )
-                }
-            }
-        }
-    ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            pendingUpdateApkUrl?.let { url -> UpdateBanner(url) }
-            NavHost(
-                navController = navController,
-                startDestination = tabs.first().route,
-                modifier = Modifier.weight(1f)
-            ) {
+    val navHostContent: @Composable (Modifier) -> Unit = { navModifier ->
+        NavHost(
+            navController = navController,
+            startDestination = tabs.first().route,
+            modifier = navModifier
+        ) {
             composable(Tab.Manage.route) {
                 ManageSection(repository, navController)
             }
@@ -297,6 +278,61 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             composable("study_lock_apps") {
                 StudyLockAppsScreen()
             }
+        }
+    }
+
+    if (isTablet) {
+        Row(Modifier.fillMaxSize()) {
+            androidx.compose.material3.NavigationRail {
+                val backStackEntry by navController.currentBackStackEntryAsState()
+                val currentDestination = backStackEntry?.destination
+                tabs.forEach { tab ->
+                    androidx.compose.material3.NavigationRailItem(
+                        selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true,
+                        onClick = {
+                            navController.navigate(tab.route) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        icon = { Text(tab.emoji) },
+                        label = { Text(tab.label) }
+                    )
+                }
+            }
+            Column(Modifier.weight(1f).fillMaxSize()) {
+                pendingUpdateApkUrl?.let { url -> UpdateBanner(url) }
+                navHostContent(Modifier.weight(1f))
+            }
+        }
+    } else {
+        Scaffold(
+            bottomBar = {
+                NavigationBar {
+                    val backStackEntry by navController.currentBackStackEntryAsState()
+                    val currentDestination = backStackEntry?.destination
+
+                    tabs.forEach { tab ->
+                        NavigationBarItem(
+                            selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true,
+                            onClick = {
+                                navController.navigate(tab.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            icon = { Text(tab.emoji) },
+                            label = { Text(tab.label) }
+                        )
+                    }
+                }
+            }
+        ) { padding ->
+            Column(Modifier.padding(padding).fillMaxSize()) {
+                pendingUpdateApkUrl?.let { url -> UpdateBanner(url) }
+                navHostContent(Modifier.weight(1f))
             }
         }
     }

@@ -27,6 +27,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -698,11 +700,11 @@ private fun MemberStudyTimetableTab(s: SocialGroupSyncClient.MemberStats) {
 
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = { cursor = cursor.minusDays(1) }) { Text("◀") }
+            OutlinedButton(onClick = { cursor = cursor.minusDays(1) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전") }
             Spacer(Modifier.width(Spacing.sm))
             Text(dateLabel, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.width(Spacing.sm))
-            OutlinedButton(onClick = { cursor = cursor.plusDays(1) }) { Text("▶") }
+            OutlinedButton(onClick = { cursor = cursor.plusDays(1) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음") }
         }
         Spacer(Modifier.height(Spacing.sm))
 

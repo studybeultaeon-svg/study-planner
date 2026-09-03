@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -89,6 +90,10 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
     // 켜짐→꺼짐으로 바꾸는 것 자체를 같은 회유 멘트 20개 절차로 보호한다(showExitConfirmGate).
     var exitConfirmEnabled by remember { mutableStateOf(repository.exitConfirmEnabled) }
     var defaultMultiPassEnabled by remember { mutableStateOf(repository.defaultMultiPassEnabled) }
+    var defaultPassCount by remember { mutableStateOf(repository.defaultPassCount) }
+    var defaultPassIntervals by remember {
+        mutableStateOf(com.phonelock.shared.calc.PassSchedule.parsePassIntervals(repository.defaultPassIntervalsCsv, repository.defaultPassCount))
+    }
     var showExitConfirmGate by remember { mutableStateOf(false) }
     var dailyResetHourText by remember { mutableStateOf(repository.dailyResetHour.toString()) }
     var launchAtStartup by remember { mutableStateOf(com.phonelock.desktop.isLaunchAtStartupEnabled()) }
@@ -843,6 +848,47 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                                 repository.defaultMultiPassEnabled = checked
                             }
                         )
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(
+                            "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 회독 수/간격입니다 " +
+                                "(계산기 업무는 업무별로 각 업무 입력 카드에서 따로 설정).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.xs))
+                        com.phonelock.desktop.ui.components.NumberStepperField(
+                            label = "기본 회독 수",
+                            value = defaultPassCount.toString(),
+                            onValueChange = { text ->
+                                val newCount = (text.toIntOrNull() ?: defaultPassCount)
+                                    .coerceIn(com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT, com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT)
+                                defaultPassCount = newCount
+                                repository.defaultPassCount = newCount
+                                defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.defaultPassIntervals(newCount)
+                                repository.defaultPassIntervalsCsv = defaultPassIntervals.joinToString(",")
+                            },
+                            min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
+                            max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
+                            modifier = Modifier.width(160.dp)
+                        )
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text("회독별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            defaultPassIntervals.forEachIndexed { i, days ->
+                                com.phonelock.desktop.ui.components.NumberStepperField(
+                                    label = "${i + 1}→${i + 2}회독",
+                                    value = days.toString(),
+                                    onValueChange = { text ->
+                                        val newDays = (text.toIntOrNull() ?: days).coerceIn(1, 90)
+                                        val updated = defaultPassIntervals.toMutableList().also { it[i] = newDays }
+                                        defaultPassIntervals = updated
+                                        repository.defaultPassIntervalsCsv = updated.joinToString(",")
+                                    },
+                                    min = 1, max = 90,
+                                    modifier = Modifier.width(140.dp)
+                                )
+                            }
+                        }
                     }
                 }
 

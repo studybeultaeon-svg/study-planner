@@ -3,6 +3,11 @@ package com.phonelock.desktop.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -90,12 +96,19 @@ internal fun stageChipColors(stage: String): ChipColors {
     return ChipColors(accent.copy(alpha = 0.15f), accent)
 }
 
+/** 83차(다회독 상세화) — passIndex/passTotal 기반 빨강→초록 그라데이션 accent. */
+internal fun passAccentColor(task: CalendarTask): Color = Color(com.phonelock.shared.calc.PassSchedule.passColor(task.passIndex, task.passTotal))
+internal fun passLabel(task: CalendarTask): String = "${task.passIndex + 1}회독"
+
 private fun dowLabel(date: LocalDate): String = WEEKDAYS_KO[date.dayOfWeek.value % 7]
 
 /**
  * 웹앱 월 그리드의 `.task-chip` — 배경/테두리를 회독 색으로 채운 배지, O/X 완료 표시는 칩 색과
- * 별개로 항상 초록/빨강(`.status-O::before`/`.status-X::before`).
+ * 별개로 항상 초록/빨강(`.status-O::before`/`.status-X::before`). 83차부터 색상은 task.passIndex/
+ * passTotal 기반 그라데이션(레거시 color 문자열 대신).
  */
+/** 모임 멤버 상세(다른 사용자의 동기화된 일정 요약, passIndex/passTotal 없음)용 레거시 오버로드 — 그
+ *  화면은 이번 다회독 상세화 범위 밖이라 기존 color 문자열 기반 렌더링을 그대로 유지한다. */
 @Composable
 internal fun TaskChip(name: String, stage: String, status: String?, modifier: Modifier = Modifier) {
     val chip = stageChipColors(stage)
@@ -111,6 +124,26 @@ internal fun TaskChip(name: String, stage: String, status: String?, modifier: Mo
             .padding(horizontal = 4.dp, vertical = 1.dp),
         style = MaterialTheme.typography.labelSmall,
         color = stageTextColor(stage),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+@Composable
+internal fun TaskChip(task: CalendarTask, modifier: Modifier = Modifier) {
+    val accent = passAccentColor(task)
+    Text(
+        buildAnnotatedString {
+            if (task.status == "O") withStyle(SpanStyle(color = Color(0xFF34D399), fontWeight = FontWeight.Black)) { append("O ") }
+            else if (task.status == "X") withStyle(SpanStyle(color = Color(0xFFF87171), fontWeight = FontWeight.Black)) { append("X ") }
+            append(task.name)
+        },
+        modifier = modifier
+            .background(accent.copy(alpha = 0.15f), MaterialTheme.shapes.extraSmall)
+            .border(1.dp, accent, MaterialTheme.shapes.extraSmall)
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = accent,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis
     )
@@ -157,7 +190,10 @@ fun CalendarScreen(repository: Repository) {
             left = {
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    OutlinedButton(onClick = { if (month == 0) { month = 11; year-- } else month-- }) { Text("◀ 이전") }
+                    OutlinedButton(onClick = { if (month == 0) { month = 11; year-- } else month-- }) {
+                        Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("이전")
+                    }
                     Text("${year}년 ${MONTHS_KO[month]}", style = MaterialTheme.typography.titleLarge)
                     Row {
                         OutlinedButton(onClick = {
@@ -167,7 +203,10 @@ fun CalendarScreen(repository: Repository) {
                             }
                         }) { Text("🧹 정리") }
                         Spacer(Modifier.width(Spacing.sm))
-                        OutlinedButton(onClick = { if (month == 11) { month = 0; year++ } else month++ }) { Text("다음 ▶") }
+                        OutlinedButton(onClick = { if (month == 11) { month = 0; year++ } else month++ }) {
+                            Text("다음")
+                            Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
                 Spacer(Modifier.height(Spacing.sm))
@@ -252,9 +291,7 @@ fun CalendarScreen(repository: Repository) {
                                         Spacer(Modifier.height(2.dp))
                                         dayTasks.take(3).forEach { t ->
                                             TaskChip(
-                                                name = t.name,
-                                                stage = t.color,
-                                                status = t.status,
+                                                task = t,
                                                 modifier = Modifier.fillMaxWidth().padding(top = 1.dp)
                                             )
                                         }
@@ -451,16 +488,18 @@ private fun CalendarTaskRow(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column {
-                Text("▲", fontSize = 10.sp, modifier = Modifier.clickable(enabled = !isFirst) {
-                    repository.moveCalendarTaskOrder(dateKey, ordinal, -1); onChanged()
-                }.padding(2.dp))
-                Text("▼", fontSize = 10.sp, modifier = Modifier.clickable(enabled = !isLast) {
-                    repository.moveCalendarTaskOrder(dateKey, ordinal, 1); onChanged()
-                }.padding(2.dp))
+                com.phonelock.desktop.ui.components.IconChip(
+                    Icons.Filled.KeyboardArrowUp, enabled = !isFirst,
+                    onClick = { repository.moveCalendarTaskOrder(dateKey, ordinal, -1); onChanged() }
+                )
+                com.phonelock.desktop.ui.components.IconChip(
+                    Icons.Filled.KeyboardArrowDown, enabled = !isLast,
+                    onClick = { repository.moveCalendarTaskOrder(dateKey, ordinal, 1); onChanged() }
+                )
             }
             Spacer(Modifier.width(Spacing.xs))
             if (editingName) {
-                Box(Modifier.size(10.dp).background(stageTextColor(task.color), CircleShape))
+                Box(Modifier.size(10.dp).background(passAccentColor(task), CircleShape))
                 Spacer(Modifier.width(Spacing.xs))
                 OutlinedTextField(
                     value = nameText,
@@ -475,10 +514,10 @@ private fun CalendarTaskRow(
                         task.name,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = stageTextColor(task.color)
+                        color = passAccentColor(task)
                     )
                     // 이름 아래 회독 라벨 옆 빈 공간에 이 업무를 실제로 잰 시간을 붙여 보여준다.
-                    val metaLine = COLOR_LABEL[task.color] ?: ""
+                    val metaLine = passLabel(task)
                     val timeLine = if (loggedSeconds != null && loggedSeconds > 0) " · ⏱ ${formatHmsLog(loggedSeconds.toLong())}" else ""
                     Text("$metaLine$timeLine", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -535,20 +574,19 @@ private fun CalendarTaskRow(
         }
 
         if (showColorPicker) {
+            // 83차: 회독 수가 업무마다 다를 수 있으므로(3~8) 고정 3개가 아니라 task.passTotal만큼 보여준다.
             Row(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
                 modifier = Modifier.padding(top = Spacing.xs).horizontalScroll(rememberScrollState())
             ) {
-                listOf(
-                    "green" to "3회독", "yellow" to "2회독", "red" to "1회독"
-                ).forEach { (c, label) ->
-                    val stageColor = stageTextColor(c)
+                (task.passTotal - 1 downTo 0).forEach { idx ->
+                    val stageColor = Color(com.phonelock.shared.calc.PassSchedule.passColor(idx, task.passTotal))
                     OutlinedButton(
-                        onClick = { repository.recolorCalendarTask(dateKey, ordinal, c); showColorPicker = false; onChanged() },
+                        onClick = { repository.setCalendarTaskPassIndex(dateKey, ordinal, idx); showColorPicker = false; onChanged() },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = stageColor),
                         border = BorderStroke(1.dp, stageColor.copy(alpha = 0.5f))
-                    ) { Text(label, style = MaterialTheme.typography.labelSmall) }
+                    ) { Text("${idx + 1}회독", style = MaterialTheme.typography.labelSmall) }
                 }
             }
         }

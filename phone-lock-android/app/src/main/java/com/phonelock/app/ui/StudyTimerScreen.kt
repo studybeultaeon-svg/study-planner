@@ -4,6 +4,10 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -302,7 +306,13 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                         run = repository.getTimerRun()
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("▶ 시작") }
+                ) {
+                    androidx.compose.material3.Icon(
+                        Icons.Filled.PlayArrow, contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text("시작")
+                }
             } else {
                 val isMirror = run == null
                 val current = run ?: TimerRunState(
@@ -632,7 +642,11 @@ private fun AllowedAppsCollapsibleSection() {
                 Modifier.fillMaxWidth().clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(if (expanded) "▼" else "▶", modifier = Modifier.padding(end = Spacing.xs))
+                androidx.compose.material3.Icon(
+                    if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = Spacing.xs)
+                )
                 Text(
                     "🔒 공부 잠금 허용 앱" + if (allowedCount > 0) " ($allowedCount)" else "",
                     style = MaterialTheme.typography.titleMedium,
@@ -654,12 +668,9 @@ private fun AllowedAppsCollapsibleSection() {
     }
 }
 
-private val TIMER_COLOR_LABEL = mapOf("red" to "1회독", "yellow" to "2회독", "green" to "3회독")
-
 private fun taskDropdownLabel(task: CalendarTask): String {
     val done = if (task.status == "O") " ✅" else ""
-    val colorLabel = TIMER_COLOR_LABEL[task.color] ?: ""
-    return "${task.name}$done · $colorLabel"
+    return "${task.name}$done · ${task.passIndex + 1}회독"
 }
 
 internal fun formatHmsLog(totalSeconds: Long): String {

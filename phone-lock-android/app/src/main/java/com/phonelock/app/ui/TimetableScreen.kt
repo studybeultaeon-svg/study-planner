@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -94,11 +97,11 @@ fun TimetableScreen(repository: PhoneLockRepository) {
             else -> MaterialTheme.colorScheme.onSurface
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = { cursor = cursor.minusDays(1) }) { Text("◀") }
+            OutlinedButton(onClick = { cursor = cursor.minusDays(1) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전") }
             Spacer(Modifier.width(Spacing.sm))
             Text(dateLabel, style = MaterialTheme.typography.titleMedium, color = weekdayColor)
             Spacer(Modifier.width(Spacing.sm))
-            OutlinedButton(onClick = { cursor = cursor.plusDays(1) }) { Text("▶") }
+            OutlinedButton(onClick = { cursor = cursor.plusDays(1) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음") }
         }
         Spacer(Modifier.height(Spacing.md))
 

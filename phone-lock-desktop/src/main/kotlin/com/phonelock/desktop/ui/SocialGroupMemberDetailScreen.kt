@@ -3,6 +3,8 @@ package com.phonelock.desktop.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -591,11 +593,11 @@ private fun MemberStudyTimetableTab(member: SocialGroupSyncClient.MemberStats) {
 
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = { cursor = cursor.minusDays(1) }) { Text("◀") }
+            OutlinedButton(onClick = { cursor = cursor.minusDays(1) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전") }
             Spacer(Modifier.width(Spacing.sm))
             Text(dateLabel, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.width(Spacing.sm))
-            OutlinedButton(onClick = { cursor = cursor.plusDays(1) }) { Text("▶") }
+            OutlinedButton(onClick = { cursor = cursor.plusDays(1) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음") }
         }
         Spacer(Modifier.height(Spacing.sm))
 

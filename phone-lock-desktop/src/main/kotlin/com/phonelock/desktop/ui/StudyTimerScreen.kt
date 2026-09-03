@@ -9,6 +9,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -302,7 +304,13 @@ fun StudyTimerScreen(repository: Repository) {
                                 run = repository.getTimerRun()
                             },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("▶ 시작") }
+                        ) {
+                            androidx.compose.material3.Icon(
+                                Icons.Filled.PlayArrow, contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text("시작")
+                        }
                     } else {
                         val isMirror = run == null
                         val current = run ?: TimerRunState(
@@ -620,12 +628,9 @@ private fun LockListEditor(items: List<String>, placeholder: String, onAdd: (Str
     }
 }
 
-private val TIMER_COLOR_LABEL = mapOf("red" to "1회독", "yellow" to "2회독", "green" to "3회독")
-
 private fun taskDropdownLabel(task: CalendarTask): String {
     val done = if (task.status == "O") " ✅" else ""
-    val colorLabel = TIMER_COLOR_LABEL[task.color] ?: ""
-    return "${task.name}$done · $colorLabel"
+    return "${task.name}$done · ${task.passIndex + 1}회독"
 }
 
 internal fun formatHmsLog(totalSeconds: Long): String {

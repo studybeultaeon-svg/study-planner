@@ -516,6 +516,21 @@ class Repository {
             persist()
         }
 
+    /** 계산기 연동이 아닌, 캘린더에서 직접 추가하는 일정의 기본 회독 수/간격(83차, 다회독 상세화). */
+    var defaultPassCount: Int
+        get() = synchronized(lock) { data.defaultPassCount }
+        set(value) = synchronized(lock) {
+            data.defaultPassCount = value
+            persist()
+        }
+
+    var defaultPassIntervalsCsv: String
+        get() = synchronized(lock) { data.defaultPassIntervalsCsv }
+        set(value) = synchronized(lock) {
+            data.defaultPassIntervalsCsv = value
+            persist()
+        }
+
     /** 커스텀 테마(79차, 사용자 요청)용 배경/포인트 색 — "#RRGGBB" 문자열로 저장. themeMode가
      *  [com.phonelock.desktop.ui.theme.ThemeMode.CUSTOM]일 때만 쓰인다. */
     var customThemeBackground: String

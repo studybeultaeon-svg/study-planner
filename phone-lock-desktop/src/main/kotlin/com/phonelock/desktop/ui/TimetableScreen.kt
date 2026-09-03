@@ -3,6 +3,9 @@ package com.phonelock.desktop.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
@@ -84,13 +88,19 @@ fun TimetableScreen(repository: Repository) {
         Spacer(Modifier.height(Spacing.md))
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            OutlinedButton(onClick = { weekOffset-- }) { Text("◀ 이전주") }
+            OutlinedButton(onClick = { weekOffset-- }) {
+                androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("이전주")
+            }
             Text(
                 "${weekDates.first().monthValue}/${weekDates.first().dayOfMonth} ~ ${weekDates.last().monthValue}/${weekDates.last().dayOfMonth}" +
                     if (weekOffset == 0) " (이번 주)" else "",
                 style = MaterialTheme.typography.titleMedium
             )
-            OutlinedButton(onClick = { weekOffset++ }) { Text("다음주 ▶") }
+            OutlinedButton(onClick = { weekOffset++ }) {
+                Text("다음주")
+                androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
         }
         Spacer(Modifier.height(Spacing.sm))
 

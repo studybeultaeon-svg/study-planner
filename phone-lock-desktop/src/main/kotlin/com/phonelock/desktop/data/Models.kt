@@ -134,7 +134,9 @@ data class GroupShareSettings(
 
 /**
  * 네이티브 캘린더(2단계)의 날짜별 일정 한 건. 웹앱 index.html의 calTasks[dateKey][] 항목을 그대로 이식.
- * color는 51차에 8단계 무지개로 확장됨(white=1회독~purple=8회독, DECISIONS.md 참고).
+ * color는 현재 red/yellow/green 3단계로 축소돼 있음(과거 8단계 무지개 서술은 낡은 기록) — 83차(다회독
+ * 상세화)부터는 passIndex/passTotal/passIntervalsCsv가 실제 회독 진행/색상의 원천이고, color는
+ * passTotal==3인 기본 케이스의 하위호환 라벨로만 쓰인다(안드로이드판과 대칭).
  * linkedCalc/progressStep은 계산기 연동용 필드(51차에 UI 추가) — linkedCalc는 연결된 계산기 업무 이름,
  * progressStep은 이 일정을 완료하면 그 업무 progress에 더해질 양(예: "51~60쪽" → "10").
  */
@@ -147,7 +149,13 @@ data class CalendarTask(
     val linkedCalc: String? = null,
     val progressStep: String? = null,
     /** 완료(O) 시 다음 회독을 자동 생성할지(79차, 사용자 요청) — 기본 off, 켜야만 [Repository.applyCalendarAutoSchedule]이 동작한다. */
-    val multiPassEnabled: Boolean = false
+    val multiPassEnabled: Boolean = false,
+    /** 이 시리즈에서 0-based 현재 회독 번호(83차, 다회독 상세화). */
+    val passIndex: Int = 0,
+    /** 이 시리즈의 총 회독 수(3~8). */
+    val passTotal: Int = 3,
+    /** 회독 간 간격(일수) CSV, 길이 = passTotal-1. */
+    val passIntervalsCsv: String = com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV
 )
 
 /**
@@ -171,7 +179,11 @@ data class CalcTask(
     /** 캘린더 일정 자동 생성 on/off(82차, 사용자 지정 스펙, 안드로이드판과 대칭) — 켜면 연동 일정을 완료할 때마다 다음 배치를 자동으로 만든다. */
     val autoGenEnabled: Boolean = false,
     /** 자동 생성 배치 크기. */
-    val autoGenBatchSize: Int = 0
+    val autoGenBatchSize: Int = 0,
+    /** 다회독 상세화(83차) — 이 업무를 캘린더에 연동할 때 몇 회독으로 만들지(3~8). */
+    val passCount: Int = com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT,
+    /** 회독 간 간격(일수) CSV, 길이 = passCount-1. */
+    val passIntervalsCsv: String = com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV
 )
 
 /**
@@ -312,6 +324,9 @@ data class AppData(
     var exitConfirmEnabled: Boolean = false,
     /** 캘린더 새 일정을 추가할 때 "다회독"(완료 시 다음 회독 자동 생성) 기본값 — 기본 꺼짐, 공부 설정에서 사용자가 변경. */
     var defaultMultiPassEnabled: Boolean = false,
+    /** 계산기 연동이 아닌, 캘린더에서 직접 추가하는 일정의 기본 회독 수(3~8)·회독별 간격(83차, 다회독 상세화). */
+    var defaultPassCount: Int = com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT,
+    var defaultPassIntervalsCsv: String = com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV,
     // ---- 자동 백업/정리(82차, §9, 안드로이드판과 대칭) ----
     var cloudBackupEnabled: Boolean = false,
     var lastCloudBackupDate: String = "",
