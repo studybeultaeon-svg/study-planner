@@ -428,7 +428,6 @@ private fun CalendarTaskRow(
     var showColorPicker by remember(task.id) { mutableStateOf(false) }
     var showMoveCopy by remember(task.id) { mutableStateOf<String?>(null) }
     var targetDateText by remember(task.id) { mutableStateOf("") }
-    var nextDaysText by remember(task.id) { mutableStateOf(task.nextDays?.toString() ?: "") }
     val scope = rememberCoroutineScope()
 
     Column(
@@ -459,7 +458,9 @@ private fun CalendarTaskRow(
                 )
             } else {
                 // 웹앱 상세 목록(.task-name-modal)은 월 그리드 배지와 달리 배경/테두리 없는 색 텍스트다.
-                Column(Modifier.weight(1f).clickable { showColorPicker = !showColorPicker }) {
+                // 85차: weight(1f, fill=false)로 바꿔 이름이 짧을 때 다회독 버튼까지의 빈 공백이 과하게
+                // 벌어지지 않게 했다(사용자 지적) — 이름이 길면 여전히 남은 폭만큼 줄바꿈된다.
+                Column(Modifier.weight(1f, fill = false).clickable { showColorPicker = !showColorPicker }) {
                     Text(
                         task.name,
                         style = MaterialTheme.typography.bodyMedium,
@@ -489,21 +490,10 @@ private fun CalendarTaskRow(
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             )
             Spacer(Modifier.width(Spacing.xs))
-            if (task.multiPassEnabled) {
-                // 웹앱 .next-days-btn — 다음 회독까지 며칠 뒤인지 짧은 알약 입력, 헤더 줄 안에 넣는다.
-                OutlinedTextField(
-                    value = nextDaysText,
-                    onValueChange = { text ->
-                        nextDaysText = text
-                        scope.launch { repository.setCalendarTaskNextDays(task, text.trim().toIntOrNull()) }
-                    },
-                    placeholder = { Text("⏱", style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.width(64.dp),
-                    textStyle = MaterialTheme.typography.labelSmall,
-                    singleLine = true
-                )
-                Spacer(Modifier.width(Spacing.xs))
-            }
+            // 85차: 스마트폰에서 업무 이름이 과하게 줄바꿈되는 문제 해결을 위해 다회독/미완 버튼 사이의
+            // "다음 회독 주기" 입력칸을 제거해 이름에 폭을 더 준다(사용자 요청) — task.nextDays 자체는
+            // 여전히 CalendarTask에 남아 자동 회독 생성 시(applyCalendarAutoSchedule) 커스텀 간격으로
+            // 쓰이지만, 그 값을 직접 입력하는 UI만 뺐다.
             val statusLabel = task.status ?: "미완"
             val statusColor = when (task.status) {
                 "O" -> Color(0xFF34D399)

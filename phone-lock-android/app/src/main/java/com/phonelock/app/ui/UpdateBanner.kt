@@ -43,6 +43,9 @@ fun UpdateBanner(apkUrl: String) {
     val scope = rememberCoroutineScope()
     var downloading by remember { mutableStateOf(false) }
     var progressPercent by remember { mutableStateOf(-1) }
+    // 85차: 다운로드/설치 인텐트 실패가 Toast(짧게 사라짐)로만 뜨고 있어 놓치기 쉬웠다는 제보 —
+    // 배너 안에 계속 남는 텍스트도 함께 보여준다.
+    var errorText by remember { mutableStateOf<String?>(null) }
     // 82차: GitHub Release body를 그대로 "이번 업데이트 내용"으로 보여준다(신규 API 호출 없음, 이미
     // 업데이트 확인 시점에 함께 받아 AppPreferences에 저장해둔 값을 읽기만 한다).
     val releaseNotes = remember { com.phonelock.app.data.AppPreferences(context).updateAvailableReleaseNotes }
@@ -72,9 +75,18 @@ fun UpdateBanner(apkUrl: String) {
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
+        if (!downloading && errorText != null) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "업데이트 실패: $errorText — 데이터 절약 모드가 켜져 있으면 꺼보거나, 잠시 후 다시 시도해주세요",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
         Spacer(Modifier.height(8.dp))
         Button(enabled = !downloading, modifier = Modifier.fillMaxWidth(), onClick = {
             if (!context.packageManager.canRequestPackageInstalls()) {
+                errorText = "설치 권한 없음"
                 Toast.makeText(
                     context,
                     "설정에서 \"출처를 알 수 없는 앱 설치\"를 이 앱에 허용해주세요",
@@ -90,9 +102,11 @@ fun UpdateBanner(apkUrl: String) {
             }
             downloading = true
             progressPercent = -1
+            errorText = null
             scope.launch {
                 val result = downloadAndInstallApk(context, apkUrl) { percent -> progressPercent = percent }
                 downloading = false
+                errorText = result
                 if (result != null) {
                     Toast.makeText(context, "업데이트 다운로드에 실패했습니다($result). 데이터 절약 모드가 켜져 있으면 꺼보거나, 잠시 후 다시 시도해주세요", Toast.LENGTH_LONG).show()
                 }
@@ -145,13 +159,19 @@ private suspend fun downloadAndInstallApk(
         }
 
         val uri = dm.getUriForDownloadedFile(id)
+            ?: return@runCatching "다운로드된 파일을 찾을 수 없음"
+        val installIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        // 85차 발견: 이 인텐트를 처리할 앱이 없으면(일부 커스텀 롬/관리형 기기) startActivity가 예외 없이
+        // 그냥 아무 일도 안 일어난 것처럼 보인다("설치 창이 안 뜬다"는 제보) — resolveActivity로 미리
+        // 확인해 실패를 명시적인 오류로 보고한다.
+        if (installIntent.resolveActivity(context.packageManager) == null) {
+            return@runCatching "설치 프로그램을 열 수 없음"
+        }
         withContext(Dispatchers.Main) {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-            )
+            context.startActivity(installIntent)
         }
         null
     }.getOrElse { it.message ?: "알 수 없는 오류" }

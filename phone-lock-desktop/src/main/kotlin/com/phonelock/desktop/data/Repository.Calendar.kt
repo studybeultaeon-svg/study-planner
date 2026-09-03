@@ -16,7 +16,6 @@ import org.json.JSONObject
 // 83차(다회독 상세화): 회독 진행은 이제 CalendarTask.passIndex/passTotal/passIntervalsCsv가
 // 원천이다(업무마다 3~8회독 + 회독별 간격을 자유 설정, 안드로이드판과 대칭). 과거 3단계(빨/노/초) 고정
 // 스케줄은 passTotal==3인 기본 케이스와 동치라 자연히 하위호환된다.
-private val koreanCollator = java.text.Collator.getInstance(java.util.Locale.KOREAN)
 
 /** 신규/자동생성 CalendarTask.color에 쓸 하위호환 라벨(안드로이드판과 동일 규칙). */
 private fun legacyColorLabel(passIndex: Int, passTotal: Int): String = when {
@@ -53,9 +52,11 @@ fun Repository.dayGlobalIndices(dateKey: String): List<Int> =
 fun Repository.sortCalendarDay(dateKey: String) {
     val indices = dayGlobalIndices(dateKey)
     if (indices.size < 2) return
+    // 85차 발견: koreanCollator만 쓰면 순수 사전식이라 "문제10"이 "문제2"보다 앞에 온다(문자 '1'<'2') —
+    // 이름에 섞인 숫자는 자연 정렬(NaturalOrder)로 값 비교해야 사용자가 기대하는 "숫자 순서"가 된다.
     val sorted = indices.map { data.calendarTasks[it] }.sortedWith(
         compareBy<CalendarTask> { it.passTotal - 1 - it.passIndex }
-            .thenComparator { a, b -> koreanCollator.compare(a.name, b.name) }
+            .thenComparator { a, b -> com.phonelock.shared.NaturalOrder.comparator.compare(a.name, b.name) }
     )
     indices.forEachIndexed { i, globalIdx -> data.calendarTasks[globalIdx] = sorted[i] }
 }

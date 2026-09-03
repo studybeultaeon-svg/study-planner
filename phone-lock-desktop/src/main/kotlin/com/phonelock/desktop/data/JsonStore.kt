@@ -109,6 +109,7 @@ object JsonStore {
                 (0 until arr.length()).map { arr.getString(it) }.toMutableList()
             },
             calendarTs = json.optLong("calendarTs", 0L),
+            settingsTs = json.optLong("settingsTs", 0L),
             calcTasksTs = json.optLong("calcTasksTs", 0L),
             calcSavedTs = json.optLong("calcSavedTs", 0L),
             calcFolderTs = json.optLong("calcFolderTs", 0L),
@@ -491,6 +492,7 @@ object JsonStore {
         json.put("quoteOutcomes", quoteOutcomesJson)
 
         json.put("calendarTs", data.calendarTs)
+        json.put("settingsTs", data.settingsTs)
         val calendarTasksJson = JSONArray()
         data.calendarTasks.forEach { c ->
             calendarTasksJson.put(JSONObject().apply {

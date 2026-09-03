@@ -339,6 +339,7 @@ private fun CalcTaskCard(
                         onValueChange = { v -> dayValues.value = dayValues.value.toMutableMap().apply { put(d, v) }; persist() },
                         label = DAY_LABELS[d],
                         centerValue = true,
+                        overlayStepper = true,
                         stepperSize = 16.dp,
                         stepperIconSize = 11.dp,
                         modifier = Modifier.weight(1f)

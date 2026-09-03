@@ -479,7 +479,6 @@ private fun CalendarTaskRow(
     var showColorPicker by remember(task) { mutableStateOf(false) }
     var showMoveCopy by remember(task) { mutableStateOf<String?>(null) }
     var targetDateText by remember(task) { mutableStateOf("") }
-    var nextDaysText by remember(task) { mutableStateOf(task.nextDays?.toString() ?: "") }
 
     Column(
         Modifier.fillMaxWidth()
@@ -539,22 +538,10 @@ private fun CalendarTaskRow(
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             )
             Spacer(Modifier.width(Spacing.xs))
-            if (task.multiPassEnabled) {
-                // 웹앱 .next-days-btn — 다음 회독까지 며칠 뒤인지 짧은 알약 입력. 예전엔 라벨 붙은
-                // 140dp 텍스트필드를 별도 줄에 뒀는데, 웹앱은 헤더 줄 안에 작은 칩으로 들어가 있다.
-                OutlinedTextField(
-                    value = nextDaysText,
-                    onValueChange = { text ->
-                        nextDaysText = text
-                        repository.setCalendarTaskNextDays(dateKey, ordinal, text.trim().toIntOrNull())
-                    },
-                    placeholder = { Text("⏱", style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.width(64.dp),
-                    textStyle = MaterialTheme.typography.labelSmall,
-                    singleLine = true
-                )
-                Spacer(Modifier.width(Spacing.xs))
-            }
+            // 85차: 스마트폰에서 업무 이름이 과하게 줄바꿈되는 문제 해결을 위해 다회독/미완 버튼 사이의
+            // "다음 회독 주기" 입력칸을 제거해 이름에 폭을 더 준다(사용자 요청, 안드로이드판과 대칭) —
+            // task.nextDays 자체는 여전히 CalendarTask에 남아 자동 회독 생성 시(applyCalendarAutoSchedule)
+            // 커스텀 간격으로 쓰이지만, 그 값을 직접 입력하는 UI만 뺐다.
             val statusLabel = task.status ?: "미완"
             val statusColor = when (task.status) {
                 "O" -> Color(0xFF34D399)

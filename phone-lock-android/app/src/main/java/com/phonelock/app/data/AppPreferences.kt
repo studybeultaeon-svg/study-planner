@@ -248,6 +248,11 @@ class AppPreferences(context: Context) {
         get() = prefs.getLong("calendar_ts", 0L)
         set(value) = prefs.edit().putLong("calendar_ts", value).apply()
 
+    /** 85차: 계산기 기본 다회독값/일일 초기화 시각 설정 동기화용 문서 단위 LWW 타임스탬프. */
+    var settingsTs: Long
+        get() = prefs.getLong("settings_ts", 0L)
+        set(value) = prefs.edit().putLong("settings_ts", value).apply()
+
     /** 루틴 전체 문서 단위 Firebase LWW 타임스탬프(51차, 데스크탑판 routinesTs와 동일 패턴). */
     var routinesTs: Long
         get() = prefs.getLong("routines_ts", 0L)

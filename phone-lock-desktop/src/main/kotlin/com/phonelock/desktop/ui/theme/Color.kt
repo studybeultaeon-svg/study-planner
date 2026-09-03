@@ -3,18 +3,14 @@ package com.phonelock.desktop.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /** 테마 선택지(설정 화면에서 고름) — AppData.themeMode에 이 문자열 그대로 저장된다.
- *  53차에 사용자 요청으로 5종 추가(LAVENDER/MINT/ROSE/MIDNIGHT/FOREST). */
+ *  85차(사용자 요청, 안드로이드판과 대칭): 53차/82차에 늘렸던 LAVENDER/MINT/ROSE/MIDNIGHT/FOREST/
+ *  HIGH_CONTRAST 6종을 제거하고 기본 3종(LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE)+CUSTOM만 남겼다.
+ *  기존에 이 값들로 저장돼 있던 사용자는 [paletteFor]의 `else -> LightGreenPalette` 폴백으로
+ *  자동 복구된다. */
 object ThemeMode {
     const val LIGHT_GREEN = "LIGHT_GREEN"
     const val DARK_BLUE = "DARK_BLUE"
     const val LIGHT_ORANGE = "LIGHT_ORANGE"
-    const val LAVENDER = "LAVENDER"
-    const val MINT = "MINT"
-    const val ROSE = "ROSE"
-    const val MIDNIGHT = "MIDNIGHT"
-    const val FOREST = "FOREST"
-    /** 고대비(82차, 감사보고서 §6/§9 접근성 신규) — 순검정 배경+순백 텍스트, 포인트색도 최대 채도로. */
-    const val HIGH_CONTRAST = "HIGH_CONTRAST"
     /** 커스텀(79차, 사용자 요청) — 배경/포인트 두 색만 사용자가 고르면 나머지 팔레트 값은
      *  [buildCustomPalette]가 자동 계산한다. 실제 두 색은 AppData.customThemeBackground/customThemeAccent. */
     const val CUSTOM = "CUSTOM"
@@ -110,133 +106,7 @@ val LightOrangePalette = PhoneLockPalette(
     outline = Color(0xFFE8D5BE)
 )
 
-// 라벤더(라이트+퍼플, 53차 신규): 은은한 라일락 배경에 진보라 포인트.
-val LavenderPalette = PhoneLockPalette(
-    isDark = false,
-    background = Color(0xFFF8F6FC),
-    surface = Color(0xFFFFFFFF),
-    surfaceAlt = Color(0xFFF0EBFA),
-    primary = Color(0xFF9575CD),
-    primaryContainer = Color(0xFFE1D5F5),
-    onPrimary = Color(0xFF2A1B47),
-    secondary = Color(0xFF7E57C2),
-    onSecondary = Color(0xFFF8F6FC),
-    success = Color(0xFF43A047),
-    warning = Color(0xFFF59E0B),
-    warningContainer = Color(0xFFFEF3C7),
-    error = Color(0xFFE53935),
-    errorContainer = Color(0xFFFEE2E2),
-    onBackground = Color(0xFF2A1B47),
-    muted = Color(0xFF7C6E94),
-    outline = Color(0xFFDCD0EF)
-)
-
-// 민트(라이트+틸, 53차 신규): 청량한 민트 배경에 딥틸 포인트.
-val MintPalette = PhoneLockPalette(
-    isDark = false,
-    background = Color(0xFFF0FBF9),
-    surface = Color(0xFFFFFFFF),
-    surfaceAlt = Color(0xFFDFF5F1),
-    primary = Color(0xFF26A69A),
-    primaryContainer = Color(0xFFB2EAE2),
-    onPrimary = Color(0xFFFFFFFF),
-    secondary = Color(0xFF00897B),
-    onSecondary = Color(0xFFF0FBF9),
-    success = Color(0xFF43A047),
-    warning = Color(0xFFF59E0B),
-    warningContainer = Color(0xFFFEF3C7),
-    error = Color(0xFFE53935),
-    errorContainer = Color(0xFFFEE2E2),
-    onBackground = Color(0xFF143330),
-    muted = Color(0xFF5C7A76),
-    outline = Color(0xFFC5E6E0)
-)
-
-// 로즈(라이트+핑크, 53차 신규): 부드러운 로즈 배경에 진분홍 포인트.
-val RosePalette = PhoneLockPalette(
-    isDark = false,
-    background = Color(0xFFFFF5F8),
-    surface = Color(0xFFFFFFFF),
-    surfaceAlt = Color(0xFFFCE4EC),
-    primary = Color(0xFFEC407A),
-    primaryContainer = Color(0xFFFBD3E1),
-    onPrimary = Color(0xFFFFFFFF),
-    secondary = Color(0xFFD81B60),
-    onSecondary = Color(0xFFFFF5F8),
-    success = Color(0xFF43A047),
-    warning = Color(0xFFF59E0B),
-    warningContainer = Color(0xFFFEF3C7),
-    error = Color(0xFFE53935),
-    errorContainer = Color(0xFFFEE2E2),
-    onBackground = Color(0xFF3D0F20),
-    muted = Color(0xFF8C6270),
-    outline = Color(0xFFF5CEDD)
-)
-
-// 미드나잇(다크+퍼플, 53차 신규): 짙은 남보라 배경에 라이트퍼플 포인트.
-val MidnightPalette = PhoneLockPalette(
-    isDark = true,
-    background = Color(0xFF14101F),
-    surface = Color(0xFF201A32),
-    surfaceAlt = Color(0xFF201A32),
-    primary = Color(0xFFB388FF),
-    primaryContainer = Color(0xFF3B2E5C),
-    onPrimary = Color(0xFF14101F),
-    secondary = Color(0xFF7C4DFF),
-    onSecondary = Color(0xFF14101F),
-    success = Color(0xFF34D399),
-    warning = Color(0xFFFBBF24),
-    warningContainer = Color(0xFF3A331A),
-    error = Color(0xFFF87171),
-    errorContainer = Color(0xFF3A2020),
-    onBackground = Color(0xFFE8E1F5),
-    muted = Color(0xFFA399BD),
-    outline = Color(0xFF332A4D)
-)
-
-// 포레스트(다크+그린, 53차 신규): 짙은 숲 배경에 산뜻한 연두 포인트.
-val ForestPalette = PhoneLockPalette(
-    isDark = true,
-    background = Color(0xFF0F1712),
-    surface = Color(0xFF1B2620),
-    surfaceAlt = Color(0xFF1B2620),
-    primary = Color(0xFF66BB6A),
-    primaryContainer = Color(0xFF26402B),
-    onPrimary = Color(0xFF0F1712),
-    secondary = Color(0xFF81C784),
-    onSecondary = Color(0xFF0F1712),
-    success = Color(0xFF66BB6A),
-    warning = Color(0xFFFBBF24),
-    warningContainer = Color(0xFF3A331A),
-    error = Color(0xFFF87171),
-    errorContainer = Color(0xFF3A2020),
-    onBackground = Color(0xFFE3EFE5),
-    muted = Color(0xFF90A896),
-    outline = Color(0xFF2A3B2F)
-)
-
 /** "#RRGGBB"(또는 "RRGGBB") 문자열을 [Color]로 파싱, 실패하면 null. */
-// 고대비(82차 신규): WCAG 대비를 최우선으로 — 순검정 배경/순백 텍스트, 포인트는 시인성 높은 노랑.
-val HighContrastPalette = PhoneLockPalette(
-    isDark = true,
-    background = Color(0xFF000000),
-    surface = Color(0xFF000000),
-    surfaceAlt = Color(0xFF1A1A1A),
-    primary = Color(0xFFFFD600),
-    primaryContainer = Color(0xFF4D4000),
-    onPrimary = Color(0xFF000000),
-    secondary = Color(0xFF00E5FF),
-    onSecondary = Color(0xFF000000),
-    success = Color(0xFF00E676),
-    warning = Color(0xFFFFD600),
-    warningContainer = Color(0xFF4D4000),
-    error = Color(0xFFFF5252),
-    errorContainer = Color(0xFF4D0000),
-    onBackground = Color(0xFFFFFFFF),
-    muted = Color(0xFFCCCCCC),
-    outline = Color(0xFFFFFFFF)
-)
-
 fun parseHexColor(hex: String): Color? = runCatching {
     val clean = hex.trim().removePrefix("#")
     if (clean.length != 6) return null
@@ -297,12 +167,6 @@ fun buildCustomPalette(backgroundHex: String, accentHex: String): PhoneLockPalet
 fun paletteFor(themeMode: String): PhoneLockPalette = when (themeMode) {
     ThemeMode.DARK_BLUE -> DarkBluePalette
     ThemeMode.LIGHT_ORANGE -> LightOrangePalette
-    ThemeMode.LAVENDER -> LavenderPalette
-    ThemeMode.MINT -> MintPalette
-    ThemeMode.ROSE -> RosePalette
-    ThemeMode.MIDNIGHT -> MidnightPalette
-    ThemeMode.FOREST -> ForestPalette
-    ThemeMode.HIGH_CONTRAST -> HighContrastPalette
     else -> LightGreenPalette
 }
 
@@ -311,11 +175,5 @@ val THEME_DISPLAY_NAMES: List<Pair<String, String>> = listOf(
     ThemeMode.LIGHT_GREEN to "라이트 · 그린",
     ThemeMode.DARK_BLUE to "다크 · 블루",
     ThemeMode.LIGHT_ORANGE to "화이트 · 오렌지",
-    ThemeMode.LAVENDER to "라벤더 · 퍼플",
-    ThemeMode.MINT to "민트 · 틸",
-    ThemeMode.ROSE to "로즈 · 핑크",
-    ThemeMode.MIDNIGHT to "미드나잇 · 퍼플",
-    ThemeMode.FOREST to "포레스트 · 그린",
-    ThemeMode.HIGH_CONTRAST to "고대비",
     ThemeMode.CUSTOM to "🎨 커스텀"
 )

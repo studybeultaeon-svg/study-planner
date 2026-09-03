@@ -96,6 +96,14 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
     }
     var showExitConfirmGate by remember { mutableStateOf(false) }
     var dailyResetHourText by remember { mutableStateOf(repository.dailyResetHour.toString()) }
+    // 85차: 설정 화면 진입 시 다른 기기에서 바꾼 다회독 기본값/일일 초기화 시각을 받아와 로컬 상태를 갱신.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { repository.syncSettingsFromFirebase() }
+        defaultMultiPassEnabled = repository.defaultMultiPassEnabled
+        defaultPassCount = repository.defaultPassCount
+        defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.parsePassIntervals(repository.defaultPassIntervalsCsv, repository.defaultPassCount)
+        dailyResetHourText = repository.dailyResetHour.toString()
+    }
     var launchAtStartup by remember { mutableStateOf(com.phonelock.desktop.isLaunchAtStartupEnabled()) }
     var blockReels by remember { mutableStateOf(repository.blockReels) }
     var blockShorts by remember { mutableStateOf(repository.blockShorts) }
@@ -673,40 +681,10 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                     }
                     Spacer(Modifier.height(Spacing.md))
 
-                    SectionCard("자동 백업 (Firebase)") {
-                        var cloudBackupEnabled by remember { mutableStateOf(repository.cloudBackupEnabled) }
-                        ToggleRow(
-                            title = "매일 자동으로 클라우드에 백업",
-                            checked = cloudBackupEnabled,
-                            onCheckedChange = { checked ->
-                                cloudBackupEnabled = checked
-                                repository.cloudBackupEnabled = checked
-                            }
-                        )
-                        Text(
-                            "로그인이 필요하며, Firebase 콘솔에서 Storage를 먼저 활성화해야 동작합니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        var lastResultText by remember { mutableStateOf(repository.lastCloudBackupResult) }
-                        if (lastResultText.isNotBlank()) {
-                            Spacer(Modifier.height(Spacing.xs))
-                            Text(
-                                lastResultText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (lastResultText.contains("성공")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                            )
-                        }
-                        Spacer(Modifier.height(Spacing.sm))
-                        val scope = rememberCoroutineScope()
-                        Button(onClick = {
-                            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                                val result = repository.uploadCloudBackupNow()
-                                lastResultText = if (result.isSuccess) "성공 (${result.getOrNull()})" else "실패: ${result.exceptionOrNull()?.message}"
-                            }
-                        }) { Text("지금 클라우드에 백업") }
-                    }
-                    Spacer(Modifier.height(Spacing.md))
+                    // 85차(사용자 요청): "자동 백업 (Firebase)" 설정 UI를 제거했다 — 로그인/Storage 활성화
+                    // 등 전제조건이 많아 실사용 검증이 부족한 상태였다. cloudBackupEnabled/CloudBackupClient
+                    // 등 하위 코드는 그대로 남겨뒀으니(제거하지 않음) 나중에 제대로 재설계해 다시 노출할 수
+                    // 있다 — 자세한 경위는 IDEAS.md/DECISIONS.md 85차 참고.
 
                     SectionCard("오래된 통계 데이터 정리") {
                         var lastResult by remember { mutableStateOf<Int?>(null) }
@@ -846,6 +824,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                             onCheckedChange = { checked ->
                                 defaultMultiPassEnabled = checked
                                 repository.defaultMultiPassEnabled = checked
+                                repository.pushSettingsToFirebase()
                             }
                         )
                         Spacer(Modifier.height(Spacing.sm))
@@ -866,6 +845,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                                 repository.defaultPassCount = newCount
                                 defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.defaultPassIntervals(newCount)
                                 repository.defaultPassIntervalsCsv = defaultPassIntervals.joinToString(",")
+                                repository.pushSettingsToFirebase()
                             },
                             min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
                             max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
@@ -883,6 +863,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                                         val updated = defaultPassIntervals.toMutableList().also { it[i] = newDays }
                                         defaultPassIntervals = updated
                                         repository.defaultPassIntervalsCsv = updated.joinToString(",")
+                                        repository.pushSettingsToFirebase()
                                     },
                                     min = 1, max = 90,
                                     modifier = Modifier.width(140.dp)
@@ -898,7 +879,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                             value = dailyResetHourText,
                             onValueChange = { text ->
                                 dailyResetHourText = text
-                                text.toIntOrNull()?.let { if (it in 0..23) repository.dailyResetHour = it }
+                                text.toIntOrNull()?.let { if (it in 0..23) { repository.dailyResetHour = it; repository.pushSettingsToFirebase() } }
                             },
                             label = { Text("초기화 시각 (0~23시)") },
                             modifier = Modifier.fillMaxWidth()

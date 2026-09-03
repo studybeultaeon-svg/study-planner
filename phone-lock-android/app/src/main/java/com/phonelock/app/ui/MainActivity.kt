@@ -364,12 +364,15 @@ private fun ManageSection(repository: PhoneLockRepository, navController: NavCon
 private fun StudySection(repository: PhoneLockRepository) {
     var subTab by remember { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
+        // 85차: 이모지+텍스트를 하나의 text 슬롯에 나란히 넣으면 좁은 폰 화면에서 5칸이 우겨넣어져
+        // 글자가 잘리거나 두 줄로 밀린다(사용자 지적) — Tab의 icon/text 슬롯을 분리하면 Material3가
+        // 이모지를 위, 라벨을 아래로 항상 세로로 쌓아준다.
         TabRow(selectedTabIndex = subTab) {
-            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("⏱️ 시간 측정") })
-            MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("📅 캘린더") })
-            MaterialTab(selected = subTab == 2, onClick = { subTab = 2 }, text = { Text("🧮 계산기") })
-            MaterialTab(selected = subTab == 3, onClick = { subTab = 3 }, text = { Text("🗓️ 일정표") })
-            MaterialTab(selected = subTab == 4, onClick = { subTab = 4 }, text = { Text("📈 통계") })
+            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("⏱️") }, text = { Text("시간 측정") })
+            MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, icon = { Text("📅") }, text = { Text("캘린더") })
+            MaterialTab(selected = subTab == 2, onClick = { subTab = 2 }, icon = { Text("🧮") }, text = { Text("계산기") })
+            MaterialTab(selected = subTab == 3, onClick = { subTab = 3 }, icon = { Text("🗓️") }, text = { Text("일정표") })
+            MaterialTab(selected = subTab == 4, onClick = { subTab = 4 }, icon = { Text("📈") }, text = { Text("통계") })
         }
         Box(Modifier.weight(1f)) {
             when (subTab) {

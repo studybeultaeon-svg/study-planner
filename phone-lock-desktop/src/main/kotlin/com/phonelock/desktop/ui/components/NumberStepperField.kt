@@ -1,7 +1,11 @@
 package com.phonelock.desktop.ui.components
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +30,11 @@ import androidx.compose.ui.unit.dp
  * 로 뺄 수 있게 했다. **83차 UI 재설계(5차)**: 화살표를 "▲"/"▼" 텍스트 글리프로 그리던 걸 [IconChip]
  * (벡터 아이콘)으로 교체했다 — 앱 폰트를 카페24 써라운드로 바꾸면서 이 폰트에 기하학 기호 글리프가
  * 없어 화살표가 전부 안 보이는 문제가 생겼기 때문(자세한 경위는 IconChip.kt 참고).
+ *
+ * **85차 발견(안드로이드판과 대칭)**: `trailingIcon` 슬롯은 아이콘 자체를 줄여도(`stepperSize`) M3
+ * `OutlinedTextField`가 그 슬롯을 위한 폭을 별도로 예약해버려, 좁은 칸에서는 화살표를 줄이는 것만으론
+ * 숫자가 여전히 잘려 보였다. `overlayStepper=true`로 켜면 `trailingIcon` 슬롯 자체를 안 쓰고
+ * 텍스트필드 전체 폭을 값 표시에 내준 뒤, 화살표를 그 위에 `Box`로 겹쳐 그린다.
  */
 @Composable
 fun NumberStepperField(
@@ -39,12 +48,45 @@ fun NumberStepperField(
     showStepper: Boolean = true,
     centerValue: Boolean = false,
     stepperSize: androidx.compose.ui.unit.Dp = 20.dp,
-    stepperIconSize: androidx.compose.ui.unit.Dp = 14.dp
+    stepperIconSize: androidx.compose.ui.unit.Dp = 14.dp,
+    overlayStepper: Boolean = false
 ) {
     fun bump(delta: Int) {
         val current = value.toDoubleOrNull()?.toInt() ?: 0
         onValueChange((current + delta).coerceIn(min, max).toString())
     }
+
+    if (overlayStepper) {
+        Box(modifier) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                label = label?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                textStyle = calcFieldTextStyle().copy(
+                    textAlign = if (centerValue) TextAlign.Center else TextAlign.Start
+                )
+            )
+            if (showStepper) {
+                // 85차 3차(사용자 지적, 안드로이드판과 대칭): 가장자리에 너무 딱 붙었었다 — end padding을
+                // 살짝 늘려 여유를 두고, label이 위쪽 공간을 차지해 값 입력 줄의 실제 세로 중심이 Box
+                // 전체 높이의 기하학적 중심보다 아래에 있어 화살표 위/아래 여백이 짝짝이로 보였던 것도
+                // 아래로 살짝 밀어(offset) 값 줄과 눈높이를 맞췄다.
+                Column(
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 5.dp).offset(y = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    IconChip(Icons.Filled.KeyboardArrowUp, size = stepperSize, iconSize = stepperIconSize, onClick = { bump(step) })
+                    Spacer(Modifier.size(2.dp))
+                    IconChip(Icons.Filled.KeyboardArrowDown, size = stepperSize, iconSize = stepperIconSize, onClick = { bump(-step) })
+                }
+            }
+        }
+        return
+    }
+
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,

@@ -298,22 +298,39 @@ private fun CalcTaskCard(
             Spacer(Modifier.height(Spacing.sm))
 
             CalcFieldGroupHeader("📆", "요일별 목표")
-            // 85차: 요일별 목표도 화살표로 조절 가능하게 요청, 한 줄에 7칸 모두 들어가야 한다는 요청도
-            // 함께 받아 FlowRow(줄바꿈) 대신 weight(1f) Row로 되돌렸다 — Row는 절대 줄바꿈하지 않고
-            // 대신 칸을 균등하게 눌러 좁히므로 "한 줄에 다 들어간다"는 요구를 구조적으로 보장한다.
-            // 화살표 칩 자체도 더 작게(16dp/11dp) 줄여 좁은 칸에서도 숫자가 가려지지 않게 했다.
+            // 85차 1차: 화살표로 조절 가능 + 한 줄에 7칸 요청으로 weight(1f) 단일 Row를 썼는데, 실기기
+            // 폰 폭에서는 7등분이 너무 좁아 라벨(요일 글자)과 숫자가 화살표에 가려 안 보이는 문제가
+            // 발생했다(85차 2차, 사용자 실기기 확인) — 4+3 두 줄로 나눠 칸당 폭을 넉넉히 확보한다.
+            val (weekdays, weekend) = DAY_ORDER.take(4) to DAY_ORDER.drop(4)
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                DAY_ORDER.forEach { d ->
+                weekdays.forEach { d ->
                     com.phonelock.app.ui.components.NumberStepperField(
                         value = dayValues.value[d] ?: "",
                         onValueChange = { v -> dayValues.value = dayValues.value.toMutableMap().apply { put(d, v) }; persist() },
                         label = DAY_LABELS[d],
                         centerValue = true,
+                        overlayStepper = true,
                         stepperSize = 16.dp,
                         stepperIconSize = 11.dp,
                         modifier = Modifier.weight(1f)
                     )
                 }
+            }
+            Spacer(Modifier.height(Spacing.xs))
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                weekend.forEach { d ->
+                    com.phonelock.app.ui.components.NumberStepperField(
+                        value = dayValues.value[d] ?: "",
+                        onValueChange = { v -> dayValues.value = dayValues.value.toMutableMap().apply { put(d, v) }; persist() },
+                        label = DAY_LABELS[d],
+                        centerValue = true,
+                        overlayStepper = true,
+                        stepperSize = 16.dp,
+                        stepperIconSize = 11.dp,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.weight(1f))
             }
             Spacer(Modifier.height(Spacing.xs))
             OutlinedTextField(

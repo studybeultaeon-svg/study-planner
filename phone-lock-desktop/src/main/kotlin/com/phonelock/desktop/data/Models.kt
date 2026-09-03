@@ -292,6 +292,8 @@ data class AppData(
     val calendarTasks: MutableList<CalendarTask> = mutableListOf(),
     /** 캘린더 전체 문서 단위 LWW 타임스탬프 — 웹앱의 studyCalendarTasks_ts에 대응. */
     var calendarTs: Long = 0L,
+    /** 85차: 계산기 기본 다회독값/일일 초기화 시각 설정 동기화용 문서 단위 LWW 타임스탬프(안드로이드판과 대칭). */
+    var settingsTs: Long = 0L,
     /** 네이티브 계산기(3단계) — 입력 중인 draft 업무 카드들과 그 LWW 타임스탬프(웹앱 tasks/tasksTs). */
     val calcTasks: MutableList<CalcTask> = mutableListOf(),
     var calcTasksTs: Long = 0L,

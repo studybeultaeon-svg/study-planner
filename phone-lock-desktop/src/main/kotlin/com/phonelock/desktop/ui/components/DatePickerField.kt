@@ -65,12 +65,16 @@ fun DatePickerField(
         OutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
         ) {
-            Text("📅", modifier = Modifier.padding(end = 6.dp))
+            Text("📅", modifier = Modifier.padding(end = 4.dp))
+            // 85차(사용자 지적, 안드로이드판과 대칭): 스마트폰에서 "시작"/"마감"을 좌우로 나란히 두면
+            // 폭이 좁아 계산기 필드와 같은 bodyLarge로는 "YYYY-MM-DD" 10글자가 다 안 보이고 말줄임됐다
+            // — 이 버튼만 bodyMedium으로 줄여 날짜 전체가 항상 다 보이게 했다.
             Text(
                 value.ifBlank { "날짜 선택" },
-                style = calcFieldTextStyle(),
+                style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Start,
                 maxLines = 1,

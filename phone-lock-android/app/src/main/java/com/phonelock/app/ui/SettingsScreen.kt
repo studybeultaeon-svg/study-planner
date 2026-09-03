@@ -125,6 +125,14 @@ fun SettingsScreen(
     }
     var settingsSubTab by remember { mutableIntStateOf(0) }
     var dailyResetHourText by remember { mutableStateOf(prefs.dailyResetHour.toString()) }
+    // 85차: 설정 화면 진입 시 다른 기기에서 바꾼 다회독 기본값/일일 초기화 시각을 받아와 로컬 상태를 갱신.
+    LaunchedEffect(Unit) {
+        repository.syncSettingsFromFirebase()
+        defaultMultiPassEnabled = prefs.defaultMultiPassEnabled
+        defaultPassCount = prefs.defaultPassCount
+        defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.parsePassIntervals(prefs.defaultPassIntervalsCsv, prefs.defaultPassCount)
+        dailyResetHourText = prefs.dailyResetHour.toString()
+    }
     var loginId by remember { mutableStateOf(AuthManager.currentLoginId) }
     var showRestoreConfirmDialog by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
@@ -567,7 +575,7 @@ fun SettingsScreen(
                     value = dailyResetHourText,
                     onValueChange = { text ->
                         dailyResetHourText = text
-                        text.toIntOrNull()?.let { if (it in 0..23) prefs.dailyResetHour = it }
+                        text.toIntOrNull()?.let { if (it in 0..23) { prefs.dailyResetHour = it; repository.pushSettingsToFirebase() } }
                     },
                     label = { Text("초기화 시각 (0~23시)") },
                     modifier = Modifier.fillMaxWidth()
@@ -1103,6 +1111,7 @@ fun SettingsScreen(
                     onCheckedChange = { checked ->
                         defaultMultiPassEnabled = checked
                         prefs.defaultMultiPassEnabled = checked
+                        repository.pushSettingsToFirebase()
                     }
                 )
                 Text(
@@ -1128,6 +1137,7 @@ fun SettingsScreen(
                         prefs.defaultPassCount = newCount
                         defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.defaultPassIntervals(newCount)
                         prefs.defaultPassIntervalsCsv = defaultPassIntervals.joinToString(",")
+                        repository.pushSettingsToFirebase()
                     },
                     min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
                     max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
@@ -1145,6 +1155,7 @@ fun SettingsScreen(
                                 val updated = defaultPassIntervals.toMutableList().also { it[i] = newDays }
                                 defaultPassIntervals = updated
                                 prefs.defaultPassIntervalsCsv = updated.joinToString(",")
+                                repository.pushSettingsToFirebase()
                             },
                             min = 1,
                             max = 90,

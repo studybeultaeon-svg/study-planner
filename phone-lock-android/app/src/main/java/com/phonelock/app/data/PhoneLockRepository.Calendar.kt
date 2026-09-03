@@ -20,7 +20,6 @@ import org.json.JSONObject
 // 원천이다(업무마다 3~8회독 + 회독별 간격을 자유 설정). 과거 3단계(빨/노/초) 고정 스케줄은
 // passTotal==3인 기본 케이스와 동치라 자연히 하위호환된다 — color 문자열은 레거시 코드가 여전히
 // "red"(=passIndex 0) 비교에 쓰므로 표시용 라벨로만 남겨둔다(legacyColorLabel 참고).
-private val koreanCollator = java.text.Collator.getInstance(java.util.Locale.KOREAN)
 
 /** 신규/자동생성 CalendarTask.color에 쓸 하위호환 라벨. passIndex==0은 항상 "red"(기존 코드가 이 값으로
  *  "1회독 최초 생성"을 판정하므로 반드시 유지), 그 외엔 3단계 기존 이름을 최대한 재사용하고 4단계 이상은
@@ -55,9 +54,11 @@ suspend fun PhoneLockRepository.getCalendarTasksInRange(fromKey: String, toKey: 
 suspend fun PhoneLockRepository.getAllCalendarTasksOnce(): List<CalendarTask> = calendarTaskDao.getAllOnce()
 
 suspend fun PhoneLockRepository.resortCalendarDay(dateKey: String) {
+    // 85차 발견: koreanCollator만 쓰면 순수 사전식이라 "문제10"이 "문제2"보다 앞에 온다(문자 '1'<'2') —
+    // 이름에 섞인 숫자는 자연 정렬(NaturalOrder)로 값 비교해야 사용자가 기대하는 "숫자 순서"가 된다.
     val sorted = calendarTaskDao.getByDate(dateKey).sortedWith(
         compareBy<CalendarTask> { it.passTotal - 1 - it.passIndex }
-            .thenComparator { a, b -> koreanCollator.compare(a.name, b.name) }
+            .thenComparator { a, b -> com.phonelock.shared.NaturalOrder.comparator.compare(a.name, b.name) }
     )
     sorted.forEachIndexed { i, t -> if (t.sortOrder != i) calendarTaskDao.update(t.copy(sortOrder = i)) }
 }
@@ -152,6 +153,9 @@ suspend fun PhoneLockRepository.applyCalendarAutoSchedule(dateKey: String, task:
                 passIndex = nextIndex, passTotal = task.passTotal, passIntervalsCsv = task.passIntervalsCsv
             )
         )
+        // 85차 발견: 데스크탑판은 여기서 정렬을 다시 하는데 안드로이드판은 빠져 있었다 — 자동 생성된
+        // 다음 회독이 기본 정렬을 안 따르고 그냥 맨 뒤에 붙던 버그(플랫폼 비대칭).
+        resortCalendarDay(nKey)
     }
 }
 
@@ -175,6 +179,8 @@ suspend fun PhoneLockRepository.applyIncompleteCarryOver(dateKey: String, task: 
     if (!exists) {
         val nextOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
         calendarTaskDao.insert(task.copy(id = 0, dateKey = nKey, status = null, sortOrder = nextOrder))
+        // 85차 발견: 데스크탑판은 여기서 정렬을 다시 하는데 안드로이드판은 빠져 있었다(플랫폼 비대칭).
+        resortCalendarDay(nKey)
     }
 }
 
