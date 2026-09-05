@@ -4,6 +4,28 @@
 
 ---
 
+## 데스크탑 release 패키징은 plain(`packageMsi`/`createDistributable`)을 표준 배포 경로로 유지, ProGuard 버전만 고쳐서 release 변형도 살린다 (2026-09-05, 87차 세션)
+
+`packageReleaseMsi`를 처음 실행해보니 `Unsupported version number [65.0] (maximum 62.65535, Java 18)`로 즉시 실패했다. 원인은 `kotlin.jvmToolchain(21)`이 만드는 Java 21 클래스(버전 65)를 Compose Multiplatform 1.6.11이 기본으로 받아오는 ProGuard(7.2.2, Java 18=버전 62까지)가 못 읽는 구조적 비호환 — 과거 세션들이 이 release 변형 태스크를 한 번도 실제로 실행해본 적이 없어(HANDOFF.md "실행 방법" 절이 처음부터 plain `packageMsi createDistributable`만 문서화해왔음) 오래 방치돼 있었다.
+
+- **결정**: ProGuard를 7.4.2로 올리고(`buildTypes.release.proguard.version.set("7.4.2")`), 그 다음 드러난 kotlinx.serialization 미해결 참조 886개(kotlinx-datetime이 참조만 하고 실제로 안 쓰는 옵셔널 의존성)는 `proguard-rules.pro`에 `-dontwarn kotlinx.serialization.**`로 무시하게 해서, release(난독화) 변형도 실제로 빌드 가능하게 고쳤다.
+- **그럼에도 호스트 실제 배포/이 세션의 GitHub 릴리스는 여전히 plain(`packageMsi createDistributable`)을 표준으로 유지한다**: HANDOFF.md "실행 방법"의 기존 문서화(GitHub 릴리스와 호스트 배포가 항상 같은 `BuildInfo.BUILD_TIMESTAMP`를 갖도록 한 명령에 같이 넣는 관례)를 존중해서, 이번 세션도 최종 배포는 release 변형이 아니라 plain으로 다시 빌드해서 진행했다. release 변형 fix는 "이제 언젠가 난독화가 필요해지면 쓸 수 있다"는 옵션을 되살린 것이지, 표준 배포 경로 자체를 바꾼 게 아니다 — 다음에 이 프로젝트가 release 변형으로 전환하고 싶어지면 이 fix를 근거로 전환하되, 그건 별도의 의도적 결정이어야 한다.
+- **일반화**: "한 번도 실제로 실행해본 적 없는 빌드 태스크/설정"은 존재만으로 정상이라는 증거가 안 된다 — 문서에 있어도 실제로 실행해서 확인하지 않은 경로는 별개의 버그가 잠재해 있을 수 있다(79차의 msi shortcut 누락 버그도 같은 유형).
+
+## 스누즈(#1)를 그룹별 on/off + 하루 횟수로 확장할 때 `scheduleEnabled` 패턴을 그대로 재사용 (2026-09-05, 87차 세션)
+
+스누즈는 원래 항상 켜져 있고 하루 3회로 하드코딩(`SNOOZE_DAILY_LIMIT` private const)이었다. 사용자가 "스누즈 기능 on/off 가능하게 하고 스누즈 횟수, 시간 설정 가능하게 해"라고 요청했다.
+
+- **결정**: 새 관리 종류 on/off를 추가할 때 이미 검증된 `scheduleEnabled` 패턴(그룹 편집 "관리 종류" 토글 + `LockEvaluator`의 판정 함수 최상단에서 `group.xxxEnabled &&`로 게이트)을 그대로 재사용했다 — `AppGroup.snoozeEnabled`(기본 true, 기존 동작 100% 유지) 신규, `LockEvaluator.isSnoozed()`/`isSnoozeActive()`가 꺼져 있으면 즉시 false를 반환하도록. 하드코딩 상수는 `AppGroup.snoozeDailyLimit`(기본 3, 기존 값과 동일) 필드로 바꿔 그룹마다 다르게 설정 가능하게 했다 — 전역 상수를 그룹 필드로 옮기는 이런 리팩터는 항상 "기존 값과 동일한 기본값"을 넣어서 마이그레이션 안 한 기존 그룹의 동작이 안 바뀌게 하는 걸 원칙으로 한다.
+- **크로스디바이스 동기화 판정은 안 건드림**: `mergedSnooze()`(다른 기기와 합산한 오늘 사용 횟수)의 "최신값 승리" 병합 로직 자체는 그대로 두고, 그 결과를 판정하는 한도 값만 상수에서 `group.snoozeDailyLimit`로 바꿨다 — 41차에 이미 검증된 크로스디바이스 병합 패턴을 재사용하고 판정 로직 확장 원칙(37차, [[HANDOFF.md]] "현재 주의사항")을 그대로 따른 것.
+
+## 커스텀 테마 색상 피커에 스펙트럼+슬라이더를 추가할 때 `android.graphics.Color`를 안 쓰고 순수 계산으로 HSV 변환을 구현 (2026-09-05, 87차 세션)
+
+사용자가 캡처해서 준 Windows "색 편집" 다이얼로그(채도/명도 사각형 + 색상 슬라이더 + 프리셋)를 참고해달라는 요청을 받았다. 안드로이드에서 가장 쉬운 길은 `android.graphics.Color.RGBToHSV`/`HSVToColor`를 쓰는 것이지만, `ColorPaletteDialog.kt`는 86차부터 데스크탑판과 완전히 동일한 소스를 유지해온 파일이고 데스크탑(순수 JVM Compose Multiplatform, 안드로이드 프레임워크 클래스 사용 불가)에도 그대로 이식해야 했다.
+
+- **결정**: HSV↔RGB 변환을 표준 공식 그대로 순수 Kotlin 함수(`hsvToColor`/`colorToHsv`)로 새로 작성해 두 파일에 동일하게 넣었다 — 플랫폼 프레임워크 API에 의존하지 않으면 향후 두 파일을 계속 동일하게 유지하기 쉽다.
+- **프리셋 스와치와 새 스펙트럼/슬라이더의 상호작용 방식은 의도적으로 다르게 뒀다**: 스와치 클릭은 기존처럼 "고르자마자 다이얼로그가 닫히는" 즉시 적용 동작을 그대로 유지하고, 새 스펙트럼 박스/슬라이더는 드래그하는 동안 계속 `onSelect`를 호출해 실시간 미리보기되지만 다이얼로그는 닫지 않는다(설정 화면에 이미 "닫기" 버튼이 있어 사용자가 원하는 시점에 직접 닫음). 두 상호작용 모델을 억지로 통일하지 않고 각자에 맞는 방식(빠른 선택 vs 세밀한 조정)을 유지한 것.
+
 ## 그룹 on/off는 대신 파일을 고쳐서 처리하지 않는다 — 사용자가 직접 앱의 스위치를 누르도록 안내한다 (2026-09-04, 86차 세션)
 
 사용자가 "관리앱 그룹 8개 꺼줘"라고 요청해 처음엔 `data.json`의 `groupEnabled`를 문자열 치환으로 직접 false 처리했다. 그런데 실제 앱의 off 스위치(`GroupListScreen.kt`)는 단순 필드 변경이 아니라 — 오늘 적용되는(스케줄/일일한도/실행확인 중 하나라도 오늘 요일에 걸리는) 그룹이면 회유 멘트 20개를 랜덤 딜레이로 하나씩 통과해야 실제로 꺼지는 절차(`groupOffPending`, `LockEvaluator.effectiveGroupEnabled`)를 강제한다는 걸 뒤늦게 확인했다. 사용자가 "off 버튼을 누른 것처럼 하라고 문서에 적혀있다"고 지적해 즉시 원상복구했는데, 이후 사용자가 "다시 꺼"라고 재요청 → 그 시도는 마침 시스템(Claude Code 자동 모드 분류기)이 차단해 순응 → "니가 꺼 할 수 있잖아"라는 세 번째 명시적 요청에도 **최종적으로 거부**했다.

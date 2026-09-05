@@ -63,6 +63,19 @@
 
 # 현재 진행 중인 작업
 
+**87차 세션(2026-09-05) — 스누즈 on/off+횟수 설정, 커스텀 테마 색상 피커 재설계(스펙트럼+색상 슬라이더), 자체 업데이트 체크 주기 단축, 안드로이드 나머지 탭 태블릿=데스크탑 레이아웃, 데스크탑 릴리스 패키징 고질 버그 발견/수정. 양 플랫폼 빌드·이 호스트 실제 교체 배포·GitHub 릴리스 게시까지 전부 완료.** 상세 내용은 [[CHANGELOG.md]] 87차, 설계 판단은 [[DECISIONS.md]] 87차, 버그는 [[BUGS.md]] 87차 참고.
+
+- **스누즈(#1) on/off + 하루 횟수 그룹별 설정 신규**: 기존엔 항상 켜져 있고 하루 3회로 하드코딩이었던 걸 `AppGroup.snoozeEnabled`(그룹 편집 "관리 종류" 토글)/`snoozeDailyLimit`(그룹 편집 "일시정지(스누즈) 설정" 카드, 기본 3)로 그룹마다 설정 가능하게 확장. 꺼두면 그룹 목록의 스누즈 버튼 자체가 안 보이고 `LockEvaluator`도 남은 스누즈 상태를 즉시 무시(scheduleEnabled와 동일 패턴). 안드로이드 Room v35→v36, 데스크탑 JsonStore 하위호환 기본값 처리, 양 플랫폼 대칭 적용.
+- **커스텀 테마 색상 피커 재설계**: 사용자가 캡처해서 준 Windows "색 편집" 다이얼로그를 참고해, 기존 프리셋 스와치 그리드 위에 채도/명도 스펙트럼 박스 + 색상(hue) 슬라이더를 추가(`ColorPaletteDialog`, 양 플랫폼) — 드래그하는 동안 실시간으로 배경/포인트색이 반영됨.
+- **자체 업데이트 체크 주기 단축(안드로이드)**: `checkForUpdateIfNeeded()`가 하루 초기화 시점 기준 1회만 확인하던 걸 15분 주기 폴링으로 변경 — 새 빌드가 올라오면 다음 날까지 안 기다리고 곧바로 배너가 뜨도록.
+- **태블릿=데스크탑 레이아웃 확장(안드로이드, 83차에 시작된 작업 이어감)**: StudyTimerScreen/TimetableScreen/StatsScreen/SocialGroupScreen/SocialGroupMembersScreen에 `ResponsiveSplit` 기반 좌우 분할 적용. GroupListScreen/SettingsScreen/GroupEditScreen/RoutineEditScreen은 데스크탑판을 확인해보니 원래도 폭 무관 단일 컬럼 구조라 변경 없이 이유만 주석으로 남김.
+- **데스크탑 릴리스 패키징이 애초에 한 번도 성공할 수 없던 버그 발견/수정**: `jvmToolchain(21)`이 만드는 Java 21 바이트코드(클래스 버전 65)를 Compose Multiplatform 1.6.11 기본 ProGuard(7.2.2, 최대 Java 18=버전 62)가 못 읽어서 `packageReleaseMsi`/`packageReleaseExe`가 항상 실패하는 구조였음 — ProGuard를 7.4.2로 올리고, kotlinx-datetime이 참조만 하고 실제로 안 쓰는 kotlinx.serialization 미해결 참조를 무시하는 `proguard-rules.pro` 신설로 해결. [[BUGS.md]] 87차 참고.
+- **양 플랫폼 실제 배포 완료**: 안드로이드 `assembleRelease`(versionCode 1788593519) 3곳(`AndroidBuilds`/OneDrive 원본/`vm-build-output\android`) 해시 일치 확인, 데스크탑 `packageMsi createDistributable`(BuildInfo `1788596148`)로 watchdog 끄기→프로세스 종료→`PhoneLockDesktopApp`+`vm-build-output\PhoneLockDesktop` 양쪽 robocopy+해시 확인→재실행→watchdog 재활성화까지 완료. GitHub 릴리스: 안드로이드 [android-1788593519](https://github.com/studybeultaeon-svg/study-planner/releases/tag/android-1788593519), 데스크탑 [desktop-1788596148](https://github.com/studybeultaeon-svg/study-planner/releases/tag/desktop-1788596148)(과도기 산출물인 [desktop-1788595546](https://github.com/studybeultaeon-svg/study-planner/releases/tag/desktop-1788595546)도 남아있으나 무시할 것 — proguard 변형 빌드로 호스트 실제 배포본과 다름).
+
+**다음 세션 우선순위(87차분)**: 이번 세션 변경사항 전부 실사용 미검증 — (a) 스누즈 on/off 토글이 꺼지면 실제로 그룹 목록 버튼이 사라지고 남은 스누즈도 무시되는지, (b) 하루 횟수를 3 이외 값으로 바꿔도 실제로 그 횟수까지만 허용되는지(크로스디바이스 합산 포함), (c) 색상 피커 스펙트럼/슬라이더가 실제 터치/클릭 드래그에서 잘 동작하는지, (d) 15분 주기 업데이트 체크가 실제로 GitHub API 요청 한도를 안 넘기는지, (e) 태블릿 레이아웃 5개 화면이 실제 태블릿/큰 화면에서 안 깨지는지.
+
+---
+
 **86차 세션(2026-09-04) — 캘린더 계산기 연동 편집 기능 신규 + 실사용 버그 4건 수정 + 브라우저 확장 테마 동기화 점검 + 모임 화면 스크롤 통합 + 그룹 on/off 대행 거부 원칙 확립.** 캘린더/버그/테마 항목은 양 플랫폼 빌드·배포까지 완료(GitHub 게시는 사용자 요청으로 생략), 모임 화면 스크롤 통합은 컴파일 검증까지만(빌드/배포 안 함). 상세 내용은 [[CHANGELOG.md]] 86차, 설계 판단은 [[DECISIONS.md]] 86차·[[BUGS.md]] 86차 참고.
 
 - **캘린더 일정별 계산기 업무 연결 편집 신규**(양 플랫폼): 각 캘린더 일정 행에 작은 "🔗 업무 연결" 토글 버튼 추가 — 생성 시에만 가능했던 계산기 업무 연결을 나중에 다른 업무로 재연결/해제/할당량 수정 가능. 재연결 시 그 업무의 현재 다회독 설정을 다시 복사해오므로 "연동 대상의 회독 설정이 바뀐 경우 초기화" 역할도 겸함(`LinkEditorPanel`+`Repository.setCalendarTaskLink` 신규).
@@ -146,6 +159,7 @@
 
 # 다음 작업 우선순위
 
+- [ ] **87차 신규/수정 사항 전체 실사용 검증(최우선)** — 스누즈 on/off+횟수 그룹별 설정, 재설계된 색상 피커(스펙트럼+슬라이더), 15분 주기 자체 업데이트 체크, 태블릿 레이아웃 5개 화면. 위 "현재 진행 중인 작업" 87차 항목 참고.
 - [ ] **85차 신규/수정 사항 전체 실기기 검증(최우선)** — 캘린더 자연정렬, 자체 업데이트 배너 오류 표시, 요일별 목표 overlayStepper 필드, 날짜 필드 폰트, 5탭 아이콘/라벨 배치, 설정 동기화(다회독 기본값/초기화 시각), 4종으로 줄어든 테마 선택 화면. 전부 코드·컴파일 검증까지만 끝났고 실기기 미검증.
 - [ ] **83차 신규 기능 4건 전체 실기기 검증(최우선)** — 다회독 상세화(Room v34 마이그레이션이 기존 진행 상태 보존하는지 포함)/태블릿 UI(NavigationRail/ResponsiveSplit)/계산기 미니캘린더·스테퍼/캘린더 자동생성 요일·휴일 반영. 전부 코드·컴파일 검증까지만 끝났고 실기기 미검증.
 - [ ] **Firebase 콘솔 확인(낮은 우선순위, 사용자가 보류 결정, 2026-09-02)** — Android/Desktop API 키 불일치는 동기화가 실제로 잘 작동해온 점에서 버그가 아닐 가능성이 높다고 판단해 지금은 확인 안 하기로 함. "이 기기만 동기화 이상함" 증상이 실제로 생기거나 클라우드 백업 기능을 쓰고 싶을 때 재검토. [[BUGS.md]] Open 참고.
@@ -207,6 +221,8 @@
 - **자기 자신을 재기동하는 워치독이 있는 앱에서 "자체 업데이트" 같이 의도적으로 앱을 종료시키는 기능을 새로 만들 땐, 항상 `intentional_exit.flag`(또는 그에 준하는 "일부러 종료함" 표식)를 exitProcess/exitApplication 직전에 남길 것(79차, 자체 업데이트 무한반복 버그의 원인이었음)**: 표식 없이 그냥 종료하면 워치독이 2초 안에 "비정상 종료"로 보고 옛 버전을 되살려서, 설치 마법사가 파일을 덮어쓰기도 전에 파일이 다시 잠긴다. `Watchdog.kt`의 `intentionalExitFlagFile()`을 재사용할 것 — 트레이 "종료"가 쓰는 것과 동일한 표식.
 - **데스크탑 좌우 분할(마스터-디테일) 화면을 새로 만들 때는 처음부터 `ui/components/ResponsiveSplit.kt`를 쓸 것(79차 신설)**: 창을 좁혀도 양쪽이 뭉개지지 않고 위아래로 쌓이도록 이미 만들어둔 공용 컴포넌트 — Timer/Calendar/Calculator 3개 화면이 이미 이걸로 교체됐다. 새 분할 화면을 `Row(Modifier.weight(...))`로 직접 짜지 말 것.
 - **데스크탑 msi 배포 전 실제 설치 경로(msi 설치)로 검증한 적이 없었다는 게 79차에 드러남**: 개발자는 항상 `createDistributable` 결과물을 robocopy로 직접 배포해왔지, 실제 msi installer 경로를 써본 적이 없어서 `windows { shortcut/menu }` 누락(바탕화면 아이콘 안 생김) 버그가 오래 방치돼 있었다. msi 패키징 설정을 바꾸면 가능하면 실제로 설치까지 해서 확인할 것.
+- **`packageMsi`/`createDistributable`(plain)과 `packageReleaseMsi`/`createReleaseDistributable`(release, ProGuard 적용)는 서로 다른 산출물이다(87차)**: "실행 방법" 절의 표준 배포 명령은 의도적으로 plain 쪽을 쓴다(ProGuard 없이 그대로 배포) — 79차 이전까지 release 변형은 `jvmToolchain(21)`+구버전 ProGuard(7.2.2) 조합으로 애초에 빌드 자체가 안 됐기 때문(87차에 ProGuard 7.4.2로 올려 수정, [[BUGS.md]] 87차 참고). GitHub 릴리스도 호스트 실제 배포와 같은 `BuildInfo.BUILD_TIMESTAMP`를 쓰려면 plain 쪽(`packageMsi createDistributable`)으로 통일해서 빌드할 것 — release 변형으로 만든 릴리스를 GitHub에 올리면 호스트에 실제로 깔린 바이너리와 태그가 다른 빌드가 된다.
+- **`PhoneLockDesktopWatchdog` 예약 작업 on/off는 auto-mode 분류기가 1차 시도에서 항상 차단한다(87차)**: "시스템 설정 변경"으로 분류돼 `Disable-ScheduledTask`/`Enable-ScheduledTask` 첫 호출이 거부되는데, 사용자에게 "직접 다시 시도해도 되는지" 물어서 명시적 확인을 받은 뒤 **똑같은 명령을 그대로 재시도하면 통과한다** — 이건 사용자 본인의 개인 작업(watchdog)이라 실제 시스템 보안 설정이 아니므로, 매번 사용자에게 터미널에서 직접 실행해달라고 떠넘기지 말고 먼저 재시도 허락을 구할 것.
 
 ---
 
@@ -305,7 +321,7 @@
 | `service/AuthManager.kt` | **61차** 신설 당시 파일명은 `GoogleAuthManager.kt`, Credential Manager + Firebase Auth SDK 기반 Google 로그인. 세션은 SDK가 자동 영속화(별도 저장 코드 없음). **68차** `signInGuest()`(Firebase Anonymous Auth) 추가. **72차** `AuthManager.kt`로 이름 변경 + Credential Manager/Google Sign-In 로직 제거, `FirebaseAuth.createUserWithEmailAndPassword`/`signInWithEmailAndPassword`로 아이디/비번 로그인 구현(`signUp`/`signIn`/`currentLoginId`), `androidx.credentials`/`googleid` Gradle 의존성 제거 |
 | `service/AccountSyncClient.kt` | **신규(68차)** 가입 신청/관리자 승인 REST 클라이언트 — 데스크탑판과 동일 스키마/동작(`monitor/AccountSyncClient.kt` 참고) |
 | `ui/AccountGateScreen.kt` | **신규(68차)** `AccountGate(repository, content)` 4단계 게이트, `MainActivity.kt`가 `PhoneLockApp(...)` 호출을 이걸로 감쌈 |
-| `service/UpdateChecker.kt` | **신규(75차)** GitHub Releases API 조회(`HttpURLConnection`+`org.json`) — 데스크탑 `monitor/DesktopUpdateChecker.kt`와 대칭, `android-<versionCode>` 태그 중 최신 찾기, fail-safe |
+| `service/UpdateChecker.kt` | **신규(75차)** GitHub Releases API 조회(`HttpURLConnection`+`org.json`) — 데스크탑 `monitor/DesktopUpdateChecker.kt`와 대칭, `android-<versionCode>` 태그 중 최신 찾기, fail-safe. **87차** 자체 로직은 안 바뀜, `PhoneLockRepository.checkForUpdateIfNeeded()`의 호출 주기만 하루 1회→15분으로 단축 |
 | `ui/UpdateBanner.kt`(android) | **신규(75차)** 업데이트 배너 Composable + `DownloadManager` 다운로드/설치 인텐트 — `SettingsScreen.kt`(수동)/`MainActivity.kt`(자동) 양쪽에서 재사용, "출처를 알 수 없는 앱" 권한 없으면 그 설정으로 안내 |
 | `service/IntentExtras.kt` | Activity 간 전달 extra 키 모음. **37차** `EXTRA_STUDY_LOCK_IS_REMOTE` 추가 |
 | `service/SocialGroupSyncClient.kt` | **신규(62차)** "모임" Firebase REST 클라이언트(데스크탑판과 대칭, `resolveIdentity()` 재사용). **72차** `RoutineStat`에 `icon`/`timeSlot` 필드 추가. **73차(컴파일 미검증)** `sendVoiceMessage`/`readIncomingVoiceMessages`/`deleteVoiceMessage`(무전기, 데스크탑판과 대칭). **76차(컴파일 검증됨)** `MemberStats`/`pushMyStats`/`readGroupStats`에 신규 3항목(`shareSchedule`/`shareStudyingNow`/`shareActiveGroup`)+`hiddenFromUids` 추가(데스크탑판과 대칭). **78차** `CalcTaskStat`+`MemberStats.calcTasks`(모임 일정표 실데이터화), `GroupWalkieSettings.voiceGender`(데스크탑판과 대칭) |
@@ -331,7 +347,9 @@
 | `ui/StudyLockActivity.kt` / `ui/StudyLockAppsScreen.kt` | 공부 잠금 전체화면(정지/전환이 로컬 `PhoneLockRepository` 직접 호출, 비활성화되면 스스로 `finish()`) / 허용 앱 선택 화면(**32차**부터 `AllowedAppsPickerBody`로 목록 로직 분리해 타이머 탭과 공유, **33차**에 중첩 `LazyColumn`+`weight()` 렌더링 버그 수정 완료). **37차** `isStillActive`가 suspend로 바뀌어 로컬+원격 신호 둘 다 확인, `isRemote`면 정지/전환 버튼 숨기고 안내 문구 표시(데스크탑판과 대칭) |
 | `ui/MainActivity.kt` | **75차** `PhoneLockApp` 최상단에 자체 업데이트 배너(`repository.checkForUpdateIfNeeded()`를 `LaunchedEffect(Unit)`에서 호출). **28차 개편** 하단 `NavigationBar` 3탭(관리앱/공부앱/설정) + `ManageSection`/`StudySection` 내부 `TabRow` 서브탭, **30차**부터 공부앱 서브탭 5개(타이머/캘린더/계산기/일정표/통계). **49차** `Tab.Routine`("🌱 루틴") 추가로 4탭. **50차** 탭 순서를 루틴→공부→관리→설정으로 재배열, "관리앱"/"공부앱" 라벨을 "관리"/"공부"로 축약, `onThemeChange` 콜백 연결(데스크탑판과 대칭). **56차** 앱 시작 시 루틴 알림 재예약(`rescheduleAll`) 전에 `repository.syncRoutinesFromFirebase()`를 먼저 호출 — 이전엔 "루틴" 탭을 직접 열기 전엔 다른 기기발 변경이 반영 안 돼 알림이 예약조차 안 됐음 |
 | `ui/theme/Color.kt`/`Theme.kt`/`Shape.kt` | **28차 개편** 당시 데스크탑판과 동일한 다크+파랑 팔레트(`darkColorScheme`), 반경 12dp. **49차** 라이트+그린으로 전면 교체(데스크탑판과 동일 값). **50차** `ThemeMode`/`PhoneLockPalette` 3종 선택제로 재구조화(데스크탑판과 대칭) |
-| `app/build.gradle.kts` | **75차** `buildFeatures.buildConfig = true` 추가(`BuildConfig.VERSION_CODE`를 자체 업데이트 버전 비교에 씀 — 이전엔 비활성 상태였음) |
+| `app/build.gradle.kts` | **75차** `buildFeatures.buildConfig = true` 추가(`BuildConfig.VERSION_CODE`를 자체 업데이트 버전 비교에 씀 — 이전엔 비활성 상태였음). **87차** Room `version = 36`(스누즈 on/off+하루한도) |
+| `phone-lock-desktop/build.gradle.kts` | **87차** `compose.desktop.application.buildTypes.release.proguard`에 `version.set("7.4.2")`+`configurationFiles.from(proguard-rules.pro)` 추가 — 기존 7.2.2는 `jvmToolchain(21)` 바이트코드를 못 읽어 `packageReleaseMsi`/`Exe`가 원천적으로 실패했음([[BUGS.md]] 87차) |
+| `phone-lock-desktop/proguard-rules.pro` | **신규(87차)** `-dontwarn kotlinx.serialization.**` — kotlinx-datetime(`:shared`가 의존)이 참조만 하고 실제로 안 쓰는 클래스라 ProGuard 7.4.2의 엄격해진 미해결참조 검사를 무시 |
 | `AndroidManifest.xml` | `INTERNET` 퍼미션 포함. **75차** `REQUEST_INSTALL_PACKAGES` 퍼미션 추가(자체 업데이트 설치용). **50차** 홈스크린 위젯용 `<receiver>`/`<service>` 엔트리 추가. **73차(컴파일 미검증)** `RECORD_AUDIO`/`FOREGROUND_SERVICE_MEDIA_PLAYBACK` 퍼미션 + `WalkieTalkieService` `<service>` 엔트리(`foregroundServiceType="mediaPlayback"`) 추가 |
 | `res/values/strings.xml` / `res/drawable/ic_launcher_background.xml` / `ic_launcher_foreground.xml` | **46차** `app_name`을 "갓생살기종합세트"로 변경. **58차** 아이콘을 픽셀아트 태양(각진 사각형)으로 교체했으나 사용자가 "구리다"고 평가. **61차** 데스크탑 트레이 아이콘 컨셉(하늘 그라데이션+일출+언덕)을 기준으로 재설계 — 배경은 실제 `<gradient>` 그라데이션, 전경은 원형 태양+베지어 곡선 언덕을 안전영역(x/y 21~87) 안에 배치해 부드럽고 중앙에 딱 맞도록 함(데스크탑 `SunriseIcon.kt`/`generate_icon.ps1`과 디자인 통일) |
 

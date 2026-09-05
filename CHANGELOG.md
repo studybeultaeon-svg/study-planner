@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-09-05 (87차 세션) — 스누즈 on/off+횟수 설정, 색상 피커 재설계, 자체 업데이트 주기 단축, 태블릿 레이아웃 확장, 데스크탑 릴리스 패키징 버그 수정
+
+사용자 요청 4건(자체 업데이트 즉시 반영/태블릿 레이아웃 확장/색상 피커 개선/스누즈 확장)을 순서대로 처리하고, 마지막에 "릴리스 apk로 배포해줘"/"데스크탑도 해야지"/"세션 마무리해" 요청에 따라 양 플랫폼 실제 배포(호스트 라이브 인스턴스 교체 포함)와 GitHub 릴리스 게시까지 완료. 실사용 검증은 안 됨.
+
+1. **자체 업데이트 체크 주기 단축(안드로이드)**: `PhoneLockRepository.checkForUpdateIfNeeded()`가 `dailyResetHour` 기준 "오늘"이 바뀔 때 하루 1회만 GitHub Releases를 확인하던 걸, 시각 기반 가드(`lastUpdateCheckAtMillis`, 15분 주기)로 교체 — 새 빌드가 올라오면 다음 날 초기화까지 기다리지 않고 곧바로 배너가 뜬다. `AppPreferences.lastUpdateCheckDate`(String) → `lastUpdateCheckAtMillis`(Long)로 필드 자체를 교체.
+2. **태블릿=데스크탑 레이아웃 확장(안드로이드, 83차 작업 이어감)**: `StudyTimerScreen`/`TimetableScreen`/`StatsScreen`/`SocialGroupScreen`/`SocialGroupMembersScreen`에 데스크탑판과 같은 좌우 분할(`ResponsiveSplit`)을 태블릿 폭에서 적용 — 예를 들어 `TimetableScreen`은 안드로이드의 일 단위 리스트 대신 데스크탑과 같은 이번 주 전체 테이블 뷰를 태블릿에서 보여주도록 신규 구현(`WeekTaskRow`/`TtCell`). `GroupListScreen`/`SettingsScreen`/`GroupEditScreen`/`RoutineEditScreen`은 데스크탑판을 대조해보니 원래도 폭과 무관한 단일 컬럼 구조라 변경 없이 판단 근거만 주석으로 남김. 폰(narrow) 레이아웃은 전부 그대로 유지.
+3. **커스텀 테마 색상 피커 재설계**(양 플랫폼): 사용자가 캡처해서 준 Windows "색 편집" 다이얼로그를 참고해 기존 프리셋 스와치 그리드 위에 채도/명도 스펙트럼 박스(Canvas+드래그 제스처) + 색상(hue) 슬라이더를 추가(`ColorPaletteDialog`) — HSV↔RGB 변환은 `android.graphics.Color`를 안 쓰고 순수 계산으로 구현해 데스크탑판과 완전히 동일한 코드를 공유. 드래그 중 계속 `onSelect`를 호출해 배경/포인트색이 실시간 반영되고, 프리셋 스와치는 기존처럼 고르자마자 닫힘.
+4. **스누즈(#1) on/off + 하루 횟수 그룹별 설정 신규**(양 플랫폼): `AppGroup.snoozeEnabled`(기본 true)/`snoozeDailyLimit`(기본 3, 기존 하드코딩 `SNOOZE_DAILY_LIMIT` 상수 대체) 신규 필드 — 그룹 편집 "관리 종류" 섹션에 스누즈 토글 추가, 켜져 있을 때만 "일시정지(스누즈) 설정" 카드(시간(분)+하루 횟수 두 입력)가 보임. 꺼두면 그룹 목록 스누즈 버튼이 안 보이고, `LockEvaluator.isSnoozed()`/`isSnoozeActive()`가 `scheduleEnabled`와 동일한 방식으로 남은 스누즈 상태를 즉시 무시. 안드로이드 Room `MIGRATION_35_36`(v35→v36, `ALTER TABLE app_group ADD COLUMN snoozeEnabled/snoozeDailyLimit`), 데스크탑 `JsonStore`는 값 없으면 `true`/`3` 기본값으로 읽어들여 하위호환.
+5. **데스크탑 릴리스 패키징이 애초에 한 번도 성공할 수 없던 버그 발견/수정**: `packageReleaseMsi`/`packageReleaseExe`를 실제로 실행해보니 `Unsupported version number [65.0] (maximum 62.65535, Java 18)`로 항상 실패 — `phone-lock-desktop/build.gradle.kts`의 `kotlin.jvmToolchain(21)`이 만드는 Java 21 클래스(버전 65)를 Compose Multiplatform 1.6.11이 기본으로 받아오는 ProGuard(7.2.2, Java 18까지)가 못 읽는 구조적 비호환이었다(과거 세션들이 release 변형을 한 번도 실제 실행해보지 않아 방치돼 있었음). `compose.desktop.application.buildTypes.release.proguard.version.set("7.4.2")`로 올려 해결했더니 이번엔 kotlinx-datetime(`:shared` 경유)이 참조하는 kotlinx.serialization 클래스 886개 미해결 참조로 새로 실패 — `proguard-rules.pro` 신규 작성(`-dontwarn kotlinx.serialization.**`)으로 최종 해결. [[BUGS.md]] 87차, [[DECISIONS.md]] 87차 참고.
+6. **양 플랫폼 실제 배포**: 안드로이드 `assembleRelease`(versionCode 1788593519)를 표준 3위치(`AndroidBuilds`/OneDrive 원본/`vm-build-output\android`)에 해시 일치 확인 후 배포, GitHub `android-1788593519` 게시. 데스크탑은 `C:\build\phone-lock-desktop`에서 `packageMsi createDistributable`(BuildInfo `1788596148`, plain 빌드 — 위 5번 fix는 release 변형에만 적용되고 host 표준 배포는 원래도 plain을 씀)로 빌드 → watchdog 비활성화 → 프로세스 종료 → `PhoneLockDesktopApp`+`vm-build-output\PhoneLockDesktop` 양쪽 robocopy+jar 해시 일치 확인 → 재실행(크래시 없음 확인) → watchdog 재활성화 → GitHub `desktop-1788596148` 게시까지 전부 완료.
+
+---
+
 ## 2026-09-04 (86차 세션 계속) — 모임 멤버 화면 스크롤 통합 + 관리 그룹 끄기 시도 실수/원상복구
 
 6. **모임 "인원" 화면 스크롤 영역 통합**(안드로이드): 공지/목표/랭킹/초대코드 등 상단 카드들이 스크롤 안 되는 고정 영역, 멤버 목록만 `weight(1f)` 별도 `LazyColumn`으로 나뉘어 있어 화면이 작으면 멤버 목록이 거의 안 보이던 문제(사용자 제보) — 상단 카드들도 전부 `item{}`으로 넣고 멤버 목록(`items`)까지 하나의 `LazyColumn`으로 합쳐 전체가 한 스크롤로 이어지도록 재구성(`SocialGroupMembersScreen.kt`). `compileDebugKotlin`으로 컴파일 검증 완료.

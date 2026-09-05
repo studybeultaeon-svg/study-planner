@@ -4,6 +4,15 @@
 
 ---
 
+## Fixed (2026-09-05, 87차 세션)
+
+### 데스크탑 release 패키징(`packageReleaseMsi`/`packageReleaseExe`)이 애초에 한 번도 성공한 적 없는 상태였음
+- **경위**: "릴리스 apk로 배포해줘"/"데스크탑도 해야지" 요청으로 `packageReleaseMsi`를 처음 실제로 실행해봄 — 여태까지 이 프로젝트의 표준 배포 절차(HANDOFF.md "실행 방법")는 항상 plain(`packageMsi`/`createDistributable`)만 써왔다.
+- **원인**: `phone-lock-desktop/build.gradle.kts`의 `kotlin.jvmToolchain(21)`이 만드는 Java 21 클래스(class file 버전 65)를, Compose Multiplatform 1.6.11이 release 빌드 타입에 기본으로 받아오는 ProGuard(7.2.2, 최대 지원 버전 62=Java 18)가 못 읽어 `Unsupported version number [65.0] (maximum 62.65535, Java 18)`로 즉시 실패. 이 project는 릴리스 변형 태스크를 처음부터 한 번도 실행해본 적이 없어(문서화된 표준 경로가 plain이라) 오래 방치됐던 것으로 보인다.
+- **해결**: `compose.desktop.application.buildTypes.release.proguard.version.set("7.4.2")`로 업그레이드. 이어서 드러난 2차 실패(kotlinx-datetime이 참조만 하고 실제로는 안 쓰는 kotlinx.serialization 클래스 886개에 대한 미해결 참조를 ProGuard 7.4.2가 경고가 아니라 하드 실패로 취급)는 신규 `phone-lock-desktop/proguard-rules.pro`(`-dontwarn kotlinx.serialization.**`)로 해결. [[DECISIONS.md]] 87차 참고 — 다만 이 세션의 실제 배포는 여전히 plain 경로를 표준으로 유지했다(release 변형은 옵션을 되살린 것뿐).
+
+---
+
 ## Fixed (2026-09-04, 86차 세션)
 
 ### 캘린더 계산기 연동 일정을 "미완료"로 바꿔도 이미 반영된 진행량이 롤백되지 않음
