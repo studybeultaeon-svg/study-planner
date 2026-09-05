@@ -45,6 +45,7 @@ import com.phonelock.shared.PERSUASION_MESSAGES
 import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.app.data.AppGroup
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.data.syncGroupSettingsFromFirebase
 import com.phonelock.app.service.AccessibilityServiceChecker
 import com.phonelock.app.service.LockEvaluator
 import com.phonelock.app.ui.components.formatHms
@@ -66,6 +67,13 @@ fun GroupListScreen(
     val groups by repository.observeGroups().collectAsState(initial = emptyList())
     val evaluator = remember { LockEvaluator(repository) }
     val scope = rememberCoroutineScope()
+
+    // 그룹 탭 진입 시 1회 그룹 설정(제어할 앱/사이트·groupEnabled 등 제외) 동기화 — RoutineScreen의
+    // syncRoutinesFromFirebase() 진입 시 호출과 동일 패턴(87차+). observeGroups()가 Flow라 동기화로
+    // Room이 갱신되면 화면도 자동으로 다시 그려진다.
+    LaunchedEffect(Unit) {
+        repository.syncGroupSettingsFromFirebase()
+    }
 
     var accessibilityEnabled by remember { mutableStateOf(AccessibilityServiceChecker.isEnabled(context)) }
     val lifecycleOwner = LocalLifecycleOwner.current

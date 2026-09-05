@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-09-05 (88차 세션) — 관리앱 그룹 설정 크로스디바이스 동기화 신규 + 게스트 계정 Firebase 미사용
+
+사용자 요청 2건 순서대로 구현: 1) 관리앱 그룹들의 "설정"을 크로스디바이스 동기화(단, 제어할 앱/사이트와 groupEnabled on/off는 절대 동기화하지 않고 기기별 로컬 유지), 2) 게스트 계정은 Firebase 사용량을 줄이도록 로컬 전용으로 동작(가능하면 아예 아무것도 안 올리기). 구현 전 그룹 필드 목록/기존 동기화 패턴을 조사한 뒤, "on/off 제외 범위"(groupEnabled만인지 다른 `*Enabled` 토글도 포함인지)와 "런타임 상태값(blockAttemptCount 등) 포함 여부"를 사용자에게 직접 확인받아 범위를 확정했다.
+
+1. **그룹 설정 크로스디바이스 동기화 신규**(양 플랫폼, `users/{user}/groupSettings`): 루틴/캘린더와 같은 "전체 문서 단위 LWW" 패턴으로 신규 구현(`Repository.GroupSync.kt`/`PhoneLockRepository.GroupSync.kt`). 동기화 대상은 `description`/`dailyLimitSeconds`류/`scheduleStartMinute`류/`enabled`(통계 필터)/`confirmEnabled`류/`initialWaitSeconds`/`waitIncrementSeconds`/`confirmCooldownSeconds`/`usageOverlayEnabled`/`overlayLevelStepsToMax`/`pomodoroUnlockEnabled`/`levelDecayEnabled`/`levelDecayIntervalSeconds`/`scheduleEnabled`/`snoozeEnabled`/`snoozeMinutes`/`snoozeDailyLimit`/`forceEnabledFrom`/`forceEnabledUntil`/`blockAttemptDate`/`blockAttemptCount`. 제외 대상은 제어할 앱/사이트(안드로이드 `GroupMember`/`GroupSite`, 데스크탑 `processNames`/`domains`), `groupEnabled`, 스누즈 진행상태 3필드(이미 `snoozeSync` 채널이 처리 — 중복 방지), `groupOffPending`/`groupOffMessageIndex`, `selfMessageText`. 그룹은 이름으로 기기 간 매칭(다른 동기화 채널과 동일 관례). `createGroup`/`updateGroup`/`updateGroupFireAndForget`/`recordBlockAttempt` 호출 시 자동 push, 그룹 목록 화면(`GroupListScreen.kt`/`MainScreen.kt` 관리 탭 진입) 진입 시 pull.
+2. **삭제 전파 없음(의도적 설계 결정)**: 그룹은 앱/사이트 목록이 기기별 로컬 전용이라, 루틴처럼 원격 문서로 로컬을 통째로 대체(delete+insert)하면 원격에 없는 이름의 로컬 그룹을 지웠을 때 그 그룹의 앱/사이트 목록이 영영 사라진다. 그래서 병합 방식을 다르게 설계: 원격에 있는 이름은 로컬에서 찾아 설정 필드만 갱신(없으면 앱/사이트 없이 새로 생성)하고, **원격 문서에 없는 이름의 로컬 그룹은 그대로 둔다.** 대신 한 기기에서 그룹을 삭제해도 다른 기기엔 그 설정이 남아있을 수 있다는 트레이드오프가 있음. [[DECISIONS.md]] 88차 참고.
+3. **게스트 계정 Firebase 미사용**(양 플랫폼): `PomodoroSyncClient`의 모든 read/write가 공통으로 거치는 `resolveIdentity()` 한 곳에 게스트(익명 로그인) 체크 추가 — `AuthManager.isAnonymous`(데스크탑)/`FirebaseUser.isAnonymous`(안드로이드)면 로그인 안 된 경우와 동일하게 null 반환. 이 채널이 루틴/캘린더/계산기/설정/일일사용량/실행확인레벨/스누즈/공부기록/뽀모도로/그룹설정(이번 신규분 포함) 전부를 담당하므로 게스트는 이 개인 데이터에 대해 Firebase 요청을 아예 안 보낸다. "모임"(`SocialGroupSyncClient`)은 다른 사람과 실시간 공유하는 별개 기능이라 제외(사용자 확인).
+4. **부수 수정**: 안드로이드 `PhoneLockRepository.groupDao`가 `private`이라 새 확장 파일에서 접근 불가 — `internal`로 완화(다른 DAO들과 동일 가시성으로 통일). `AppPreferences.resetSyncTimestamps()`에 신규 `groupSettingsTs`도 포함.
+5. **빌드/배포**: 안드로이드 `assembleRelease`(versionCode `1788598884`)를 표준 3위치(`AndroidBuilds`/OneDrive 원본/`vm-build-output\android`)에 해시 일치 확인 후 배포, GitHub `android-1788598884` 게시. 데스크탑은 OneDrive 경로의 한글 인코딩 문제(jlink가 "출력 디렉터리가 이미 존재함" 오류 반복 — 기존에 알려진 문제, [[CHANGELOG.md]] 참고)로 `C:\build\phone-lock-desktop` ASCII 사본에 최신 소스를 robocopy한 뒤 그곳에서 빌드. **처음에 `packageReleaseMsi`(87차에 막 고친 ProGuard 난독화 변형)로 빌드해서 게시했다가, [[DECISIONS.md]] 87차의 "표준 배포 경로는 여전히 plain" 결정을 뒤늦게 확인하고 그 릴리스를 삭제한 뒤 `packageMsi`(plain, BuildInfo `1788599443`)로 다시 빌드해 교체** — GitHub `desktop-1788599443` 게시(최종본은 plain). **이번엔 "빌드하고 깃허브에 올리고"만 요청받아 호스트에서 실제로 돌아가는 데스크탑 앱/설치된 APK를 교체하는 절차(watchdog 끄기→프로세스 종료→교체→재실행)는 진행하지 않음** — 다음에 "배포해줘"라고 하면 진행할 것.
+
+---
+
 ## 2026-09-05 (87차 세션) — 스누즈 on/off+횟수 설정, 색상 피커 재설계, 자체 업데이트 주기 단축, 태블릿 레이아웃 확장, 데스크탑 릴리스 패키징 버그 수정
 
 사용자 요청 4건(자체 업데이트 즉시 반영/태블릿 레이아웃 확장/색상 피커 개선/스누즈 확장)을 순서대로 처리하고, 마지막에 "릴리스 apk로 배포해줘"/"데스크탑도 해야지"/"세션 마무리해" 요청에 따라 양 플랫폼 실제 배포(호스트 라이브 인스턴스 교체 포함)와 GitHub 릴리스 게시까지 완료. 실사용 검증은 안 됨.

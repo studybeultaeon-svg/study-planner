@@ -63,6 +63,18 @@
 
 # 현재 진행 중인 작업
 
+**88차 세션(2026-09-05) — 관리앱 그룹 설정 크로스디바이스 동기화 신규 + 게스트 계정 Firebase 미사용(로컬 전용) 적용. 양 플랫폼 빌드·GitHub 릴리스 게시까지 완료(호스트 실제 교체 배포는 이번엔 요청 범위 밖이라 생략).** 상세 내용은 [[CHANGELOG.md]] 88차, 설계 판단은 [[DECISIONS.md]] 88차 참고.
+
+- **그룹 설정 크로스디바이스 동기화 신규**: `users/{user}/groupSettings`에 그룹 이름을 키로 하는 전체 문서 단위 LWW 동기화 추가(루틴/캘린더와 같은 패턴, `Repository.GroupSync.kt`/`PhoneLockRepository.GroupSync.kt` 신규). 동기화 대상은 설명·시간대/일일한도·실행확인 설정·대기시간·오버레이 설정·뽀모도로 연동·레벨 감소·스누즈 분/횟수·기간지정 강화·통계 필터(`enabled`)·`blockAttemptDate`/`blockAttemptCount`. **동기화 제외**(사용자 명시 요구): 제어할 앱/사이트(안드로이드 `GroupMember`/`GroupSite`, 데스크탑 `processNames`/`domains` — 기기마다 다르게), `groupEnabled`(그룹 on/off), 스누즈 진행상태(`snoozedUntilEpochMillis`/`snoozeUsedDate`/`snoozeUsedCount` — 이미 `snoozeSync` 채널이 처리 중이라 중복 방지), `groupOffPending`/`groupOffMessageIndex`(임시 UI 상태), `selfMessageText`(원래부터 로컬 전용). 그룹 추가/수정/차단시도 기록 시 자동 push, 그룹 목록 화면 진입 시 pull. **설계상 중요한 결정**: 그룹은 앱/사이트 목록이 기기별로만 존재하는 유일한 데이터라 루틴처럼 "원격 문서 전체로 로컬 대체"를 하면 삭제된 그룹의 앱/사이트 목록이 영영 사라질 위험이 있어, 이름이 일치하는 그룹의 설정 필드만 갱신하고 **원격에 없는 로컬 그룹은 삭제하지 않는(삭제 전파 없음)** 방식으로 구현 — 대신 한 기기에서 지운 그룹 설정이 다른 기기에 계속 남을 수 있는 트레이드오프가 있음. [[DECISIONS.md]] 88차 참고.
+- **게스트 계정 Firebase 미사용(로컬 전용)**: 양 플랫폼 `PomodoroSyncClient`의 모든 read/write 함수가 공통으로 거치는 `resolveIdentity()`에 게스트(익명 로그인) 체크를 추가 — 로그인은 돼 있어도(uid는 있음) 로그인 안 된 경우와 동일하게 null을 반환해 이 채널(루틴/캘린더/계산기/설정/일일사용량/실행확인레벨/스누즈/공부기록/뽀모도로/그룹설정) 전체가 조용히 동기화를 건너뛴다. "모임"(소셜 그룹, `SocialGroupSyncClient`)은 다른 사람과 실시간 공유하는 별개 기능이라 이 제한 대상이 아님(사용자 확인).
+- **빌드/배포**: 안드로이드 `assembleRelease`(versionCode `1788598884`) 3곳(`AndroidBuilds`/OneDrive 원본/`vm-build-output\android`) 해시 일치 확인. 데스크탑은 OneDrive 경로의 한글 인코딩 문제로 `C:\build\phone-lock-desktop` ASCII 사본에서 빌드(BuildInfo `1788599443`) — 처음 `packageReleaseMsi`로 게시했다가 [[DECISIONS.md]] 87차의 "표준은 plain" 결정을 뒤늦게 확인해 삭제 후 `packageMsi`(plain)로 재빌드/교체. GitHub 릴리스: 안드로이드 [android-1788598884](https://github.com/studybeultaeon-svg/study-planner/releases/tag/android-1788598884), 데스크탑 [desktop-1788599443](https://github.com/studybeultaeon-svg/study-planner/releases/tag/desktop-1788599443)(최종본은 plain). **이번엔 사용자가 "빌드하고 깃허브에 올리고"만 요청해서 호스트에서 실제로 돌아가는 데스크탑 앱/설치된 APK를 교체하는 배포는 하지 않았다** — 다음에 "배포해줘"라고 하면 그때 watchdog 끄기→프로세스 종료→교체→재실행 절차 진행할 것.
+
+**다음 세션 최우선 순위(사용자 지정)**: 1) **앱 설명서(사용법 안내) 추가** — 아직 없음, 어떤 형태(앱 내 도움말 화면/별도 문서/온보딩 투어 등)로 만들지부터 논의 필요. 2) **UI 대개편** — 범위/방향(어느 화면부터, 어떤 스타일로) 사용자와 먼저 합의 필요.
+
+**다음 세션 우선순위(88차분, 실사용 검증)**: (a) 그룹 설정 동기화가 실제로 다른 기기 간 반영되는지(제어할 앱/사이트는 그대로 기기별로 다른지 함께 확인), (b) 그룹 이름을 바꾸면 동기화가 "다른 그룹"으로 인식해 새로 생기는지 예상대로 동작하는지, (c) 게스트 계정으로 로그인했을 때 실제로 Firebase 네트워크 요청이 전혀 안 나가는지(네트워크 탭/로그로 확인).
+
+---
+
 **87차 세션(2026-09-05) — 스누즈 on/off+횟수 설정, 커스텀 테마 색상 피커 재설계(스펙트럼+색상 슬라이더), 자체 업데이트 체크 주기 단축, 안드로이드 나머지 탭 태블릿=데스크탑 레이아웃, 데스크탑 릴리스 패키징 고질 버그 발견/수정. 양 플랫폼 빌드·이 호스트 실제 교체 배포·GitHub 릴리스 게시까지 전부 완료.** 상세 내용은 [[CHANGELOG.md]] 87차, 설계 판단은 [[DECISIONS.md]] 87차, 버그는 [[BUGS.md]] 87차 참고.
 
 - **스누즈(#1) on/off + 하루 횟수 그룹별 설정 신규**: 기존엔 항상 켜져 있고 하루 3회로 하드코딩이었던 걸 `AppGroup.snoozeEnabled`(그룹 편집 "관리 종류" 토글)/`snoozeDailyLimit`(그룹 편집 "일시정지(스누즈) 설정" 카드, 기본 3)로 그룹마다 설정 가능하게 확장. 꺼두면 그룹 목록의 스누즈 버튼 자체가 안 보이고 `LockEvaluator`도 남은 스누즈 상태를 즉시 무시(scheduleEnabled와 동일 패턴). 안드로이드 Room v35→v36, 데스크탑 JsonStore 하위호환 기본값 처리, 양 플랫폼 대칭 적용.

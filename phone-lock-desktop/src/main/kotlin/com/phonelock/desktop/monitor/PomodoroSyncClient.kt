@@ -461,6 +461,52 @@ object PomodoroSyncClient {
         }
     }
 
+    data class GroupSettingsSyncResult(val groupsJson: JSONObject, val ts: Long)
+
+    /**
+     * 그룹 설정(87차+, 사용자 요청) 전체 문서를 읽는다. `users/{user}/groupSettings`에
+     * `{<firebaseSafeKey(그룹이름)>: {...설정필드...}, _ts}` — settings/routines와 같은 문서 단위 LWW.
+     * 제어할 앱/사이트(processNames/domains)와 groupEnabled·스누즈 진행상태 등은 이 문서에 아예
+     * 안 실린다(호출부의 groupSettingsToJson 참고). 설정 누락/오류 시 null.
+     */
+    fun readGroupSettings(databaseUrl: String?, apiKey: String?): GroupSettingsSyncResult? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return runCatching {
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
+            val base = databaseUrl.trimEnd('/')
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("$base/users/$user/groupSettings.json?auth=$token"))
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .GET()
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            if (response.statusCode() !in 200..299) return@runCatching null
+            val body = response.body()
+            if (body.isNullOrBlank() || body == "null") return@runCatching GroupSettingsSyncResult(JSONObject(), 0L)
+            val json = JSONObject(body)
+            GroupSettingsSyncResult(json, json.optLong("_ts", 0L))
+        }.getOrNull()
+    }
+
+    /** 그룹 설정 전체 문서를 덮어쓴다(문서 단위 LWW — 호출부가 이미 로컬이 더 최신임을 확인한 뒤 호출). */
+    fun writeGroupSettings(databaseUrl: String?, apiKey: String?, groupsJson: JSONObject, ts: Long) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
+        runCatching {
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
+            val base = databaseUrl.trimEnd('/')
+            val body = JSONObject(groupsJson.toString()).apply { put("_ts", ts) }
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("$base/users/$user/groupSettings.json?auth=$token"))
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .PUT(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .build()
+            httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        }
+    }
+
+    /** [firebaseSafeKey]를 그룹 설정 동기화(Repository.GroupSync.kt)에서도 재사용하기 위한 공개 창구. */
+    fun groupSettingsSafeKey(groupName: String): String = firebaseSafeKey(groupName)
+
     data class CalculatorSyncResult(
         val tasksJson: org.json.JSONArray, val tasksTs: Long,
         val savedJson: org.json.JSONArray, val savedTs: Long,
@@ -593,8 +639,14 @@ object PomodoroSyncClient {
      * 동작했지만, 여러 기기가 서로 다른 텍스트를 입력해 동기화가 안 맞는 문제의 근본 원인이라 로그인
      * 기능이 자리잡은 뒤로는 그 경로를 완전히 제거했다(사용자 확인) — 여러 사용자가 각자 쓰는 앱이라
      * 기기가 스스로 아이디를 대신 정해줄 이유가 없다.
+     *
+     * **게스트 계정은 이 채널 전체를 안 쓴다(87차+ 세션 요청)**: 게스트(익명 로그인)는 Firebase 사용량을
+     * 줄이려고 로컬 전용으로 쓰게 하는 게 목적이라, 로그인 자체는 돼 있어도(uid는 있음) 로그인 안 된
+     * 경우와 동일하게 null을 반환해 이 파일의 모든 read/write 함수가 조용히 동기화를 건너뛰게 한다.
+     * "모임"(SocialGroupSyncClient)은 다른 사람과 실시간 공유하는 별개 기능이라 이 제한 대상이 아니다.
      */
     private fun resolveIdentity(apiKey: String): Pair<String, String>? {
+        if (AuthManager.isAnonymous) return null
         val uid = AuthManager.currentUid ?: return null
         val token = AuthManager.ensureIdToken(apiKey)
         if (token.isNullOrBlank()) return null

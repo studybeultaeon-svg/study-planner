@@ -4,6 +4,23 @@
 
 ---
 
+## 그룹 설정 동기화는 "삭제 전파 없음"으로 설계 — 루틴/캘린더의 전체 문서 대체 방식을 그대로 쓰지 않는다 (2026-09-05, 88차 세션)
+
+루틴/캘린더는 원격 문서가 더 최신이면 로컬을 통째로 delete+insert로 대체한다. 그룹도 같은 패턴을 처음엔 검토했지만, 그룹은 다른 동기화 대상과 달리 **제어할 앱/사이트 목록(안드로이드 `GroupMember`/`GroupSite`, 데스크탑 `processNames`/`domains`)이 기기별 로컬에만 존재**하고 Firebase엔 아예 안 올라간다(사용자 명시 요구). 만약 루틴처럼 전체 대체를 하면, 한 기기에서 그룹을 지운 뒤 다른 기기가 동기화를 받을 때 "원격 문서에 없는 이름"이라는 이유로 그 기기의 로컬 그룹까지 지워지고, 그 그룹에 딸린 앱/사이트 목록(기기별로만 존재해 재입력 전엔 복구 불가)이 함께 영영 사라진다.
+
+- **결정**: 원격 문서에 있는 그룹 이름은 로컬에서 찾아 설정 필드만 갱신하고(없으면 앱/사이트 없이 새로 생성), **원격 문서에 없는 이름의 로컬 그룹은 절대 삭제하지 않는다.** 대신 한 기기에서 삭제한 그룹의 설정이 다른 기기에 "유령"처럼 계속 남아있을 수 있다는 트레이드오프를 감수한다 — 데이터 손실(앱/사이트 목록 복구 불가) 쪽이 훨씬 되돌리기 어려우므로, 안전한 쪽을 택했다.
+- **동기화 범위 확정 과정**: 사용자에게 "그룹들의 on/off도 동기화는 하지마"의 범위(그룹 전체 on/off인 `groupEnabled`만 제외인지, `scheduleEnabled`/`confirmEnabled` 등 다른 `*Enabled` 토글도 포함인지)와 "런타임 상태값(`blockAttemptCount` 등) 포함 여부"를 직접 물어 확정했다 — 결과: `groupEnabled`만 on/off로 취급해 제외(나머지 `*Enabled` 토글은 "설정"으로 동기화 포함), `blockAttemptCount`/`blockAttemptDate`는 포함, 스누즈 진행상태 3필드(`snoozedUntilEpochMillis`/`snoozeUsedDate`/`snoozeUsedCount`)는 이미 `snoozeSync` 채널이 최신값 병합을 하고 있어 중복 방지를 위해 제외.
+- **게스트 계정의 Firebase 제한 범위**: "모임"(소셜 그룹, `SocialGroupSyncClient`)까지 포함할지도 물어 확정 — 모임은 다른 사람과 실시간 공유하는 기능이라 Firebase 사용이 구조적으로 불가피하므로, 제한 범위는 `PomodoroSyncClient`가 담당하는 개인 데이터 동기화(루틴/캘린더/계산기/설정/일일사용량/실행확인레벨/스누즈/공부기록/뽀모도로/그룹설정)로만 한정했다.
+
+## 데스크탑 GitHub 릴리스 산출물은 87차 결정(표준은 plain)을 따라야 한다 — 실수로 release 변형을 게시했다가 정정 (2026-09-05, 88차 세션)
+
+87차 세션에서 "release(ProGuard 난독화) 변형이 이제 빌드는 되지만, 호스트 실제 배포/GitHub 릴리스 표준은 여전히 plain(`packageMsi`/`createDistributable`)으로 유지한다"고 명시적으로 결정해뒀는데(바로 위 87차 항목 참고), 88차 세션에서 "릴리스 빌드해줘"라는 사용자 요청을 안드로이드의 `assembleRelease`(서명된 배포용 빌드)와 동일한 의미로 오해해 데스크탑도 `packageReleaseMsi`(난독화 변형)로 빌드해 GitHub에 먼저 게시했다.
+
+- **정정**: 게시 직후 DECISIONS.md를 다시 확인해 87차 결정과 어긋난다는 걸 발견 — 이미 게시한 `desktop-1788599443` 릴리스를 삭제(`gh release delete --cleanup-tag`)하고, 같은 `BuildInfo.BUILD_TIMESTAMP`로 `packageMsi`(plain)를 다시 빌드해 같은 태그로 재게시했다.
+- **교훈**: 안드로이드의 "릴리스"(debug와 대비되는 서명된 배포용 빌드, 실제로는 debug/release가 거의 항상 release여야 함)와 데스크탑의 "release"(plain과 대비되는 ProGuard 난독화 변형, 표준이 오히려 plain)는 같은 단어라도 이 프로젝트에서 정반대 의미다 — 데스크탑 배포 작업 전엔 항상 DECISIONS.md의 최신 "표준 배포 경로" 결정을 먼저 확인할 것.
+
+---
+
 ## 데스크탑 release 패키징은 plain(`packageMsi`/`createDistributable`)을 표준 배포 경로로 유지, ProGuard 버전만 고쳐서 release 변형도 살린다 (2026-09-05, 87차 세션)
 
 `packageReleaseMsi`를 처음 실행해보니 `Unsupported version number [65.0] (maximum 62.65535, Java 18)`로 즉시 실패했다. 원인은 `kotlin.jvmToolchain(21)`이 만드는 Java 21 클래스(버전 65)를 Compose Multiplatform 1.6.11이 기본으로 받아오는 ProGuard(7.2.2, Java 18=버전 62까지)가 못 읽는 구조적 비호환 — 과거 세션들이 이 release 변형 태스크를 한 번도 실제로 실행해본 적이 없어(HANDOFF.md "실행 방법" 절이 처음부터 plain `packageMsi createDistributable`만 문서화해왔음) 오래 방치돼 있었다.

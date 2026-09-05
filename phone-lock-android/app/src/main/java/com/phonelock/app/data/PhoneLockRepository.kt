@@ -41,7 +41,7 @@ class PhoneLockRepository(context: Context) {
 
     internal val appContext = context.applicationContext
     internal val db = AppDatabase.getInstance(context)
-    private val groupDao = db.appGroupDao()
+    internal val groupDao = db.appGroupDao()
     private val memberDao = db.groupMemberDao()
     internal val usageDao = db.usageRecordDao()
     private val groupSiteDao = db.groupSiteDao()
@@ -118,16 +118,26 @@ class PhoneLockRepository(context: Context) {
     internal val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun updateGroupFireAndForget(group: AppGroup) {
-        ioScope.launch { groupDao.update(group) }
+        ioScope.launch {
+            groupDao.update(group)
+            pushGroupSettingsToFirebase()
+        }
     }
 
     fun observeGroups(): Flow<List<AppGroup>> = groupDao.observeAll()
 
     fun observeMembers(groupId: Long): Flow<List<GroupMember>> = memberDao.observeMembers(groupId)
 
-    suspend fun createGroup(group: AppGroup): Long = groupDao.insert(group)
+    suspend fun createGroup(group: AppGroup): Long {
+        val id = groupDao.insert(group)
+        pushGroupSettingsToFirebase()
+        return id
+    }
 
-    suspend fun updateGroup(group: AppGroup) = groupDao.update(group)
+    suspend fun updateGroup(group: AppGroup) {
+        groupDao.update(group)
+        pushGroupSettingsToFirebase()
+    }
 
     /** 설정한 초기화 시간(dailyResetHour)이 지나면, 사용자가 꺼둔 그룹(groupEnabled=false)도 자동으로
      *  다시 켠다 — 사용자 요청: "초기화 시간이 지나면 그룹들이 꺼져 있더라도 다시 켜지게". 하루에 한 번만
@@ -402,12 +412,16 @@ class PhoneLockRepository(context: Context) {
     /** 잠김(스케줄/일일한도) 화면 조롱 문구 강도용 — 오늘 이 그룹을 열려고 시도한 횟수를 1 늘리고
      *  늘린 뒤의 값을 반환한다(dailyResetHour 기준 날짜가 바뀌면 1부터 다시 센다). 데스크탑판
      *  Repository.recordBlockAttempt와 같은 패턴. */
-    suspend fun recordBlockAttempt(groupId: Long): Int = blockAttemptMutex.withLock {
-        val group = groupDao.getById(groupId) ?: return@withLock 0
-        val today = effectiveDate(dailyResetHour).toString()
-        val count = if (group.blockAttemptDate == today) group.blockAttemptCount + 1 else 1
-        groupDao.update(group.copy(blockAttemptDate = today, blockAttemptCount = count))
-        count
+    suspend fun recordBlockAttempt(groupId: Long): Int {
+        val count = blockAttemptMutex.withLock {
+            val group = groupDao.getById(groupId) ?: return@withLock 0
+            val today = effectiveDate(dailyResetHour).toString()
+            val newCount = if (group.blockAttemptDate == today) group.blockAttemptCount + 1 else 1
+            groupDao.update(group.copy(blockAttemptDate = today, blockAttemptCount = newCount))
+            newCount
+        }
+        if (count > 0) pushGroupSettingsToFirebase()
+        return count
     }
 
     data class SnoozeState(val untilEpochMillis: Long, val usedDate: String, val usedCount: Int)

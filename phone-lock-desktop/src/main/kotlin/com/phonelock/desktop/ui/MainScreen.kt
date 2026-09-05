@@ -27,8 +27,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.syncGroupSettingsFromFirebase
 import com.phonelock.desktop.ui.theme.Spacing
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private enum class TopSection { MANAGE, STUDY, ROUTINE, SOCIAL_GROUP, SETTINGS }
 
@@ -69,6 +72,10 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
     // 28차 세션의 좌우 분할처럼 그룹 목록은 편집 중에도 항상 왼쪽에 보이므로, 편집 여부와 무관하게 갱신한다.
     LaunchedEffect(section, manageSubTab) {
         if (section == TopSection.MANAGE && manageSubTab == 0) {
+            // 그룹 탭 진입 시 1회 그룹 설정(제어할 앱/사이트·groupEnabled 등 제외) 동기화 — RoutineScreen의
+            // syncRoutinesFromFirebase() 진입 시 호출과 동일 패턴(87차+).
+            withContext(Dispatchers.IO) { repository.syncGroupSettingsFromFirebase() }
+            refresh()
             while (true) {
                 delay(1000)
                 refresh()

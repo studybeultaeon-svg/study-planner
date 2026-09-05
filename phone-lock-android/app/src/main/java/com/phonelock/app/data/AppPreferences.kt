@@ -258,6 +258,12 @@ class AppPreferences(context: Context) {
         get() = prefs.getLong("routines_ts", 0L)
         set(value) = prefs.edit().putLong("routines_ts", value).apply()
 
+    /** 그룹 설정(제어할 앱/사이트·groupEnabled·스누즈 진행상태 등 제외) 전체 문서 단위 Firebase LWW
+     *  타임스탬프(87차+, 데스크탑판 groupSettingsTs와 동일 패턴) — users/{user}/groupSettings. */
+    var groupSettingsTs: Long
+        get() = prefs.getLong("group_settings_ts", 0L)
+        set(value) = prefs.edit().putLong("group_settings_ts", value).apply()
+
     // ---- 네이티브 계산기(3단계) ----
     var calcTasksTs: Long
         get() = prefs.getLong("calc_tasks_ts", 0L)
@@ -300,6 +306,7 @@ class AppPreferences(context: Context) {
         calcSavedTs = 0L
         calcFolderTs = 0L
         calcFolderOrderTs = 0L
+        groupSettingsTs = 0L
     }
 
     /** 접힌 폴더 경로 집합(calcPathToOrderKey로 인코딩) — 기기별 UI 상태라 Firebase엔 올리지 않는다. */

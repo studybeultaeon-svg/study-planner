@@ -327,6 +327,9 @@ data class AppData(
     val routineLogs: MutableList<RoutineLog> = mutableListOf(),
     /** 루틴 전체 문서 단위 LWW 타임스탬프(51차, 캘린더의 calendarTs와 동일 패턴) — users/{user}/routines. */
     var routinesTs: Long = 0L,
+    /** 그룹 설정(제어할 앱/사이트·groupEnabled·스누즈 진행상태 등 제외) 전체 문서 단위 LWW 타임스탬프
+     *  (87차+, 안드로이드판과 대칭) — users/{user}/groupSettings. */
+    var groupSettingsTs: Long = 0L,
     /** 앱 전체 테마 선택(설정 화면) — ThemeMode.LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE 등, CUSTOM이면 아래 두 값을 씀. */
     var themeMode: String = "LIGHT_GREEN",
     /** 커스텀 테마(79차)의 배경/포인트 색 — "#RRGGBB". */
