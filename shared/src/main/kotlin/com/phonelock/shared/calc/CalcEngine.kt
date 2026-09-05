@@ -115,7 +115,7 @@ object CalcEngine {
         val holidays = input.holidays.toSet()
 
         if (name.isEmpty()) return CalcOutcome.Error("업무 이름을 입력해주세요")
-        if (qty <= 0) return CalcOutcome.Error("\"$name\": 총 할당량을 입력해주세요")
+        if (qty <= 0) return CalcOutcome.Error("\"$name\": 전체 분량을 입력해주세요")
         if (input.dday.isBlank()) return CalcOutcome.Error("\"$name\": 마감 날짜를 입력해주세요")
         if (dayGoals.values.all { it <= 0 }) return CalcOutcome.Error("\"$name\": 최소 하나의 요일 목표를 입력해주세요")
 

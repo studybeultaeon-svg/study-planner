@@ -22,12 +22,12 @@ class BlockActivity : ComponentActivity() {
         val reason = reasonName?.let { runCatching { LockReason.valueOf(it) }.getOrNull() }
         val blockAttempts = intent.getIntExtra(IntentExtras.EXTRA_BLOCK_ATTEMPTS, 0)
         val message = when (reason) {
-            LockReason.SCHEDULE -> "지정된 시간대에는 이 그룹의 앱을 사용할 수 없습니다."
-            LockReason.LIMIT -> "오늘 이 그룹의 사용 시간 한도를 모두 사용했습니다."
+            LockReason.SCHEDULE -> "지정된 시간대에는 이 차단 규칙의 앱을 사용할 수 없습니다."
+            LockReason.LIMIT -> "오늘 이 차단 규칙의 사용 시간 한도를 모두 사용했습니다."
             LockReason.REELS -> "릴스 화면이 감지되어 차단되었습니다."
             LockReason.SHORTS -> "쇼츠 화면이 감지되어 차단되었습니다."
             LockReason.STUDY_LOCK -> "공부 중에는 허용된 사이트만 이용할 수 있습니다."
-            null -> "이 그룹은 현재 잠겨 있습니다."
+            null -> "이 차단 규칙은 현재 잠겨 있습니다."
         }
 
         // 실행확인 대기화면(ConfirmOpenActivity)과 같은 톤으로 통일. 여기선 "확인"이라는 탈출구를

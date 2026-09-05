@@ -3,9 +3,17 @@ package com.phonelock.desktop
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -159,6 +167,12 @@ private fun startApp() = application {
     var overlayStatus by remember { mutableStateOf<UsageOverlayStatus?>(null) }
     var studyLockStatus by remember { mutableStateOf<StudyLockStatus?>(null) }
     var studyLockToast by remember { mutableStateOf<String?>(null) }
+    // 92차(사용자 요청): 39차에 타이머 탭 정지 버튼에만 붙였던 짧은 회고 입력이 잠금 화면(오버레이)의
+    // "정지" 버튼에는 빠져있었다 — 두 경로 다 결국 같은 Repository.timerStop(note, tag)를 부르므로
+    // 여기서도 같은 다이얼로그를 띄운 뒤 그 값을 넘긴다.
+    var showLockStopNoteDialog by remember { mutableStateOf(false) }
+    var lockStopNoteText by remember { mutableStateOf("") }
+    var lockStopTagText by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         val apiServer = LocalApiServer(repository)
@@ -304,10 +318,57 @@ private fun startApp() = application {
                                     studyLockToast = "\"$appName\" 실행 실패: 설치 경로를 찾지 못했습니다. 시작 메뉴에 표시되는 이름으로 다시 등록해보세요."
                                 }
                         },
-                        onStopTimer = { repository.timerStop() },
+                        onStopTimer = { showLockStopNoteDialog = true },
                         onSwitchToBreak = { repository.timerSwitchPhase() },
                         onToastShown = { studyLockToast = null }
                     )
+                    // 92차(사용자 요청): 39차 회고 입력이 이 잠금 화면의 "정지" 경로엔 빠져있었다 —
+                    // 이 창(공부 잠금 Window) 위에 그대로 다이얼로그를 띄운다(별도 창 불필요).
+                    if (showLockStopNoteDialog) {
+                        AlertDialog(
+                            onDismissRequest = {},
+                            title = { Text("공부 종료") },
+                            text = {
+                                Column {
+                                    Text(
+                                        "짧은 회고를 남기고 싶다면 적어주세요(선택).",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = lockStopNoteText,
+                                        onValueChange = { lockStopNoteText = it },
+                                        placeholder = { Text("예: 3장까지 풀었다, 집중이 잘 됐다") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    OutlinedTextField(
+                                        value = lockStopTagText,
+                                        onValueChange = { lockStopTagText = it },
+                                        label = { Text("태그(과목 등, 선택)") },
+                                        placeholder = { Text("예: 수학, 영어") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    repository.timerStop(lockStopNoteText.trim(), lockStopTagText.trim())
+                                    lockStopNoteText = ""
+                                    lockStopTagText = ""
+                                    showLockStopNoteDialog = false
+                                }) { Text("정지") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    lockStopNoteText = ""
+                                    lockStopTagText = ""
+                                    showLockStopNoteDialog = false
+                                }) { Text("취소") }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -358,7 +419,7 @@ private fun startApp() = application {
                 req.result.complete(false)
                 confirmRequest = null
             },
-            title = "실행 확인",
+            title = "실행 전 대기",
             undecorated = true,
             alwaysOnTop = true,
             state = rememberWindowState(placement = WindowPlacement.Maximized)

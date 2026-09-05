@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -88,11 +89,14 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     var run by remember { mutableStateOf(repository.getTimerRun()) }
     var todayTasks by remember { mutableStateOf(listOf<CalendarTask>()) }
     var taskName by remember { mutableStateOf(todayTasks.firstOrNull { it.name.isNotBlank() }?.name ?: "") }
+    // 93차(사용자 요청): "해당 없음"을 골라 taskName을 일부러 비웠는데, 아래 자동 채움 로직이
+    // "비어있으면 첫 일정으로 채운다"는 규칙 때문에 다음 목록 갱신 때 도로 채워버리는 문제가 있었다 —
+    // 사용자가 한 번이라도 직접 고르거나 입력했으면 그 뒤로는 자동 채움을 하지 않는다.
+    var taskNameTouchedByUser by remember { mutableStateOf(false) }
     var taskDropdownExpanded by remember { mutableStateOf(false) }
     var pomodoroEnabled by remember { mutableStateOf(repository.pomodoroModeEnabled) }
     var studyMinText by remember { mutableStateOf(repository.pomodoroStudyMinutes.toString()) }
     var breakMinText by remember { mutableStateOf(repository.pomodoroBreakMinutes.toString()) }
-    var allowedSites by remember { mutableStateOf(repository.studyLockAllowedSites.toList()) }
     var todayLog by remember { mutableStateOf(listOf<StudyLogEntry>()) }
     var calcTasksForSummary by remember { mutableStateOf(listOf<CalcTask>()) }
     var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -141,8 +145,13 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
             // 다른 기기의 기록은 별도로 계속 갱신돼야 하므로 run 상태와 무관하게 돈다.
             if (tickCount % 5 == 0) {
                 repository.syncStudyLogFromFirebase(repository.todayCalendarDateKey())
+                // 93차(사용자 요청): 다른 기기에서 오늘 캘린더 일정을 새로 추가해도 이 탭은
+                // CalendarScreen/StudyStatsScreen과 달리 진입 시 동기화를 한 번도 안 해서 로컬 데이터가
+                // 오래된 채로 남아있었다 — 새 일정이 드롭다운에 안 보이던 원인. 여기서도 동기화한다.
+                repository.syncCalendarFromFirebase()
                 todayLog = repository.getTodayStudyLog()
                 calcTasksForSummary = repository.getCalcTasks()
+                if (run == null) todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
             }
         }
     }
@@ -150,7 +159,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     // 1초마다 todayTasks를 새로 불러오는데, 그때마다 taskName을 무조건 첫 항목으로 되돌리면
     // 사용자가 고른 값이 계속 리셋된다. 현재 선택값이 여전히 목록에 유효할 때만 유지한다.
     LaunchedEffect(todayTasks) {
-        if (taskName.isBlank() || todayTasks.none { it.name == taskName }) {
+        if (!taskNameTouchedByUser && (taskName.isBlank() || todayTasks.none { it.name == taskName })) {
             taskName = todayTasks.firstOrNull { it.name.isNotBlank() }?.name ?: ""
         }
     }
@@ -216,25 +225,22 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
         val remoteActive = remoteStudying || remoteResting
         val mirrorFromRemote = run == null && remoteActive
         SectionCard("⏱️ 공부 타이머") {
-            if (run == null && todayTasks.isEmpty() && !mirrorFromRemote) {
-                Text(
-                    "캘린더에 오늘 일정을 추가하면 타이머를 사용할 수 있습니다.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else if (run == null && !mirrorFromRemote) {
-                // ExposedDropdownMenuBox 사용 — readOnly TextField에 Modifier.clickable만
-                // 얹은 예전 방식은 텍스트필드가 자체 포인터 입력을 먼저 가로채 항목을 눌러도
-                // 선택이 안 바뀌는 버그가 있었다(사용자 리포트로 발견).
+            if (run == null && !mirrorFromRemote) {
+                // 92차(사용자 요청): 91차에 "일정 없으면 자유 입력"으로 바꿨더니 일정이 있을 때도
+                // 드롭다운 선택 기능이 없어진 것처럼 보인다는 피드백 — 실제로는 남아있었지만,
+                // 아예 항상 "골라도 되고 직접 입력해도 되는" 입력칸으로 통합해 헷갈릴 여지를 없앤다.
+                // 이제 readOnly를 걸지 않아 일정이 있어도 자유롭게 고쳐 쓸 수 있고, 일정이 있으면
+                // 드롭다운 아이콘으로 목록에서 고를 수도 있다.
                 ExposedDropdownMenuBox(
                     expanded = taskDropdownExpanded,
                     onExpandedChange = { taskDropdownExpanded = it }
                 ) {
                     OutlinedTextField(
                         value = taskName,
-                        onValueChange = {},
-                        readOnly = true,
+                        onValueChange = { taskName = it; taskNameTouchedByUser = true },
+                        readOnly = false,
                         label = { Text("오늘 캘린더 일정") },
+                        placeholder = { Text("예: 수학 (선택, 비워둬도 됩니다)") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = taskDropdownExpanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
@@ -242,10 +248,16 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                         expanded = taskDropdownExpanded,
                         onDismissRequest = { taskDropdownExpanded = false }
                     ) {
+                        // 93차(사용자 요청): 빈칸으로 지우는 방법을 모르는 사용자를 위해 목록에서도
+                        // 명시적으로 고를 수 있는 "해당 없음" 항목을 항상 맨 위에 둔다.
+                        DropdownMenuItem(
+                            text = { Text("해당 없음") },
+                            onClick = { taskName = ""; taskNameTouchedByUser = true; taskDropdownExpanded = false }
+                        )
                         todayTasks.forEach { t ->
                             DropdownMenuItem(
                                 text = { Text(taskDropdownLabel(t)) },
-                                onClick = { taskName = t.name; taskDropdownExpanded = false }
+                                onClick = { taskName = t.name; taskNameTouchedByUser = true; taskDropdownExpanded = false }
                             )
                         }
                     }
@@ -305,6 +317,8 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                         Icons.Filled.PlayArrow, contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
+                    // 아이콘과 글자가 붙어 있어 "▶시작"처럼 한 덩어리로 보였다.
+                    Spacer(Modifier.width(Spacing.xs))
                     Text("시작")
                 }
             } else {
@@ -410,27 +424,9 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
             }
         }
     }
+    // 90차(사용자 요청): 허용 앱/사이트 편집은 설정 > 공부 탭으로 옮겼다 — 매번 보는 화면이 아니라
+    // 한 번 정해두는 설정이기 때문(데스크탑판과 동일한 이동). 여기엔 오늘 기록만 남는다.
     val extrasContent: @Composable () -> Unit = {
-        AllowedAppsCollapsibleSection()
-        Spacer(Modifier.height(Spacing.md))
-
-        SectionCard("🌐 공부 잠금 허용 사이트") {
-            Text(
-                "허용된 앱(브라우저)이 열려 있어도 여기 등록 안 된 사이트는 따로 차단됩니다. 허용 앱 목록은 " +
-                    "위 \"공부 잠금 허용 앱\"에서 관리합니다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(Spacing.sm))
-            LockListEditor(
-                items = allowedSites,
-                placeholder = "예: google.com",
-                onAdd = { name -> allowedSites = allowedSites + name; repository.studyLockAllowedSites = allowedSites.toSet() },
-                onRemove = { idx -> allowedSites = allowedSites.toMutableList().apply { removeAt(idx) }; repository.studyLockAllowedSites = allowedSites.toSet() }
-            )
-        }
-        Spacer(Modifier.height(Spacing.md))
-
         SectionCard("📊 오늘의 공부 기록") {
             if (todayLog.isEmpty()) {
                 Text("아직 오늘 기록된 공부 시간이 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -439,7 +435,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     byTask.entries.sortedByDescending { (_, entries) -> entries.sumOf { it.seconds } }.forEach { (name, entries) ->
                         val lastEntry = entries.maxByOrNull { it.startedAt }
-                        StudyLogRow(name = name, seconds = entries.sumOf { it.seconds }.toLong(), note = lastEntry?.note.orEmpty(), tag = lastEntry?.tag.orEmpty())
+                        StudyLogRow(name = name.ifBlank { "이름 없는 공부" }, seconds = entries.sumOf { it.seconds }.toLong(), note = lastEntry?.note.orEmpty(), tag = lastEntry?.tag.orEmpty())
                     }
                     StudyLogRow(name = "합계", seconds = todayLog.sumOf { it.seconds }.toLong(), isTotal = true)
                 }
@@ -594,9 +590,12 @@ internal fun StudyLogRow(name: String, seconds: Long, isTotal: Boolean = false, 
     }
 }
 
-/** 웹앱의 "입력창 + 추가 버튼 + 목록(항목마다 ✕ 삭제)" 패턴. */
+/**
+ * 웹앱의 "입력창 + 추가 버튼 + 목록(항목마다 ✕ 삭제)" 패턴. 90차부터 실제 사용처는
+ * 설정 > 공부 탭의 "공부 잠금 허용 사이트" 하나뿐이지만, 컴포넌트는 원래 자리에 그대로 둔다.
+ */
 @Composable
-private fun LockListEditor(items: List<String>, placeholder: String, onAdd: (String) -> Unit, onRemove: (Int) -> Unit) {
+internal fun LockListEditor(items: List<String>, placeholder: String, onAdd: (String) -> Unit, onRemove: (Int) -> Unit) {
     var input by remember { mutableStateOf("") }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         OutlinedTextField(
@@ -636,58 +635,6 @@ private fun LockListEditor(items: List<String>, placeholder: String, onAdd: (Str
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-/**
- * "공부 잠금 허용 앱" 인라인 선택 — 앱 목록/검색 로직은 [StudyLockAppsScreen.kt]의
- * `AllowedAppsPickerBody`를 그대로 재사용한다(설정 탭의 전체화면과 코드 중복 없이 공유). 기본
- * 접힌 상태로 시작해서 헤더를 눌러야만 앱 목록이 펼쳐진다 — 데스크탑 타이머 탭엔 허용 프로그램
- * 입력칸이 바로 보이는 것과 달리, 설치 앱이 수십~수백 개인 안드로이드에서 목록을 항상 펼쳐두면
- * 타이머 탭이 지나치게 길어지기 때문.
- */
-@Composable
-private fun AllowedAppsCollapsibleSection() {
-    val context = LocalContext.current
-    val prefs = remember { AppPreferences(context) }
-    var expanded by remember { mutableStateOf(false) }
-    val allowedCount = prefs.studyLockAllowedPackages.size
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        tonalElevation = 0.dp
-    ) {
-        Column(Modifier.padding(Spacing.md)) {
-            Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                androidx.compose.material3.Icon(
-                    if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = Spacing.xs)
-                )
-                Text(
-                    "🔒 공부 잠금 허용 앱" + if (allowedCount > 0) " ($allowedCount)" else "",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            if (expanded) {
-                Spacer(Modifier.height(Spacing.sm))
-                Text(
-                    "선택한 앱은 공부앱 타이머가 켜져 있는 동안에도 항상 열 수 있습니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                AllowedAppsPickerBody(prefs = prefs, modifier = Modifier.fillMaxWidth())
             }
         }
     }

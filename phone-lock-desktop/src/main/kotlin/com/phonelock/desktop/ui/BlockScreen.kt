@@ -16,8 +16,8 @@ import com.phonelock.desktop.ui.components.WatchAndWaitScreen
 @Composable
 fun BlockScreen(reason: LockReason, blockAttempts: Int = 0, onConfirm: () -> Unit) {
     val message = when (reason) {
-        LockReason.SCHEDULE -> "지정된 시간대에는 이 그룹의 프로그램을 사용할 수 없습니다."
-        LockReason.LIMIT -> "오늘 이 그룹의 사용 시간 한도를 모두 사용했습니다."
+        LockReason.SCHEDULE -> "지정된 시간대에는 이 차단 규칙의 프로그램을 사용할 수 없습니다."
+        LockReason.LIMIT -> "오늘 이 차단 규칙의 사용 시간 한도를 모두 사용했습니다."
         LockReason.STUDY_LOCK -> "공부 중에는 허용된 사이트만 이용할 수 있습니다."
     }
     val title = remember(blockAttempts) { quoteForTier(blockQuoteTier(blockAttempts)) }

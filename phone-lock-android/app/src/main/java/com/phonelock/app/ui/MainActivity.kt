@@ -56,6 +56,7 @@ import java.util.concurrent.TimeUnit
 /** 하단 탭은 "관리앱"(그룹/통계)/"공부앱"(타이머/캘린더/계산기)/"설정" 3개로만 두고, 그 안을
  * 서브탭으로 나눈다 — 데스크탑판(왼쪽 사이드바 + 서브탭)과 같은 2단 구조를 모바일에서는 하단 탭으로 구현. */
 private sealed class Tab(val route: String, val label: String, val emoji: String) {
+    object Home : Tab("home", "홈", "🏠")
     object Manage : Tab("manage", "관리", "🗂️")
     object Study : Tab("study", "공부", "📘")
     object Routine : Tab("routine", "루틴", "🌱")
@@ -67,6 +68,9 @@ private sealed class Tab(val route: String, val label: String, val emoji: String
  *  (로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 [AppPreferences]가 전부 true를
  *  기본값으로 주므로 이 필터링으로 인한 회귀는 없다. */
 private fun visibleTabs(prefs: AppPreferences): List<Tab> = listOfNotNull(
+    // 90차: 맨 앞의 "홈"(오늘 요약)이 기본 시작 화면 — 설정과 마찬가지로 권한 필터링 대상이 아니고,
+    // 홈 안의 카드들이 각자 권한에 따라 보이고 숨는다.
+    Tab.Home,
     Tab.Routine.takeIf { prefs.permRoutine },
     Tab.Study.takeIf { prefs.permStudy },
     Tab.Manage.takeIf { prefs.permManage },
@@ -203,10 +207,10 @@ private fun OnboardingDialog(onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
                 Text("이 앱이 제대로 동작하려면 다음 권한들이 필요합니다.")
-                Text("• 알림 — 루틴/스트릭/모임 알림을 보내려면 필요합니다.")
+                Text("• 알림 — 루틴/연속 기록/모임 알림을 보내려면 필요합니다.")
                 Text("• 접근성 서비스 — 차단 대상 앱이 켜졌는지 감지하려면 필요합니다(설정 탭에서 별도로 켤 수 있습니다).")
-                Text("• 다른 앱 위에 표시 — 차단 중 남은 시간 오버레이를 보여주려면 필요합니다(설정 탭에서 별도로 켤 수 있습니다).")
-                Text("접근성 서비스와 오버레이 권한은 나중에 설정 탭에서 언제든 켤 수 있습니다.")
+                Text("• 다른 앱 위에 표시 — 차단 중 남은 시간 화면 덮개를 보여주려면 필요합니다(설정 탭에서 별도로 켤 수 있습니다).")
+                Text("접근성 서비스와 화면 덮개 권한은 나중에 설정 탭에서 언제든 켤 수 있습니다.")
             }
         },
         confirmButton = {
@@ -238,6 +242,27 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             startDestination = tabs.first().route,
             modifier = navModifier
         ) {
+            composable(Tab.Home.route) {
+                // 탭 이동은 하단 바와 같은 방식(startDestination까지 popUpTo + 상태 저장/복원)으로 통일한다.
+                val goTab: (Tab) -> Unit = { tab ->
+                    navController.navigate(tab.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+                HomeScreen(
+                    repository = repository,
+                    showManage = tabs.contains(Tab.Manage),
+                    showStudy = tabs.contains(Tab.Study),
+                    showRoutine = tabs.contains(Tab.Routine),
+                    showSocial = tabs.contains(Tab.Group),
+                    onGoManage = { goTab(Tab.Manage) },
+                    onGoStudy = { goTab(Tab.Study) },
+                    onGoRoutine = { goTab(Tab.Routine) },
+                    onGoSocial = { goTab(Tab.Group) }
+                )
+            }
             composable(Tab.Manage.route) {
                 ManageSection(repository, navController)
             }
@@ -357,9 +382,11 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
 private fun ManageSection(repository: PhoneLockRepository, navController: NavController) {
     var subTab by remember { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
+        // 공부 섹션 서브탭(아래 StudySection)만 이모지 아이콘이 있고 관리 섹션엔 없어서 같은 자리의
+        // 탭 줄인데도 높이/생김새가 서로 달라 보였다 — 두 섹션의 서브탭 표기를 통일한다.
         TabRow(selectedTabIndex = subTab) {
-            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("그룹") })
-            MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("통계") })
+            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("🗂️") }, text = { Text("차단 규칙") })
+            MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, icon = { Text("📊") }, text = { Text("사용 기록") })
         }
         Box(Modifier.weight(1f)) {
             when (subTab) {
@@ -382,11 +409,11 @@ private fun StudySection(repository: PhoneLockRepository) {
         // 글자가 잘리거나 두 줄로 밀린다(사용자 지적) — Tab의 icon/text 슬롯을 분리하면 Material3가
         // 이모지를 위, 라벨을 아래로 항상 세로로 쌓아준다.
         TabRow(selectedTabIndex = subTab) {
-            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("⏱️") }, text = { Text("시간 측정") })
+            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("⏱️") }, text = { Text("타이머") })
             MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, icon = { Text("📅") }, text = { Text("캘린더") })
             MaterialTab(selected = subTab == 2, onClick = { subTab = 2 }, icon = { Text("🧮") }, text = { Text("계산기") })
             MaterialTab(selected = subTab == 3, onClick = { subTab = 3 }, icon = { Text("🗓️") }, text = { Text("일정표") })
-            MaterialTab(selected = subTab == 4, onClick = { subTab = 4 }, icon = { Text("📈") }, text = { Text("통계") })
+            MaterialTab(selected = subTab == 4, onClick = { subTab = 4 }, icon = { Text("📈") }, text = { Text("학습 통계") })
         }
         Box(Modifier.weight(1f)) {
             when (subTab) {

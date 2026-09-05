@@ -16,11 +16,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -83,7 +86,7 @@ class StudyLockActivity : ComponentActivity() {
                     // 로컬 저장소를 직접 호출 — 예전엔 웹뷰 evaluateJavascript + Firebase remoteCommand
                     // 비동기 왕복이라 실패해도 신호가 없었다. 지금은 즉시 반영되고, 잠금화면은 다음
                     // 접근성 서비스 tick(최대 2초)에서 checkStudyLock()이 로컬 상태를 다시 읽어 닫힌다.
-                    onStopTimer = { repository.timerStop() },
+                    onStopTimer = { note, tag -> repository.timerStop(note, tag) },
                     onSwitchToBreak = { repository.timerSwitchPhase() },
                     // 이 기기의 로컬 타이머뿐 아니라 다른 기기의 원격 신호로 잠긴 경우도 그 신호가
                     // 꺼지면 같이 풀려야 한다(checkStudyLock과 같은 OR 판정).
@@ -112,13 +115,18 @@ private fun StudyLockScreen(
     isPomodoroMode: Boolean,
     isRemote: Boolean,
     onLaunchApp: (String) -> Unit,
-    onStopTimer: () -> Unit,
+    onStopTimer: (String, String) -> Unit,
     onSwitchToBreak: () -> Unit,
     isStillActive: suspend () -> Boolean,
     onInactive: () -> Unit
 ) {
     val context = LocalContext.current
     var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    // 92차(사용자 요청): 39차 정지 시 회고 입력이 타이머 탭 정지 버튼에만 있고 이 잠금 화면의
+    // "타이머 정지" 버튼엔 빠져있었다 — 같은 다이얼로그를 여기서도 띄운 뒤 timerStop(note, tag)를 부른다.
+    var showStopNoteDialog by remember { mutableStateOf(false) }
+    var stopNoteText by remember { mutableStateOf("") }
+    var stopTagText by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
         while (true) {
             delay(1000)
@@ -164,7 +172,7 @@ private fun StudyLockScreen(
                 } else {
                     Spacer(Modifier.height(24.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = onStopTimer) { Text("⏹ 타이머 정지") }
+                        OutlinedButton(onClick = { showStopNoteDialog = true }) { Text("⏹ 타이머 정지") }
                         if (isPomodoroMode) {
                             Spacer(Modifier.width(4.dp))
                             Button(onClick = onSwitchToBreak) { Text("☕ 휴식으로 전환") }
@@ -204,6 +212,51 @@ private fun StudyLockScreen(
                 }
             }
         }
+    }
+
+    if (showStopNoteDialog) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("공부 종료") },
+            text = {
+                Column {
+                    Text(
+                        "짧은 회고를 남기고 싶다면 적어주세요(선택).",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = stopNoteText,
+                        onValueChange = { stopNoteText = it },
+                        placeholder = { Text("예: 3장까지 풀었다, 집중이 잘 됐다") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = stopTagText,
+                        onValueChange = { stopTagText = it },
+                        label = { Text("태그(과목 등, 선택)") },
+                        placeholder = { Text("예: 수학, 영어") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onStopTimer(stopNoteText.trim(), stopTagText.trim())
+                    stopNoteText = ""
+                    stopTagText = ""
+                    showStopNoteDialog = false
+                }) { Text("정지") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    stopNoteText = ""
+                    stopTagText = ""
+                    showStopNoteDialog = false
+                }) { Text("취소") }
+            }
+        )
     }
 }
 

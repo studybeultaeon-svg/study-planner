@@ -277,11 +277,11 @@ private fun CalcTaskCard(
 
             CalcFieldGroupHeader("📊", "기본 정보")
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                com.phonelock.app.ui.components.NumberStepperField(value = qty, onValueChange = { qty = it; persist() }, label = "총 할당량", modifier = Modifier.weight(1f))
+                com.phonelock.app.ui.components.NumberStepperField(value = qty, onValueChange = { qty = it; persist() }, label = "전체 분량", modifier = Modifier.weight(1f))
                 OutlinedTextField(value = unit, onValueChange = { unit = it; persist() }, label = { Text("단위") }, modifier = Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(12.dp), textStyle = com.phonelock.app.ui.components.calcFieldTextStyle())
             }
             Spacer(Modifier.height(Spacing.xs))
-            com.phonelock.app.ui.components.NumberStepperField(value = progress, onValueChange = { progress = it; persist() }, label = "현재 진척도", modifier = Modifier.fillMaxWidth())
+            com.phonelock.app.ui.components.NumberStepperField(value = progress, onValueChange = { progress = it; persist() }, label = "지금까지 한 양", modifier = Modifier.fillMaxWidth())
 
             Spacer(Modifier.height(Spacing.md))
             androidx.compose.material3.HorizontalDivider()
@@ -289,8 +289,8 @@ private fun CalcTaskCard(
 
             CalcFieldGroupHeader("🗓️", "기간")
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                com.phonelock.app.ui.components.DatePickerField(value = start, onValueChange = { start = it; persist() }, label = "시작", modifier = Modifier.weight(1f))
-                com.phonelock.app.ui.components.DatePickerField(value = dday, onValueChange = { dday = it; persist() }, label = "마감", modifier = Modifier.weight(1f))
+                com.phonelock.app.ui.components.DatePickerField(value = start, onValueChange = { start = it; persist() }, label = "시작일", modifier = Modifier.weight(1f))
+                com.phonelock.app.ui.components.DatePickerField(value = dday, onValueChange = { dday = it; persist() }, label = "마감일", modifier = Modifier.weight(1f))
             }
 
             Spacer(Modifier.height(Spacing.md))
@@ -345,10 +345,10 @@ private fun CalcTaskCard(
             androidx.compose.material3.HorizontalDivider()
             Spacer(Modifier.height(Spacing.sm))
 
-            CalcFieldGroupHeader("🔁", "다회독 설정")
+            CalcFieldGroupHeader("🔁", "N회독 설정")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "다회독 사용",
+                    "N회독 사용",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 androidx.compose.material3.Switch(

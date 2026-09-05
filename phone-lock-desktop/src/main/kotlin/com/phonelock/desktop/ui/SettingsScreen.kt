@@ -74,11 +74,44 @@ private fun pickOpenFile(title: String): File? {
 private enum class SettingsSubTab { COMMON, ROUTINE, STUDY, MANAGE, SOCIAL }
 
 /**
+ * 90차(사용자 요청): 설정 카드들이 넓은 데스크탑 창에서도 한 줄로만 길게 쌓여 좌우 공간을 못 쓰던 문제를
+ * 해결하는 배치 전용 래퍼. 카드 순서/내용/로직은 그대로 두고 어느 컬럼에 놓을지만 정한다. 창이 좁아지면
+ * (ResponsiveSplit의 임계값과 같은 맥락으로) 기존처럼 한 컬럼으로 되돌아가 위아래로 쌓인다.
+ * ResponsiveSplit을 쓰지 않는 이유: 이 화면은 바깥 Column이 이미 verticalScroll이라 높이가 무한이고,
+ * ResponsiveSplit은 fillMaxSize()+weight로 유한한 높이를 전제하기 때문(중첩 스크롤 충돌).
+ */
+@Composable
+private fun SettingsColumns(
+    narrowBreakpoint: androidx.compose.ui.unit.Dp = 900.dp,
+    left: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+    right: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
+) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < narrowBreakpoint) {
+            Column(Modifier.fillMaxWidth()) {
+                left()
+                Spacer(Modifier.height(Spacing.md))
+                right()
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                Column(Modifier.weight(1f)) { left() }
+                Column(Modifier.weight(1f)) { right() }
+            }
+        }
+    }
+}
+
+/**
  * 설정 화면 — 공통/루틴/공부/관리 4개 서브탭으로 세분화(MainScreen의 MANAGE/STUDY 서브탭과 동일한
  * TabRow 패턴). 기존 SectionCard들은 로직 변경 없이 재배치만 했다:
  * 공통 = 테마/일일한도초기화시각/계정동기화/모임 공유 설정(신규)/일일백업복원/
  *        설정그룹내보내기가져오기/오래된통계정리/종료방지
- * 루틴 = 루틴스트릭알림/루틴내보내기가져오기, 공부 = (자리만, 현재 항목 없음), 관리 = 릴스쇼츠차단
+ * 루틴 = 루틴스트릭알림/루틴내보내기가져오기, 공부 = 캘린더N회독기본값/공부중허용프로그램·사이트(90차에
+ *        타이머 탭에서 이동), 관리 = 일일한도초기화시각/종료확인/릴스쇼츠차단
+ *
+ * 90차: 각 서브탭 안의 카드들을 [SettingsColumns]로 2열 배치해 넓은 창에서도 좌우를 쓰게 했다(카드
+ * 내용/순서/로직은 그대로, 배치만 변경). 창이 좁아지면 예전처럼 한 컬럼으로 돌아간다.
  */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -111,6 +144,9 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
     var blockReels by remember { mutableStateOf(repository.blockReels) }
     var blockShorts by remember { mutableStateOf(repository.blockShorts) }
     var routineStreakNotifyEnabled by remember { mutableStateOf(repository.routineStreakNotifyEnabled) }
+    // 90차: 타이머 탭에서 옮겨온 "공부 중 허용 프로그램/사이트"(공부 서브탭) — 저장 위치는 그대로다.
+    var studyAllowedApps by remember { mutableStateOf(repository.studyLockAllowedApps) }
+    var studyAllowedSites by remember { mutableStateOf(repository.studyLockAllowedSites) }
     var googleEmail by remember { mutableStateOf(AuthManager.currentLoginId ?: AuthManager.currentEmail) }
     var backups by remember { mutableStateOf(repository.listBackups()) }
     var pendingRestoreFile by remember { mutableStateOf<File?>(null) }
@@ -163,7 +199,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
         AlertDialog(
             onDismissRequest = { pendingRestoreFile = null },
             title = { Text("복원 확인") },
-            text = { Text("복원하면 현재 그룹/기록이 ${file.name} 백업 내용으로 완전히 대체됩니다(되돌리기 없음). 계속할까요?") },
+            text = { Text("복원하면 현재 차단 규칙/기록이 ${file.name} 백업 내용으로 완전히 대체됩니다(되돌리기 없음). 계속할까요?") },
             confirmButton = {
                 TextButton(onClick = {
                     repository.restoreFromBackup(file)
@@ -180,7 +216,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
         AlertDialog(
             onDismissRequest = { pendingImportFile = null },
             title = { Text("가져오기 확인") },
-            text = { Text("가져오면 현재 그룹/기록이 ${file.name} 파일 내용으로 완전히 대체됩니다(되돌리기 없음). 계속할까요?") },
+            text = { Text("가져오면 현재 차단 규칙/기록이 ${file.name} 파일 내용으로 완전히 대체됩니다(되돌리기 없음). 계속할까요?") },
             confirmButton = {
                 TextButton(onClick = {
                     repository.restoreFromBackup(file)
@@ -244,7 +280,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
             // 관리자가 승인 시 지정한 기능 범위(MainScreen.kt의 permXxx와 동일)에 맞춰 해당 서브탭만
             // 보여준다 — "공통"은 로그아웃 등 항상 필요한 항목이라 예외로 항상 표시. 본문 각 섹션은
             // 여전히 고정 인덱스(0~4)로 분기하므로 숨긴 탭은 그냥 선택 불가능해질 뿐이다.
-            Tab(selected = settingsSubTab == 0, onClick = { settingsSubTab = 0 }, text = { Text("공통") })
+            Tab(selected = settingsSubTab == 0, onClick = { settingsSubTab = 0 }, text = { Text("앱 전체") })
             if (repository.permRoutine) {
                 Tab(selected = settingsSubTab == 1, onClick = { settingsSubTab = 1 }, text = { Text("루틴") })
             }
@@ -266,10 +302,24 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                 .padding(Spacing.md)
         ) {
             when (SettingsSubTab.entries[settingsSubTab]) {
-                SettingsSubTab.COMMON -> {
+                SettingsSubTab.COMMON -> SettingsColumns(left = {
+                    // 왼쪽: 앱 외형·계정 관련 카드
+                    // "도움말"은 원래 공통 탭 스크롤 한참 아래에 있어서, 정작 사용법을 모를 때
+                    // 찾기가 가장 어려운 자리였다 — 탭을 열면 바로 보이도록 맨 위로 올린다.
+                    SectionCard("도움말") {
+                        Text(
+                            "그림으로 보는 사용법 안내를 다시 볼 수 있습니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        Button(onClick = onShowGuide) { Text("앱 사용법 다시 보기") }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
                     SectionCard("테마") {
                         Text(
-                            "앱 전체 배경/포인트 색과 차단/실행확인 화면 강조색, 브라우저 확장 색까지 함께 바뀝니다.",
+                            "앱 전체 배경/포인트 색과 차단/실행 전 대기 화면 강조색, 브라우저 확장 색까지 함께 바뀝니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -388,7 +438,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
 
                     SectionCard("계정 동기화 (로그인 필수)") {
                         Text(
-                            "동기화(실행확인 레벨/스누즈/일일사용량/캘린더/계산기/루틴)는 이제 로그인이 있어야만 " +
+                            "동기화(실행 전 대기 단계/잠깐 풀기/일일사용량/캘린더/계산기/루틴)는 이제 로그인이 있어야만 " +
                                 "작동합니다. 같은 계정으로 로그인한 기기끼리 자동으로 연결됩니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -563,8 +613,8 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                             Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    Spacer(Modifier.height(Spacing.md))
-
+                }, right = {
+                    // 오른쪽: 데이터 관리·유지보수 카드
                     if (isAdmin) {
                         SectionCard("관리자 패널 — 가입 승인 대기") {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -665,9 +715,9 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                         Spacer(Modifier.height(Spacing.md))
                     }
 
-                    SectionCard("일일 백업 / 복원") {
+                    SectionCard("일일 백업 · 복원") {
                         Text(
-                            "앱 시작 시 하루 한 번 전체 데이터(그룹/사용시간/캘린더/계산기 등)를 자동 백업합니다. " +
+                            "앱 시작 시 하루 한 번 전체 데이터(차단 규칙/사용시간/캘린더/계산기 등)를 자동 백업합니다. " +
                                 "최근 7일치를 보관하며, 복원하면 현재 데이터가 완전히 대체됩니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -691,9 +741,9 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                     }
                     Spacer(Modifier.height(Spacing.md))
 
-                    SectionCard("설정/그룹 내보내기 · 가져오기") {
+                    SectionCard("설정·차단 규칙 내보내기 · 가져오기") {
                         Text(
-                            "기기 교체나 재설치 시 현재 데이터 전체(그룹/사용시간/캘린더/계산기 등)를 원하는 위치에 파일로 저장하거나, " +
+                            "기기 교체나 재설치 시 현재 데이터 전체(차단 규칙/사용시간/캘린더/계산기 등)를 원하는 위치에 파일로 저장하거나, " +
                                 "저장해둔 파일에서 그대로 불러올 수 있습니다. 위 자동 백업과 달리 파일 위치를 직접 고를 수 있어 다른 PC로 옮길 때 유용합니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -701,12 +751,12 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                         Spacer(Modifier.height(Spacing.sm))
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                             Button(onClick = {
-                                pickSaveFile("설정/그룹 내보내기", "phonelock_export_${java.time.LocalDate.now()}.json")?.let { file ->
+                                pickSaveFile("설정·차단 규칙 내보내기", "phonelock_export_${java.time.LocalDate.now()}.json")?.let { file ->
                                     repository.exportDataToFile(file)
                                 }
                             }) { Text("📤 내보내기") }
                             OutlinedButton(onClick = {
-                                pickOpenFile("설정/그룹 가져오기")?.let { file -> pendingImportFile = file }
+                                pickOpenFile("설정·차단 규칙 가져오기")?.let { file -> pendingImportFile = file }
                             }) { Text("📥 가져오기") }
                         }
                     }
@@ -717,11 +767,11 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                     // 등 하위 코드는 그대로 남겨뒀으니(제거하지 않음) 나중에 제대로 재설계해 다시 노출할 수
                     // 있다 — 자세한 경위는 IDEAS.md/DECISIONS.md 85차 참고.
 
-                    SectionCard("오래된 통계 데이터 정리") {
+                    SectionCard("오래된 사용 기록 정리") {
                         var lastResult by remember { mutableStateOf<Int?>(null) }
                         Text(
                             "12개월 이상 지난 사용시간/재확인 통과 횟수/공부 기록을 영구 삭제합니다(되돌리기 없음). " +
-                                "캘린더 일정과 스트릭 계산에는 영향을 주지 않습니다.",
+                                "캘린더 일정과 연속 기록 계산에는 영향을 주지 않습니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -778,18 +828,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                     }
                     Spacer(Modifier.height(Spacing.md))
 
-                    SectionCard("도움말") {
-                        Text(
-                            "그림으로 보는 사용법 안내를 다시 볼 수 있습니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        Button(onClick = onShowGuide) { Text("앱 사용법 다시 보기") }
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    SectionCard("종료 방지") {
+                    SectionCard("자동 재시작(워치독)") {
                         Text(
                             "감시 프로세스와 작업 스케줄러가 함께 지켜보다가, 작업 관리자로 강제종료해도 자동으로 다시 실행됩니다. " +
                                 "트레이 메뉴의 \"종료\"로 10분 대기를 마치고 정식으로 나가야만 꺼진 상태가 유지됩니다.",
@@ -797,12 +836,32 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    // 91차(사용자 요청): 관리(차단) 탭에서 이리로 이동 — 워치독과 함께 "앱을 끄기 어렵게
+                    // 만드는" 설정이라 옆에 두는 게 자연스럽다. 기본값은 false(OFF, Models.kt 기존값 그대로).
+                    SectionCard("종료 시 확인 질문") {
+                        ToggleRow(
+                            title = "종료 시 확인 질문 20개 확인",
+                            description = "꺼두면 트레이 \"종료\"를 눌렀을 때 이 확인 없이 바로 꺼집니다.",
+                            checked = exitConfirmEnabled,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    exitConfirmEnabled = true
+                                    repository.exitConfirmEnabled = true
+                                } else {
+                                    // 끄는 것 자체를 같은 절차로 보호 — 바로 끄지 않고 확인 게이트를 띄운다.
+                                    showExitConfirmGate = true
+                                }
+                            }
+                        )
+                    }
+                })
 
                 SettingsSubTab.SOCIAL -> {
                     SectionCard("모임 공유 설정") {
                         Text(
-                            "모임마다 공개할 내 정보(루틴/공부/스트릭/오늘 일정/공부중 여부/작동 중인 관리 그룹)를 " +
+                            "모임마다 공개할 내 정보(루틴/공부/연속 기록/오늘 일정/공부중 여부/작동 중인 차단 규칙)를 " +
                                 "다르게 정할 수 있어, 여기가 아니라 각 모임 화면의 🔒 공유 설정에서 모임별로 관리합니다. " +
                                 "특정 멤버에게만 내 정보를 숨기거나 특정 멤버의 정보를 안 보이게 하는 것도 그 " +
                                 "멤버의 상세 화면에서 따로 설정할 수 있습니다.",
@@ -811,17 +870,17 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                         )
                     }
                     Text(
-                        "무전기(음성/텍스트 메시지) 수신 설정도 모임마다 다르게 정할 수 있어 여기가 아니라 각 " +
-                            "모임 화면의 ⚙ 무전기 설정에서 관리합니다.",
+                        "깨우기 메시지(음성/텍스트) 수신 설정도 모임마다 다르게 정할 수 있어 여기가 아니라 각 " +
+                            "모임 화면의 ⚙ 깨우기 메시지 설정에서 관리합니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                SettingsSubTab.ROUTINE -> {
-                    SectionCard("루틴 스트릭 알림") {
+                SettingsSubTab.ROUTINE -> SettingsColumns(left = {
+                    SectionCard("루틴 연속 기록 알림") {
                         ToggleRow(
-                            title = "스트릭 알림 받기",
+                            title = "연속 기록 알림 받기",
                             checked = routineStreakNotifyEnabled,
                             onCheckedChange = { checked ->
                                 routineStreakNotifyEnabled = checked
@@ -829,14 +888,13 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                             }
                         )
                         Text(
-                            "하루 중 랜덤한 시각에 어제 루틴 스트릭 상태를 트레이 알림으로 알려줍니다.",
+                            "하루 중 랜덤한 시각에 어제 루틴 연속 기록 상태를 트레이 알림으로 알려줍니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    SectionCard("루틴 내보내기 / 가져오기") {
+                }, right = {
+                    SectionCard("루틴 내보내기 · 가져오기") {
                         Text(
                             "루틴 목록과 체크 기록만 파일로 저장하거나 불러옵니다. 루틴은 이미 Firebase로 기기 간 자동 " +
                                 "동기화되지만, 위 전체 백업과 달리 루틴만 골라서 다른 계정으로 옮기거나 별도 보관할 때 씁니다.",
@@ -855,12 +913,12 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                             }) { Text("📥 가져오기") }
                         }
                     }
-                }
+                })
 
-                SettingsSubTab.STUDY -> {
-                    SectionCard("캘린더 다회독 기본값") {
+                SettingsSubTab.STUDY -> SettingsColumns(left = {
+                    SectionCard("캘린더 N회독 기본값") {
                         ToggleRow(
-                            title = "새 일정을 다회독으로 시작",
+                            title = "새 일정을 N회독으로 시작",
                             description = "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 회독을 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
                             checked = defaultMultiPassEnabled,
                             onCheckedChange = { checked ->
@@ -895,7 +953,12 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                         )
                         Spacer(Modifier.height(Spacing.xs))
                         Text("회독별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        // 2열 배치(90차)로 카드 폭이 절반이 되면 입력칸 7개가 한 줄에 안 들어가므로
+                        // 넘치면 다음 줄로 접히도록 FlowRow로 바꾼다(테마 칩과 같은 패턴).
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
                             defaultPassIntervals.forEachIndexed { i, days ->
                                 com.phonelock.desktop.ui.components.NumberStepperField(
                                     label = "${i + 1}→${i + 2}회독",
@@ -913,9 +976,43 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                             }
                         }
                     }
-                }
+                }, right = {
+                    // 90차(사용자 요청): 타이머 탭 오른쪽에 있던 두 카드를 여기로 옮겼다 — 매번 보는
+                    // 화면이 아니라 한 번 정해두는 설정이라 설정 탭이 제자리다. 저장 위치
+                    // (studyLockAllowedApps/Sites)와 LockListEditor 컴포넌트는 그대로 재사용한다.
+                    SectionCard("🔒 공부 중 허용 프로그램") {
+                        Text(
+                            "공부 페이즈가 진행 중일 때만(휴식 중엔 아님) 데스크탑이 잠기고, 여기 등록한 프로그램만 열 수 있습니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        LockListEditor(
+                            items = studyAllowedApps,
+                            placeholder = "예: chrome.exe",
+                            onAdd = { name -> studyAllowedApps = studyAllowedApps + name; repository.studyLockAllowedApps = studyAllowedApps },
+                            onRemove = { idx -> studyAllowedApps = studyAllowedApps.toMutableList().apply { removeAt(idx) }; repository.studyLockAllowedApps = studyAllowedApps }
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.md))
 
-                SettingsSubTab.MANAGE -> {
+                    SectionCard("🌐 공부 중 허용 사이트") {
+                        Text(
+                            "공부 페이즈 중엔 브라우저를 열어도 여기 등록한 사이트만 접속할 수 있습니다. 이 기기에만 적용됩니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        LockListEditor(
+                            items = studyAllowedSites,
+                            placeholder = "예: google.com",
+                            onAdd = { name -> studyAllowedSites = studyAllowedSites + name; repository.studyLockAllowedSites = studyAllowedSites },
+                            onRemove = { idx -> studyAllowedSites = studyAllowedSites.toMutableList().apply { removeAt(idx) }; repository.studyLockAllowedSites = studyAllowedSites }
+                        )
+                    }
+                })
+
+                SettingsSubTab.MANAGE -> SettingsColumns(left = {
                     SectionCard("일일 사용 한도 초기화 시각") {
                         OutlinedTextField(
                             value = dailyResetHourText,
@@ -927,31 +1024,14 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                             modifier = Modifier.fillMaxWidth()
                         )
                         Text(
-                            "이 시각이 되면 그룹별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
+                            "이 시각이 되면 차단 규칙별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    SectionCard("앱 종료 확인 절차") {
-                        ToggleRow(
-                            title = "종료 시 회유 멘트 20개 확인",
-                            description = "꺼두면 트레이 \"종료\"를 눌렀을 때 이 확인 없이 바로 꺼집니다.",
-                            checked = exitConfirmEnabled,
-                            onCheckedChange = { checked ->
-                                if (checked) {
-                                    exitConfirmEnabled = true
-                                    repository.exitConfirmEnabled = true
-                                } else {
-                                    // 끄는 것 자체를 같은 절차로 보호 — 바로 끄지 않고 확인 게이트를 띄운다.
-                                    showExitConfirmGate = true
-                                }
-                            }
-                        )
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
+                    // 91차(사용자 요청): "종료 시 확인 질문"은 관리(차단) 기능이 아니라 앱을 끄는 절차 자체에
+                    // 관한 설정이라 성격이 비슷한 "자동 재시작(워치독)" 옆(공통/앱 전체 탭)으로 옮겼다.
+                }, right = {
                     SectionCard("릴스/쇼츠 차단") {
                         ToggleRow(
                             title = "릴스 차단 (인스타그램)",
@@ -975,7 +1055,7 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                }
+                })
             }
         }
     }

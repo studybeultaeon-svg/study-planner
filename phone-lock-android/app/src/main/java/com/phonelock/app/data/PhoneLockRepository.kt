@@ -83,7 +83,7 @@ class PhoneLockRepository(context: Context) {
         val records = usageDao.getAllOnce()
         val header = "date,group,usedSeconds"
         val rows = records.map { r ->
-            val groupName = groups.find { it.id == r.groupId }?.name ?: "(삭제된 그룹 ${r.groupId})"
+            val groupName = groups.find { it.id == r.groupId }?.name ?: "(삭제된 차단 규칙 ${r.groupId})"
             "${r.date},${csvEscape(groupName)},${r.usedSeconds}"
         }
         return (listOf(header) + rows).joinToString("\n")

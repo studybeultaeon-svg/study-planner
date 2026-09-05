@@ -149,7 +149,7 @@ fun StatsScreen(repository: PhoneLockRepository) {
                     if (detail == null) {
                         androidx.compose.foundation.layout.Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
                             Text(
-                                "그룹을 선택하면 상세 사용량을 볼 수 있습니다.",
+                                "차단 규칙을 선택하면 상세 사용량을 볼 수 있습니다.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -227,7 +227,7 @@ fun StatsScreen(repository: PhoneLockRepository) {
  * item과 태블릿 좌측 패널 둘 다에서 재사용한다. */
 @Composable
 private fun QuoteOutcomesSection(quoteOutcomes: List<com.phonelock.app.data.QuoteOutcome>) {
-    Text("회유 멘트 성공률", style = MaterialTheme.typography.titleMedium)
+    Text("확인 질문 성공률", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(Spacing.xs))
     Text(
         "문구가 뜬 상태에서 \"중단\"(저항)을 고른 비율입니다.",

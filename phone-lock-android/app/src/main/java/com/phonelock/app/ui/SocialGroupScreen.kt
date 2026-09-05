@@ -229,11 +229,20 @@ fun SocialGroupScreen(repository: PhoneLockRepository, onOpenGroup: (String) -> 
                                     )
                                 }
                                 Spacer(Modifier.width(Spacing.md))
-                                Text(
-                                    "${s.avgTodayRate}%",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                                // 예전엔 진행바 옆에 숫자만 덩그러니 있어 무엇의 퍼센트인지 알 수 없었다 —
+                                // 무슨 수치인지 라벨을 붙인다.
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        "${s.avgTodayRate}%",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        "오늘 루틴 평균",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }

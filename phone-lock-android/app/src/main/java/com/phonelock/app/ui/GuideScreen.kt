@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -98,8 +100,11 @@ fun GuideScreen(onDismiss: () -> Unit) {
 
 @Composable
 private fun GuidePageContent(page: GuidePage) {
+    // 이모지+제목+모크업(가로폭의 1/1.4 높이)+설명 여러 줄이 세로로 쌓여서, 화면이 작은 폰이나
+    // 글자 크기를 키운 설정에서는 마지막 설명 줄이 화면 밖으로 잘려 아예 읽을 수 없었다 —
+    // 페이지 안쪽을 세로 스크롤 가능하게 해서 어떤 크기에서도 전부 읽히게 한다.
     Column(
-        Modifier.fillMaxSize().padding(top = Spacing.md),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Spacing.md),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(page.emoji, style = MaterialTheme.typography.displayMedium)
@@ -176,7 +181,7 @@ private fun MockupIntro() {
 @Composable
 private fun MockupManage() {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        listOf("SNS 그룹" to true, "게임 그룹" to false).forEach { (name, locked) ->
+        listOf("SNS 차단" to true, "게임 차단" to false).forEach { (name, locked) ->
             Surface(
                 shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.surface,

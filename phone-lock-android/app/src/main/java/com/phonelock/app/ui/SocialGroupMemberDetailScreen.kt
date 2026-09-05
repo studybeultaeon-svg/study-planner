@@ -230,7 +230,7 @@ fun SocialGroupMemberDetailScreen(
                 0 -> {
                     TabRow(selectedTabIndex = routineSubTab) {
                         Tab(selected = routineSubTab == 0, onClick = { routineSubTab = 0 }, text = { Text("오늘") })
-                        Tab(selected = routineSubTab == 1, onClick = { routineSubTab = 1 }, text = { Text("통계") })
+                        Tab(selected = routineSubTab == 1, onClick = { routineSubTab = 1 }, text = { Text("🔥 연속 기록") })
                     }
                     Spacer(Modifier.height(Spacing.sm))
                     if (!s.shareRoutines) {
@@ -268,7 +268,7 @@ fun SocialGroupMemberDetailScreen(
                     TabRow(selectedTabIndex = studySubTab) {
                         Tab(selected = studySubTab == 0, onClick = { studySubTab = 0 }, text = { Text("캘린더") })
                         Tab(selected = studySubTab == 1, onClick = { studySubTab = 1 }, text = { Text("일정표") })
-                        Tab(selected = studySubTab == 2, onClick = { studySubTab = 2 }, text = { Text("통계") })
+                        Tab(selected = studySubTab == 2, onClick = { studySubTab = 2 }, text = { Text("📈 학습 통계") })
                     }
                     Spacer(Modifier.height(Spacing.sm))
                     if (!s.shareSchedule) {
@@ -647,18 +647,18 @@ private fun MemberRoutineStatsTab(s: SocialGroupSyncClient.MemberStats) {
     val rate = if (routines.isNotEmpty()) Math.round(doneCount * 100.0 / routines.size).toInt() else 0
 
     if (!s.shareStreak) {
-        Text("스트릭은 비공개입니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("연속 기록은 비공개입니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
     Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)) {
         Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("현재 스트릭", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("현재 연속 기록", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             StreakVisual(streak = s.streak ?: 0)
         }
     }
     Spacer(Modifier.height(Spacing.sm))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        MemberStatTile("최고 스트릭", "${s.routineBestStreak ?: 0}일", Modifier.weight(1f))
+        MemberStatTile("최고 연속 기록", "${s.routineBestStreak ?: 0}일", Modifier.weight(1f))
         MemberStatTile("오늘 완료율", "$rate%", Modifier.weight(1f))
     }
 }

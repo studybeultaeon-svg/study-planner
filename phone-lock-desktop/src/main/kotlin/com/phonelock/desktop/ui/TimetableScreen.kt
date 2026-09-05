@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.CalcTask
 import com.phonelock.desktop.data.*
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -122,7 +124,15 @@ fun TimetableScreen(repository: Repository) {
         val totalColWidth = 92.dp
         val border = MaterialTheme.colorScheme.outlineVariant
 
-        Column(Modifier.horizontalScroll(rememberScrollState())) {
+        // 90차(사용자 요청): 표 자체는 그대로 두되, 넓은 데스크탑 창에서 표 오른쪽에 남던 빈 공간에
+        // "오늘 목표"/범례 패널을 둔다. 표가 주인공이라 좌:우 = 3:1, 창이 좁아지면 ResponsiveSplit이
+        // 알아서 위아래로 쌓는다.
+        com.phonelock.desktop.ui.components.ResponsiveSplit(
+            modifier = Modifier.weight(1f),
+            leftWeight = 3f,
+            rightWeight = 1f,
+            left = {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState())) {
             // 헤더 — 웹앱과 동일하게 일요일은 빨강, 토요일은 파랑으로 강조(.weekday-label.sun/.sat)
             Row(Modifier.border(1.dp, border)) {
                 TtCell("업무", nameColWidth, header = true)
@@ -174,6 +184,59 @@ fun TimetableScreen(repository: Repository) {
                 TtCell(fmtDec(dayTotals.sum()), totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
             }
         }
+            },
+            right = {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    SectionCard("오늘 목표") {
+                        val todayIdx = weekDates.indexOfFirst { it == today }
+                        if (todayIdx < 0) {
+                            Text(
+                                "지금 보고 있는 주에 오늘이 없습니다. \"이번 주\"로 돌아오면 오늘 목표가 표시됩니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            // 표를 그리며 채우는 dayTotals와 별개로, 오늘 칸 값만 다시 계산한다
+                            // (렌더링 순서에 기대지 않기 위해 — 계산식은 위 표 본문과 동일).
+                            val todayGoals = rows.mapNotNull { row ->
+                                if (today < row.start || today > row.dday) return@mapNotNull null
+                                val v = dayValue(row.task, todayIdx).toDoubleOrNull() ?: 0.0
+                                if (v > 0) row to v else null
+                            }
+                            if (todayGoals.isEmpty()) {
+                                Text("오늘 예정된 업무가 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    todayGoals.forEach { (row, v) ->
+                                        val achieved = repository.isLinkedGoalAchieved(today.toString(), row.task.name, v)
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text(row.task.name, style = MaterialTheme.typography.bodyMedium)
+                                            Text(
+                                                "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✅" else "",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (achieved) Color(0xFF34D399) else Color(0xFFF87171)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    SectionCard("표 보는 법") {
+                        Text(
+                            "· 값은 계산기 업무의 요일별 목표량입니다.\n" +
+                                "· 오늘 칸은 빨강, 캘린더 연동 목표를 달성한 칸은 초록 ✅으로 표시됩니다.\n" +
+                                "· 목표량은 할당량 계산기 \"업무 입력\"에서 바꿉니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        )
     }
 }
 

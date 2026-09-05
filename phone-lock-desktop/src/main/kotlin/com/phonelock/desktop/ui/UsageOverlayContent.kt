@@ -78,13 +78,13 @@ fun UsageOverlayContent(status: UsageOverlayStatus) {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(12.dp)) {
             Text(
-                if (status.isPomodoro) "휴식 중 임시 해제" else "남은 유예시간",
-                color = MaterialTheme.colorScheme.onBackground,
+                if (status.isPomodoro) "휴식 중 임시 해제" else "다시 묻기까지",
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = alpha),
                 style = MaterialTheme.typography.titleLarge
             )
             Text(
                 formatRemaining(remaining),
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
                 fontWeight = FontWeight.Bold,
                 fontSize = 64.sp
             )

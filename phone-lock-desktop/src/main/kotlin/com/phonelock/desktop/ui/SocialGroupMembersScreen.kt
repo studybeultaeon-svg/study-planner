@@ -296,7 +296,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                                 onClick = { showSettingsMenu = false; showShareSettingsDialog = true }
                             )
                             androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("🎙️ 무전기") },
+                                text = { Text("🎙️ 깨우기 메시지") },
                                 onClick = { showSettingsMenu = false; showWalkieSettingsDialog = true }
                             )
                             androidx.compose.material3.DropdownMenuItem(
@@ -463,7 +463,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
             if (quoteStats.isNotEmpty()) {
                 Surface(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceVariant) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
-                        Text("😤 모임 랭킹 (회유 멘트 저항률)", style = MaterialTheme.typography.labelLarge)
+                        Text("😤 모임 랭킹 (확인 질문 저항률)", style = MaterialTheme.typography.labelLarge)
                         Spacer(Modifier.height(Spacing.xs))
                         quoteStats.sortedByDescending { it.stopRatePercent }.forEachIndexed { idx, qs ->
                             Text("${idx + 1}위 ${qs.displayName} — ${qs.stopRatePercent}% (${qs.totalCount}회 중)", style = MaterialTheme.typography.bodySmall)

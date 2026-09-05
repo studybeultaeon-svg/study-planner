@@ -488,7 +488,7 @@ class Repository {
     fun exportUsageCsv(): String = synchronized(lock) {
         val header = "date,group,usedSeconds"
         val rows = data.usageRecords.sortedByDescending { it.date }.map { r ->
-            val groupName = data.groups.find { it.id == r.groupId }?.name ?: "(삭제된 그룹 ${r.groupId})"
+            val groupName = data.groups.find { it.id == r.groupId }?.name ?: "(삭제된 차단 규칙 ${r.groupId})"
             "${r.date},${csvEscape(groupName)},${r.usedSeconds}"
         }
         (listOf(header) + rows).joinToString("\n")

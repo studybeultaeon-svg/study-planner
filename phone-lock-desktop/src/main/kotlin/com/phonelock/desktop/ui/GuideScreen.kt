@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -24,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,8 +60,14 @@ fun GuideScreen(onDismiss: () -> Unit) {
                     TextButton(onClick = onDismiss) { Text("건너뛰기") }
                 }
 
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    GuidePageContent(pages[pageIndex])
+                // 창을 작게 줄이면 이모지+제목+모크업+설명이 세로로 다 안 들어가 마지막 설명 줄이
+                // 잘려서 아예 읽을 수 없었다 — 페이지 안쪽을 세로 스크롤 가능하게 한다(안드로이드판과 동일).
+                // key(pageIndex)로 감싸 페이지를 넘길 때마다 스크롤 위치가 맨 위에서 다시 시작된다.
+                Column(
+                    Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    key(pageIndex) { GuidePageContent(pages[pageIndex]) }
                 }
 
                 Row(
@@ -176,7 +185,7 @@ private fun MockupIntro() {
 @Composable
 private fun MockupManage() {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        listOf("SNS 그룹" to true, "게임 그룹" to false).forEach { (name, locked) ->
+        listOf("SNS 차단" to true, "게임 차단" to false).forEach { (name, locked) ->
             Surface(
                 shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.surface,

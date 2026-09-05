@@ -3,7 +3,9 @@ package com.phonelock.desktop.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,6 +30,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.delay
 import kotlin.random.Random
@@ -135,31 +139,63 @@ fun WatchAndWaitScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(title, style = titleStyle ?: MaterialTheme.typography.titleLarge)
+            // 안드로이드판(InterstitialScreen)과 달리 문단 정렬이 빠져 있어, 두 줄 이상인 긴 문구가
+            // 가운데 정렬된 블록 안에서만 왼쪽으로 붙어 보였다 — 양 플랫폼 표시를 동일하게 맞춘다.
+            Text(
+                title,
+                style = titleStyle ?: MaterialTheme.typography.titleLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
             if (message != null) {
                 Spacer(Modifier.height(Spacing.md))
-                Text(message, style = MaterialTheme.typography.bodyLarge)
+                Text(message, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             }
             if (quote != null) {
                 Spacer(Modifier.height(Spacing.md))
-                Text(quote, style = MaterialTheme.typography.titleMedium)
+                Text(quote, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             }
             if (countdownSeconds != null && started && paused) {
                 Spacer(Modifier.height(Spacing.sm))
-                Text("이게 의무입니까?", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "이게 의무입니까?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                // 체크포인트에서 카운트다운이 조용히 멈추기만 해서, 문구만 보고는 "왜 숫자가 안 줄지"
+                // 알 수 없었다 — 다시 눌러야 이어진다는 사실을 명시한다(문구 자체는 의도된 표현이라 유지).
+                Text(
+                    "아래 \"$primaryLabel\"을 다시 눌러야 이어집니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
             } else if (countdownSeconds != null && started && !windowInfo.isWindowFocused) {
                 Spacer(Modifier.height(Spacing.sm))
-                Text("이 창을 벗어나서 다시 눌러야 합니다.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "이 창을 벗어나서 다시 눌러야 합니다.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
             Spacer(Modifier.height(Spacing.xl))
             // primary(진행) 버튼은 누르는 순간 대기시간이 시작되고, 다 지나면 자동으로 onPrimary가
             // 호출된다 — 시각적 좌우 순서(reverseButtonOrder)나 채워짐/테두리 스타일(primaryFilled/
             // secondaryFilled)을 바꿔도 "진행" 액션에 걸린 대기시간 게이트는 항상 primary 쪽에 그대로 유지된다.
-            val secondaryButton: (@Composable () -> Unit)? = if (secondaryLabel != null && onSecondary != null) {
+            // 안드로이드판과 동일하게 두 버튼을 48dp 높이·균등 폭으로 — 이 화면의 버튼은 앱에서 가장
+            // 자주, 대개 급한 마음으로 누르는 버튼이라 조준하기 쉬워야 한다.
+            val buttonModifier = Modifier.defaultMinSize(minHeight = 48.dp)
+            val secondaryButton: (@Composable RowScope.() -> Unit)? = if (secondaryLabel != null && onSecondary != null) {
                 {
                     if (secondaryFilled) {
                         Button(
                             onClick = onSecondary,
+                            modifier = buttonModifier.weight(1f),
                             colors = if (secondaryContainerColor != null) {
                                 ButtonDefaults.buttonColors(containerColor = secondaryContainerColor)
                             } else {
@@ -167,7 +203,7 @@ fun WatchAndWaitScreen(
                             }
                         ) { Text(secondaryLabel) }
                     } else {
-                        OutlinedButton(onClick = onSecondary) { Text(secondaryLabel) }
+                        OutlinedButton(onClick = onSecondary, modifier = buttonModifier.weight(1f)) { Text(secondaryLabel) }
                     }
                 }
             } else null
@@ -187,15 +223,16 @@ fun WatchAndWaitScreen(
             } else {
                 primaryLabel
             }
-            val primaryButton: @Composable () -> Unit = {
+            val primaryButton: @Composable RowScope.() -> Unit = {
                 if (primaryFilled) {
-                    Button(onClick = primaryOnClick, enabled = effectivePrimaryEnabled) {
+                    Button(onClick = primaryOnClick, enabled = effectivePrimaryEnabled, modifier = buttonModifier.weight(1f)) {
                         Text(primaryText)
                     }
                 } else {
                     OutlinedButton(
                         onClick = primaryOnClick,
                         enabled = effectivePrimaryEnabled,
+                        modifier = buttonModifier.weight(1f),
                         colors = if (primaryOutlineColor != null) {
                             ButtonDefaults.outlinedButtonColors(contentColor = primaryOutlineColor)
                         } else {
@@ -206,12 +243,12 @@ fun WatchAndWaitScreen(
                     }
                 }
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
                 if (reverseButtonOrder) {
                     primaryButton()
-                    secondaryButton?.invoke()
+                    secondaryButton?.invoke(this)
                 } else {
-                    secondaryButton?.invoke()
+                    secondaryButton?.invoke(this)
                     primaryButton()
                 }
             }

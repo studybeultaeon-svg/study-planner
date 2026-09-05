@@ -270,11 +270,20 @@ fun SocialGroupScreen(repository: Repository, onSelectGroup: (String) -> Unit) {
                             )
                         }
                         Spacer(Modifier.width(Spacing.md))
-                        Text(
-                            "${g.avgTodayPercent}%",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        // 예전엔 진행바 옆에 숫자만 덩그러니 있어 무엇의 퍼센트인지 알 수 없었다 —
+                        // 무슨 수치인지 라벨을 붙인다(안드로이드판과 동일).
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "${g.avgTodayPercent}%",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "오늘 루틴 평균",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

@@ -116,11 +116,20 @@ fun StudyStatsScreen(repository: Repository) {
     val maxDayCnt = maxOf(1, dayStats.maxOf { it.cnt })
     val collapsedCalcNames = remember { mutableStateOf(setOf<String>()) }
 
-    Column(Modifier.fillMaxSize().padding(Spacing.md).verticalScroll(rememberScrollState())) {
+    Column(Modifier.fillMaxSize().padding(Spacing.md)) {
         Text("📈 통계", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
         Text("캘린더 회독 진행 기준", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(Spacing.md))
 
+        // 90차(사용자 요청): 넓은 데스크탑 창에서 세로 한 줄로만 쌓이던 걸 좌(요약 지표)/우(그래프·상세)
+        // 로 나눴다 — 성격이 다른 두 종류라 타이머/캘린더 화면과 같은 ResponsiveSplit이 그대로 맞는다.
+        // 창이 좁아지면 ResponsiveSplit이 알아서 위아래로 쌓는다(임계값 760dp).
+        com.phonelock.desktop.ui.components.ResponsiveSplit(
+            modifier = Modifier.weight(1f),
+            leftWeight = 1f,
+            rightWeight = 1.4f, // 막대 30개짜리 그래프가 있는 오른쪽에 폭을 조금 더 준다
+            left = {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         // 현재 스트릭을 가장 위, 가장 크게(51차) — 최고 스트릭은 아래 타일 중 하나로.
         Surface(
             Modifier.fillMaxWidth(),
@@ -129,7 +138,7 @@ fun StudyStatsScreen(repository: Repository) {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
         ) {
             Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("현재 스트릭", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("현재 연속 기록", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "${streak}일" + if (streak > 0) " 🔥" else "",
                     style = MaterialTheme.typography.displaySmall,
@@ -143,13 +152,14 @@ fun StudyStatsScreen(repository: Repository) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             StatTile("오늘 완료", "$doneCount / $totalCount", Modifier.weight(1f), accentColor = Color(0xFF34D399))
             StatTile("오늘 완료율", "$completionRate%", Modifier.weight(1f), accentColor = Color(0xFFFBBF24))
-            StatTile("최고 스트릭", "${bestStreak}일" + if (bestStreak > 0) "🔥" else "", Modifier.weight(1f), accentColor = MaterialTheme.colorScheme.secondary)
+            StatTile("최고 연속 기록", "${bestStreak}일" + if (bestStreak > 0) "🔥" else "", Modifier.weight(1f), accentColor = MaterialTheme.colorScheme.secondary)
         }
         Spacer(Modifier.height(Spacing.md))
 
         WeekOverWeekCard(allTasks = allTasks, today = today)
-        Spacer(Modifier.height(Spacing.md))
-
+        }
+        }, right = {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SectionCard("최근 30일 완료 추이 (막대 높이 = 일정 개수, 색상 = 완료율)") {
             Row(Modifier.fillMaxWidth().height(90.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 dayStats.forEach { ds ->
@@ -275,6 +285,8 @@ fun StudyStatsScreen(repository: Repository) {
                 Spacer(Modifier.height(Spacing.sm))
             }
         }
+        }
+        })
     }
 }
 

@@ -153,7 +153,7 @@ fun StudyStatsScreen(repository: PhoneLockRepository) {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
         ) {
             Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("현재 스트릭", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("현재 연속 기록", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "${streak}일" + if (streak > 0) " 🔥" else "",
                     style = MaterialTheme.typography.displaySmall,
@@ -169,7 +169,7 @@ fun StudyStatsScreen(repository: PhoneLockRepository) {
             StatTile("오늘 완료율", "$completionRate%", Modifier.weight(1f), accentColor = Color(0xFFFBBF24))
         }
         Spacer(Modifier.height(Spacing.sm))
-        StatTile("최고 스트릭", "${bestStreak}일" + if (bestStreak > 0) "🔥" else "", Modifier.fillMaxWidth(), accentColor = MaterialTheme.colorScheme.secondary)
+        StatTile("최고 연속 기록", "${bestStreak}일" + if (bestStreak > 0) "🔥" else "", Modifier.fillMaxWidth(), accentColor = MaterialTheme.colorScheme.secondary)
         Spacer(Modifier.height(Spacing.md))
 
         WeekOverWeekCard(allTasks = allTasks, today = today)

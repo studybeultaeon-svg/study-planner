@@ -53,7 +53,7 @@ fun GroupShareSettingsDialog(
                 Spacer(Modifier.height(Spacing.sm))
                 ShareToggleRow("루틴", "오늘 루틴 목록과 완료 여부", shareRoutines) { shareRoutines = it }
                 ShareToggleRow("공부", "오늘 공부 시간·진행률", shareStudy) { shareStudy = it }
-                ShareToggleRow("스트릭", null, shareStreak) { shareStreak = it }
+                ShareToggleRow("연속 기록", null, shareStreak) { shareStreak = it }
                 ShareToggleRow("오늘 일정", "오늘 캘린더 일정 목록과 완료 여부", shareSchedule) { shareSchedule = it }
                 ShareToggleRow("공부중 여부", "지금 공부(뽀모도로 포함) 중인지와 업무 이름", shareStudyingNow) { shareStudyingNow = it }
             }

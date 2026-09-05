@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -59,7 +60,8 @@ private val ROUTINE_WEEKDAYS_KO = arrayOf("월", "화", "수", "목", "금", "�
 private val ROUTINE_WEEKDAYS_SUN_FIRST = arrayOf("일", "월", "화", "수", "목", "금", "토")
 
 private fun bitIndexFor(date: LocalDate): Int = date.dayOfWeek.value - 1
-private fun isScheduledOn(routine: Routine, date: LocalDate): Boolean {
+/** 홈 화면(HomeScreen.kt)도 "오늘 예정된 루틴"을 세려면 같은 판정이 필요해 internal로 열어둔다. */
+internal fun isScheduledOn(routine: Routine, date: LocalDate): Boolean {
     routine.startDate?.let { if (date.isBefore(LocalDate.parse(it))) return false }
     routine.endDate?.let { if (date.isAfter(LocalDate.parse(it))) return false }
     return (routine.daysMask shr bitIndexFor(date)) and 1 == 1
@@ -115,7 +117,7 @@ fun RoutineScreen(repository: PhoneLockRepository) {
 
         TabRow(selectedTabIndex = subTab) {
             Tab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("오늘") })
-            Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("통계") })
+            Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("🔥 연속 기록") })
         }
         Spacer(Modifier.height(Spacing.sm))
 
@@ -128,17 +130,24 @@ fun RoutineScreen(repository: PhoneLockRepository) {
             // 않고) 한 화면에 들어오게 바꿨다. FilterChip 대신 여백이 작은 커스텀 칩을 써서 좁은 칸에서도
             // 요일+날짜 두 줄이 다 보인다.
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // 28dp였던 주 이동 버튼은 권장 최소 터치 영역(48dp)의 절반을 조금 넘는 크기라 잘못
+                // 눌리기 쉬웠다 — 요일 칩이 좁아지지 않는 선에서 40dp까지 넓힌다.
                 IconButton(
                     onClick = { weekOffset-- },
-                    modifier = Modifier.width(28.dp).semantics { contentDescription = "이전 주" }
+                    modifier = Modifier.width(40.dp).semantics { contentDescription = "이전 주" }
                 ) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null) }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     weekDates.forEachIndexed { i, d ->
                         val selected = d == selectedDate
+                        // 다른 주로 이동하면 "오늘"이 어디였는지 알 방법이 전혀 없었다 —
+                        // 선택 표시와 별개로 오늘 날짜는 항상 굵게+포인트 색으로 구분한다.
+                        val isRealToday = d == today
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
                             modifier = Modifier
                                 .weight(1f)
+                                .heightIn(min = 44.dp)
                                 .background(
                                     if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                                     MaterialTheme.shapes.small
@@ -149,16 +158,21 @@ fun RoutineScreen(repository: PhoneLockRepository) {
                                     MaterialTheme.shapes.small
                                 )
                                 .clickable { selectedDate = d }
-                                .padding(vertical = 4.dp)
+                                .padding(vertical = Spacing.xs)
                         ) {
                             Text(ROUTINE_WEEKDAYS_SUN_FIRST[i], style = MaterialTheme.typography.labelSmall)
-                            Text("${d.dayOfMonth}", style = MaterialTheme.typography.labelSmall)
+                            Text(
+                                "${d.dayOfMonth}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isRealToday) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isRealToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
                 }
                 IconButton(
                     onClick = { weekOffset++ },
-                    modifier = Modifier.width(28.dp).semantics { contentDescription = "다음 주" }
+                    modifier = Modifier.width(40.dp).semantics { contentDescription = "다음 주" }
                 ) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null) }
             }
             Spacer(Modifier.height(Spacing.sm))
@@ -326,7 +340,7 @@ private fun RoutineStatsTab(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
         ) {
             Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("현재 스트릭", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("현재 연속 기록", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "${currentStreak}일" + if (currentStreak > 0) " 🔥" else "",
                     style = MaterialTheme.typography.displaySmall,
@@ -342,7 +356,7 @@ private fun RoutineStatsTab(
             RoutineStatTile("오늘 완료율", "$todayRate%", Modifier.weight(1f), accentColor = Color(0xFFFBBF24))
         }
         Spacer(Modifier.height(Spacing.sm))
-        RoutineStatTile("최고 스트릭", "${bestStreak}일" + if (bestStreak > 0) "🔥" else "", Modifier.fillMaxWidth(), accentColor = MaterialTheme.colorScheme.secondary)
+        RoutineStatTile("최고 연속 기록", "${bestStreak}일" + if (bestStreak > 0) "🔥" else "", Modifier.fillMaxWidth(), accentColor = MaterialTheme.colorScheme.secondary)
         Spacer(Modifier.height(Spacing.md))
 
         if (thisTotal > 0 || lastTotal > 0) {

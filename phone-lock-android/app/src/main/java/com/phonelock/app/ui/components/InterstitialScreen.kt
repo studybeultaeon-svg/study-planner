@@ -3,7 +3,9 @@ package com.phonelock.app.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -213,6 +216,15 @@ fun InterstitialScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
+                // 체크포인트에서 카운트다운이 조용히 멈추기만 해서, 문구만 보고는 "왜 숫자가 안 줄지"
+                // 알 수 없었다 — 다시 눌러야 이어진다는 사실을 명시한다(문구 자체는 의도된 표현이라 유지).
+                Text(
+                    "아래 \"$primaryLabel\"을 다시 눌러야 이어집니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
             } else if (countdownSeconds != null && started && !isResumed) {
                 Spacer(Modifier.height(Spacing.sm))
                 Text(
@@ -227,11 +239,16 @@ fun InterstitialScreen(
             // primary(진행) 버튼은 누르는 순간 대기시간이 시작되고, 다 지나면 자동으로 onPrimary가
             // 호출된다 — 시각적 좌우 순서(reverseButtonOrder)나 채워짐/테두리 스타일(primaryFilled/
             // secondaryFilled)을 바꿔도 "진행" 액션에 걸린 대기시간 게이트는 항상 primary 쪽에 그대로 유지된다.
-            val secondaryButton: (@Composable () -> Unit)? = if (secondaryLabel != null && onSecondary != null) {
+            // 이 화면의 두 버튼은 앱에서 가장 자주, 그리고 대개 급한 마음으로 누르는 버튼이다 —
+            // Material3 기본 높이(40dp)는 권장 최소 터치 영역(48dp)보다 작아 오조작이 나기 쉬우므로
+            // 높이를 48dp로 올리고, 좌우 폭도 균등(weight)하게 줘서 조준하기 쉽게 만든다.
+            val buttonModifier = Modifier.defaultMinSize(minHeight = 48.dp)
+            val secondaryButton: (@Composable RowScope.() -> Unit)? = if (secondaryLabel != null && onSecondary != null) {
                 {
                     if (secondaryFilled) {
                         Button(
                             onClick = onSecondary,
+                            modifier = buttonModifier.weight(1f),
                             colors = if (secondaryContainerColor != null) {
                                 ButtonDefaults.buttonColors(containerColor = secondaryContainerColor)
                             } else {
@@ -239,7 +256,7 @@ fun InterstitialScreen(
                             }
                         ) { Text(secondaryLabel) }
                     } else {
-                        OutlinedButton(onClick = onSecondary) { Text(secondaryLabel) }
+                        OutlinedButton(onClick = onSecondary, modifier = buttonModifier.weight(1f)) { Text(secondaryLabel) }
                     }
                 }
             } else null
@@ -259,15 +276,16 @@ fun InterstitialScreen(
             } else {
                 primaryLabel
             }
-            val primaryButton: @Composable () -> Unit = {
+            val primaryButton: @Composable RowScope.() -> Unit = {
                 if (primaryFilled) {
-                    Button(onClick = primaryOnClick, enabled = primaryEnabled) {
+                    Button(onClick = primaryOnClick, enabled = primaryEnabled, modifier = buttonModifier.weight(1f)) {
                         Text(primaryText)
                     }
                 } else {
                     OutlinedButton(
                         onClick = primaryOnClick,
                         enabled = primaryEnabled,
+                        modifier = buttonModifier.weight(1f),
                         colors = if (primaryOutlineColor != null) {
                             ButtonDefaults.outlinedButtonColors(contentColor = primaryOutlineColor)
                         } else {
@@ -278,12 +296,12 @@ fun InterstitialScreen(
                     }
                 }
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
                 if (reverseButtonOrder) {
                     primaryButton()
-                    secondaryButton?.invoke()
+                    secondaryButton?.invoke(this)
                 } else {
-                    secondaryButton?.invoke()
+                    secondaryButton?.invoke(this)
                     primaryButton()
                 }
             }
