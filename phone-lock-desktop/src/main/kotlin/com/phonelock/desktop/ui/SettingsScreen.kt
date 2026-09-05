@@ -1,5 +1,8 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -30,10 +35,15 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.*
 import com.phonelock.desktop.monitor.AccountSyncClient
 import com.phonelock.desktop.monitor.AuthManager
 import com.phonelock.desktop.ui.components.SectionCard
@@ -75,7 +85,29 @@ private enum class SettingsSubTab { COMMON, ROUTINE, STUDY, MANAGE, SOCIAL }
 fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
     var settingsSubTab by remember { mutableIntStateOf(0) }
     var themeMode by remember { mutableStateOf(repository.themeMode) }
+    var customBgText by remember { mutableStateOf(repository.customThemeBackground) }
+    var customAccentText by remember { mutableStateOf(repository.customThemeAccent) }
+    var showBgPalette by remember { mutableStateOf(false) }
+    var showAccentPalette by remember { mutableStateOf(false) }
+    // 79차(사용자 요청): "종료 확인 절차"는 관리(차단) 기능의 꼼수 방지 장치이므로 켜고 끌 수 있게 하되,
+    // 켜짐→꺼짐으로 바꾸는 것 자체를 같은 회유 멘트 20개 절차로 보호한다(showExitConfirmGate).
+    var exitConfirmEnabled by remember { mutableStateOf(repository.exitConfirmEnabled) }
+    var defaultMultiPassEnabled by remember { mutableStateOf(repository.defaultMultiPassEnabled) }
+    var defaultPassCount by remember { mutableStateOf(repository.defaultPassCount) }
+    var defaultPassIntervals by remember {
+        mutableStateOf(com.phonelock.shared.calc.PassSchedule.parsePassIntervals(repository.defaultPassIntervalsCsv, repository.defaultPassCount))
+    }
+    var showExitConfirmGate by remember { mutableStateOf(false) }
     var dailyResetHourText by remember { mutableStateOf(repository.dailyResetHour.toString()) }
+    // 85차: 설정 화면 진입 시 다른 기기에서 바꾼 다회독 기본값/일일 초기화 시각을 받아와 로컬 상태를 갱신.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { repository.syncSettingsFromFirebase() }
+        defaultMultiPassEnabled = repository.defaultMultiPassEnabled
+        defaultPassCount = repository.defaultPassCount
+        defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.parsePassIntervals(repository.defaultPassIntervalsCsv, repository.defaultPassCount)
+        dailyResetHourText = repository.dailyResetHour.toString()
+    }
+    var launchAtStartup by remember { mutableStateOf(com.phonelock.desktop.isLaunchAtStartupEnabled()) }
     var blockReels by remember { mutableStateOf(repository.blockReels) }
     var blockShorts by remember { mutableStateOf(repository.blockShorts) }
     var routineStreakNotifyEnabled by remember { mutableStateOf(repository.routineStreakNotifyEnabled) }
@@ -178,6 +210,29 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
         )
     }
 
+    if (showExitConfirmGate) {
+        androidx.compose.ui.window.Window(
+            onCloseRequest = { showExitConfirmGate = false },
+            title = "종료 확인 절차 끄기",
+            undecorated = true,
+            alwaysOnTop = true,
+            state = androidx.compose.ui.window.rememberWindowState(placement = androidx.compose.ui.window.WindowPlacement.Maximized)
+        ) {
+            com.phonelock.desktop.ui.theme.PhoneLockTheme(repository.currentPalette()) {
+                ExitConfirmScreen(
+                    title = "정말 종료 확인 절차를 끌까요?",
+                    finalLabel = "끄기",
+                    onConfirmExit = {
+                        exitConfirmEnabled = false
+                        repository.exitConfirmEnabled = false
+                        showExitConfirmGate = false
+                    },
+                    onCancel = { showExitConfirmGate = false }
+                )
+            }
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         Text("설정", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(Spacing.md))
 
@@ -231,23 +286,102 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                                 )
                             }
                         }
+                        // 79차(사용자 요청): 배경색/포인트색 두 개만 직접 골라 나만의 테마를 만드는 기능.
+                        // 나머지 색(텍스트/카드/보조색 등)은 buildCustomPalette()가 이 둘로부터 자동 계산한다.
+                        if (themeMode == com.phonelock.desktop.ui.theme.ThemeMode.CUSTOM) {
+                            Spacer(Modifier.height(Spacing.sm))
+                            val bgPreview = com.phonelock.desktop.ui.theme.parseHexColor(customBgText)
+                            val accentPreview = com.phonelock.desktop.ui.theme.parseHexColor(customAccentText)
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = customBgText,
+                                    onValueChange = { text ->
+                                        customBgText = text
+                                        if (com.phonelock.desktop.ui.theme.parseHexColor(text) != null) {
+                                            repository.customThemeBackground = text.trim()
+                                            onThemeChange(themeMode)
+                                        }
+                                    },
+                                    label = { Text("배경색") },
+                                    placeholder = { Text("#FAFBF6") },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                                // 86차(사용자 요청): 미리보기 상자를 누르면 헥스 직접 입력 대신 프리셋
+                                // 팔레트에서 골라 고를 수 있다(안드로이드판과 대칭).
+                                Box(
+                                    Modifier.size(36.dp)
+                                        .background(bgPreview ?: Color.Gray, MaterialTheme.shapes.small)
+                                        .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                        .clickable { showBgPalette = true }
+                                )
+                            }
+                            Spacer(Modifier.height(Spacing.sm))
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = customAccentText,
+                                    onValueChange = { text ->
+                                        customAccentText = text
+                                        if (com.phonelock.desktop.ui.theme.parseHexColor(text) != null) {
+                                            repository.customThemeAccent = text.trim()
+                                            onThemeChange(themeMode)
+                                        }
+                                    },
+                                    label = { Text("포인트색") },
+                                    placeholder = { Text("#8BC34A") },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                                Box(
+                                    Modifier.size(36.dp)
+                                        .background(accentPreview ?: Color.Gray, MaterialTheme.shapes.small)
+                                        .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                        .clickable { showAccentPalette = true }
+                                )
+                            }
+                            Spacer(Modifier.height(Spacing.xs))
+                            Text(
+                                "직접 입력하거나, 오른쪽 색상 상자를 눌러 팔레트에서 고를 수 있습니다. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (showBgPalette) {
+                                com.phonelock.desktop.ui.components.ColorPaletteDialog(
+                                    title = "배경색 고르기",
+                                    currentHex = customBgText,
+                                    onSelect = { hex ->
+                                        customBgText = hex
+                                        repository.customThemeBackground = hex
+                                        onThemeChange(themeMode)
+                                    },
+                                    onDismiss = { showBgPalette = false }
+                                )
+                            }
+                            if (showAccentPalette) {
+                                com.phonelock.desktop.ui.components.ColorPaletteDialog(
+                                    title = "포인트색 고르기",
+                                    currentHex = customAccentText,
+                                    onSelect = { hex ->
+                                        customAccentText = hex
+                                        repository.customThemeAccent = hex
+                                        onThemeChange(themeMode)
+                                    },
+                                    onDismiss = { showAccentPalette = false }
+                                )
+                            }
+                        }
                     }
                     Spacer(Modifier.height(Spacing.md))
 
-                    SectionCard("일일 사용 한도 초기화 시각") {
-                        OutlinedTextField(
-                            value = dailyResetHourText,
-                            onValueChange = { text ->
-                                dailyResetHourText = text
-                                text.toIntOrNull()?.let { if (it in 0..23) repository.dailyResetHour = it }
-                            },
-                            label = { Text("초기화 시각 (0~23시)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            "이 시각이 되면 그룹별 오늘 사용 시간이 초기화됩니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    SectionCard("자동 실행") {
+                        ToggleRow(
+                            title = "컴퓨터 시작 시 자동 실행",
+                            description = "Windows 로그인 시 이 계정으로 앱이 자동으로 켜집니다.",
+                            checked = launchAtStartup,
+                            onCheckedChange = { checked ->
+                                launchAtStartup = checked
+                                com.phonelock.desktop.setLaunchAtStartupEnabled(checked)
+                            }
                         )
                     }
                     Spacer(Modifier.height(Spacing.md))
@@ -578,6 +712,11 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                     }
                     Spacer(Modifier.height(Spacing.md))
 
+                    // 85차(사용자 요청): "자동 백업 (Firebase)" 설정 UI를 제거했다 — 로그인/Storage 활성화
+                    // 등 전제조건이 많아 실사용 검증이 부족한 상태였다. cloudBackupEnabled/CloudBackupClient
+                    // 등 하위 코드는 그대로 남겨뒀으니(제거하지 않음) 나중에 제대로 재설계해 다시 노출할 수
+                    // 있다 — 자세한 경위는 IDEAS.md/DECISIONS.md 85차 참고.
+
                     SectionCard("오래된 통계 데이터 정리") {
                         var lastResult by remember { mutableStateOf<Int?>(null) }
                         Text(
@@ -708,14 +847,100 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                 }
 
                 SettingsSubTab.STUDY -> {
-                    Text(
-                        "현재 공부 전용 설정 항목은 없습니다.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SectionCard("캘린더 다회독 기본값") {
+                        ToggleRow(
+                            title = "새 일정을 다회독으로 시작",
+                            description = "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 회독을 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
+                            checked = defaultMultiPassEnabled,
+                            onCheckedChange = { checked ->
+                                defaultMultiPassEnabled = checked
+                                repository.defaultMultiPassEnabled = checked
+                                repository.pushSettingsToFirebase()
+                            }
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(
+                            "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 회독 수/간격입니다 " +
+                                "(계산기 업무는 업무별로 각 업무 입력 카드에서 따로 설정).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.xs))
+                        com.phonelock.desktop.ui.components.NumberStepperField(
+                            label = "기본 회독 수",
+                            value = defaultPassCount.toString(),
+                            onValueChange = { text ->
+                                val newCount = (text.toIntOrNull() ?: defaultPassCount)
+                                    .coerceIn(com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT, com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT)
+                                defaultPassCount = newCount
+                                repository.defaultPassCount = newCount
+                                defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.defaultPassIntervals(newCount)
+                                repository.defaultPassIntervalsCsv = defaultPassIntervals.joinToString(",")
+                                repository.pushSettingsToFirebase()
+                            },
+                            min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
+                            max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
+                            modifier = Modifier.width(160.dp)
+                        )
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text("회독별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            defaultPassIntervals.forEachIndexed { i, days ->
+                                com.phonelock.desktop.ui.components.NumberStepperField(
+                                    label = "${i + 1}→${i + 2}회독",
+                                    value = days.toString(),
+                                    onValueChange = { text ->
+                                        val newDays = (text.toIntOrNull() ?: days).coerceIn(1, 90)
+                                        val updated = defaultPassIntervals.toMutableList().also { it[i] = newDays }
+                                        defaultPassIntervals = updated
+                                        repository.defaultPassIntervalsCsv = updated.joinToString(",")
+                                        repository.pushSettingsToFirebase()
+                                    },
+                                    min = 1, max = 90,
+                                    modifier = Modifier.width(140.dp)
+                                )
+                            }
+                        }
+                    }
                 }
 
                 SettingsSubTab.MANAGE -> {
+                    SectionCard("일일 사용 한도 초기화 시각") {
+                        OutlinedTextField(
+                            value = dailyResetHourText,
+                            onValueChange = { text ->
+                                dailyResetHourText = text
+                                text.toIntOrNull()?.let { if (it in 0..23) { repository.dailyResetHour = it; repository.pushSettingsToFirebase() } }
+                            },
+                            label = { Text("초기화 시각 (0~23시)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            "이 시각이 되면 그룹별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    SectionCard("앱 종료 확인 절차") {
+                        ToggleRow(
+                            title = "종료 시 회유 멘트 20개 확인",
+                            description = "꺼두면 트레이 \"종료\"를 눌렀을 때 이 확인 없이 바로 꺼집니다.",
+                            checked = exitConfirmEnabled,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    exitConfirmEnabled = true
+                                    repository.exitConfirmEnabled = true
+                                } else {
+                                    // 끄는 것 자체를 같은 절차로 보호 — 바로 끄지 않고 확인 게이트를 띄운다.
+                                    showExitConfirmGate = true
+                                }
+                            }
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
                     SectionCard("릴스/쇼츠 차단") {
                         ToggleRow(
                             title = "릴스 차단 (인스타그램)",

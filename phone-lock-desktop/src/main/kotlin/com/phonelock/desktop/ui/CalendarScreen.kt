@@ -3,6 +3,11 @@ package com.phonelock.desktop.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -47,6 +53,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phonelock.desktop.data.CalendarTask
+import com.phonelock.desktop.data.*
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.theme.Spacing
@@ -89,12 +96,19 @@ internal fun stageChipColors(stage: String): ChipColors {
     return ChipColors(accent.copy(alpha = 0.15f), accent)
 }
 
+/** 83차(다회독 상세화) — passIndex/passTotal 기반 빨강→초록 그라데이션 accent. */
+internal fun passAccentColor(task: CalendarTask): Color = Color(com.phonelock.shared.calc.PassSchedule.passColor(task.passIndex, task.passTotal))
+internal fun passLabel(task: CalendarTask): String = "${task.passIndex + 1}회독"
+
 private fun dowLabel(date: LocalDate): String = WEEKDAYS_KO[date.dayOfWeek.value % 7]
 
 /**
  * 웹앱 월 그리드의 `.task-chip` — 배경/테두리를 회독 색으로 채운 배지, O/X 완료 표시는 칩 색과
- * 별개로 항상 초록/빨강(`.status-O::before`/`.status-X::before`).
+ * 별개로 항상 초록/빨강(`.status-O::before`/`.status-X::before`). 83차부터 색상은 task.passIndex/
+ * passTotal 기반 그라데이션(레거시 color 문자열 대신).
  */
+/** 모임 멤버 상세(다른 사용자의 동기화된 일정 요약, passIndex/passTotal 없음)용 레거시 오버로드 — 그
+ *  화면은 이번 다회독 상세화 범위 밖이라 기존 color 문자열 기반 렌더링을 그대로 유지한다. */
 @Composable
 internal fun TaskChip(name: String, stage: String, status: String?, modifier: Modifier = Modifier) {
     val chip = stageChipColors(stage)
@@ -110,6 +124,26 @@ internal fun TaskChip(name: String, stage: String, status: String?, modifier: Mo
             .padding(horizontal = 4.dp, vertical = 1.dp),
         style = MaterialTheme.typography.labelSmall,
         color = stageTextColor(stage),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+@Composable
+internal fun TaskChip(task: CalendarTask, modifier: Modifier = Modifier) {
+    val accent = passAccentColor(task)
+    Text(
+        buildAnnotatedString {
+            if (task.status == "O") withStyle(SpanStyle(color = Color(0xFF34D399), fontWeight = FontWeight.Black)) { append("O ") }
+            else if (task.status == "X") withStyle(SpanStyle(color = Color(0xFFF87171), fontWeight = FontWeight.Black)) { append("X ") }
+            append(task.name)
+        },
+        modifier = modifier
+            .background(accent.copy(alpha = 0.15f), MaterialTheme.shapes.extraSmall)
+            .border(1.dp, accent, MaterialTheme.shapes.extraSmall)
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = accent,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis
     )
@@ -145,12 +179,21 @@ fun CalendarScreen(repository: Repository) {
         Text("📅 캘린더", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(Spacing.md))
 
-        // 데스크탑 전용 좌우 분할: 왼쪽은 월 그리드(고정 높이라 스크롤 불필요), 오른쪽은 선택한 날짜의
-        // 상세 일정(별도로 스크롤) — 웹앱의 모달 대신 항상 곁에 두고 볼 수 있는 패널 형태.
-        Row(Modifier.weight(1f)) {
-            Column(Modifier.weight(1.1f).fillMaxHeight()) {
+        // 데스크탑 전용 분할: 왼쪽(넓을 땐 좌측, 좁을 땐 위쪽)은 월 그리드, 오른쪽(넓을 땐 우측, 좁을 땐
+        // 아래쪽)은 선택한 날짜의 상세 일정 — 웹앱의 모달 대신 항상 곁에 두고 볼 수 있는 패널 형태.
+        // 79차: 창이 좁아지면(다른 앱과 나란히 등) Row 그대로 유지하면 양쪽 다 뭉개지므로, 안드로이드처럼
+        // 위아래로 쌓는 ResponsiveSplit으로 교체(사용자 요청).
+        com.phonelock.desktop.ui.components.ResponsiveSplit(
+            modifier = Modifier.weight(1f),
+            leftWeight = 1.1f,
+            rightWeight = 0.9f,
+            left = {
+            Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    OutlinedButton(onClick = { if (month == 0) { month = 11; year-- } else month-- }) { Text("◀ 이전") }
+                    OutlinedButton(onClick = { if (month == 0) { month = 11; year-- } else month-- }) {
+                        Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("이전")
+                    }
                     Text("${year}년 ${MONTHS_KO[month]}", style = MaterialTheme.typography.titleLarge)
                     Row {
                         OutlinedButton(onClick = {
@@ -160,7 +203,10 @@ fun CalendarScreen(repository: Repository) {
                             }
                         }) { Text("🧹 정리") }
                         Spacer(Modifier.width(Spacing.sm))
-                        OutlinedButton(onClick = { if (month == 11) { month = 0; year++ } else month++ }) { Text("다음 ▶") }
+                        OutlinedButton(onClick = { if (month == 11) { month = 0; year++ } else month++ }) {
+                            Text("다음")
+                            Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
                 Spacer(Modifier.height(Spacing.sm))
@@ -245,9 +291,7 @@ fun CalendarScreen(repository: Repository) {
                                         Spacer(Modifier.height(2.dp))
                                         dayTasks.take(3).forEach { t ->
                                             TaskChip(
-                                                name = t.name,
-                                                stage = t.color,
-                                                status = t.status,
+                                                task = t,
                                                 modifier = Modifier.fillMaxWidth().padding(top = 1.dp)
                                             )
                                         }
@@ -264,18 +308,18 @@ fun CalendarScreen(repository: Repository) {
                 }
                 }
             }
-
-            Spacer(Modifier.width(Spacing.md))
-
-            Column(Modifier.weight(0.9f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                val date = selectedDate
-                if (date == null) {
-                    Text("날짜를 클릭하면 그날의 일정을 확인할 수 있습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    DayDetailSection(repository = repository, date = date, onChanged = { dayRefreshTick++ })
+            },
+            right = {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    val date = selectedDate
+                    if (date == null) {
+                        Text("날짜를 클릭하면 그날의 일정을 확인할 수 있습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        DayDetailSection(repository = repository, date = date, onChanged = { dayRefreshTick++ })
+                    }
                 }
             }
-        }
+        )
     }
 }
 
@@ -419,6 +463,85 @@ private fun LinkedCalcSection(repository: Repository, dateKey: String, onChanged
     }
 }
 
+/**
+ * 캘린더 일정 하나의 계산기 연동 설정 편집(86차 신규, 안드로이드판 LinkEditorPanel과 대칭) — 생성 시
+ * (LinkedCalcSection)에만 정할 수 있던 연결을 업무마다 나중에 바꿀 수 있게 하는 작은 패널. 다른 계산기
+ * 업무로 재연결, 완전 해제, 완료 시 반영될 할당량(progressStep) 수정을 한 곳에서 처리한다. "적용"은
+ * 선택된 업무가 지금 연결과 같아도 실행되므로, 그 업무의 회독 설정이 나중에 바뀐 경우 다시 맞추는
+ * 초기화 용도로도 쓰인다.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun LinkEditorPanel(
+    repository: Repository,
+    dateKey: String,
+    ordinal: Int,
+    task: CalendarTask,
+    onChanged: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val calcTasks = remember(task) { repository.getCalcTasks().filter { it.name.isNotBlank() } }
+    var selected by remember(task) { mutableStateOf(task.linkedCalc) }
+    var amountText by remember(task) { mutableStateOf(task.progressStep ?: "") }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+            .padding(Spacing.sm)
+            .padding(top = Spacing.xs)
+    ) {
+        Text("업무 연결 설정", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(Spacing.xs))
+        if (calcTasks.isEmpty()) {
+            Text("등록된 계산기 업무가 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+            ) {
+                calcTasks.forEach { t ->
+                    val isSelected = selected == t.name
+                    OutlinedButton(
+                        onClick = { selected = t.name },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        colors = if (isSelected) {
+                            ButtonDefaults.outlinedButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.primary
+                            )
+                        } else ButtonDefaults.outlinedButtonColors()
+                    ) { Text(t.name, style = MaterialTheme.typography.labelSmall) }
+                }
+            }
+        }
+        Spacer(Modifier.height(Spacing.xs))
+        OutlinedTextField(
+            value = amountText,
+            onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' } },
+            label = { Text("완료 시 반영될 할당량") },
+            enabled = selected != null,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(Spacing.xs))
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+            Button(
+                onClick = {
+                    val name = selected ?: return@Button
+                    repository.setCalendarTaskLink(dateKey, ordinal, name, amountText.ifBlank { null })
+                    onChanged()
+                },
+                enabled = selected != null
+            ) { Text("적용") }
+            OutlinedButton(onClick = {
+                repository.setCalendarTaskLink(dateKey, ordinal, null, null)
+                onChanged()
+            }) { Text("연결 해제") }
+            TextButton(onClick = onCancel) { Text("취소") }
+        }
+    }
+}
+
 @Composable
 private fun CalendarTaskRow(
     repository: Repository,
@@ -435,7 +558,7 @@ private fun CalendarTaskRow(
     var showColorPicker by remember(task) { mutableStateOf(false) }
     var showMoveCopy by remember(task) { mutableStateOf<String?>(null) }
     var targetDateText by remember(task) { mutableStateOf("") }
-    var nextDaysText by remember(task) { mutableStateOf(task.nextDays?.toString() ?: "") }
+    var showLinkEditor by remember(task) { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxWidth()
@@ -444,16 +567,18 @@ private fun CalendarTaskRow(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column {
-                Text("▲", fontSize = 10.sp, modifier = Modifier.clickable(enabled = !isFirst) {
-                    repository.moveCalendarTaskOrder(dateKey, ordinal, -1); onChanged()
-                }.padding(2.dp))
-                Text("▼", fontSize = 10.sp, modifier = Modifier.clickable(enabled = !isLast) {
-                    repository.moveCalendarTaskOrder(dateKey, ordinal, 1); onChanged()
-                }.padding(2.dp))
+                com.phonelock.desktop.ui.components.IconChip(
+                    Icons.Filled.KeyboardArrowUp, enabled = !isFirst,
+                    onClick = { repository.moveCalendarTaskOrder(dateKey, ordinal, -1); onChanged() }
+                )
+                com.phonelock.desktop.ui.components.IconChip(
+                    Icons.Filled.KeyboardArrowDown, enabled = !isLast,
+                    onClick = { repository.moveCalendarTaskOrder(dateKey, ordinal, 1); onChanged() }
+                )
             }
             Spacer(Modifier.width(Spacing.xs))
             if (editingName) {
-                Box(Modifier.size(10.dp).background(stageTextColor(task.color), CircleShape))
+                Box(Modifier.size(10.dp).background(passAccentColor(task), CircleShape))
                 Spacer(Modifier.width(Spacing.xs))
                 OutlinedTextField(
                     value = nameText,
@@ -468,29 +593,35 @@ private fun CalendarTaskRow(
                         task.name,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = stageTextColor(task.color)
+                        color = passAccentColor(task)
                     )
                     // 이름 아래 회독 라벨 옆 빈 공간에 이 업무를 실제로 잰 시간을 붙여 보여준다.
-                    val metaLine = COLOR_LABEL[task.color] ?: ""
+                    val metaLine = passLabel(task)
                     val timeLine = if (loggedSeconds != null && loggedSeconds > 0) " · ⏱ ${formatHmsLog(loggedSeconds.toLong())}" else ""
                     Text("$metaLine$timeLine", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Spacer(Modifier.width(Spacing.xs))
-            // 웹앱 .next-days-btn — 다음 회독까지 며칠 뒤인지 짧은 알약 입력. 예전엔 라벨 붙은
-            // 140dp 텍스트필드를 별도 줄에 뒀는데, 웹앱은 헤더 줄 안에 작은 칩으로 들어가 있다.
-            OutlinedTextField(
-                value = nextDaysText,
-                onValueChange = { text ->
-                    nextDaysText = text
-                    repository.setCalendarTaskNextDays(dateKey, ordinal, text.trim().toIntOrNull())
-                },
-                placeholder = { Text("⏱", style = MaterialTheme.typography.labelSmall) },
-                modifier = Modifier.width(64.dp),
-                textStyle = MaterialTheme.typography.labelSmall,
-                singleLine = true
+            // 79차: 완료(O) 시 다음 회독을 자동 생성할지 업무마다 켜고 끌 수 있는 토글(기본 off, 사용자 요청).
+            // 꺼져 있으면 아래 ⏱(nextDays) 입력은 의미가 없으므로 숨긴다.
+            Text(
+                if (task.multiPassEnabled) "🔁다회독" else "🔁off",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .background(
+                        (if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.15f),
+                        RoundedCornerShape(50)
+                    )
+                    .clickable { repository.setCalendarTaskMultiPass(dateKey, ordinal, !task.multiPassEnabled); onChanged() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             )
             Spacer(Modifier.width(Spacing.xs))
+            // 85차: 스마트폰에서 업무 이름이 과하게 줄바꿈되는 문제 해결을 위해 다회독/미완 버튼 사이의
+            // "다음 회독 주기" 입력칸을 제거해 이름에 폭을 더 준다(사용자 요청, 안드로이드판과 대칭) —
+            // task.nextDays 자체는 여전히 CalendarTask에 남아 자동 회독 생성 시(applyCalendarAutoSchedule)
+            // 커스텀 간격으로 쓰이지만, 그 값을 직접 입력하는 UI만 뺐다.
             val statusLabel = task.status ?: "미완"
             val statusColor = when (task.status) {
                 "O" -> Color(0xFF34D399)
@@ -510,20 +641,19 @@ private fun CalendarTaskRow(
         }
 
         if (showColorPicker) {
+            // 83차: 회독 수가 업무마다 다를 수 있으므로(3~8) 고정 3개가 아니라 task.passTotal만큼 보여준다.
             Row(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
                 modifier = Modifier.padding(top = Spacing.xs).horizontalScroll(rememberScrollState())
             ) {
-                listOf(
-                    "green" to "3회독", "yellow" to "2회독", "red" to "1회독"
-                ).forEach { (c, label) ->
-                    val stageColor = stageTextColor(c)
+                (task.passTotal - 1 downTo 0).forEach { idx ->
+                    val stageColor = Color(com.phonelock.shared.calc.PassSchedule.passColor(idx, task.passTotal))
                     OutlinedButton(
-                        onClick = { repository.recolorCalendarTask(dateKey, ordinal, c); showColorPicker = false; onChanged() },
+                        onClick = { repository.setCalendarTaskPassIndex(dateKey, ordinal, idx); showColorPicker = false; onChanged() },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = stageColor),
                         border = BorderStroke(1.dp, stageColor.copy(alpha = 0.5f))
-                    ) { Text(label, style = MaterialTheme.typography.labelSmall) }
+                    ) { Text("${idx + 1}회독", style = MaterialTheme.typography.labelSmall) }
                 }
             }
         }
@@ -538,11 +668,38 @@ private fun CalendarTaskRow(
                 TextButton(onClick = { editingName = false; nameText = task.name }) { Text("취소") }
             }
         } else {
-            TextButton(
-                onClick = { editingName = true },
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                modifier = Modifier.padding(top = 2.dp)
-            ) { Text("✏️ 이름 수정", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    onClick = { editingName = true },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(top = 2.dp)
+                ) { Text("✏️ 이름 수정", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                // 86차: 계산기 업무 연결은 생성 시(LinkedCalcSection)에만 설정할 수 있었는데, 업무마다
+                // 개별적으로 연결 해제/변경/할당량 수정이 가능하도록 작은 버튼 하나만 추가(안드로이드판과
+                // 대칭, 사용자 요청 — 공간을 많이 차지하지 않게).
+                TextButton(
+                    onClick = { showLinkEditor = !showLinkEditor },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    Text(
+                        if (task.linkedCalc != null) "🔗 ${task.linkedCalc}" else "🔗 업무 연결",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (task.linkedCalc != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        if (showLinkEditor) {
+            LinkEditorPanel(
+                repository = repository,
+                dateKey = dateKey,
+                ordinal = ordinal,
+                task = task,
+                onChanged = { showLinkEditor = false; onChanged() },
+                onCancel = { showLinkEditor = false }
+            )
         }
 
         // 웹앱 .modal-actions .modal-btn — 버튼 5개가 flex:1로 균등하게 폭을 나눠 차지하고,

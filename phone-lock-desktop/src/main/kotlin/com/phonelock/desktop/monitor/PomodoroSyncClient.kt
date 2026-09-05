@@ -365,6 +365,47 @@ object PomodoroSyncClient {
         }
     }
 
+    data class SettingsSyncResult(val json: JSONObject, val ts: Long)
+
+    /**
+     * 85차(사용자 요청, 안드로이드판과 대칭) — 설정 탭의 계산기 기본 다회독값(defaultPassCount/
+     * defaultPassIntervalsCsv/defaultMultiPassEnabled)과 일일 초기화 시각(dailyResetHour)이 기기 간
+     * 동기화되지 않던 문제를 고치기 위해 신설. `users/{user}/settings`에 문서 단위 LWW로 저장한다.
+     */
+    fun readSettings(databaseUrl: String?, apiKey: String?): SettingsSyncResult? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return runCatching {
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
+            val base = databaseUrl.trimEnd('/')
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("$base/users/$user/settings.json?auth=$token"))
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .GET()
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            if (response.statusCode() !in 200..299) return@runCatching null
+            val body = response.body()
+            if (body.isNullOrBlank() || body == "null") return@runCatching SettingsSyncResult(JSONObject(), 0L)
+            val json = JSONObject(body)
+            SettingsSyncResult(json, json.optLong("_ts", 0L))
+        }.getOrNull()
+    }
+
+    fun writeSettings(databaseUrl: String?, apiKey: String?, settingsJson: JSONObject, ts: Long) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
+        runCatching {
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
+            val base = databaseUrl.trimEnd('/')
+            val body = JSONObject(settingsJson.toString()).apply { put("_ts", ts) }
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("$base/users/$user/settings.json?auth=$token"))
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .PUT(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .build()
+            httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        }
+    }
+
     data class RoutineSyncResult(val routinesJson: org.json.JSONArray, val logsJson: org.json.JSONArray, val ts: Long)
 
     /**

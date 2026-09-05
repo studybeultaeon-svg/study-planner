@@ -9,6 +9,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +56,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phonelock.desktop.data.CalcTask
+import com.phonelock.desktop.data.*
 import com.phonelock.desktop.data.CalendarTask
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.data.TimerRunState
@@ -116,6 +119,7 @@ fun StudyTimerScreen(repository: Repository) {
     var tickCount by remember { mutableStateOf(0) }
     var showStopNoteDialog by remember { mutableStateOf(false) }
     var stopNoteText by remember { mutableStateOf("") }
+    var stopTagText by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -174,14 +178,23 @@ fun StudyTimerScreen(repository: Repository) {
                         placeholder = { Text("예: 3장까지 풀었다, 집중이 잘 됐다") },
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(Modifier.height(Spacing.sm))
+                    OutlinedTextField(
+                        value = stopTagText,
+                        onValueChange = { stopTagText = it },
+                        label = { Text("태그(과목 등, 선택)") },
+                        placeholder = { Text("예: 수학, 영어") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    repository.timerStop(stopNoteText.trim())
+                    repository.timerStop(stopNoteText.trim(), stopTagText.trim())
                     run = repository.getTimerRun()
                     refreshLog()
                     stopNoteText = ""
+                    stopTagText = ""
                     showStopNoteDialog = false
                 }) { Text("정지") }
             },
@@ -198,9 +211,10 @@ fun StudyTimerScreen(repository: Repository) {
         TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
         Spacer(Modifier.height(Spacing.md))
 
-        Row(Modifier.weight(1f)) {
+        // 79차: 창이 좁아지면 위아래로 쌓는 ResponsiveSplit(사용자 요청, CalendarScreen/CalculatorScreen과 동일 패턴).
+        com.phonelock.desktop.ui.components.ResponsiveSplit(modifier = Modifier.weight(1f), left = {
             // 왼쪽: 타이머 본체
-            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 // 이 기기 타이머가 꺼져 있어도 다른 기기가 재고 있으면(신선한 신호일 때만) 그 값을 그대로
                 // 미러링해서 보여준다 — 사용자 요청: 데스크탑에서 시작하면 모바일도 시작 없이 같은 숫자를 보여줄 것.
                 val remoteActive = remoteStudying || remoteResting
@@ -290,7 +304,13 @@ fun StudyTimerScreen(repository: Repository) {
                                 run = repository.getTimerRun()
                             },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("▶ 시작") }
+                        ) {
+                            androidx.compose.material3.Icon(
+                                Icons.Filled.PlayArrow, contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text("시작")
+                        }
                     } else {
                         val isMirror = run == null
                         val current = run ?: TimerRunState(
@@ -392,11 +412,9 @@ fun StudyTimerScreen(repository: Repository) {
                     }
                 }
             }
-
-            Spacer(Modifier.width(Spacing.md))
-
+        }, right = {
             // 오른쪽: 부가 설정 + 오늘 기록
-            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                 SectionCard("🔒 공부 중 허용 프로그램") {
                     Text(
                         "공부 페이즈가 진행 중일 때만(휴식 중엔 아님) 데스크탑이 잠기고, 여기 등록한 프로그램만 열 수 있습니다.",
@@ -436,15 +454,15 @@ fun StudyTimerScreen(repository: Repository) {
                         val byTask = todayLog.groupBy { it.taskName }
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             byTask.entries.sortedByDescending { (_, entries) -> entries.sumOf { it.seconds } }.forEach { (name, entries) ->
-                                val lastNote = entries.maxByOrNull { it.startedAt }?.note.orEmpty()
-                                StudyLogRow(name = name, seconds = entries.sumOf { it.seconds }.toLong(), note = lastNote)
+                                val lastEntry = entries.maxByOrNull { it.startedAt }
+                                StudyLogRow(name = name, seconds = entries.sumOf { it.seconds }.toLong(), note = lastEntry?.note.orEmpty(), tag = lastEntry?.tag.orEmpty())
                             }
                             StudyLogRow(name = "합계", seconds = todayLog.sumOf { it.seconds }.toLong(), isTotal = true)
                         }
                     }
                 }
             }
-        }
+        })
     }
 }
 
@@ -532,7 +550,7 @@ private fun PomoToggleButton(checked: Boolean, onClick: () -> Unit) {
 
 /** 웹앱 .study-log-row — 카드형 행, 합계 행은 파랑 틴트로 강조. note가 있으면 이름 아래 회고를 작게 덧붙인다. */
 @Composable
-internal fun StudyLogRow(name: String, seconds: Long, isTotal: Boolean = false, note: String = "") {
+internal fun StudyLogRow(name: String, seconds: Long, isTotal: Boolean = false, note: String = "", tag: String = "") {
     val accent = MaterialTheme.colorScheme.primary
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -546,7 +564,14 @@ internal fun StudyLogRow(name: String, seconds: Long, isTotal: Boolean = false, 
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    if (tag.isNotBlank()) {
+                        Surface(shape = RoundedCornerShape(50), color = accent.copy(alpha = 0.12f)) {
+                            Text(tag, style = MaterialTheme.typography.labelSmall, color = accent, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                        }
+                    }
+                }
                 Text(formatHmsLog(seconds), style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, color = accent)
             }
             if (note.isNotBlank()) {
@@ -603,12 +628,9 @@ private fun LockListEditor(items: List<String>, placeholder: String, onAdd: (Str
     }
 }
 
-private val TIMER_COLOR_LABEL = mapOf("red" to "1회독", "yellow" to "2회독", "green" to "3회독")
-
 private fun taskDropdownLabel(task: CalendarTask): String {
     val done = if (task.status == "O") " ✅" else ""
-    val colorLabel = TIMER_COLOR_LABEL[task.color] ?: ""
-    return "${task.name}$done · $colorLabel"
+    return "${task.name}$done · ${task.passIndex + 1}회독"
 }
 
 internal fun formatHmsLog(totalSeconds: Long): String {

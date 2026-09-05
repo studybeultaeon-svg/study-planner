@@ -1,6 +1,5 @@
 package com.phonelock.app.ui
 
-import android.app.NotificationManager
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
@@ -10,16 +9,24 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,9 +51,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.platform.LocalContext
 import com.phonelock.app.R
 import com.phonelock.app.data.AppPreferences
+import com.phonelock.app.data.*
 import com.phonelock.app.data.PreMigrationBackup
 import com.phonelock.app.routine.RoutineAlarmScheduler
 import com.phonelock.app.data.PhoneLockRepository
@@ -71,17 +80,27 @@ private fun isDeviceAdminActive(context: android.content.Context): Boolean {
     return dpm.isAdminActive(PhoneLockDeviceAdminReceiver.componentName(context))
 }
 
-private fun isNotificationPolicyAccessGranted(context: android.content.Context): Boolean {
-    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    return nm.isNotificationPolicyAccessGranted
-}
-
 private fun canScheduleExactAlarms(context: android.content.Context): Boolean {
     if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return true
     val am = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
     return am.canScheduleExactAlarms()
 }
 
+/** 동기화 상태 배지용 — "N분/시간/일" 형태의 짧은 상대시간(82차, §10①). */
+private fun syncElapsedLabel(atMillis: Long): String {
+    val elapsedMs = (System.currentTimeMillis() - atMillis).coerceAtLeast(0L)
+    val minutes = elapsedMs / 60_000L
+    return when {
+        minutes < 1 -> "방금"
+        minutes < 60 -> "${minutes}분"
+        minutes < 60 * 24 -> "${minutes / 60}시간"
+        else -> "${minutes / (60 * 24)}일"
+    }
+}
+
+// 태블릿 무대응(의도적 판단, 84차): 데스크탑판 SettingsScreen.kt도 동일한 TabRow + 세로 스크롤
+// Column/SectionCard 나열 구조뿐이고 ResponsiveSplit 등 좌우 분할을 쓰지 않는다 — 포팅할 desktop
+// 전용 레이아웃이 없다.
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
@@ -94,6 +113,10 @@ fun SettingsScreen(
     val prefs = remember { AppPreferences(context) }
 
     var themeMode by remember { mutableStateOf(prefs.themeMode) }
+    var customBgText by remember { mutableStateOf(prefs.customThemeBackground) }
+    var customAccentText by remember { mutableStateOf(prefs.customThemeAccent) }
+    var showBgPalette by remember { mutableStateOf(false) }
+    var showAccentPalette by remember { mutableStateOf(false) }
     var accessibilityEnabled by remember { mutableStateOf(AccessibilityServiceChecker.isEnabled(context)) }
     var deviceAdminActive by remember { mutableStateOf(isDeviceAdminActive(context)) }
     var batteryOptIgnored by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
@@ -101,10 +124,21 @@ fun SettingsScreen(
     var blockReels by remember { mutableStateOf(prefs.blockReels) }
     var blockShorts by remember { mutableStateOf(prefs.blockShorts) }
     var routineStreakNotifyEnabled by remember { mutableStateOf(prefs.routineStreakNotifyEnabled) }
-    var autoDndEnabled by remember { mutableStateOf(prefs.autoDndEnabled) }
+    var defaultMultiPassEnabled by remember { mutableStateOf(prefs.defaultMultiPassEnabled) }
+    var defaultPassCount by remember { mutableStateOf(prefs.defaultPassCount) }
+    var defaultPassIntervals by remember {
+        mutableStateOf(com.phonelock.shared.calc.PassSchedule.parsePassIntervals(prefs.defaultPassIntervalsCsv, prefs.defaultPassCount))
+    }
     var settingsSubTab by remember { mutableIntStateOf(0) }
-    var notificationPolicyGranted by remember { mutableStateOf(isNotificationPolicyAccessGranted(context)) }
     var dailyResetHourText by remember { mutableStateOf(prefs.dailyResetHour.toString()) }
+    // 85차: 설정 화면 진입 시 다른 기기에서 바꾼 다회독 기본값/일일 초기화 시각을 받아와 로컬 상태를 갱신.
+    LaunchedEffect(Unit) {
+        repository.syncSettingsFromFirebase()
+        defaultMultiPassEnabled = prefs.defaultMultiPassEnabled
+        defaultPassCount = prefs.defaultPassCount
+        defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.parsePassIntervals(prefs.defaultPassIntervalsCsv, prefs.defaultPassCount)
+        dailyResetHourText = prefs.dailyResetHour.toString()
+    }
     var loginId by remember { mutableStateOf(AuthManager.currentLoginId) }
     var showRestoreConfirmDialog by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
@@ -165,12 +199,6 @@ fun SettingsScreen(
         ActivityResultContracts.StartActivityForResult()
     ) {
         batteryOptIgnored = isIgnoringBatteryOptimizations(context)
-    }
-
-    val notificationPolicyLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        notificationPolicyGranted = isNotificationPolicyAccessGranted(context)
     }
 
     val exactAlarmLauncher = rememberLauncherForActivityResult(
@@ -266,38 +294,6 @@ fun SettingsScreen(
                 .padding(Spacing.md)
         ) {
           if (settingsSubTab == 0) {
-            if (autoBackups.isNotEmpty()) {
-                SectionCard("⚠ 그룹 데이터 복구") {
-                    Text(
-                        "앱 업데이트로 로컬 데이터가 초기화됐을 때 자동으로 만들어진 백업이 있습니다. 그룹(차단 " +
-                            "대상 앱/사이트 목록)은 동기화되지 않는 데이터라 지워졌다면 이 백업에서만 복구할 수 " +
-                            "있습니다. 그룹이 이미 정상적으로 보이면 누르지 마세요(같은 그룹이 중복으로 추가됩니다).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                    val latest = autoBackups.first()
-                    Text("가장 최근 백업: ${latest.name}", style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(Spacing.sm))
-                    Button(onClick = {
-                        scope.launch {
-                            val json = runCatching { JSONObject(latest.readText()) }.getOrNull()
-                            if (json == null) {
-                                groupRestoreResult = "백업 파일을 읽지 못했습니다."
-                            } else {
-                                val count = repository.restoreGroupsFromBackup(json)
-                                groupRestoreResult = "그룹 ${count}개 복구 완료. 앱을 재시작해주세요."
-                            }
-                        }
-                    }) { Text("이 백업에서 그룹 복구") }
-                    groupRestoreResult?.let {
-                        Spacer(Modifier.height(Spacing.sm))
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-                Spacer(Modifier.height(Spacing.md))
-            }
-
             SectionCard("테마") {
                 Text(
                     "앱 전체 배경/포인트 색과 차단/실행확인 화면 강조색, 홈 화면 위젯 색까지 함께 바뀝니다.",
@@ -321,6 +317,127 @@ fun SettingsScreen(
                             label = { Text(label) }
                         )
                     }
+                }
+                // 79차(사용자 요청): 배경색/포인트색 두 개만 직접 골라 나만의 테마를 만드는 기능.
+                // 나머지 색은 buildCustomPalette()가 이 둘로부터 자동 계산한다(데스크탑판과 동일).
+                if (themeMode == com.phonelock.app.ui.theme.ThemeMode.CUSTOM) {
+                    Spacer(Modifier.height(Spacing.sm))
+                    val bgPreview = com.phonelock.app.ui.theme.parseHexColor(customBgText)
+                    val accentPreview = com.phonelock.app.ui.theme.parseHexColor(customAccentText)
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = customBgText,
+                            onValueChange = { text ->
+                                customBgText = text
+                                if (com.phonelock.app.ui.theme.parseHexColor(text) != null) {
+                                    prefs.customThemeBackground = text.trim()
+                                    onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                                }
+                            },
+                            label = { Text("배경색") },
+                            placeholder = { Text("#FAFBF6") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        // 86차(사용자 요청): 미리보기 상자를 누르면 헥스 직접 입력 대신 프리셋 팔레트에서
+                        // 골라 고를 수 있다.
+                        Box(
+                            Modifier.size(36.dp)
+                                .background(bgPreview ?: Color.Gray, MaterialTheme.shapes.small)
+                                .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                .clickable { showBgPalette = true }
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.sm))
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = customAccentText,
+                            onValueChange = { text ->
+                                customAccentText = text
+                                if (com.phonelock.app.ui.theme.parseHexColor(text) != null) {
+                                    prefs.customThemeAccent = text.trim()
+                                    onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                                }
+                            },
+                            label = { Text("포인트색") },
+                            placeholder = { Text("#8BC34A") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        Box(
+                            Modifier.size(36.dp)
+                                .background(accentPreview ?: Color.Gray, MaterialTheme.shapes.small)
+                                .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                .clickable { showAccentPalette = true }
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text(
+                        "직접 입력하거나, 오른쪽 색상 상자를 눌러 팔레트에서 고를 수 있습니다. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (showBgPalette) {
+                        com.phonelock.app.ui.components.ColorPaletteDialog(
+                            title = "배경색 고르기",
+                            currentHex = customBgText,
+                            onSelect = { hex ->
+                                customBgText = hex
+                                prefs.customThemeBackground = hex
+                                onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                            },
+                            onDismiss = { showBgPalette = false }
+                        )
+                    }
+                    if (showAccentPalette) {
+                        com.phonelock.app.ui.components.ColorPaletteDialog(
+                            title = "포인트색 고르기",
+                            currentHex = customAccentText,
+                            onSelect = { hex ->
+                                customAccentText = hex
+                                prefs.customThemeAccent = hex
+                                onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                            },
+                            onDismiss = { showAccentPalette = false }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+
+            SectionCard("표시 / 진단") {
+                Text("글자 크기", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(Spacing.xs))
+                var fontScale by remember { mutableStateOf(prefs.fontScale) }
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    listOf(0.85f to "작게", 1.0f to "기본", 1.15f to "크게", 1.3f to "아주 크게").forEach { (scale, label) ->
+                        FilterChip(
+                            selected = fontScale == scale,
+                            onClick = { fontScale = scale; prefs.fontScale = scale },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(Spacing.md))
+                Text("동기화 상태", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(Spacing.xs))
+                val lastSyncAt = prefs.lastSyncSuccessAtMillis
+                val failCount = prefs.lastSyncFailCount
+                val syncStatusText = when {
+                    lastSyncAt <= 0L -> "아직 동기화 기록 없음"
+                    failCount > 0 -> "마지막 성공: ${syncElapsedLabel(lastSyncAt)} 전 · 이후 실패 ${failCount}회"
+                    else -> "마지막 성공: ${syncElapsedLabel(lastSyncAt)} 전 · 정상"
+                }
+                Text(
+                    syncStatusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (failCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                var showDebugLog by remember { mutableStateOf(false) }
+                OutlinedButton(onClick = { showDebugLog = true }) { Text("디버그 로그 보기") }
+                if (showDebugLog) {
+                    com.phonelock.app.ui.components.DebugLogDialog(onDismiss = { showDebugLog = false })
                 }
             }
             Spacer(Modifier.height(Spacing.md))
@@ -441,24 +558,6 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(Spacing.md))
 
-            SectionCard("일일 사용 한도 초기화 시각") {
-                OutlinedTextField(
-                    value = dailyResetHourText,
-                    onValueChange = { text ->
-                        dailyResetHourText = text
-                        text.toIntOrNull()?.let { if (it in 0..23) prefs.dailyResetHour = it }
-                    },
-                    label = { Text("초기화 시각 (0~23시)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    "이 시각이 되면 그룹별 오늘 사용 시간이 초기화됩니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(Modifier.height(Spacing.md))
-
             run {
                 val crashLogFile = java.io.File(context.filesDir, "crash_log.txt")
                 if (crashLogFile.exists()) {
@@ -505,6 +604,24 @@ fun SettingsScreen(
           }
 
           if (settingsSubTab == 3) {
+            SectionCard("일일 사용 한도 초기화 시각") {
+                OutlinedTextField(
+                    value = dailyResetHourText,
+                    onValueChange = { text ->
+                        dailyResetHourText = text
+                        text.toIntOrNull()?.let { if (it in 0..23) { prefs.dailyResetHour = it; repository.pushSettingsToFirebase() } }
+                    },
+                    label = { Text("초기화 시각 (0~23시)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "이 시각이 되면 그룹별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(Spacing.md))
+
             SectionCard("릴스/쇼츠 차단") {
                 ToggleRow(
                     title = "인스타 차단",
@@ -529,6 +646,95 @@ fun SettingsScreen(
                 )
             }
             Spacer(Modifier.height(Spacing.md))
+
+            if (autoBackups.isNotEmpty()) {
+                SectionCard("⚠ 그룹 데이터 복구") {
+                    Text(
+                        "앱 업데이트로 로컬 데이터가 초기화됐을 때 자동으로 만들어진 백업이 있습니다. 그룹(차단 " +
+                            "대상 앱/사이트 목록)은 동기화되지 않는 데이터라 지워졌다면 이 백업에서만 복구할 수 " +
+                            "있습니다. 그룹이 이미 정상적으로 보이면 누르지 마세요(같은 그룹이 중복으로 추가됩니다).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                    val latest = autoBackups.first()
+                    Text("가장 최근 백업: ${latest.name}", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(Spacing.sm))
+                    Button(onClick = {
+                        scope.launch {
+                            val json = runCatching { JSONObject(latest.readText()) }.getOrNull()
+                            if (json == null) {
+                                groupRestoreResult = "백업 파일을 읽지 못했습니다."
+                            } else {
+                                val count = repository.restoreGroupsFromBackup(json)
+                                groupRestoreResult = "그룹 ${count}개 복구 완료. 앱을 재시작해주세요."
+                            }
+                        }
+                    }) { Text("이 백업에서 그룹 복구") }
+                    groupRestoreResult?.let {
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Spacer(Modifier.height(Spacing.md))
+            }
+
+            SectionCard("백업 / 복원") {
+                Button(
+                    onClick = { backupLauncher.launch("phone_lock_backup.json") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("클라우드로 백업")
+                }
+                Spacer(Modifier.height(Spacing.sm))
+                Button(
+                    onClick = { restoreLauncher.launch(arrayOf("application/json")) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("백업 파일에서 복원")
+                }
+                Text(
+                    "저장 위치 선택 창에서 구글 드라이브 등 클라우드 폴더를 직접 고를 수 있습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(Spacing.md))
+
+            SectionCard("자동 백업 (Firebase)") {
+                var cloudBackupEnabled by remember { mutableStateOf(prefs.cloudBackupEnabled) }
+                ToggleRow(
+                    title = "매일 자동으로 클라우드에 백업",
+                    checked = cloudBackupEnabled,
+                    onCheckedChange = { checked -> cloudBackupEnabled = checked; prefs.cloudBackupEnabled = checked }
+                )
+                Text(
+                    "로그인이 필요하며, Firebase 콘솔에서 Storage를 먼저 활성화해야 동작합니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (prefs.lastCloudBackupResult.isNotBlank()) {
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text(
+                        "마지막 결과(${prefs.lastCloudBackupDate}): ${prefs.lastCloudBackupResult}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (prefs.lastCloudBackupResult.startsWith("성공")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                }
+                Spacer(Modifier.height(Spacing.sm))
+                OutlinedButton(onClick = {
+                    scope.launch {
+                        val json = repository.exportBackupJson()
+                        val result = com.phonelock.app.service.CloudBackupClient.uploadBackup(prefs.fbDatabaseUrl, json)
+                        Toast.makeText(
+                            context,
+                            if (result.isSuccess) "백업 업로드 완료" else "백업 실패: ${result.exceptionOrNull()?.message}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }) { Text("지금 클라우드에 백업") }
+            }
+            Spacer(Modifier.height(Spacing.md))
           }
 
           if (settingsSubTab == 1) {
@@ -551,39 +757,6 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-            Spacer(Modifier.height(Spacing.md))
-          }
-
-          if (settingsSubTab == 3) {
-            SectionCard("공부 잠금 중 방해금지 모드") {
-                Text(
-                    "공부 잠금 화면이 뜨는 동안 자동으로 방해금지(우선순위만) 모드를 켜고, 잠금이 풀리면 원래대로 되돌립니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                ToggleRow(
-                    title = "공부 잠금 중 방해금지 자동 적용",
-                    checked = autoDndEnabled,
-                    onCheckedChange = { checked ->
-                        autoDndEnabled = checked
-                        prefs.autoDndEnabled = checked
-                    }
-                )
-                if (autoDndEnabled && !notificationPolicyGranted) {
-                    Spacer(Modifier.height(Spacing.sm))
-                    Text(
-                        "알림 정책 접근 권한이 없어 아직 적용되지 않습니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                    Button(
-                        onClick = { notificationPolicyLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("알림 정책 접근 권한 설정 열기") }
-                }
             }
             Spacer(Modifier.height(Spacing.md))
           }
@@ -962,35 +1135,69 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(Spacing.md))
 
-            SectionCard("백업 / 복원") {
-                Button(
-                    onClick = { backupLauncher.launch("phone_lock_backup.json") },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("클라우드로 백업")
-                }
-                Spacer(Modifier.height(Spacing.sm))
-                Button(
-                    onClick = { restoreLauncher.launch(arrayOf("application/json")) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("백업 파일에서 복원")
-                }
-                Text(
-                    "저장 위치 선택 창에서 구글 드라이브 등 클라우드 폴더를 직접 고를 수 있습니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(Modifier.height(Spacing.md))
           }
 
           if (settingsSubTab == 2) {
-            Text(
-                "공부 전용 설정 항목은 아직 없습니다. 필요해지면 여기에 추가됩니다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            SectionCard("캘린더 다회독 기본값") {
+                ToggleRow(
+                    title = "새 일정을 다회독으로 시작",
+                    checked = defaultMultiPassEnabled,
+                    onCheckedChange = { checked ->
+                        defaultMultiPassEnabled = checked
+                        prefs.defaultMultiPassEnabled = checked
+                        repository.pushSettingsToFirebase()
+                    }
+                )
+                Text(
+                    "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 회독을 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                Text(
+                    "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 회독 수/간격입니다 " +
+                        "(계산기 업무는 업무별로 각 업무 입력 카드에서 따로 설정).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.xs))
+                com.phonelock.app.ui.components.NumberStepperField(
+                    label = "기본 회독 수",
+                    value = defaultPassCount.toString(),
+                    onValueChange = { text ->
+                        val newCount = (text.toIntOrNull() ?: defaultPassCount)
+                            .coerceIn(com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT, com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT)
+                        defaultPassCount = newCount
+                        prefs.defaultPassCount = newCount
+                        defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.defaultPassIntervals(newCount)
+                        prefs.defaultPassIntervalsCsv = defaultPassIntervals.joinToString(",")
+                        repository.pushSettingsToFirebase()
+                    },
+                    min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
+                    max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
+                    modifier = Modifier.width(160.dp)
+                )
+                Spacer(Modifier.height(Spacing.xs))
+                Text("회독별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    defaultPassIntervals.forEachIndexed { i, days ->
+                        com.phonelock.app.ui.components.NumberStepperField(
+                            label = "${i + 1}→${i + 2}회독",
+                            value = days.toString(),
+                            onValueChange = { text ->
+                                val newDays = (text.toIntOrNull() ?: days).coerceIn(1, 90)
+                                val updated = defaultPassIntervals.toMutableList().also { it[i] = newDays }
+                                defaultPassIntervals = updated
+                                prefs.defaultPassIntervalsCsv = updated.joinToString(",")
+                                repository.pushSettingsToFirebase()
+                            },
+                            min = 1,
+                            max = 90,
+                            modifier = Modifier.width(140.dp)
+                        )
+                    }
+                }
+            }
           }
 
           if (settingsSubTab == 1) {

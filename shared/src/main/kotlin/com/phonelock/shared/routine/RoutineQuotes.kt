@@ -1,7 +1,9 @@
-package com.phonelock.desktop.routine
+package com.phonelock.shared.routine
 
 /**
- * 스트릭 기반 응원/비판/조롱 알림(52차, IDEAS.md 요청) 문구 — 안드로이드판과 내용 동일하게 유지할 것.
+ * 스트릭 기반 응원/비판/조롱 알림(52차, IDEAS.md 요청) 문구 — 42차 MotivationalQuotes.kt(재확인/차단
+ * 화면용, 5단계 149개)와는 별개 용도라 새로 작은 세트로 둔다. 82차부터 안드로이드/데스크탑이 각자
+ * 대칭 복제하던 것을 이 :shared 모듈로 통합(감사 §7).
  */
 object RoutineQuotes {
     private val BROKEN = listOf(

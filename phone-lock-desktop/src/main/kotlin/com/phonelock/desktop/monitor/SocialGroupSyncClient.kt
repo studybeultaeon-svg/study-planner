@@ -1,6 +1,7 @@
 package com.phonelock.desktop.monitor
 
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.*
 import com.phonelock.desktop.routine.RoutineEngine
 import org.json.JSONArray
 import org.json.JSONObject
@@ -30,38 +31,18 @@ object SocialGroupSyncClient {
     data class MemberInfo(val uid: String, val displayName: String, val joinedAt: Long)
     data class RoutineStat(val title: String, val doneToday: Boolean, val icon: String = "", val timeSlot: String? = null)
     /** [dateKey]/[color]가 있어야 모임 멤버 상세에서 실제 캘린더 미니 그리드로 그릴 수 있다(76차 확장 —
-     *  예전엔 오늘 하루치만 이름/상태로 보여줬다). */
-    data class ScheduleStat(val dateKey: String, val name: String, val status: String?, val color: String)
+     *  예전엔 오늘 하루치만 이름/상태로 보여줬다). [linkedCalc]/[progressStep]은 일정표 탭의 달성(✅) 표시용(79차,
+     *  라이브 TimetableScreen의 isLinkedGoalAchieved와 동일 판정을 여기서도 재현하기 위함). */
+    data class ScheduleStat(
+        val dateKey: String, val name: String, val status: String?, val color: String,
+        val linkedCalc: String? = null, val progressStep: String? = null
+    )
     /** 할당량 계산기 업무 하나 — 라이브 [com.phonelock.desktop.ui.TimetableScreen]과 같은 요일별 목표량 표를
      *  모임 멤버 상세에도 그대로 그리기 위해(78차) draft CalcTask에서 표시에 필요한 필드만 옮긴다. */
     data class CalcTaskStat(
         val name: String, val unit: String, val start: String, val dday: String,
         val mon: String, val tue: String, val wed: String, val thu: String,
         val fri: String, val sat: String, val sun: String
-    )
-    /** "작동 중인 관리 그룹" 클릭 시 상세 다이얼로그로 보여줄 전체 설정 — Group의 관련 필드를 그대로 옮긴다. */
-    data class ActiveGroupStat(
-        val name: String,
-        val description: String,
-        val scheduleEnabled: Boolean,
-        val scheduleStartMinute: Int?,
-        val scheduleEndMinute: Int?,
-        val scheduleDaysMask: Int,
-        val dailyLimitSeconds: Int?,
-        val dailyLimitApplyStartMinute: Int?,
-        val dailyLimitApplyEndMinute: Int?,
-        val dailyLimitDaysMask: Int,
-        val confirmEnabled: Boolean,
-        val confirmApplyStartMinute: Int?,
-        val confirmApplyEndMinute: Int?,
-        val confirmDaysMask: Int,
-        val processNames: List<String>,
-        val domains: List<String>,
-        /** "관리 - 통계" 탭용 — StatsScreen.kt와 같은 4개 지표를 그룹별로 함께 옮긴다. */
-        val todayUsageSeconds: Int,
-        val confirmCountToday: Int,
-        val confirmCountYesterday: Int,
-        val recentAverageSeconds: Int
     )
     data class MemberStats(
         val uid: String,
@@ -72,7 +53,6 @@ object SocialGroupSyncClient {
         val shareStreak: Boolean,
         val shareSchedule: Boolean,
         val shareStudyingNow: Boolean,
-        val shareActiveGroup: Boolean,
         val routines: List<RoutineStat>,
         val studyTodaySeconds: Int,
         val studyProgressPercent: Int,
@@ -84,7 +64,6 @@ object SocialGroupSyncClient {
         val studySecondsByDate: Map<String, Int>,
         val studyingNow: Boolean,
         val studyingTaskName: String,
-        val activeGroups: List<ActiveGroupStat>,
         /** "루틴 - 통계" 탭의 최고 스트릭 타일용. */
         val routineBestStreak: Int,
         /** 이 사람이 "내 정보 숨기기"로 지정한 상대 uid 목록 — 이 목록에 내 uid가 있으면 위 항목을 전부 "비공개"로 취급한다. */
@@ -339,6 +318,94 @@ object SocialGroupSyncClient {
         }
     }
 
+    /** "모임 랭킹"(82차, §11, 안드로이드판과 대칭) — 회유 멘트 저항률을 모임원끼리 비교. */
+    data class QuoteStat(val uid: String, val displayName: String, val stopRatePercent: Int, val totalCount: Int)
+
+    fun writeMyQuoteStat(databaseUrl: String?, apiKey: String?, groupId: String, stopRatePercent: Int, totalCount: Int) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
+        runCatching {
+            val (token, uid) = resolveIdentity(apiKey) ?: return@runCatching
+            val base = databaseUrl.trimEnd('/')
+            val body = JSONObject().apply {
+                put("displayName", myDisplayName(databaseUrl, apiKey)); put("stopRatePercent", stopRatePercent)
+                put("totalCount", totalCount); put("updatedAt", System.currentTimeMillis())
+            }
+            put(base, "groups/$groupId/quoteStats/$uid", token, body.toString())
+        }
+    }
+
+    fun readQuoteStats(databaseUrl: String?, apiKey: String?, groupId: String): List<QuoteStat> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return emptyList()
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: return@runCatching emptyList()
+            val base = databaseUrl.trimEnd('/')
+            val text = get(base, "groups/$groupId/quoteStats", token)
+            if (text.isNullOrBlank() || text == "null") return@runCatching emptyList()
+            val json = JSONObject(text)
+            json.keys().asSequence().mapNotNull { uid ->
+                val s = json.optJSONObject(uid) ?: return@mapNotNull null
+                QuoteStat(uid, s.optString("displayName", uid), s.optInt("stopRatePercent", 0), s.optInt("totalCount", 0))
+            }.toList()
+        }.getOrDefault(emptyList())
+    }
+
+    /** 모임장 공지사항(82차, §9, 안드로이드판과 대칭). */
+    data class Announcement(val text: String, val updatedAt: Long, val updatedByName: String)
+
+    fun readAnnouncement(databaseUrl: String?, apiKey: String?, groupId: String): Announcement? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: return@runCatching null
+            val base = databaseUrl.trimEnd('/')
+            val text = get(base, "groups/$groupId/announcement", token)
+            if (text.isNullOrBlank() || text == "null") return@runCatching null
+            val json = JSONObject(text)
+            val body = json.optString("text", "")
+            if (body.isBlank()) return@runCatching null
+            Announcement(body, json.optLong("updatedAt", 0L), json.optString("updatedByName", ""))
+        }.getOrNull()
+    }
+
+    fun writeAnnouncement(databaseUrl: String?, apiKey: String?, groupId: String, text: String): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+            val base = databaseUrl.trimEnd('/')
+            val body = JSONObject().apply {
+                put("text", text.trim()); put("updatedAt", System.currentTimeMillis())
+                put("updatedByName", myDisplayName(databaseUrl, apiKey))
+            }
+            put(base, "groups/$groupId/announcement", token, body.toString())
+        }
+    }
+
+    /** 모임 공동 목표(82차, §9, 안드로이드판과 대칭). */
+    data class GroupGoal(val targetMinutes: Int, val updatedAt: Long)
+
+    fun readGoal(databaseUrl: String?, apiKey: String?, groupId: String): GroupGoal? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: return@runCatching null
+            val base = databaseUrl.trimEnd('/')
+            val text = get(base, "groups/$groupId/goal", token)
+            if (text.isNullOrBlank() || text == "null") return@runCatching null
+            val json = JSONObject(text)
+            val target = json.optInt("targetMinutes", 0)
+            if (target <= 0) return@runCatching null
+            GroupGoal(target, json.optLong("updatedAt", 0L))
+        }.getOrNull()
+    }
+
+    fun writeGoal(databaseUrl: String?, apiKey: String?, groupId: String, targetMinutes: Int): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+            val base = databaseUrl.trimEnd('/')
+            val body = JSONObject().apply { put("targetMinutes", targetMinutes); put("updatedAt", System.currentTimeMillis()) }
+            put(base, "groups/$groupId/goal", token, body.toString())
+        }
+    }
+
     /** 초대 코드 재발급(모임장/관리자만) — 새 코드 생성 + inviteCodes 등록 + info.inviteCode 갱신 + 옛 코드 삭제. */
     fun regenerateInviteCode(databaseUrl: String?, apiKey: String?, groupId: String): Result<String> {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
@@ -425,7 +492,6 @@ object SocialGroupSyncClient {
                 put("shareStreak", share.shareStreak)
                 put("shareSchedule", share.shareSchedule)
                 put("shareStudyingNow", share.shareStudyingNow)
-                put("shareActiveGroup", share.shareActiveGroup)
                 put("hiddenFromUids", JSONArray(hiddenFromUids.toList()))
             }
 
@@ -480,6 +546,8 @@ object SocialGroupSyncClient {
                             put("name", t.name)
                             put("status", t.status ?: JSONObject.NULL)
                             put("color", t.color)
+                            put("linkedCalc", t.linkedCalc ?: JSONObject.NULL)
+                            put("progressStep", t.progressStep ?: JSONObject.NULL)
                         })
                     }
                 })
@@ -506,35 +574,6 @@ object SocialGroupSyncClient {
                     if (localStudying) timerRun?.taskName ?: "" else runCatching { PomodoroSyncClient.remoteTaskName(databaseUrl, apiKey) }.getOrDefault("")
                 )
             }
-            if (share.shareActiveGroup) {
-                stats.put("activeGroups", JSONArray().apply {
-                    repository.sharedActiveGroups().forEach { g ->
-                        put(JSONObject().apply {
-                            put("name", g.name)
-                            put("description", g.description)
-                            put("scheduleEnabled", g.scheduleEnabled)
-                            put("scheduleStartMinute", g.scheduleStartMinute ?: JSONObject.NULL)
-                            put("scheduleEndMinute", g.scheduleEndMinute ?: JSONObject.NULL)
-                            put("scheduleDaysMask", g.scheduleDaysMask)
-                            put("dailyLimitSeconds", g.dailyLimitSeconds ?: JSONObject.NULL)
-                            put("dailyLimitApplyStartMinute", g.dailyLimitApplyStartMinute ?: JSONObject.NULL)
-                            put("dailyLimitApplyEndMinute", g.dailyLimitApplyEndMinute ?: JSONObject.NULL)
-                            put("dailyLimitDaysMask", g.dailyLimitDaysMask)
-                            put("confirmEnabled", g.confirmEnabled)
-                            put("confirmApplyStartMinute", g.confirmApplyStartMinute ?: JSONObject.NULL)
-                            put("confirmApplyEndMinute", g.confirmApplyEndMinute ?: JSONObject.NULL)
-                            put("confirmDaysMask", g.confirmDaysMask)
-                            put("processNames", JSONArray(g.processNames))
-                            put("domains", JSONArray(g.domains))
-                            put("todayUsageSeconds", repository.getTodayUsageSeconds(g.id))
-                            put("confirmCountToday", repository.getConfirmCountToday(g.id))
-                            put("confirmCountYesterday", repository.getConfirmCountYesterday(g.id))
-                            put("recentAverageSeconds", repository.getRecentAverageUsageSeconds(g.id))
-                        })
-                    }
-                })
-            }
-
             put(base, "groups/$groupId/stats/$uid", token, stats.toString())
         }
     }
@@ -568,35 +607,9 @@ object SocialGroupSyncClient {
                             sc.optString("dateKey", ""),
                             sc.optString("name", ""),
                             if (sc.isNull("status")) null else sc.optString("status", null),
-                            sc.optString("color", "white")
-                        )
-                    }
-                } else emptyList()
-                val activeGroupArr = s.optJSONArray("activeGroups")
-                val activeGroups = if (activeGroupArr != null) {
-                    (0 until activeGroupArr.length()).map { i ->
-                        val g = activeGroupArr.getJSONObject(i)
-                        ActiveGroupStat(
-                            name = g.optString("name", ""),
-                            description = g.optString("description", ""),
-                            scheduleEnabled = g.optBoolean("scheduleEnabled", false),
-                            scheduleStartMinute = if (g.isNull("scheduleStartMinute")) null else g.optInt("scheduleStartMinute"),
-                            scheduleEndMinute = if (g.isNull("scheduleEndMinute")) null else g.optInt("scheduleEndMinute"),
-                            scheduleDaysMask = g.optInt("scheduleDaysMask", 127),
-                            dailyLimitSeconds = if (g.isNull("dailyLimitSeconds")) null else g.optInt("dailyLimitSeconds"),
-                            dailyLimitApplyStartMinute = if (g.isNull("dailyLimitApplyStartMinute")) null else g.optInt("dailyLimitApplyStartMinute"),
-                            dailyLimitApplyEndMinute = if (g.isNull("dailyLimitApplyEndMinute")) null else g.optInt("dailyLimitApplyEndMinute"),
-                            dailyLimitDaysMask = g.optInt("dailyLimitDaysMask", 127),
-                            confirmEnabled = g.optBoolean("confirmEnabled", false),
-                            confirmApplyStartMinute = if (g.isNull("confirmApplyStartMinute")) null else g.optInt("confirmApplyStartMinute"),
-                            confirmApplyEndMinute = if (g.isNull("confirmApplyEndMinute")) null else g.optInt("confirmApplyEndMinute"),
-                            confirmDaysMask = g.optInt("confirmDaysMask", 127),
-                            processNames = g.optJSONArray("processNames")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } } ?: emptyList(),
-                            domains = g.optJSONArray("domains")?.let { arr -> (0 until arr.length()).map { arr.getString(it) } } ?: emptyList(),
-                            todayUsageSeconds = g.optInt("todayUsageSeconds", 0),
-                            confirmCountToday = g.optInt("confirmCountToday", 0),
-                            confirmCountYesterday = g.optInt("confirmCountYesterday", 0),
-                            recentAverageSeconds = g.optInt("recentAverageSeconds", 0)
+                            sc.optString("color", "white"),
+                            if (sc.isNull("linkedCalc")) null else sc.optString("linkedCalc", null),
+                            if (sc.isNull("progressStep")) null else sc.optString("progressStep", null)
                         )
                     }
                 } else emptyList()
@@ -626,7 +639,6 @@ object SocialGroupSyncClient {
                     shareStreak = s.optBoolean("shareStreak", false),
                     shareSchedule = s.optBoolean("shareSchedule", false),
                     shareStudyingNow = s.optBoolean("shareStudyingNow", false),
-                    shareActiveGroup = s.optBoolean("shareActiveGroup", false),
                     routines = routines,
                     studyTodaySeconds = s.optInt("studyTodaySeconds", 0),
                     studyProgressPercent = s.optInt("studyProgressPercent", 0),
@@ -636,7 +648,6 @@ object SocialGroupSyncClient {
                     studySecondsByDate = studySecondsByDate,
                     studyingNow = s.optBoolean("studyingNow", false),
                     studyingTaskName = s.optString("studyingTaskName", ""),
-                    activeGroups = activeGroups,
                     routineBestStreak = s.optInt("routineBestStreak", 0),
                     hiddenFromUids = (0 until hiddenArr.length()).map { hiddenArr.getString(it) }.toSet()
                 )

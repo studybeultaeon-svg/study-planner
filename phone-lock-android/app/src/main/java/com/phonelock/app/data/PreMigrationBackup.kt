@@ -56,8 +56,19 @@ object PreMigrationBackup {
             backupDir.mkdirs()
             val outFile = File(backupDir, "backup_v${last}_to_v${currentVersionCode}_${System.currentTimeMillis()}.json")
             outFile.writeText(backupJson.toString(2))
+            pruneOldBackups(backupDir)
             outFile
         }.getOrNull()
+    }
+
+    /** 매 업데이트마다 DB 전체를 덤프하다 보니 용량이 계속 쌓이는 걸 막기 위해, 최신 것만 남기고 나머지는 지운다. */
+    private const val MAX_KEPT_BACKUPS = 5
+
+    private fun pruneOldBackups(backupDir: File) {
+        val files = backupDir.listFiles { f -> f.isFile && f.extension == "json" } ?: return
+        files.sortedByDescending { it.lastModified() }
+            .drop(MAX_KEPT_BACKUPS)
+            .forEach { it.delete() }
     }
 
     /** auto_backups 폴더의 백업 파일들을 최신순으로 나열한다(52차, 그룹 데이터 복구 UI용). */

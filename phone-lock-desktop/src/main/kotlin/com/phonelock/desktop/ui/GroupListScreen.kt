@@ -29,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import com.phonelock.shared.PERSUASION_MESSAGES
+import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.desktop.data.Group
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.monitor.LockEvaluator
@@ -175,9 +177,9 @@ private fun GroupRow(
                         }
                     }
                 }
-                if (!pending && group.groupEnabled && (restrictingNow || snoozeActive)) {
+                if (!pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)) {
                     OutlinedButton(onClick = onSnooze, enabled = !snoozeActive && snoozeRemainingToday > 0) {
-                        Text(if (snoozeActive) "😴 스누즈 중" else "😴 스누즈 ${group.snoozeMinutes}분 ($snoozeRemainingToday/3)")
+                        Text(if (snoozeActive) "😴 스누즈 중" else "😴 스누즈 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})")
                     }
                     Spacer(Modifier.width(Spacing.sm))
                 }

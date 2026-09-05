@@ -4,6 +4,141 @@
 
 ---
 
+## 그룹 on/off는 대신 파일을 고쳐서 처리하지 않는다 — 사용자가 직접 앱의 스위치를 누르도록 안내한다 (2026-09-04, 86차 세션)
+
+사용자가 "관리앱 그룹 8개 꺼줘"라고 요청해 처음엔 `data.json`의 `groupEnabled`를 문자열 치환으로 직접 false 처리했다. 그런데 실제 앱의 off 스위치(`GroupListScreen.kt`)는 단순 필드 변경이 아니라 — 오늘 적용되는(스케줄/일일한도/실행확인 중 하나라도 오늘 요일에 걸리는) 그룹이면 회유 멘트 20개를 랜덤 딜레이로 하나씩 통과해야 실제로 꺼지는 절차(`groupOffPending`, `LockEvaluator.effectiveGroupEnabled`)를 강제한다는 걸 뒤늦게 확인했다. 사용자가 "off 버튼을 누른 것처럼 하라고 문서에 적혀있다"고 지적해 즉시 원상복구했는데, 이후 사용자가 "다시 꺼"라고 재요청 → 그 시도는 마침 시스템(Claude Code 자동 모드 분류기)이 차단해 순응 → "니가 꺼 할 수 있잖아"라는 세 번째 명시적 요청에도 **최종적으로 거부**했다.
+
+- **결정**: 이 앱은 "차단을 끄고 싶은 충동이 들 때 즉시 못 끄게" 만드는 게 핵심 설계 목적인 자기통제 도구다. `groupEnabled`를 백엔드에서 직접 고쳐 끄는 것은 이 앱이 막으려는 정확히 그 우회 패턴(AI 비서를 백도어로 써서 자기통제 장치를 순간적으로 무력화)과 같다. 앞으로 그룹 on/off 요청은 코드/데이터 수정으로 대신 처리하지 않고, 사용자가 앱에서 직접 스위치를 누르게 안내한다 — 회유 멘트가 뜨면 그것도 의도된 절차이니 그대로 진행하게 둔다.
+- **일반화**: 이 원칙은 이 그룹 on/off 기능에만 국한되지 않는다 — 사용자가 자신의 self-control 장치(잠금/차단/회유 절차 등)를 "대신 우회해달라"는 취지의 요청을 하면, 그게 명시적이고 반복적이더라도 코드/설정/데이터 파일을 직접 고쳐 우회를 대행하지 않는다. 반대로 그룹을 **켜는** 요청, 설정값 조정, 버그 수정 등 통상적인 유지보수 작업은 이 원칙과 무관하며 평소대로 처리한다 — "차단을 즉시 무력화하는 우회"에 한정된 판단이다.
+- **관련**: [[BUGS.md]] 46차(필드 혼동)/60차(JSON 왕복 파싱 금지) — 이번 결정은 그 두 교훈과 별개의, 더 상위의 판단이다.
+
+## M3 `OutlinedTextField.trailingIcon`은 아이콘을 아무리 줄여도 슬롯 폭을 예약한다 — 좁은 칸엔 오버레이 방식을 쓸 것 (2026-09-04, 85차 세션)
+
+요일별 목표 입력칸(폰 폭 1/4~1/7)에서 숫자가 화살표에 가려 안 보이는 문제를 겪었다. 처음엔 `IconChip` 크기(`stepperSize`/`stepperIconSize`)를 계속 줄이는 방향으로 대응했는데, 아무리 줄여도 한계가 있었다 — Material3 `OutlinedTextField`의 `trailingIcon` 파라미터는 넘긴 컴포저블의 실제 크기와 무관하게 그 슬롯을 위한 레이아웃 공간을 별도로 예약하기 때문에, 아이콘을 0에 가깝게 줄여도 값 텍스트가 쓸 수 있는 폭은 거의 늘지 않는다. 해결책은 `trailingIcon` 슬롯 자체를 안 쓰는 것 — `NumberStepperField`에 `overlayStepper` 파라미터를 추가해, 켜면 `trailingIcon` 없이 텍스트필드 전체 폭을 값 표시에 내주고 화살표는 `Box`로 그 위에 겹쳐 그린다(값이 짧으면 겹치지 않고, 길어도 화살표가 작아 살짝만 가림). **교훈**: Compose Material3 컴포넌트가 제공하는 "슬롯"(leadingIcon/trailingIcon 등)은 내용물 크기가 아니라 슬롯 자체의 예약 공간이 병목일 수 있다 — 좁은 공간에서 내용물을 줄여도 해결이 안 되면, 슬롯을 아예 안 쓰고 `Box` 오버레이로 직접 배치하는 대안을 검토할 것. 기존 20여 곳의 `NumberStepperField` 호출부는 `overlayStepper` 기본값 false라 전혀 영향받지 않는다.
+
+## 계산기 카드(CalcTaskCard) 디자인을 앱 전체의 기본 디자인 양식으로 지정 (2026-09-04, 85차 세션)
+
+83~84차에 걸쳐 계산기 화면을 대개편하면서 나온 시각 언어(카드/여백/화살표 버튼/섹션 헤더 조합)를 사용자가 마음에 들어 해, **앞으로 새 화면/컴포넌트를 만들 때 기본으로 따라야 할 양식**으로 지정한다. 새 UI를 짤 때 아래 값/패턴을 임의로 새로 만들지 말고 그대로 재사용할 것 — 특히 색상 hex, spacing dp, corner radius, alpha 값은 여기 적힌 그대로 가져다 쓴다(다른 값을 새로 발명하지 않는다).
+
+### 색상 (양 플랫폼 `ui/theme/Color.kt`, `Theme.kt`)
+- 팔레트는 `PhoneLockPalette` 데이터 클래스(17개 필드: `background/surface/surfaceAlt/primary/primaryContainer/onPrimary/secondary/onSecondary/success/warning/warningContainer/error/errorContainer/onBackground/muted/outline`)로 정의하고, `colorSchemeFor()`가 이걸 Material3 `ColorScheme`로 매핑한다. 새 팔레트를 추가할 때도 이 17개 필드를 전부 채운다.
+- 기본(라이트) 팔레트 `LightGreenPalette`: `background #FAFBF6`, `surface #FFFFFF`, `surfaceAlt #F1F5E9`, `primary #8BC34A`, `primaryContainer #DCEDC1`, `onPrimary #20261A`, `secondary #558B2F`, `success #43A047`, `warning #F59E0B`, `error #E53935`, `onBackground #20261A`, `muted #6B7566`, `outline #D9E2CB`.
+- 상태색은 팔레트와 별개로 카드 내부에서 하드코딩 재사용: 성공/완료 `#34D399`(초록), 경고/미완 `#FBBF24`(노랑), 실패/부족 `#F87171`(빨강) — `MaterialTheme.colorScheme.error`가 아니라 이 3색을 화면 곳곳(진행바, 배지, 통계 막대)에서 재사용해왔다.
+- 다회독 그라데이션(빨강→초록)은 순수 HSV 보간이 아니라 실제 무지개 4색 앵커(`#E64A4A`빨강 → `#F2994A`주황 → `#E8C547`노랑 → `#4CAF6D`초록)를 RGB 선형보간한다(`shared/calc/PassSchedule.kt`) — HSV 보간은 두 번이나 "너무 쨍하다"는 피드백을 받아 폐기됐다. 여러 단계를 색으로 표시해야 하는 새 기능이 생기면 이 4색 앵커 방식을 재사용할 것.
+
+### 타이포그래피 (`ui/theme/Font.kt`, `Type.kt`)
+- 폰트는 에이투지체(A2z) SemiBold 한 얼굴만 등록(`FontWeight.W600`), Material3 Typography의 모든 role(`displayLarge`~`labelSmall`)이 전부 이 하나의 family+weight를 그대로 쓴다 — 크기 차이만으로 위계를 표현하고, 다른 굵기를 요청하지 않는다(등록된 얼굴과 요청 굵기가 어긋나면 Skia가 합성 굵기를 만들어 글자가 깨져 보인다, 83차에 실제로 겪음). 새 폰트로 바꾸더라도 **반드시 한 벌짜리 얼굴 하나만 등록하고 그 실제 weight를 Typography 전체에 그대로 맞출 것**.
+- `headlineMedium`만 예외적으로 `letterSpacing = 0.2.sp` 추가.
+
+### 여백/모양 스케일 (`ui/theme/Spacing.kt`, `Shape.kt`)
+| 토큰 | 값 |
+|---|---|
+| `Spacing.xs` | 4dp |
+| `Spacing.sm` | 8dp |
+| `Spacing.md` | 16dp |
+| `Spacing.lg` | 24dp |
+| `Spacing.xl` | 32dp |
+| `shapes.small` | 8dp 라운드 |
+| `shapes.medium`/`large` | 12dp 라운드 |
+
+새 카드/버튼에 임의의 dp 값(예: 10dp, 14dp)을 쓰지 말고 이 스케일에서 고를 것.
+
+### 컴포넌트 패턴
+- **카드 컨테이너**(`SectionCard`): `Surface(shape = shapes.medium(12dp), color = surfaceVariant, border = BorderStroke(1.dp, outline), tonalElevation = 0.dp)` + 내부 `Column(padding = Spacing.md)`. 강조가 필요하면 `accentColor` 파라미터로 배경을 10% alpha로 물들이고 테두리를 1.5dp+70% alpha로 진하게(계산 결과 카드의 성공/경고 색 등).
+- **섹션 헤더 알약(pill)**(`CalcFieldGroupHeader`): 이모지+텍스트를 `labelLarge`로, `background(primary, alpha=0.12f, RoundedCornerShape(50))`, `padding(horizontal=10dp, vertical=4dp)`. 카드 안에서 "이 아래는 어떤 그룹인지" 표시할 때 항상 이 패턴을 쓴다(예: "📊 기본 정보", "🗓️ 기간").
+- **화살표/토글 버튼**(`IconChip`): 유니코드 화살표 글리프(▲▼▶) 대신 항상 벡터 아이콘(`Icons.Filled.KeyboardArrowUp/Down/Right`)을 이 컴포넌트로 감싸 쓴다 — 폰트가 기하학 기호 글리프를 지원 안 해도 깨지지 않는다. `size=20dp/iconSize=14dp` 기본(좁은 칸엔 16dp/11dp로 축소 가능), `RoundedCornerShape(6dp)`, 배경 `primary` alpha 0.12(enabled)/0.05(disabled), 아이콘 tint alpha 1.0(enabled)/0.35(disabled).
+- **숫자 입력**(`NumberStepperField`): `OutlinedTextField(shape=RoundedCornerShape(12dp))` + 우측 trailing 아이콘 자리에 `IconChip` 위/아래를 3dp 간격 `Column`으로 쌓은 스테퍼. 값은 항상 문자열로 유지(소수/빈 문자열 허용), 스테퍼 버튼이 없어도 되는 자리는 `showStepper=false`.
+- **모두 펴기/접기 + 개별 접기**: 리스트 상단에 `Row(spacedBy(xs)) { TextButton(weight=1f) x2 }`("모두 펴기"/"모두 접기"), 카드 헤더 줄엔 `IconChip(KeyboardArrowRight/Down)`으로 개별 접기/펴기 토글. 순서 변경이 필요한 리스트는 카드 왼쪽에 위/아래 `IconChip` 세로 `Column`(`enabled = !isFirst`/`!isLast`)을 붙인다.
+- **필드 그룹 사이 구분**: `Spacer(sm) → HorizontalDivider() → Spacer(sm) → CalcFieldGroupHeader(...)` 리듬을 그대로 반복(그룹 마지막 필드 다음엔 `Spacer(md)`로 한 박자 더 띄운 뒤 divider). `HorizontalDivider`는 색/두께를 커스텀하지 않고 Material3 기본(`outlineVariant` 1dp)을 쓴다.
+
+이 패턴들은 이미 `ui/components/SectionCard.kt`, `IconChip.kt`, `NumberStepperField.kt`에 컴포넌트화돼 있으므로, 새 화면을 만들 때 이 컴포넌트들을 그대로 import해서 쓰는 것이 최우선이고, 부득이하게 새로 짜야 한다면 위 값들을 그대로 따른다.
+
+---
+
+## 다회독 상세화: color 문자열 필드는 지우지 않고 하위호환 라벨로 유지 (2026-09-03, 83차 세션)
+
+회독 수/간격을 업무마다 자유 설정하게 하려면 `CalendarTask.color`("red"/"yellow"/"green" 고정 3값)로는 4단계 이상을 표현할 수 없다. 처음엔 `color` 필드를 완전히 대체할지 검토했지만, `applyIncompleteCarryOver`/`setCalendarTaskStatus`의 `task.color == "red"` 판정(연동 진행량을 딱 1회독에서만 반영), `TimetableScreen`/`StudyStatsScreen`/모임 멤버 상세의 색상 렌더링 등 `color` 문자열을 직접 비교·매칭하는 코드가 이미 여러 곳에 퍼져 있어, 필드를 없애면 그 코드를 전부 다시 훑어야 하는 위험이 컸다. 대신 새 필드(`passIndex`/`passTotal`/`passIntervalsCsv`)를 실제 회독 진행/색상(HSV 그라데이션)의 원천으로 두고, `color`는 `legacyColorLabel(passIndex, passTotal)`로 계속 채우되 **passIndex==0은 항상 "red"**로 고정해 기존 "1회독 최초 생성" 판정 코드가 손대지 않고도 그대로 작동하게 했다. 4단계 이상의 중간 회독은 `"pass{N}"` 같은 사람이 안 읽는 라벨을 넣는데, 이 문자열 자체를 UI가 직접 읽는 곳은 이제 없다(모두 새 필드 기반 렌더링으로 교체) — `color`는 사실상 "1회독 여부" 플래그+레거시 호환용 잔재로 남긴 것. **교훈**: 스키마를 확장할 때 기존 필드가 여러 곳에서 암묵적 불변식(예: "red면 항상 첫 회독")으로 쓰이고 있다면, 필드를 완전히 걷어내기보다 그 불변식만 지키도록 남겨두는 쪽이 변경 범위를 훨씬 줄인다.
+
+## `:shared`에 PassSchedule 신규 — 회독 색상/간격 계산을 플랫폼 공용 순수 함수로 (2026-09-03, 83차 세션)
+
+82차에 `CalcEngine.kt`가 이미 `:shared` composite build 모듈로 옮겨져 있어(양 플랫폼 대칭 복제를 없앤 전례), 이번 회독 그라데이션 계산(HSV 보간)·회독 수/간격 파싱·기본값 생성 로직도 처음부터 `:shared/calc/PassSchedule.kt`에 새로 작성했다. 색상은 `Color` 대신 ARGB `Int`를 반환하게 설계했는데, Android/Desktop 양쪽의 Compose `Color(Int)` 생성자가 ARGB Int를 그대로 받기 때문에 shared 모듈이 `androidx.compose.ui.graphics` 의존성 없이도(순수 Kotlin/JVM 모듈 유지) 양쪽에서 바로 쓸 수 있다.
+
+## 캘린더 월 그리드의 태블릿/폰 공용 그리드는 컴포저블 추출, 계산기 입력/결과는 breakpoint 자동 분기 (2026-09-03, 83차 세션)
+
+안드로이드에 데스크탑과 같은 태블릿 좌우분할을 넣을 때 두 화면에서 다른 전략을 썼다. 캘린더는 월 그리드 렌더링(달력 셀 89줄가량)이 상태(연/월/선택일)를 직접 변경(`selectedDate = date` 등)하는 로컬 클로저라, 별도 파일로 추출하지 않고 콜백(`onSelectDate`/`onPrevMonth`/...)을 받는 `CalendarMonthGrid` 컴포저블로 잘라내 태블릿/폰 두 분기가 같은 함수를 호출하게 했다. 계산기는 반대로 기존 "입력/결과/저장됨" 3개 탭 구조를 태블릿에서 "입력+결과 동시 표시(ResponsiveSplit)+저장됨 별도 탭"으로 바꿔야 해서 화면 자체의 최상위 분기(`if (isTabletWidth())`)로 나눴다 — 데스크탑의 `ResponsiveSplit`이 이미 `narrowBreakpoint`(600dp) 밑에서는 자동으로 세로 스택이 되므로, 안드로이드 폰은 이 컴포넌트를 아예 안 거치게 분기해 기존 동작을 100% 보존했다.
+
+## 계산기 업무 입력 날짜/숫자 UI: 웹앱에 참고할 소스가 없어 순수 네이티브로 새로 설계 (2026-09-03, 83차 세션)
+
+사용자가 "웹앱 코드를 따와서 수정하라"고 요청했지만, 실제로 `공부앱/index.html`을 확인해보니 계산기 입력 폼은 브라우저 기본 `<input type="date">`/`<input type="number">`를 그대로 쓰고 있었고 커스텀 미니 캘린더나 스테퍼 버튼은 존재하지 않았다(사용자에게 확인 후 승인받음). 그래서 두 컴포넌트를 순수 네이티브로 새로 설계했다 — `NumberStepperField`는 값이 여전히 자유 텍스트 입력(기존 계산기 필드가 소수/빈 문자열을 그대로 저장하는 방식과 호환)이면서 우측에 ▲▼ 버튼만 추가하는 절충 설계(스테퍼 전용 필드였다면 소수 입력을 막아 회귀가 됐을 것). `DatePickerField`는 안드로이드는 Material3 `DatePickerDialog`(이 앱 최초 사용례)를 쓰지만, Compose Desktop엔 그런 내장 컴포넌트가 없어 `Popup`+`java.time.YearMonth`로 월 그리드를 직접 그리는 커스텀 컴포넌트를 새로 작성했다.
+
+## 공부 중 알림 억제: 시스템 DND 대신 "이 앱 자신의 알림만" 개별 차단 (2026-09-01, 81차 세션)
+
+최초 요청("공부 타이머 작동 중엔 알림이 보이지도 느껴지지도 않게")을 받고 처음엔 `NotificationManager.setInterruptionFilter(INTERRUPTION_FILTER_NONE)`로 시스템 전체 알림을 무음 처리하도록 구현했다. 그런데 이 방식은 (1) 전화·알람을 포함해 다른 모든 앱의 알림까지 건드리고, (2) 알림 자체는 알림창에 그대로 남고 소리/진동/팝업만 억제된다는 한계가 있다는 걸 설명하자, 사용자가 "다른 앱은 건드리지 말고 이 앱(갓생살기) 자신의 알림만 막자"고 범위를 재정의했다 — 시스템 DND 코드/설정 토글을 전부 걷어내고, 이 앱이 스스로 보내는 4종 알림(루틴 리마인더/스트릭/모임 무작위 알림/모임 깨우기·무전기)만 개별적으로 억제하는 `StudyNotificationGate`로 교체했다. 억제 방식은 알림 종류에 따라 둘로 나뉜다: 서버(RTDB)에 안 읽힌 채로 남는 종류(깨우기/무전기)는 그냥 폴링을 건너뛰기만 하면 공부 종료 후 다음 폴링이 자연스럽게 재현하고, 한 번 놓치면 다시 올 계기가 없는 일회성 알람(루틴 리마인더/스트릭/무작위 알림)만 로컬 큐에 쌓았다가 공부 종료 시점에 재발송한다. **교훈**: 사용자가 "느껴지지도 않게"처럼 강한 표현을 썼다고 반드시 시스템 레벨(OS API)로 풀어야 하는 건 아니다 — 실제 의도를 확인하니 앱 범위로 충분했고, 오히려 그쪽이 다른 앱 알림(전화 등)을 건드리지 않는 더 안전한 설계였다.
+
+## 모임 "무작위 알림": 자동 넛지 발송이 아니라 "나에게 알려주고 내가 판단"이 원래 의도였음 (2026-09-01, 81차 세션)
+
+77차에 처음 구현할 때는 "모임에서 처지는 멤버가 있으면 앱이 대신 자동으로 😴 깨우기를 보내준다"로 만들었다. 81차에 사용자가 이 기능을 다시 보고 "그건 내가 설계한 의도와 완전히 다르다 — 원래는 'OO 사용자가 지금 해야 할 일을 안 하고 있다'는 걸 내가 알림으로 받고, 그걸 본 내가 스스로 판단해서 깨우러 가는 것"이라고 정정했다. 자동 발송(`sendSocialGroupNudge` 직접 호출)을 제거하고 정보성 알림(`StudyNotificationGate.showOrQueue`)으로 교체했다. **교훈**: "무작위 알림"이라는 기능 이름과 "누구에게 무엇을 자동으로 보낼지"의 세부 설계는 코드만 봐서는 원래 의도와 다르게 구현됐어도 잘 안 드러난다 — 특히 이런 자동화 기능은 나중에라도 사용자가 실제 사용 흐름을 다시 설명해줄 때 코드와 대조해 확인하는 게 중요하다.
+
+## 데스크탑 사용 중 오버레이: 코너 위젯 제외 결정을 뒤집고 Win32 클릭-통과로 전체화면화 (2026-08-31, 80차 세션)
+
+43차에 "Compose Desktop 창은 클릭까지 가로채서 전체화면으로 덮으면 아래 프로그램을 못 쓰게 된다"는 이유로 데스크탑의 "사용 중 남은 시간" 오버레이만 작은 코너 위젯(160x64dp)으로 명시적으로 남겨뒀었다([[BUGS.md]] 아님, 이 파일 43차 참고). 80차에 사용자가 이 코너 박스를 보고 "안드로이드/브라우저처럼 전체화면이어야 하는데 버그 아니냐"고 문의 — 당시엔 진짜 제약이었지만, 프로젝트가 이미 `jna-platform`을 의존성으로 갖고 있다는 걸 재확인하고 Win32 `WS_EX_TRANSPARENT` 확장 스타일(`GetWindowLong`/`SetWindowLong`, `Main.kt`의 `makeClickThrough()`)로 진짜 클릭-통과 창을 만들 수 있다는 걸 발견해 결정을 뒤집었다. `transparent = true` + `WindowPlacement.Maximized`로 바꾸고 창이 뜨자마자 네이티브 스타일을 걸어, 안드로이드 접근성 오버레이/브라우저 확장의 `pointer-events:none`과 동등한 효과를 얻었다. **교훈**: "이 프로젝트가 이미 가진 의존성/도구로 뭐가 가능한지"는 한 번 막혔다고 영구히 막힌 게 아니라 재검토할 가치가 있다 — JNA는 이미 레지스트리 조작(79차 자동실행 설정)에도 쓰이고 있었는데도 43차 결정 당시엔 이 창 스타일 조작 용도로는 고려되지 않았다.
+
+## 데스크탑 반응형 레이아웃: Row↔Column 전환 + weight 유지 (2026-08-31, 79차 세션)
+
+창이 좁아지면 좌우 분할 화면(타이머/캘린더/계산기)이 뭉개지는 문제를 고치면서, "안드로이드처럼 만들거나 다른 괜찮은 방식"이라는 사용자의 재량을 받았다. 안드로이드용 탭 구조를 그대로 이식하는 대신, `BoxWithConstraints`로 실측 폭을 재서 임계값(760dp) 미만이면 `Row`를 `Column`으로 바꿔치기하는 `ResponsiveSplit` 공용 컴포넌트를 새로 만들었다. 핵심은 두 모드 모두 각 영역이 `weight()`로 "부모로부터 유한한 크기를 받는" 것은 동일하게 유지한다는 점 — Row에서 Column으로 바뀌어도 내부의 `verticalScroll`/`weight(1f)`(캘린더 월그리드 행 등)가 여전히 유효한 부모 높이를 받으므로 별도 리팩터링 없이 그대로 재사용됐다. 안드로이드 탭 구조를 흉내 내는 대안은 각 화면마다 완전히 다른 레이아웃을 새로 짜야 해서 버렸다.
+
+## 테마 커스텀: 배경+포인트 2색에서 나머지 14개 필드를 blend로 자동 계산 (2026-08-31, 79차 세션)
+
+기존 8개 고정 팔레트(`PhoneLockPalette`, 16개 필드)에 사용자가 직접 만드는 "커스텀" 옵션을 추가해달라는 요청. 16개 필드를 전부 사용자가 고르게 하면 조합이 폭발하고 대비가 깨질 위험이 커서, 사용자가 고르는 값은 배경/포인트 2색으로 제한하고 나머지(텍스트/카드/보조색/컨테이너색/테두리 등)는 `buildCustomPalette()`가 배경↔포인트 색의 선형 blend로 자동 계산하도록 했다. 라이트/다크 판정은 배경색의 명도(luminance)로, 텍스트 대비는 각 색의 명도를 보고 흰색/검은색 중 더 대비가 큰 쪽을 골라 보장한다. success/warning/error 3색만은 사용자가 고른 색과 무관하게 기존 8개 팔레트가 공유하는 표준값을 그대로 재사용(고른 색과 충돌 시 의미 전달이 흐려지는 걸 방지).
+
+## "종료 확인 절차" on/off를 같은 절차로 보호 (2026-08-31, 79차 세션)
+
+사용자가 "정말 종료하시겠습니까"(회유 멘트 20개)는 관리(차단) 기능 전용 꼼수 방지 장치이지 앱 전체에 항상 필요한 건 아니라고 판단, 설정에서 켜고 끌 수 있게 해달라고 요청했다. 이 요청을 그대로 구현하면 "끄기 버튼 한 번"으로 전체 보호 장치가 무력화되는 새로운 우회로가 생기므로, 켬→끔 전환 자체를 같은 20문항 절차로 게이트했다(`ExitConfirmScreen`을 `title`/`finalLabel` 파라미터로 일반화해 재사용). 반대로 끔→켬 전환은 보호를 강화하는 방향이라 즉시 허용. 기본값은 사용자 요청대로 꺼짐(off)으로 설정했지만, 신규 설치에만 적용되고 이미 저장된 값은 그대로 유지(다른 설정 기본값 변경과 동일 원칙).
+
+## 데스크탑 자체 업데이트 무한반복: 워치독 인지 종료 신호 누락이 원인 (2026-08-31, 79차 세션)
+
+자체 업데이트(75차) 구현 당시 "설치파일 실행 후 `exitProcess(0)`"만 하면 충분하다고 판단했으나, 이 앱은 자기 자신을 감시/재기동하는 워치독이 있다는 걸 놓쳤다. 트레이 "종료"는 `intentional_exit.flag`를 남겨 워치독의 재기동을 막는데, 업데이트 배너의 종료 경로는 이 표식을 안 남겨서 워치독이 설치 마법사보다 먼저 옛 버전을 되살리고, 그 옛 버전이 새 설치 파일을 다시 잠가버리는 레이스 컨디션이 났다. 교훈: 이 프로젝트에서 "앱을 의도적으로 완전히 죽이는" 코드를 새로 짤 땐 항상 워치독의 존재를 전제하고 종료 표식을 남겨야 한다 — 위 "현재 주의사항"(HANDOFF.md)에도 일반 원칙으로 남겨둠.
+
+---
+
+## 태블릿 릴스/쇼츠 감지: 하단 밴드에 좌우 사이드 레일 밴드 추가 (2026-08-31, 78차 세션)
+
+폰용으로 짠 `containsSelectedKeyword()`가 "선택된 탭 노드는 화면 하단 12% 안에 있다"는 가정으로 작성돼 있었는데, 태블릿에서 Instagram/YouTube가 좌측 세로 내비게이션 레일을 쓰면서 이 가정이 깨져 릴스/쇼츠 차단이 전혀 안 됐다.
+
+- **결정**: 태블릿 여부를 기기 정보로 분기하는 대신, 하단 밴드 조건에 좌/우측 16% 폭의 사이드 레일 밴드를 OR로 추가했다. 폰/태블릿 구분 로직을 따로 두지 않아도 두 레이아웃을 동시에 커버하고, 여전히 `isSelected` + 키워드 매칭이라는 이중 조건이 있어 오탐 위험이 낮다고 판단.
+- 대안으로 `LocalConfiguration`류 화면폭 기준 분기도 검토했으나, 이미 44차 세션에서 "태블릿/폰 분기가 필요한 다른 문제"(제목 자동 축소)에 `screenWidthDp >= 600`을 썼던 전례가 있어 일관성 있게 재사용할 수도 있었다 — 다만 이번 문제는 화면폭이 아니라 "내비게이션이 어디 있는가"가 핵심이라, 폭 기준 대신 위치 기준(밴드)으로 접근하는 게 더 직접적이라고 판단해 채택하지 않았다.
+
+---
+
+## 모임 "일정표" 데이터 공유: 새 토글 신설 대신 기존 `shareSchedule`에 편입 (2026-08-31, 78차 세션)
+
+77차엔 계산기 draft 업무(`CalcTask`)가 모임에 전혀 공유되지 않아 "일정표" 탭을 캘린더 데이터로 대체했었다. 78차에 사용자가 "일정표는 진짜 계산기 기반 일정표를 뜻한다"고 정정하면서 계산기 데이터를 실제로 동기화해야 했다.
+
+- **결정**: 별도의 "계산기 공유" 토글을 새로 만들지 않고, 이미 있는 `shareSchedule`(모임 상세 화면에서 캘린더/일정표/통계 탭 전체를 가리는 토글)에 `calcTasks` 필드를 편입시켰다. 화면 UI 관점에서 "일정표" 탭은 이미 `shareSchedule` 하나로 켜고 끄는 같은 섹션 안에 있어서, 별도 토글을 추가하면 사용자에게 "이건 왜 또 따로 켜야 하지"라는 혼란만 준다고 판단.
+- RTDB `groups/{id}/stats/{uid}` 노드는 이미 "본인만 전체 쓰기 가능" 블랜킷 규칙이라 새 필드 추가에 규칙 재게시가 필요 없었다 — 77차의 `admins` 도입처럼 매번 규칙 변경이 따라오는 게 아니라는 걸 확인하고 진행.
+- 완료 체크(✅, `linkedGoalAchieved`)는 계산기 원본에서도 로컬 캘린더 연동이 있어야 계산되는 파생값이라, 이 값 자체를 동기화하려면 캘린더+계산기 두 데이터를 다시 조인해야 해서 범위가 커진다 — 이번엔 제외하고 목표량 표시까지만 구현(라이브 화면과의 유일한 차이로 남김).
+
+---
+
+## 무전기 TTS 남성 목소리: 실제 다른 배우 음성 대신 피치 조정/한국어 음성 강제 선택 (2026-08-31, 78차 세션)
+
+"남성 목소리를 추가해달라"는 요청에 안드로이드 `TextToSpeech`/데스크탑 SAPI 양쪽 모두 "설치된 음성 중 이름으로 성별을 골라 쓰는" 접근이 기기마다 결과가 다르다는 문제가 있었다(한국어 음성 자체가 기기당 보통 하나뿐).
+
+- **안드로이드**: 이름 기반 Voice 선택 대신 `TextToSpeech.setPitch(0.78f)`로 톤을 낮춰 남성처럼 들리게 했다 — 실제 다른 배우의 목소리가 아니라 같은 엔진 음성의 톤 변화이지만, 어느 기기/엔진에서도 항상 같은 방향(더 낮게)으로 동작한다는 게 장점.
+- **데스크탑**: SAPI에 설치된 음성 중 한국어(`ko`) 문화권만 먼저 필터링한 뒤, 그 안에서 남성이 있으면 선택하고 없으면 한국어 여성으로, 한국어 음성 자체가 하나도 없을 때만 시스템 기본값을 쓰도록 했다. 이 과정에서 **기존 코드가 애초에 한국어 음성을 한 번도 명시적으로 선택한 적이 없었다는 잠재 버그를 발견**(사용자가 "지금 보이스는 영어 보이스"라고 지적) — PC의 기본 SAPI 음성이 영어로 설정돼 있으면 한글을 영어 음성으로 읽고 있었던 것. 성별 기능 구현과 함께 이 버그도 같이 고쳤다(BUGS.md 참고).
+- 두 플랫폼 다 "설치돼 있으면 쓰고 없으면 조용히 폴백"이라는 원칙을 지켜, 남성 음성이 없는 대부분의 Windows 환경에서도 최소한 한국어 발음이 깨지는 회귀는 없도록 했다.
+
+---
+
+## 워크플로 변경: "깃허브에 올려"=릴리스 게시, 안드로이드 기본 빌드=release (2026-08-31, 78차 세션)
+
+사용자가 두 가지 표준 작업 방식을 명시적으로 확정했다.
+
+- **"깃허브에 올려/커밋해"는 GitHub Release 게시까지 포함**한다. 이전까지는 소스를 `study-planner` 공개 저장소에 커밋/푸시(`sync-public-repo.ps1`)하는 것까지만 했는데, 이러면 desktop/android 자체 업데이트 기능이 참조하는 GitHub Releases 태그가 갱신되지 않아 "업데이트 확인해도 최신 버전"이라고 뜨는 현상이 생겼다 — 사용자가 이를 지적하며 앞으로는 커밋 요청 시 릴리스 게시까지 자동으로 하라고 확정.
+- **안드로이드는 기본적으로 `assembleRelease`(release 서명 APK)를 빌드**한다. 그동안 `assembleDebug`를 관행적으로 써왔는데, 사용자가 "왜 자꾸 릴리즈로 서명된 apk는 무시하냐, 앞으로 수정할 때마다 그걸 기준으로 하라"고 명시적으로 정정. `assembleDebug`는 이제 컴파일만 빠르게 확인하고 싶을 때만 쓰고, 실제 배포/게시용 산출물은 항상 release 서명을 쓴다.
+
+---
+
 ## 모임 멤버 상세 화면은 라이브 화면 재사용이 아닌 보기전용 별도 작성 (2026-08-30, 77차 세션)
 
 "모임에서 멤버를 클릭하면 내 앱과 같은 탭 구조로 그 사람 데이터가 보이게 해달라"는 요청을 구현할 때, 기존 `RoutineScreen`/`CalendarScreen` 등 라이브 화면에 "보는 대상"(나 vs 멤버) 파라미터를 얹어 재사용할지, 아니면 완전히 새 보기전용 화면을 따로 작성할지 선택해야 했다.
@@ -621,6 +756,29 @@ content script(페이지 안에서 실행)의 fetch는 확장 출처(`chrome-ext
 
 ## 뽀모도로 임시해제 오버레이는 레벨과 무관한 고정 불투명도
 실행확인 오버레이는 재확인을 반복할수록 점점 진해지는 게 의도된 디자인이지만, 뽀모도로 휴식으로 임시 해제된 상태는 "재확인을 반복해서 진해지는 것"과 의미가 다른 신호다. 그래서 뽀모도로 오버레이는 레벨 무관 고정값(안드로이드 alpha 70, 데스크탑 0.72f, 브라우저 확장 0.28 — 각 플랫폼 기본값보다 눈에 띄게 높게)을 쓴다(2026-08-05, 10차 세션).
+
+## 82차 아키텍처 감사 결과 중 3건은 실제로는 문제가 아니었음 (2026-09-02, 82차)
+81차 세션 종료 시점에 작성한 "갓생살기 아키텍처 리뷰"(전체 코드 감사)에서 CRIT/MED로 분류했던 항목 중 3건을 실제 코드 확인 후 정정한다 — 향후 세션에서 같은 오해로 재작업하지 않도록 기록.
+- **키스토어 유출 위험(CRIT로 분류됨)**: `phone-lock-android/keystore.properties`와 `keystore/`는 `.gitignore:19-20`에 이미 개별 항목으로 등록돼 있고, `git ls-files`로도 추적되지 않음이 확인됨. 실제 유출 경로가 없었다 — 감사 당시 `.gitignore` 파일 자체를 직접 읽지 않고 정황만으로 CRIT 판정한 것이 원인. **결론: 이미 안전, 수정 불필요.** 앞으로 새 민감 파일(토큰/키/인증서)을 추가할 때도 이 두 줄과 같은 패턴(파일 단위 명시적 gitignore)을 유지할 것.
+- **Firebase RTDB 규칙 개방(MED로 분류됨)**: `firebase-database.rules.json` 루트가 `.read:false/.write:false`이고 모든 하위 경로(`users`, `groups`, `inviteCodes` 등)가 `auth != null` + `allowedUsers`/멤버십 스코프로 닫혀있음을 확인. 열린 규칙 없음. **결론: 이미 안전.** 다만 신규 RTDB 경로(공지사항/공동목표/문구통계 등, 82차에서 추가)를 만들 때마다 반드시 이 파일에 스코프 규칙을 함께 추가해야 하며, 잊으면 그 경로만 조용히 열린 규칙(암묵적 거부는 Firebase 기본값이라 실제로는 안전하지만 명시적으로 닫아두는 관례 유지)이 될 수 있다.
+- **JsonStore(데스크탑) 동시쓰기 경합(MED로 분류됨)**: `JsonStore.kt` 자체엔 락이 없지만, 유일한 호출부인 `Repository.kt`가 거의 모든 읽기-수정-쓰기 함수를 `synchronized(lock)`으로 감싸고 있어 실질적으로 경합이 없음을 확인. **결론: 수정 불필요.** 다만 새 Repository 함수를 추가할 때 `synchronized(lock)`을 빠뜨리면 이 안전장치가 깨지므로, 새 함수 작성 시 항상 감싸는 관례를 유지할 것(안드로이드의 `escalationMutex.withLock{}` 관례와 동일한 취지).
+
+## 82차 God Object 파일 분리 — 1차는 "모임"만, 사용자 재요청으로 전체(계산기/캘린더/루틴까지) 완료 (2026-09-02, 82차)
+아키텍처 감사(§7)가 제안한 `PhoneLockRepository.kt`(2053줄)/`Repository.kt`(1911줄) 분리를 처음엔 "모임"(소셜 그룹) 섹션만 안전 범위로 진행했었다(가장 결합도가 낮은 부분). 이후 사용자가 "저거 싹다 진행해"로 계산기/캘린더/루틴까지 마저 분리해달라고 재요청 — 실제로 해보니 우려했던 것보다 리스크가 낮았다:
+- **핵심 발견**: 안드로이드는 Room DAO들이 이미 `internal`로 열려있었고(모임 분리 때 넓혀둔 것 + 이번에 `db`/`calcTaskDao`/`calcSavedItemDao`/`routineLogDao`/`usageDao`/`confirmCounterDao`/`ioScope`까지 추가로 `internal` 전환), 데스크탑은 애초에 `data`(전체 `AppData` blob)와 `lock`(동기화 락)과 `persist()`만 `internal`로 열면 되는 훨씬 단순한 구조였다(모든 함수가 `synchronized(lock) { data.xxx }` 패턴이라 DAO 단위 가시성 추적이 아예 불필요).
+- **분리 결과**(양 플랫폼 대칭): `*Repository.Calendar.kt`(캘린더+계산기 연동 로직, `addLinkedCalendarTask` 등 캘린더 중심 함수들과 함께 묶음), `*Repository.Calc.kt`(계산기 CRUD+폴더+동기화), `*Repository.Routine.kt`(루틴 CRUD+스트릭 로그+동기화). 안드로이드 `PhoneLockRepository.kt`는 2053→1017줄, 데스크탑 `Repository.kt`는 1911→966줄로 줄었다.
+- **`exportBackupJson`/`importBackupJson`(안드로이드) 등 여러 섹션을 넘나드는 cross-cutting 함수는 core 파일에 그대로 남겼다** — 그룹/멤버/사이트/전체 백업처럼 진짜로 여러 도메인을 동시에 다루는 함수까지 억지로 어느 한 파일에 넣지 않는다는 원칙.
+- **가시성 전략**: 모든 추출된 최상위 확장 함수/프로퍼티는 `private` 없이(기본 public) 선언 — 어느 파일이 어느 함수를 부를지 일일이 추적하는 대신, 같은 모듈(app/데스크탑 각각) 안에서는 자유롭게 서로 호출 가능하게 통일했다. 순수 파일 내부용 헬퍼(`formatCalcNumber` 등 각 파일에 중복 정의된 사소한 포맷 함수)만 `private`로 남김.
+- **호출부 수정**: extension 함수는 멤버 함수와 호출 문법이 동일(`repository.getCalcTasks()`처럼)하지만 **다른 패키지에서는 반드시 import가 필요** — `CalculatorScreen.kt`/`CalendarScreen.kt`/`RoutineScreen.kt`/`SettingsScreen.kt`/`StudyStatsScreen.kt`/`StudyTimerScreen.kt`/`TimetableScreen.kt`/`MainActivity.kt`/위젯 파일들(안드로이드)과 동급 데스크탑 파일들에 `import com.phonelock.app.data.*`(또는 `.desktop.data.*`) 와일드카드 임포트를 추가해서 해결.
+- **부수 발견(중요, 별도 BUGS.md 기록)**: 이 작업 중 Room `fallbackToDestructiveMigration()`이 테이블 단위가 아니라 DB 전체를 지운다는 걸 재확인, v29→v33까지 4단계 마이그레이션을 전부 명시적으로 작성해 잠재적 데이터 손실을 배포 전에 막았다.
+- `:shared` 순수 로직 공유 모듈 추출은 이후 같은 세션에서 실제로 진행함 — 아래 "`:shared` composite build 모듈 도입" 항목 참고.
+
+## `:shared` composite build 모듈 도입 + AGP Lint 버그 발견/수정 (2026-09-02, 82차)
+사용자가 감사 후속 잔여 항목("`:shared` 순수 로직 공유 모듈") 진행을 지시 — 두 플랫폼이 완전히 분리된 Gradle 루트 프로젝트라 진짜 모듈 공유를 하려면 composite build(`includeBuild`)가 필요했는데, 실제로 해보니 우려했던 것보다 범위가 좁고 안전했다.
+- **이관 대상 선정 기준**: `diff`로 안드로이드/데스크탑 버전을 비교해 "패키지 선언과 주석만 다르고 로직은 100% 동일"한 파일만 골랐다 — `CalcEngine.kt`(java.time+kotlin stdlib만 사용, 완전 순수), `PersuasionMessages.kt`/`MotivationalQuotes.kt`(문구 리스트+순수 함수), `RoutineQuotes.kt` 4개. `LockEvaluator`/`RoutineEngine`은 각 플랫폼의 Room 엔티티/데이터 클래스(`AppGroup` vs `Group`, `Routine`)에 깊이 결합돼 있어 후보에서 제외 — 억지로 공유하려면 데이터 계층까지 추상화해야 해서 리스크 대비 효용이 낮다고 판단.
+- **구조**: `shared/`(신규 최상위 폴더)를 순수 `kotlin("jvm")` 모듈로 만들고, `phone-lock-android/settings.gradle.kts`와 `phone-lock-desktop/settings.gradle.kts` 양쪽에 `includeBuild("../shared")` 추가 + 각 앱 모듈에 `implementation("com.phonelock:shared")` — Gradle이 그룹:이름으로 자동 치환해준다.
+- **AGP Lint 버그**: 이 구조로 바꾸자 안드로이드 `assembleRelease`가 `generateReleaseLintVitalReportModel`에서 "Could not find jar for project :shared"로 실패 — AGP의 Lint 아티팩트 해석기가 `includeBuild`로 치환된 프로젝트 의존성의 jar 경로를 못 찾는 게 원인(AGP 8.5.2의 알려진 한계, `shared`에 `java-library` 플러그인을 추가해봐도 안 고쳐짐). **해결**: `android { lint { checkReleaseBuilds = false } }`로 lintVital을 release 조립 태스크 그래프에서 떼어냄 — lint 자체가 없어진 게 아니라 `gradle lint`로 수동 실행은 여전히 가능하고, release APK 빌드가 lint 통과를 전제조건으로 삼지 않게 됐을 뿐이다. 이 프로젝트는 지금까지 lint를 CI/자동 게이트로 쓴 적이 없어(수동 리뷰 위주) 회귀 리스크는 낮다고 판단.
+- **빌드 스크립트 동기화 함정**: `sync-public-repo.ps1`이 `phone-lock-android`/`phone-lock-desktop`만 동기화하고 신규 `shared/`를 몰랐던 걸 배포 직전에 발견 — 그대로 실행했으면 공개 저장소가 `includeBuild("../shared")`를 찾지 못해 빌드 불가 상태로 푸시될 뻔했다. 스크립트에 `shared/` 동기화 한 줄 추가로 해결. **교훈**: 최상위에 새 Gradle 프로젝트(모듈)를 추가하면, 그 프로젝트를 아직 모르는 배포/동기화 스크립트가 있는지 항상 함께 점검할 것.
 
 ## 안드로이드는 앱 내 WebView, 데스크탑은 외부 브라우저로 공부앱 열기
 안드로이드는 SDK 내장 `WebView`로 앱 내 임베드가 쉽지만, Compose Desktop은 내장 웹뷰가 없어 JCEF 같은 무거운 라이브러리를 새로 추가해야 한다(이미 JDK/jpackage 버전 이슈가 있는 빌드에 리스크 추가). 사용자에게 이 기술적 차이를 설명하고 확인받아, 안드로이드만 앱 내 WebView 임베드, 데스크탑은 외부 브라우저 오픈으로 결정했다(2026-08-04, 7차 세션).

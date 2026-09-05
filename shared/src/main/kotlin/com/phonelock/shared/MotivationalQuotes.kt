@@ -1,10 +1,11 @@
-package com.phonelock.app.ui
+package com.phonelock.shared
 
 /**
  * 실행확인/잠김 화면에 뜨는 조롱조 문구, 5단계 강도(순한~극한)로 나눠 상황에 따라 더 독한 쪽이
  * 뽑히게 한다. 실행확인 화면은 재확인 레벨(PhoneLockRepository.getCurrentLevel, 오버레이 밝기
  * 설정과는 무관한 절대 수치)로, 잠김(스케줄/일일한도) 화면은 오늘 이 그룹을 열려고 시도한 횟수
  * (PhoneLockRepository.recordBlockAttempt)로 강도를 정한다. 사용자 요청으로 도입(2026-08-11).
+ * 82차부터 안드로이드/데스크탑이 각자 대칭 복제하던 것을 이 :shared 모듈로 통합(감사 §7).
  */
 private val MILD_QUOTES = listOf(
     "또 여기 왔네",

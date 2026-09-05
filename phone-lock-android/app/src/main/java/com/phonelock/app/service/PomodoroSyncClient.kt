@@ -429,6 +429,57 @@ object PomodoroSyncClient {
         }
     }
 
+    data class SettingsSyncResult(val json: JSONObject, val ts: Long)
+
+    /**
+     * 85차(사용자 요청) — 설정 탭의 계산기 기본 다회독값(defaultPassCount/defaultPassIntervalsCsv/
+     * defaultMultiPassEnabled)과 일일 초기화 시각(dailyResetHour)이 기기 간 동기화되지 않던 문제를
+     * 고치기 위해 신설. `users/{user}/settings`에 문서 단위 LWW(캘린더와 동일 패턴)로 저장한다.
+     */
+    suspend fun readSettings(databaseUrl: String?, apiKey: String?): SettingsSyncResult? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
+                val base = databaseUrl.trimEnd('/')
+                val url = URL("$base/users/$user/settings.json?auth=$token")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = TIMEOUT_MS
+                    readTimeout = TIMEOUT_MS
+                }
+                if (conn.responseCode !in 200..299) { conn.disconnect(); return@runCatching null }
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                if (body.isBlank() || body == "null") return@runCatching SettingsSyncResult(JSONObject(), 0L)
+                val json = JSONObject(body)
+                SettingsSyncResult(json, json.optLong("_ts", 0L))
+            }.getOrNull()
+        }
+    }
+
+    suspend fun writeSettings(databaseUrl: String?, apiKey: String?, settingsJson: JSONObject, ts: Long) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
+                val base = databaseUrl.trimEnd('/')
+                val url = URL("$base/users/$user/settings.json?auth=$token")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"
+                    connectTimeout = TIMEOUT_MS
+                    readTimeout = TIMEOUT_MS
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                }
+                val body = JSONObject(settingsJson.toString()).apply { put("_ts", ts) }
+                conn.outputStream.use { it.write(body.toString().toByteArray()) }
+                conn.responseCode
+                conn.disconnect()
+            }
+        }
+    }
+
     data class RoutineSyncResult(val routinesJson: JSONArray, val logsJson: JSONArray, val ts: Long)
 
     /**

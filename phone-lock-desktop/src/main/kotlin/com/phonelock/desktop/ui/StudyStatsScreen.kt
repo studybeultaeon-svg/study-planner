@@ -2,6 +2,10 @@ package com.phonelock.desktop.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.CalendarTask
+import com.phonelock.desktop.data.*
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.theme.Spacing
@@ -47,10 +53,12 @@ private data class DayStat(val date: LocalDate, val cnt: Int, val done: Int)
 @Composable
 fun StudyStatsScreen(repository: Repository) {
     var allTasks by remember { mutableStateOf(emptyList<CalendarTask>()) }
+    var allStudyLog by remember { mutableStateOf(emptyList<com.phonelock.desktop.data.StudyLogEntry>()) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { repository.syncCalendarFromFirebase() }
         allTasks = repository.getAllCalendarTasks()
+        allStudyLog = repository.getAllStudyLogOnce()
     }
 
     if (allTasks.isEmpty()) {
@@ -106,6 +114,7 @@ fun StudyStatsScreen(repository: Repository) {
         DayStat(d, dayTasks.size, dayTasks.count { it.status == "O" })
     }
     val maxDayCnt = maxOf(1, dayStats.maxOf { it.cnt })
+    val collapsedCalcNames = remember { mutableStateOf(setOf<String>()) }
 
     Column(Modifier.fillMaxSize().padding(Spacing.md).verticalScroll(rememberScrollState())) {
         Text("📈 통계", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
@@ -174,6 +183,96 @@ fun StudyStatsScreen(repository: Repository) {
                         )
                     }
                 }
+            }
+        }
+
+        // 82차(§9 "포모도로 세션 태그"): 태그별 누적 공부시간.
+        val taggedSeconds = allStudyLog.filter { it.tag.isNotBlank() }.groupBy { it.tag }.mapValues { (_, v) -> v.sumOf { it.seconds } }
+        if (taggedSeconds.isNotEmpty()) {
+            Spacer(Modifier.height(Spacing.md))
+            SectionCard("태그별 누적 공부시간") {
+                val maxTagSeconds = maxOf(1, taggedSeconds.values.max())
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    taggedSeconds.entries.sortedByDescending { it.value }.forEach { (tag, seconds) ->
+                        Column {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(tag, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                Text(formatHmsLog(seconds.toLong()), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Spacer(Modifier.height(2.dp))
+                            val widthFraction = (seconds.toFloat() / maxTagSeconds).coerceIn(0.03f, 1f)
+                            Row(
+                                Modifier.fillMaxWidth(widthFraction).height(8.dp)
+                                    .background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small)
+                            ) {}
+                        }
+                    }
+                }
+            }
+        }
+
+        // 82차(§9 "일정표-계산기 진행량 그래프"): 계산기 연동 일정의 최근 30일 목표 대비 실제 완료량.
+        // 85차: 과목(계산기 업무)별 상세 통계를 한 번에 접었다 펼 수 있게 요청(안드로이드판과 대칭) —
+        // 계산기 입력 탭의 "모두 펴기/모두 접기"와 같은 패턴(collapsedKeys Set), calcName을 키로 잡는다.
+        val linkedByTask = allTasks.filter { it.linkedCalc != null }.groupBy { it.linkedCalc!! }
+        if (linkedByTask.isNotEmpty()) {
+            Spacer(Modifier.height(Spacing.md))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("계산기 연동 진행량 (최근 30일)", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    androidx.compose.material3.TextButton(onClick = { collapsedCalcNames.value = emptySet() }) { Text("모두 펴기") }
+                    androidx.compose.material3.TextButton(onClick = { collapsedCalcNames.value = linkedByTask.keys.toSet() }) { Text("모두 접기") }
+                }
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            linkedByTask.forEach { (calcName, tasks) ->
+                val collapsed = calcName in collapsedCalcNames.value
+                Row(
+                    Modifier.fillMaxWidth().clickable {
+                        collapsedCalcNames.value = if (collapsed) collapsedCalcNames.value - calcName else collapsedCalcNames.value + calcName
+                    },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    com.phonelock.desktop.ui.components.IconChip(
+                        if (collapsed) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown,
+                        onClick = { collapsedCalcNames.value = if (collapsed) collapsedCalcNames.value - calcName else collapsedCalcNames.value + calcName }
+                    )
+                    Spacer(Modifier.width(Spacing.xs))
+                    Text(calcName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                }
+                if (!collapsed) {
+                    val byDateForTask = tasks.groupBy { it.dateKey }
+                    val series = (0 until 30).map { i ->
+                        val d = today.minusDays((29 - i).toLong())
+                        val dayTasks = byDateForTask[d.toString()] ?: emptyList()
+                        val target = dayTasks.sumOf { it.progressStep?.toDoubleOrNull() ?: 0.0 }
+                        val done = dayTasks.filter { it.status == "O" }.sumOf { it.progressStep?.toDoubleOrNull() ?: 0.0 }
+                        d to (target to done)
+                    }
+                    val maxAmount = maxOf(1.0, series.maxOf { it.second.first })
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth().height(70.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        series.forEach { (d, pair) ->
+                            val (target, done) = pair
+                            val achieved = target > 0 && done >= target
+                            val barColor = when {
+                                target <= 0 -> MaterialTheme.colorScheme.outlineVariant
+                                achieved -> Color(0xFF34D399)
+                                done > 0 -> Color(0xFFFBBF24)
+                                else -> Color(0xFFF87171)
+                            }
+                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Column(Modifier.fillMaxWidth().height(50.dp), verticalArrangement = Arrangement.Bottom) {
+                                    val heightPct = (target / maxAmount).toFloat().coerceIn(if (target > 0) 0.08f else 0.03f, 1f)
+                                    Row(Modifier.fillMaxWidth().height((50 * heightPct).dp).background(barColor)) {}
+                                }
+                                Spacer(Modifier.height(2.dp))
+                                Text("${d.dayOfMonth}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(Spacing.sm))
             }
         }
     }

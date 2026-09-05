@@ -53,8 +53,14 @@ private fun colorSchemeFor(palette: PhoneLockPalette) = if (palette.isDark) {
  */
 @Composable
 fun PhoneLockTheme(themeMode: String = ThemeMode.LIGHT_GREEN, content: @Composable () -> Unit) {
+    PhoneLockTheme(paletteFor(themeMode), content)
+}
+
+/** CUSTOM 테마처럼 미리 계산된 팔레트를 직접 넘길 때 쓰는 오버로드(79차, [Repository.currentPalette] 참고). */
+@Composable
+fun PhoneLockTheme(palette: PhoneLockPalette, content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = colorSchemeFor(paletteFor(themeMode)),
+        colorScheme = colorSchemeFor(palette),
         shapes = PhoneLockShapes,
         typography = PhoneLockTypography,
         content = content

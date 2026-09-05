@@ -12,15 +12,111 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("block_reels", false)
         set(value) = prefs.edit().putBoolean("block_reels", value).apply()
 
+    /** 최초 실행 시 권한 안내 온보딩을 이미 보여줬는지(82차, §6 "온보딩 권한 설명 다이얼로그") — 한 번만 표시. */
+    var onboardingShown: Boolean
+        get() = prefs.getBoolean("onboarding_shown", false)
+        set(value) = prefs.edit().putBoolean("onboarding_shown", value).apply()
+
+    // ---- 동기화 상태 대시보드(82차, 감사보고서 §10①) ----
+    /** 가장 최근에 Firebase 동기화(어느 SyncClient든)가 성공한 시각. 설정 화면 상단 배지용, 판정 로직과 무관. */
+    var lastSyncSuccessAtMillis: Long
+        get() = prefs.getLong("last_sync_success_at", 0L)
+        set(value) = prefs.edit().putLong("last_sync_success_at", value).apply()
+
+    /** 가장 최근 성공 이후 연속 실패 횟수 — 성공하면 0으로 리셋. */
+    var lastSyncFailCount: Int
+        get() = prefs.getInt("last_sync_fail_count", 0)
+        set(value) = prefs.edit().putInt("last_sync_fail_count", value).apply()
+
+    fun recordSyncSuccess() {
+        lastSyncSuccessAtMillis = System.currentTimeMillis()
+        lastSyncFailCount = 0
+    }
+
+    fun recordSyncFailure() {
+        lastSyncFailCount = lastSyncFailCount + 1
+    }
+
+    /** 글자 크기 배율(82차, §6/§9) — 0.85(작게)/1.0(기본)/1.15(크게)/1.3(아주 크게). */
+    var fontScale: Float
+        get() = prefs.getFloat("font_scale", 1.0f)
+        set(value) = prefs.edit().putFloat("font_scale", value).apply()
+
+    /** 발견된 새 릴리스의 노트(GitHub Release body) — 업데이트 배너에 "이번 업데이트 내용"으로 표시(82차). */
+    var updateAvailableReleaseNotes: String
+        get() = prefs.getString("update_available_release_notes", "") ?: ""
+        set(value) = prefs.edit().putString("update_available_release_notes", value).apply()
+
+    // ---- 자동 백업/정리(82차, §9 "자동 백업 클라우드 업로드"/"12개월 정리 자동 스케줄") ----
+    /** 매일 1회 전체 데이터를 Firebase Storage에 자동 업로드할지 — 기본 off(로그인 필요, 데이터 사용량 발생). */
+    var cloudBackupEnabled: Boolean
+        get() = prefs.getBoolean("cloud_backup_enabled", false)
+        set(value) = prefs.edit().putBoolean("cloud_backup_enabled", value).apply()
+
+    var lastCloudBackupDate: String
+        get() = prefs.getString("last_cloud_backup_date", "") ?: ""
+        set(value) = prefs.edit().putString("last_cloud_backup_date", value).apply()
+
+    var lastCloudBackupResult: String
+        get() = prefs.getString("last_cloud_backup_result", "") ?: ""
+        set(value) = prefs.edit().putString("last_cloud_backup_result", value).apply()
+
+    /** 12개월 이상 지난 통계를 자동으로 정리한 마지막 날짜 — 월 1회만 실행되게 가드. */
+    var lastAutoStatsPruneDate: String
+        get() = prefs.getString("last_auto_stats_prune_date", "") ?: ""
+        set(value) = prefs.edit().putString("last_auto_stats_prune_date", value).apply()
+
     var blockShorts: Boolean
         get() = prefs.getBoolean("block_shorts", false)
         set(value) = prefs.edit().putBoolean("block_shorts", value).apply()
 
-    /** 공부 잠금(전체화면) 진입 시 방해금지 모드를 자동으로 켤지 — 전문가 종합분석 보고서 #13. 알림 정책
-     *  접근 권한(ACCESS_NOTIFICATION_POLICY)이 없으면 이 설정이 켜져 있어도 조용히 무시된다. */
-    var autoDndEnabled: Boolean
-        get() = prefs.getBoolean("auto_dnd_enabled", false)
-        set(value) = prefs.edit().putBoolean("auto_dnd_enabled", value).apply()
+    /** 캘린더 일정을 새로 만들 때 "다회독"(완료 시 다음 회독 자동 생성) 기본값 — 기본은 off, 공부 설정에서 사용자가 변경. */
+    var defaultMultiPassEnabled: Boolean
+        get() = prefs.getBoolean("default_multi_pass_enabled", false)
+        set(value) = prefs.edit().putBoolean("default_multi_pass_enabled", value).apply()
+
+    /** 계산기 연동이 아닌, 캘린더에서 직접 추가하는 일정의 기본 회독 수(3~8)·회독별 간격(83차, 다회독 상세화). */
+    var defaultPassCount: Int
+        get() = prefs.getInt("default_pass_count", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT)
+            .coerceIn(com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT, com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT)
+        set(value) = prefs.edit().putInt("default_pass_count", value).apply()
+
+    var defaultPassIntervalsCsv: String
+        get() = prefs.getString("default_pass_intervals_csv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV)
+            ?: com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV
+        set(value) = prefs.edit().putString("default_pass_intervals_csv", value).apply()
+
+    /** 공부 페이즈 중엔 뜨지 않고 미뤄지는 알림(루틴 리마인더/스트릭) — 다시 알릴 자연스러운 계기가
+     *  없는 "일회성" 알림만 여기 쌓아둔다(모임 깨우기/무전기는 서버에 안 읽은 채로 남아있으므로 공부가
+     *  끝난 뒤 다음 폴링에서 저절로 다시 온다 — 별도 큐가 필요 없다, [com.phonelock.app.service.StudyNotificationGate] 참고). */
+    data class QueuedNotification(val id: Int, val channelId: String, val title: String, val text: String)
+
+    var queuedStudyNotificationsJson: String
+        get() = prefs.getString("queued_study_notifications_json", "[]") ?: "[]"
+        set(value) = prefs.edit().putString("queued_study_notifications_json", value).apply()
+
+    fun queuedStudyNotifications(): List<QueuedNotification> {
+        val arr = org.json.JSONArray(queuedStudyNotificationsJson)
+        return (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            QueuedNotification(o.optInt("id"), o.optString("channelId"), o.optString("title"), o.optString("text"))
+        }
+    }
+
+    fun addQueuedStudyNotification(notification: QueuedNotification) {
+        val arr = org.json.JSONArray(queuedStudyNotificationsJson)
+        arr.put(org.json.JSONObject().apply {
+            put("id", notification.id)
+            put("channelId", notification.channelId)
+            put("title", notification.title)
+            put("text", notification.text)
+        })
+        queuedStudyNotificationsJson = arr.toString()
+    }
+
+    fun clearQueuedStudyNotifications() {
+        queuedStudyNotificationsJson = "[]"
+    }
 
     /**
      * 공부앱 타이머가 "공부" 페이즈로 진행 중일 때(휴식 중엔 아님) 예외로 허용할 앱 패키지명 목록. 이 목록과
@@ -94,6 +190,15 @@ class AppPreferences(context: Context) {
         get() = prefs.getString("theme_mode", "LIGHT_GREEN") ?: "LIGHT_GREEN"
         set(value) = prefs.edit().putString("theme_mode", value).apply()
 
+    /** 커스텀 테마(79차, 사용자 요청)용 배경/포인트 색 — "#RRGGBB" 문자열, 데스크탑판과 동일 구조. */
+    var customThemeBackground: String
+        get() = prefs.getString("custom_theme_background", "#FAFBF6") ?: "#FAFBF6"
+        set(value) = prefs.edit().putString("custom_theme_background", value).apply()
+
+    var customThemeAccent: String
+        get() = prefs.getString("custom_theme_accent", "#8BC34A") ?: "#8BC34A"
+        set(value) = prefs.edit().putString("custom_theme_accent", value).apply()
+
     /** 그룹 자동 재활성화를 마지막으로 적용한 날짜(effectiveDate 기준) — 데스크탑판 lastGroupAutoResetDate와 동일 역할. */
     var lastGroupAutoResetDate: String?
         get() = prefs.getString("last_group_auto_reset_date", null)
@@ -142,6 +247,11 @@ class AppPreferences(context: Context) {
     var calendarTs: Long
         get() = prefs.getLong("calendar_ts", 0L)
         set(value) = prefs.edit().putLong("calendar_ts", value).apply()
+
+    /** 85차: 계산기 기본 다회독값/일일 초기화 시각 설정 동기화용 문서 단위 LWW 타임스탬프. */
+    var settingsTs: Long
+        get() = prefs.getLong("settings_ts", 0L)
+        set(value) = prefs.edit().putLong("settings_ts", value).apply()
 
     /** 루틴 전체 문서 단위 Firebase LWW 타임스탬프(51차, 데스크탑판 routinesTs와 동일 패턴). */
     var routinesTs: Long
@@ -218,9 +328,7 @@ class AppPreferences(context: Context) {
         /** 오늘 캘린더 일정 목록(이름+완료여부). */
         val shareSchedule: Boolean = true,
         /** 지금 공부 중(뽀모도로 포함)인지 여부 + 업무 이름. */
-        val shareStudyingNow: Boolean = true,
-        /** 지금 실제로 나를 제한 중인 관리(차단) 그룹 이름 목록. */
-        val shareActiveGroup: Boolean = true
+        val shareStudyingNow: Boolean = true
     )
 
     /** 모임ID -> 공유 설정(JSON 객체 문자열) — nudgeLastSeenByGroupJson과 동일한 맵 저장 패턴. */
@@ -235,8 +343,7 @@ class AppPreferences(context: Context) {
             shareStudy = g.optBoolean("shareStudy", true),
             shareStreak = g.optBoolean("shareStreak", true),
             shareSchedule = g.optBoolean("shareSchedule", true),
-            shareStudyingNow = g.optBoolean("shareStudyingNow", true),
-            shareActiveGroup = g.optBoolean("shareActiveGroup", true)
+            shareStudyingNow = g.optBoolean("shareStudyingNow", true)
         )
     }
 
@@ -248,17 +355,17 @@ class AppPreferences(context: Context) {
             put("shareStreak", settings.shareStreak)
             put("shareSchedule", settings.shareSchedule)
             put("shareStudyingNow", settings.shareStudyingNow)
-            put("shareActiveGroup", settings.shareActiveGroup)
         })
         groupShareSettingsJson = json.toString()
     }
 
-    // ---- 무작위 알림(77차, 사용자 요청) — 하루 중 무작위 시각 한 번, 이 기기가 속한 모임의 멤버들을
-    // 확인해서 "오늘 해야 할 루틴/일정이 아직 남은" 사람에게 기존 넛지(😴 깨우기)와 같은 방식으로 자동
-    // 알림을 보낸다. 각 기기가 독립적으로 체크해서 보내므로(넛지가 1인 1슬롯 덮어쓰기라 중복 무해,
-    // 사용자 확인) 별도 발신자 조율은 없다. 모임마다 켜고 끌 수 있으며(기본 켜짐), 이 값은 순수 로컬
-    // 설정 — "받는 쪽" 설정인 무전기(walkieSettings, RTDB)와 달리 "이 기기가 보낼지"를 결정하므로
-    // 동기화 대상이 아니다.
+    // ---- 무작위 알림(77차, 81차에 의도 정정) — 하루 중 무작위 시각 한 번, 이 기기가 속한 모임의
+    // 멤버들을 확인해서 "오늘 해야 할 루틴/일정이 아직 남은" 사람이 있으면 나(이 기기 사용자)에게
+    // "OO님이 아직 할 일을 안 했어요" 정보성 알림을 띄운다. 넛지를 대신 자동으로 보내는 게 아니라,
+    // 알림을 받은 사람이 스스로 판단해서 모임 화면에서 직접 😴 깨우기를 누르게 하는 게 원래 의도였다
+    // (77차 최초 구현은 자동으로 넛지까지 보내버려서 81차에 바로잡음). 모임마다 켜고 끌 수 있으며
+    // (기본 켜짐), 이 값은 순수 로컬 설정 — "받는 쪽" 설정인 무전기(walkieSettings, RTDB)와 달리
+    // "이 기기가 이 모임에 대해 알림을 받을지"를 결정하므로 동기화 대상이 아니다.
     var groupRandomNudgeEnabledJson: String
         get() = prefs.getString("group_random_nudge_enabled_json", "{}") ?: "{}"
         set(value) = prefs.edit().putString("group_random_nudge_enabled_json", value).apply()
@@ -354,11 +461,12 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putBoolean("perm_social", value).apply()
 
     // ---- 자체 업데이트 확인(GitHub Releases, 2026-08-30) ----
-    /** 마지막으로 GitHub Releases를 확인한 날짜(effectiveDate 기준) — 하루 1회만 네트워크 호출하기 위한 가드,
-     *  lastGroupAutoResetDate와 동일 패턴. */
-    var lastUpdateCheckDate: String?
-        get() = prefs.getString("last_update_check_date", null)
-        set(value) = prefs.edit().putString("last_update_check_date", value).apply()
+    /** 마지막으로 GitHub Releases를 확인한 시각(epoch millis) — 하루 1회(날짜 기준) 가드였던 것을
+     *  새 빌드가 올라오면 하루 초기화를 기다리지 않고 곧바로 뜨도록 짧은 주기(UPDATE_CHECK_INTERVAL_MS)
+     *  가드로 바꿨다(2026-09-05). */
+    var lastUpdateCheckAtMillis: Long
+        get() = prefs.getLong("last_update_check_at_millis", 0L)
+        set(value) = prefs.edit().putLong("last_update_check_at_millis", value).apply()
 
     /** GitHub Releases에서 발견한 최신 안드로이드 릴리스의 versionCode. 0이면 "새 버전 없음". */
     var updateAvailableVersionCode: Long

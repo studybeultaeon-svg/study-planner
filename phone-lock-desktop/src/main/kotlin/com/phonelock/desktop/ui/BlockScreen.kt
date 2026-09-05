@@ -3,6 +3,8 @@ package com.phonelock.desktop.ui
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import com.phonelock.shared.blockQuoteTier
+import com.phonelock.shared.quoteForTier
 import com.phonelock.desktop.monitor.LockReason
 import com.phonelock.desktop.ui.components.WatchAndWaitScreen
 

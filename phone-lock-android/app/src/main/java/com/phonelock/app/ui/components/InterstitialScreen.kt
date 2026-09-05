@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.isSpecified
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.phonelock.shared.quoteForTier
 import com.phonelock.app.ui.theme.Spacing
 import kotlinx.coroutines.delay
 import kotlin.random.Random

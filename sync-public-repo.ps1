@@ -1,4 +1,4 @@
-# Syncs only the app source (phone-lock-android/, phone-lock-desktop/) plus
+# Syncs only the app source (phone-lock-android/, phone-lock-desktop/, shared/) plus
 # .gitignore and .claude/launch.json from this working directory (whatever is
 # currently on disk on "master" -- usually UNCOMMITTED, since this project's
 # convention is to not commit until asked) into a separate worktree checked
@@ -40,13 +40,16 @@ robocopy "$repoRoot\phone-lock-android" "$worktree\phone-lock-android" /MIR /XD 
 Write-Host "Copying phone-lock-desktop from master (working tree) into the clean-main worktree..."
 robocopy "$repoRoot\phone-lock-desktop" "$worktree\phone-lock-desktop" /MIR /XD ".git" "build" | Out-Null
 
+Write-Host "Copying shared from master (working tree) into the clean-main worktree..."
+robocopy "$repoRoot\shared" "$worktree\shared" /MIR /XD ".git" "build" | Out-Null
+
 Copy-Item "$repoRoot\.gitignore" "$worktree\.gitignore" -Force
 Copy-Item "$repoRoot\.claude\launch.json" "$worktree\.claude\launch.json" -Force
 
 Set-Location $worktree
-git add phone-lock-android phone-lock-desktop .gitignore .claude/launch.json
+git add phone-lock-android phone-lock-desktop shared .gitignore .claude/launch.json
 
-$changed = git status --porcelain -- phone-lock-android phone-lock-desktop .gitignore .claude/launch.json
+$changed = git status --porcelain -- phone-lock-android phone-lock-desktop shared .gitignore .claude/launch.json
 if (-not $changed) {
     Write-Host "Nothing changed -- skipping commit and push."
     Set-Location $repoRoot

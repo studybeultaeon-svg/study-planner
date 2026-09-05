@@ -3,6 +3,9 @@ package com.phonelock.desktop.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,7 +13,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.CalcTask
+import com.phonelock.desktop.data.*
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
@@ -83,13 +89,19 @@ fun TimetableScreen(repository: Repository) {
         Spacer(Modifier.height(Spacing.md))
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            OutlinedButton(onClick = { weekOffset-- }) { Text("◀ 이전주") }
+            OutlinedButton(onClick = { weekOffset-- }) {
+                androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("이전주")
+            }
             Text(
                 "${weekDates.first().monthValue}/${weekDates.first().dayOfMonth} ~ ${weekDates.last().monthValue}/${weekDates.last().dayOfMonth}" +
                     if (weekOffset == 0) " (이번 주)" else "",
                 style = MaterialTheme.typography.titleMedium
             )
-            OutlinedButton(onClick = { weekOffset++ }) { Text("다음주 ▶") }
+            OutlinedButton(onClick = { weekOffset++ }) {
+                Text("다음주")
+                androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
         }
         Spacer(Modifier.height(Spacing.sm))
 
@@ -102,7 +114,10 @@ fun TimetableScreen(repository: Repository) {
         }
 
         val dayTotals = DoubleArray(7)
-        val nameColWidth = 140.dp
+        // 86차 버그 수정: 업무명 칸이 좁고(140dp) 높이가 고정(44dp)이라, 이름이 길어 줄바꿈되면 두 번째
+        // 줄이 고정 높이 밖으로 잘려 안 보였다(사용자 실사용 확인) — 폭을 넓히고, 아래 TtCell의 고정
+        // height를 heightIn(min=)으로 바꿔 이름이 길면 그 행만 자연스럽게 늘어나도록 함.
+        val nameColWidth = 180.dp
         val dayColWidth = 92.dp
         val totalColWidth = 92.dp
         val border = MaterialTheme.colorScheme.outlineVariant
@@ -167,7 +182,7 @@ private fun TtCell(text: String, width: androidx.compose.ui.unit.Dp, header: Boo
     Column(
         Modifier
             .width(width)
-            .height(if (header) 52.dp else 44.dp)
+            .heightIn(min = if (header) 52.dp else 44.dp)
             .background(if (highlight) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f) else Color.Transparent)
             .padding(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

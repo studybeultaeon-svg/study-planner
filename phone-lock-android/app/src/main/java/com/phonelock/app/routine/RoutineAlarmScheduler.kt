@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.data.*
 import com.phonelock.app.data.Routine
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -23,9 +24,11 @@ object RoutineAlarmScheduler {
     const val ACTION_ROUTINE_REMINDER = "com.phonelock.app.ACTION_ROUTINE_REMINDER"
     const val ACTION_STREAK_CHECK = "com.phonelock.app.ACTION_STREAK_CHECK"
     const val ACTION_GROUP_NUDGE_CHECK = "com.phonelock.app.ACTION_GROUP_NUDGE_CHECK"
+    const val ACTION_WEEKLY_SUMMARY = "com.phonelock.app.ACTION_WEEKLY_SUMMARY"
     const val EXTRA_ROUTINE_ID = "routineId"
     private const val STREAK_REQUEST_CODE = -1
     private const val GROUP_NUDGE_REQUEST_CODE = -2
+    private const val WEEKLY_SUMMARY_REQUEST_CODE = -3
 
     private fun alarmManager(context: Context) = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
@@ -133,5 +136,21 @@ object RoutineAlarmScheduler {
 
     fun cancelGroupNudgeCheck(context: Context) {
         alarmManager(context).cancel(pendingIntentFor(context, GROUP_NUDGE_REQUEST_CODE, ACTION_GROUP_NUDGE_CHECK))
+    }
+
+    /** 주간 요약 알림(82차, §9) — 매주 일요일 20시(다음 세션에서 정확한 시각 요청받으면 조정). 이미 지났으면 다음 주 일요일. */
+    fun scheduleWeeklySummary(context: Context) {
+        val now = LocalDateTime.now()
+        var candidate = LocalDateTime.of(now.toLocalDate(), LocalTime.of(20, 0))
+        while (candidate.dayOfWeek != java.time.DayOfWeek.SUNDAY || !candidate.isAfter(now)) {
+            candidate = candidate.plusDays(1)
+        }
+        val triggerAtMillis = candidate.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val pendingIntent = pendingIntentFor(context, WEEKLY_SUMMARY_REQUEST_CODE, ACTION_WEEKLY_SUMMARY)
+        scheduleAlarm(context, triggerAtMillis, pendingIntent)
+    }
+
+    fun cancelWeeklySummary(context: Context) {
+        alarmManager(context).cancel(pendingIntentFor(context, WEEKLY_SUMMARY_REQUEST_CODE, ACTION_WEEKLY_SUMMARY))
     }
 }

@@ -27,7 +27,9 @@ import com.phonelock.app.ui.theme.Spacing
 /**
  * 모임 하나에 무엇을 공유할지 — [GroupWalkieSettingsDialog]와 같은 이유로 전역(Settings)이 아니라
  * 모임마다 따로 설정한다(가족 모임엔 공부시간만, 스터디 모임엔 루틴까지 등). 항목은 62차의 루틴/공부/
- * 스트릭 3종에서 오늘 일정/공부중 여부/현재 작동 중인 관리 그룹까지 6종으로 확장했다.
+ * 스트릭 3종에서 오늘 일정/공부중 여부까지 5종으로 확장했다. "현재 작동 중인 관리(차단) 그룹"은 77차에
+ * 추가됐다가 81차에 완전히 제외됨 — 다른 사람에게 내가 뭘 차단 중인지까지 공유할 필요는 없다는 판단
+ * (사용자 요청).
  */
 @Composable
 fun GroupShareSettingsDialog(
@@ -40,7 +42,6 @@ fun GroupShareSettingsDialog(
     var shareStreak by remember { mutableStateOf(initial.shareStreak) }
     var shareSchedule by remember { mutableStateOf(initial.shareSchedule) }
     var shareStudyingNow by remember { mutableStateOf(initial.shareStudyingNow) }
-    var shareActiveGroup by remember { mutableStateOf(initial.shareActiveGroup) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -58,14 +59,13 @@ fun GroupShareSettingsDialog(
                 ShareToggleRow("스트릭", null, shareStreak) { shareStreak = it }
                 ShareToggleRow("오늘 일정", "오늘 캘린더 일정 목록과 완료 여부", shareSchedule) { shareSchedule = it }
                 ShareToggleRow("공부중 여부", "지금 공부(뽀모도로 포함) 중인지와 업무 이름", shareStudyingNow) { shareStudyingNow = it }
-                ShareToggleRow("작동 중인 관리 그룹", "지금 실제로 나를 제한 중인 관리(차단) 그룹 이름", shareActiveGroup) { shareActiveGroup = it }
             }
         },
         confirmButton = {
             Button(onClick = {
                 onSave(
                     AppPreferences.GroupShareSettings(
-                        shareRoutines, shareStudy, shareStreak, shareSchedule, shareStudyingNow, shareActiveGroup
+                        shareRoutines, shareStudy, shareStreak, shareSchedule, shareStudyingNow
                     )
                 )
             }) { Text("저장") }

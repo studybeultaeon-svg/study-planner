@@ -75,9 +75,19 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    // 82차(감사 §7 ":shared" 도입 후 발견): AGP의 Lint 모델이 composite build(includeBuild)로 연결된
+    // :shared 모듈의 jar를 못 찾아 "Could not find jar for project :shared" 에러로 release 빌드 자체가
+    // 막힘(AGP의 알려진 한계 — lint의 아티팩트 해석이 substituted project dependency를 못 다룸).
+    // lintVital을 release 조립 태스크에서 분리 — lint 자체는 여전히 `gradle lint`로 수동 실행 가능.
+    lint {
+        checkReleaseBuilds = false
+    }
 }
 
 dependencies {
+    // 82차(감사 §7 ":shared"): CalcEngine/문구 등 순수 로직을 데스크탑과 공유하는 composite build 모듈.
+    implementation("com.phonelock:shared")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
@@ -105,4 +115,9 @@ dependencies {
     implementation("com.google.firebase:firebase-auth")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // 82차(감사 TOP20 20위, §14): LockEvaluator/ConfirmationGate 판정 로직 최소 유닛테스트용(로컬 JVM 테스트).
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("io.mockk:mockk:1.13.11")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }

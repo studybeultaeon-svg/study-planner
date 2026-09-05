@@ -3,6 +3,8 @@ package com.phonelock.desktop.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -97,8 +99,6 @@ fun SocialGroupMemberDetailScreen(
     // 깨우기 흐름 — 알림만/음성/텍스트 중 고르는 선택창부터 시작한다("무전기"는 "😴 깨우기"의 확장이라는
     // 관점, SocialGroupMembersScreen과 같은 다이얼로그를 공유).
     var wakeStep by remember { mutableStateOf<String?>(null) }
-    // "🗂️ 관리 그룹" 항목 클릭 시 상세 설정(스케줄/일일한도/실행확인/차단 앱·사이트)을 보여줄 다이얼로그 대상.
-    var detailGroup by remember { mutableStateOf<com.phonelock.desktop.monitor.SocialGroupSyncClient.ActiveGroupStat?>(null) }
     // "모임 내 사용자 상세 설정" — 이 사람에게 내 정보를 숨길지(RTDB에 반영돼 상대 화면에 보임)와
     // 이 사람 정보를 내 화면에서만 안 보이게 할지(순수 로컬)는 서로 독립적인 두 방향 설정이다.
     var hideMyInfoFromThem by remember(groupId, member.uid) { mutableStateOf(repository.hiddenFromUidsFor(groupId).contains(member.uid)) }
@@ -158,20 +158,19 @@ fun SocialGroupMemberDetailScreen(
             return@Column
         }
 
-        // 77차: 이 사람의 데이터를 한 화면에 쭉 나열하던 걸, 내 앱 본체와 똑같은 탭 구조(루틴/공부/관리 +
+        // 77차: 이 사람의 데이터를 한 화면에 쭉 나열하던 걸, 내 앱 본체와 똑같은 탭 구조(루틴/공부 +
         // 각 서브탭)로 바꿔서 "내가 그 탭을 눌렀을 때 보는 화면"과 같은 형태로 클릭해서 들어가게 했다
         // (편집 기능은 전부 뺀 읽기전용 버전, 사용자 요청). 각 리프 탭 컴포저블은 라이브 화면(RoutineScreen
         // 등)을 직접 재사용하지 않고 이 파일 안에 별도로 새로 작성했다 — 라이브 화면은 내 실제 데이터를
         // 읽고 쓰는 핵심 화면이라 그대로 재사용하면 버그 위험이 크다는 판단(사용자 확인).
+        // "관리"(차단 그룹) 정보는 81차에 공유 항목에서 완전히 제외됨(사용자 요청).
         var section by remember { mutableStateOf(0) }
         var routineSubTab by remember { mutableStateOf(0) }
         var studySubTab by remember { mutableStateOf(0) }
-        var manageSubTab by remember { mutableStateOf(0) }
 
         TabRow(selectedTabIndex = section, containerColor = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
             Tab(selected = section == 0, onClick = { section = 0 }, text = { Text("🌱 루틴") })
             Tab(selected = section == 1, onClick = { section = 1 }, text = { Text("📘 공부") })
-            Tab(selected = section == 2, onClick = { section = 2 }, text = { Text("🗂️ 관리") })
         }
         Spacer(Modifier.height(Spacing.sm))
 
@@ -227,26 +226,7 @@ fun SocialGroupMemberDetailScreen(
                     else -> MemberStudyStatsTab(member)
                 }
             }
-            else -> {
-                TabRow(selectedTabIndex = manageSubTab, containerColor = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
-                    Tab(selected = manageSubTab == 0, onClick = { manageSubTab = 0 }, text = { Text("그룹") })
-                    Tab(selected = manageSubTab == 1, onClick = { manageSubTab = 1 }, text = { Text("통계") })
-                }
-                Spacer(Modifier.height(Spacing.sm))
-                if (!member.shareActiveGroup) {
-                    Text("비공개", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else if (member.activeGroups.isEmpty()) {
-                    Text("등록된 그룹이 없습니다.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else when (manageSubTab) {
-                    0 -> MemberManageGroupsTab(member) { detailGroup = it }
-                    else -> MemberManageStatsTab(member) { detailGroup = it }
-                }
-            }
         }
-    }
-
-    detailGroup?.let { g ->
-        ActiveGroupDetailDialog(group = g, onDismiss = { detailGroup = null })
     }
 
     if (wakeStep == "options") {
@@ -468,77 +448,6 @@ private fun ReadOnlyMiniCalendar(
     }
 }
 
-private val GROUP_DETAIL_DAY_LABELS = listOf("월", "화", "수", "목", "금", "토", "일")
-
-private fun groupDetailMinutes(m: Int?): String = if (m == null) "" else "%02d:%02d".format(m / 60, m % 60)
-
-private fun groupDetailDaysMask(mask: Int): String {
-    if (mask == 127) return "매일"
-    val days = GROUP_DETAIL_DAY_LABELS.filterIndexed { i, _ -> (mask shr i) and 1 == 1 }
-    return if (days.isEmpty()) "없음" else days.joinToString(", ")
-}
-
-/**
- * "🗂️ 관리 그룹" 항목을 클릭하면 뜨는 상세 — 이 그룹이 어떤 방식(스케줄/일일한도/실행확인)으로,
- * 언제, 무엇(앱/사이트)을 차단하는지 전부 보여준다(77차, "그룹은 뭐하는 그룹인지"까지 보고 싶다는 요청).
- */
-@Composable
-private fun ActiveGroupDetailDialog(group: com.phonelock.desktop.monitor.SocialGroupSyncClient.ActiveGroupStat, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(group.name) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (group.description.isNotBlank()) {
-                    Text(group.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(Spacing.md))
-                }
-                if (group.scheduleEnabled) {
-                    Text("⏰ 스케줄 차단", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "${groupDetailMinutes(group.scheduleStartMinute)} ~ ${groupDetailMinutes(group.scheduleEndMinute)} · ${groupDetailDaysMask(group.scheduleDaysMask)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                }
-                if (group.dailyLimitSeconds != null) {
-                    Text("⏳ 일일 사용한도", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "${group.dailyLimitSeconds / 60}분 · ${groupDetailMinutes(group.dailyLimitApplyStartMinute)} ~ ${groupDetailMinutes(group.dailyLimitApplyEndMinute)} · ${groupDetailDaysMask(group.dailyLimitDaysMask)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                }
-                if (group.confirmEnabled) {
-                    Text("✅ 실행 확인", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "${groupDetailMinutes(group.confirmApplyStartMinute)} ~ ${groupDetailMinutes(group.confirmApplyEndMinute)} · ${groupDetailDaysMask(group.confirmDaysMask)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                }
-                if (!group.scheduleEnabled && group.dailyLimitSeconds == null && !group.confirmEnabled) {
-                    Text("적용된 관리 종류가 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(Spacing.sm))
-                }
-                if (group.processNames.isNotEmpty()) {
-                    Text("🖥️ 차단 프로그램 (${group.processNames.size}개)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                    Text(group.processNames.joinToString(", "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(Spacing.sm))
-                }
-                if (group.domains.isNotEmpty()) {
-                    Text("🌐 차단 사이트 (${group.domains.size}개)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                    Text(group.domains.joinToString(", "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } }
-    )
-}
-
 @Composable
 private fun StreakVisual(streak: Int) {
     val flameCount = when {
@@ -662,8 +571,9 @@ private fun MemberStatTile(label: String, value: String, modifier: Modifier = Mo
  * "공부 - 일정표" 탭 — 라이브 TimetableScreen(할당량 계산기 업무를 요일별 목표량 표로 보여주는 화면)을
  * 그대로 옮긴다(78차). 이전엔 계산기 데이터가 모임 공유 대상이 아니라서 대신 그 주 캘린더 일정을
  * 나열하는 형태로 단순화했었는데, 사용자가 "일정표는 진짜 일정표 화면을 의미한다"고 정정해 [MemberStats.calcTasks]
- * (shareSchedule 토글에 함께 묶임)를 새로 동기화해 반영했다. linkedCalc 완료 체크(✅)는 계산기 원본에서도
- * 로컬 캘린더 연동이 있어야만 계산되는 값이라 이 읽기전용 화면에는 옮기지 않는다(라이브 화면과의 유일한 차이).
+ * (shareSchedule 토글에 함께 묶임)를 새로 동기화해 반영했다. **79차**: 라이브 화면의 빨강(미달성)/초록(달성)
+ * 색 시스템도 그대로 이식 — [MemberStats.schedule]에 함께 실려오는 linkedCalc/progressStep으로
+ * [Repository.isLinkedGoalAchieved]와 동일한 판정(그날 연동 완료 일정의 progressStep 합 ≥ 목표량)을 재현한다.
  */
 @Composable
 private fun MemberStudyTimetableTab(member: SocialGroupSyncClient.MemberStats) {
@@ -683,11 +593,11 @@ private fun MemberStudyTimetableTab(member: SocialGroupSyncClient.MemberStats) {
 
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = { cursor = cursor.minusDays(1) }) { Text("◀") }
+            OutlinedButton(onClick = { cursor = cursor.minusDays(1) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전") }
             Spacer(Modifier.width(Spacing.sm))
             Text(dateLabel, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.width(Spacing.sm))
-            OutlinedButton(onClick = { cursor = cursor.plusDays(1) }) { Text("▶") }
+            OutlinedButton(onClick = { cursor = cursor.plusDays(1) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음") }
         }
         Spacer(Modifier.height(Spacing.sm))
 
@@ -701,13 +611,23 @@ private fun MemberStudyTimetableTab(member: SocialGroupSyncClient.MemberStats) {
             dayTasks.forEach { t ->
                 val v = memberTimetableDayValue(t, jsDow).toDoubleOrNull() ?: 0.0
                 dayTotal += v
+                val achieved = v > 0 && memberIsLinkedGoalAchieved(member, cursor.toString(), t.name, v)
                 Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(t.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    // 86차 버그 수정(안드로이드판과 대칭): weight 없는 SpaceBetween만 쓰면 이름이 길 때
+                    // 값 Text가 화면 밖으로 밀려 안 보였다.
                     Text(
-                        if (v > 0) "${memberTimetableFmtDec(v)}${t.unit}" else "—",
+                        t.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f, fill = false).padding(end = Spacing.xs)
+                    )
+                    Text(
+                        if (v > 0) "${memberTimetableFmtDec(v)}${t.unit}" + if (achieved) " ✅" else "" else "—",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (v > 0) FontWeight.Bold else FontWeight.Normal,
-                        color = if (v <= 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+                        color = if (v <= 0) MaterialTheme.colorScheme.onSurfaceVariant
+                            else if (achieved) Color(0xFF34D399)
+                            else if (isToday) Color(0xFFF87171) else MaterialTheme.colorScheme.primary
                     )
                 }
                 HorizontalDivider()
@@ -718,6 +638,15 @@ private fun MemberStudyTimetableTab(member: SocialGroupSyncClient.MemberStats) {
             }
         }
     }
+}
+
+/** [Repository.isLinkedGoalAchieved]와 동일 판정을 [MemberStats.schedule](동기화된 캘린더 일정)로 재현한다. */
+private fun memberIsLinkedGoalAchieved(member: SocialGroupSyncClient.MemberStats, dateKey: String, calcTaskName: String, dayQuota: Double): Boolean {
+    if (dayQuota <= 0) return false
+    val doneTotal = member.schedule
+        .filter { it.dateKey == dateKey && it.linkedCalc == calcTaskName && it.status == "O" }
+        .sumOf { it.progressStep?.toDoubleOrNull() ?: 0.0 }
+    return doneTotal >= dayQuota
 }
 
 private fun memberTimetableDayValue(task: SocialGroupSyncClient.CalcTaskStat, jsDow: Int): String = when (jsDow) {
@@ -775,67 +704,3 @@ private fun MemberStudyStatsTab(member: SocialGroupSyncClient.MemberStats) {
     }
 }
 
-/** "관리 - 그룹" 탭 — 그룹 이름/설명 목록, 클릭하면 [ActiveGroupDetailDialog]로 전체 설정을 보여준다. */
-@Composable
-private fun MemberManageGroupsTab(member: SocialGroupSyncClient.MemberStats, onClick: (SocialGroupSyncClient.ActiveGroupStat) -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
-        Text(
-            "그룹을 눌러 자세한 설정을 볼 수 있습니다.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(Spacing.xs))
-        member.activeGroups.forEach { g ->
-            Column(
-                Modifier.fillMaxWidth().padding(vertical = 2.dp).clickable { onClick(g) }.padding(vertical = 4.dp)
-            ) {
-                Text("• ${g.name}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                if (g.description.isNotBlank()) {
-                    Text(
-                        g.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = Spacing.md)
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** "관리 - 통계" 탭 — 라이브 StatsScreen의 오늘 사용량/한도/재확인 횟수/최근 평균을 그룹별로 옮겼다. */
-@Composable
-private fun MemberManageStatsTab(member: SocialGroupSyncClient.MemberStats, onClick: (SocialGroupSyncClient.ActiveGroupStat) -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
-        member.activeGroups.forEach { g ->
-            Surface(
-                Modifier.fillMaxWidth().padding(vertical = 3.dp).clickable { onClick(g) },
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Column(Modifier.padding(Spacing.sm)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(g.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                        Text(
-                            formatSeconds(g.todayUsageSeconds) + if (g.dailyLimitSeconds != null) " / ${g.dailyLimitSeconds / 60}분" else "",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                    if (g.dailyLimitSeconds != null) {
-                        Spacer(Modifier.height(Spacing.xs))
-                        LinearProgressIndicator(
-                            progress = { (g.todayUsageSeconds.toFloat() / g.dailyLimitSeconds).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
-                        )
-                    }
-                    Spacer(Modifier.height(Spacing.xs))
-                    Text(
-                        "재확인 오늘 ${g.confirmCountToday}회 · 어제 ${g.confirmCountYesterday}회 · 최근 평균 ${formatSeconds(g.recentAverageSeconds)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}

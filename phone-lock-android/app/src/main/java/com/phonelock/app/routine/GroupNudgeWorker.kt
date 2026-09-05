@@ -12,6 +12,7 @@ import androidx.work.WorkerParameters
 import com.phonelock.app.R
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.data.*
 import com.phonelock.app.ui.MainActivity
 
 // v2: 진동 없이 기존 채널이 이미 만들어진 기기가 많아(진동 추가 전 테스트로) 코드로 나중에 진동을 켜도
@@ -34,6 +35,9 @@ class GroupNudgeWorker(
         val context = applicationContext
         val repository = PhoneLockRepository(context)
         val prefs = AppPreferences(context)
+        // 공부 중이면 이번 실행은 건너뛴다 — lastSeen을 안 갱신하므로 다음 실행(WorkManager 주기)이나
+        // WalkieTalkieService의 더 빠른 폴링이 공부가 끝난 뒤 그대로 다시 알려준다.
+        if (com.phonelock.app.service.StudyNotificationGate.isStudying(repository)) return Result.success()
         val nudges = repository.readIncomingSocialGroupNudges()
         if (nudges.isEmpty()) return Result.success()
 

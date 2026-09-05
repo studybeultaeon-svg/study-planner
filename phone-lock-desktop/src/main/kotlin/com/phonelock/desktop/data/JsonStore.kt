@@ -67,6 +67,16 @@ object JsonStore {
             dailyResetHour = json.optInt("dailyResetHour", 0),
             routinesTs = json.optLong("routinesTs", 0L),
             themeMode = json.optString("themeMode", "LIGHT_GREEN"),
+            customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
+            customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
+            exitConfirmEnabled = json.optBoolean("exitConfirmEnabled", false),
+            defaultMultiPassEnabled = json.optBoolean("defaultMultiPassEnabled", false),
+            defaultPassCount = json.optInt("defaultPassCount", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT),
+            defaultPassIntervalsCsv = json.optString("defaultPassIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV),
+            cloudBackupEnabled = json.optBoolean("cloudBackupEnabled", false),
+            lastCloudBackupDate = json.optString("lastCloudBackupDate", ""),
+            lastCloudBackupResult = json.optString("lastCloudBackupResult", ""),
+            lastAutoStatsPruneDate = json.optString("lastAutoStatsPruneDate", ""),
             blockReels = json.optBoolean("blockReels", false),
             blockShorts = json.optBoolean("blockShorts", false),
             routineStreakNotifyEnabled = json.optBoolean("routineStreakNotifyEnabled", false),
@@ -99,6 +109,7 @@ object JsonStore {
                 (0 until arr.length()).map { arr.getString(it) }.toMutableList()
             },
             calendarTs = json.optLong("calendarTs", 0L),
+            settingsTs = json.optLong("settingsTs", 0L),
             calcTasksTs = json.optLong("calcTasksTs", 0L),
             calcSavedTs = json.optLong("calcSavedTs", 0L),
             calcFolderTs = json.optLong("calcFolderTs", 0L),
@@ -126,8 +137,7 @@ object JsonStore {
                 shareStudy = g.optBoolean("shareStudy", true),
                 shareStreak = g.optBoolean("shareStreak", true),
                 shareSchedule = g.optBoolean("shareSchedule", true),
-                shareStudyingNow = g.optBoolean("shareStudyingNow", true),
-                shareActiveGroup = g.optBoolean("shareActiveGroup", true)
+                shareStudyingNow = g.optBoolean("shareStudyingNow", true)
             )
         }
         val hiddenFromJson = json.optJSONObject("hiddenFromUidsByGroup") ?: JSONObject()
@@ -152,7 +162,21 @@ object JsonStore {
                     taskName = s.optString("taskName", ""),
                     seconds = s.optInt("seconds", 0),
                     startedAt = s.optLong("startedAt", 0L),
-                    note = s.optString("note", "")
+                    note = s.optString("note", ""),
+                    tag = s.optString("tag", "")
+                )
+            )
+        }
+
+        val quoteOutcomesJson = json.optJSONArray("quoteOutcomes") ?: JSONArray()
+        for (i in 0 until quoteOutcomesJson.length()) {
+            val q = quoteOutcomesJson.getJSONObject(i)
+            data.quoteOutcomes.add(
+                QuoteOutcome(
+                    tier = q.optInt("tier", 0),
+                    quoteText = q.optString("quoteText", ""),
+                    choice = q.optString("choice", ""),
+                    timestampMillis = q.optLong("timestampMillis", 0L)
                 )
             )
         }
@@ -160,15 +184,20 @@ object JsonStore {
         val calendarTasksJson = json.optJSONArray("calendarTasks") ?: JSONArray()
         for (i in 0 until calendarTasksJson.length()) {
             val c = calendarTasksJson.getJSONObject(i)
+            val color = c.optString("color", "white")
             data.calendarTasks.add(
                 CalendarTask(
                     dateKey = c.getString("dateKey"),
                     name = c.optString("name", ""),
-                    color = c.optString("color", "white"),
+                    color = color,
                     status = if (c.isNull("status")) null else c.optString("status", null),
                     nextDays = if (c.has("nextDays") && !c.isNull("nextDays")) c.getInt("nextDays") else null,
                     linkedCalc = if (c.isNull("linkedCalc")) null else c.optString("linkedCalc", null),
-                    progressStep = if (c.isNull("progressStep")) null else c.optString("progressStep", null)
+                    progressStep = if (c.isNull("progressStep")) null else c.optString("progressStep", null),
+                    multiPassEnabled = c.optBoolean("multiPassEnabled", false),
+                    passIndex = if (c.has("passIndex")) c.optInt("passIndex", 0) else inferPassIndexFromColor(color),
+                    passTotal = c.optInt("passTotal", 3),
+                    passIntervalsCsv = c.optString("passIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV)
                 )
             )
         }
@@ -184,7 +213,11 @@ object JsonStore {
                     mon = c.optString("mon", ""), tue = c.optString("tue", ""), wed = c.optString("wed", ""),
                     thu = c.optString("thu", ""), fri = c.optString("fri", ""), sat = c.optString("sat", ""), sun = c.optString("sun", ""),
                     holidays = (0 until holidaysArr.length()).map { holidaysArr.getString(it) },
-                    modifiedAt = c.optString("modifiedAt", ""), modifiedAtTs = c.optLong("modifiedAtTs", 0L)
+                    modifiedAt = c.optString("modifiedAt", ""), modifiedAtTs = c.optLong("modifiedAtTs", 0L),
+                    autoGenEnabled = c.optBoolean("autoGenEnabled", false), autoGenBatchSize = c.optInt("autoGenBatchSize", 0),
+                    passCount = c.optInt("passCount", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT),
+                    passIntervalsCsv = c.optString("passIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV),
+                    multiPassUsageEnabled = c.optBoolean("multiPassUsageEnabled", true)
                 )
             )
         }
@@ -287,7 +320,9 @@ object JsonStore {
                     groupEnabled = g.optBoolean("groupEnabled", g.optBoolean("scheduleEnabled", true)),
                     groupOffPending = g.optBoolean("groupOffPending", g.optBoolean("scheduleOffPending", false)),
                     groupOffMessageIndex = g.optInt("groupOffMessageIndex", g.optInt("scheduleOffMessageIndex", 0)),
+                    snoozeEnabled = g.optBoolean("snoozeEnabled", true),
                     snoozeMinutes = g.optInt("snoozeMinutes", 30),
+                    snoozeDailyLimit = g.optInt("snoozeDailyLimit", 3),
                     snoozedUntilEpochMillis = if (g.isNull("snoozedUntilEpochMillis")) null else g.optLong("snoozedUntilEpochMillis", 0L).let { if (it == 0L) null else it },
                     snoozeUsedDate = g.optString("snoozeUsedDate", ""),
                     snoozeUsedCount = g.optInt("snoozeUsedCount", 0),
@@ -296,7 +331,8 @@ object JsonStore {
                     blockAttemptDate = g.optString("blockAttemptDate", ""),
                     blockAttemptCount = g.optInt("blockAttemptCount", 0),
                     processNames = processNames,
-                    domains = domains
+                    domains = domains,
+                    selfMessageText = g.optString("selfMessageText", "")
                 )
             )
         }
@@ -362,11 +398,24 @@ object JsonStore {
         file.writeText(toJsonObject(data).toString(2))
     }
 
+    /** 클라우드 자동 백업(82차)용 — 파일 없이 전체 데이터를 JSON 문자열로만 필요할 때. */
+    fun exportToJsonString(data: AppData): String = toJsonObject(data).toString(2)
+
     private fun toJsonObject(data: AppData): JSONObject {
         val json = JSONObject()
         json.put("nextGroupId", data.nextGroupId)
         json.put("dailyResetHour", data.dailyResetHour)
         json.put("themeMode", data.themeMode)
+        json.put("customThemeBackground", data.customThemeBackground)
+        json.put("customThemeAccent", data.customThemeAccent)
+        json.put("exitConfirmEnabled", data.exitConfirmEnabled)
+        json.put("defaultMultiPassEnabled", data.defaultMultiPassEnabled)
+        json.put("defaultPassCount", data.defaultPassCount)
+        json.put("defaultPassIntervalsCsv", data.defaultPassIntervalsCsv)
+        json.put("cloudBackupEnabled", data.cloudBackupEnabled)
+        json.put("lastCloudBackupDate", data.lastCloudBackupDate)
+        json.put("lastCloudBackupResult", data.lastCloudBackupResult)
+        json.put("lastAutoStatsPruneDate", data.lastAutoStatsPruneDate)
         json.put("routinesTs", data.routinesTs)
         json.put("lastGroupAutoResetDate", data.lastGroupAutoResetDate ?: JSONObject.NULL)
         json.put("nextRoutineId", data.nextRoutineId)
@@ -401,7 +450,6 @@ object JsonStore {
                 put("shareStreak", s.shareStreak)
                 put("shareSchedule", s.shareSchedule)
                 put("shareStudyingNow", s.shareStudyingNow)
-                put("shareActiveGroup", s.shareActiveGroup)
             })
         }
         json.put("groupShareSettings", groupShareJson)
@@ -432,11 +480,21 @@ object JsonStore {
                 put("seconds", s.seconds)
                 put("startedAt", s.startedAt)
                 put("note", s.note)
+                put("tag", s.tag)
             })
         }
         json.put("studyLog", studyLogJson)
 
+        val quoteOutcomesJson = JSONArray()
+        data.quoteOutcomes.forEach { q ->
+            quoteOutcomesJson.put(JSONObject().apply {
+                put("tier", q.tier); put("quoteText", q.quoteText); put("choice", q.choice); put("timestampMillis", q.timestampMillis)
+            })
+        }
+        json.put("quoteOutcomes", quoteOutcomesJson)
+
         json.put("calendarTs", data.calendarTs)
+        json.put("settingsTs", data.settingsTs)
         val calendarTasksJson = JSONArray()
         data.calendarTasks.forEach { c ->
             calendarTasksJson.put(JSONObject().apply {
@@ -447,6 +505,8 @@ object JsonStore {
                 put("nextDays", c.nextDays ?: JSONObject.NULL)
                 put("linkedCalc", c.linkedCalc ?: JSONObject.NULL)
                 put("progressStep", c.progressStep ?: JSONObject.NULL)
+                put("multiPassEnabled", c.multiPassEnabled)
+                put("passIndex", c.passIndex); put("passTotal", c.passTotal); put("passIntervalsCsv", c.passIntervalsCsv)
             })
         }
         json.put("calendarTasks", calendarTasksJson)
@@ -461,6 +521,9 @@ object JsonStore {
                 put("fri", c.fri); put("sat", c.sat); put("sun", c.sun)
                 put("holidays", JSONArray(c.holidays))
                 put("modifiedAt", c.modifiedAt); put("modifiedAtTs", c.modifiedAtTs)
+                put("autoGenEnabled", c.autoGenEnabled); put("autoGenBatchSize", c.autoGenBatchSize)
+                put("passCount", c.passCount); put("passIntervalsCsv", c.passIntervalsCsv)
+                put("multiPassUsageEnabled", c.multiPassUsageEnabled)
             })
         }
         json.put("calcTasks", calcTasksJson)
@@ -521,7 +584,9 @@ object JsonStore {
             gj.put("groupEnabled", g.groupEnabled)
             gj.put("groupOffPending", g.groupOffPending)
             gj.put("groupOffMessageIndex", g.groupOffMessageIndex)
+            gj.put("snoozeEnabled", g.snoozeEnabled)
             gj.put("snoozeMinutes", g.snoozeMinutes)
+            gj.put("snoozeDailyLimit", g.snoozeDailyLimit)
             gj.put("snoozedUntilEpochMillis", g.snoozedUntilEpochMillis ?: JSONObject.NULL)
             gj.put("snoozeUsedDate", g.snoozeUsedDate)
             gj.put("snoozeUsedCount", g.snoozeUsedCount)
@@ -531,6 +596,7 @@ object JsonStore {
             gj.put("blockAttemptCount", g.blockAttemptCount)
             gj.put("processNames", JSONArray(g.processNames))
             gj.put("domains", JSONArray(g.domains))
+            gj.put("selfMessageText", g.selfMessageText)
             groupsJson.put(gj)
         }
         json.put("groups", groupsJson)

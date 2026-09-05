@@ -11,25 +11,28 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
-import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import com.phonelock.desktop.data.DebugLog
+import com.phonelock.desktop.data.*
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.routine.DesktopNotifier
 import com.phonelock.desktop.routine.RoutineNotifier
 import com.phonelock.desktop.routine.SocialGroupNotifier
 import com.phonelock.desktop.routine.VoiceMessageNotifier
+import com.phonelock.desktop.routine.WeeklySummaryNotifier
+import com.sun.jna.Native
 import com.sun.jna.platform.win32.Advapi32Util
+import com.sun.jna.platform.win32.User32
+import com.sun.jna.platform.win32.WinDef.HWND
 import com.sun.jna.platform.win32.WinReg
+import com.sun.jna.platform.win32.WinUser
 import com.phonelock.desktop.monitor.EnforcementService
 import com.phonelock.desktop.monitor.LockReason
 import com.phonelock.desktop.monitor.StudyLockStatus
@@ -81,6 +84,20 @@ private fun resolveAppPath(appName: String): File? {
     return null
 }
 
+/**
+ * 사용 중 오버레이가 화면 전체를 덮으면서도 마우스 클릭은 아래 프로그램으로 그대로 전달되도록
+ * (안드로이드 접근성 오버레이/브라우저 확장의 pointer-events:none과 동등한 효과) Win32
+ * WS_EX_TRANSPARENT 확장 스타일을 추가한다. Compose Desktop 창 자체엔 이런 클릭-통과 옵션이
+ * 없어(코너 위젯으로 축소해둔 원래 이유) 네이티브 호출이 필요하다.
+ */
+private fun makeClickThrough(window: java.awt.Window) {
+    runCatching {
+        val hwnd = HWND(Native.getComponentPointer(window))
+        val exStyle = User32.INSTANCE.GetWindowLong(hwnd, WinUser.GWL_EXSTYLE)
+        User32.INSTANCE.SetWindowLong(hwnd, WinUser.GWL_EXSTYLE, exStyle or WinUser.WS_EX_LAYERED or WinUser.WS_EX_TRANSPARENT)
+    }.onFailure { e -> DebugLog.log("UsageOverlay", "클릭-통과 설정 실패: ${e.javaClass.simpleName}: ${e.message}") }
+}
+
 private data class BlockRequest(val processName: String, val reason: LockReason, val blockAttempts: Int)
 
 private data class ConfirmRequest(
@@ -127,6 +144,10 @@ fun main(args: Array<String>) {
 private fun startApp() = application {
     val repository = remember { Repository() }
     var themeMode by remember { mutableStateOf(repository.themeMode) }
+    // 79차: 커스텀 테마는 themeMode 문자열("CUSTOM")이 안 바뀌어도 색상만 바뀔 수 있어서, 그 경우도
+    // 반드시 재계산되도록 별도 카운터를 함께 key로 쓴다(SettingsScreen이 색을 바꿀 때마다 증가).
+    var themeRefreshTick by remember { mutableStateOf(0) }
+    val palette = remember(themeMode, themeRefreshTick) { repository.currentPalette() }
     var mainWindowVisible by remember { mutableStateOf(true) }
     var blockRequest by remember { mutableStateOf<BlockRequest?>(null) }
     var confirmRequest by remember { mutableStateOf<ConfirmRequest?>(null) }
@@ -154,26 +175,35 @@ private fun startApp() = application {
     }
 
     val trayState = rememberTrayState()
+    // 82차(감사 후속): 예전엔 30초/7초 주기 루프 2개가 각자 따로 돌았다 — 하나의 7초 티커로 합치고,
+    // 30초 주기 작업은 누적 경과시간으로 4번에 1번(≈30초)만 실행해 기존 주기를 그대로 유지한다.
+    // "무전기"(VoiceMessageNotifier)는 켜짐/모드/일정이 모임마다 달라 전역 스위치가 없으므로 매번 돌리고,
+    // 어느 모임에서도 안 켜져 있으면 실질적으로 아무 일도 하지 않는다.
     LaunchedEffect(trayState) {
         DesktopNotifier.trayState = trayState
-        // 안드로이드는 AlarmManager로 정확히 예약하지만 데스크탑엔 그런 API가 없어 30초 주기로 직접 비교한다(52차).
-        while (true) {
-            RoutineNotifier.tick(repository)
-            SocialGroupNotifier.tick(repository)
-            delay(30_000)
-        }
-    }
-
-    // "무전기" — 켜짐/모드/일정이 모임마다 다를 수 있어(그룹 설정 화면에서 관리) 전역 플래그 없이 항상
-    // 짧은 주기로 폴링한다. VoiceMessageNotifier.tick()이 매 폴링마다 모임별 설정을 따로 조회해서
-    // 처리하므로, 어느 모임에서도 안 켜져 있으면 실질적으로 아무 일도 하지 않는다.
-    LaunchedEffect(Unit) {
+        var msSinceSlowTick = 0L
         while (true) {
             VoiceMessageNotifier.tick(repository)
+            msSinceSlowTick += 7_000L
+            // 안드로이드는 AlarmManager로 정확히 예약하지만 데스크탑엔 그런 API가 없어 직접 경과시간을 비교한다(52차).
+            if (msSinceSlowTick >= 30_000L) {
+                msSinceSlowTick = 0L
+                RoutineNotifier.tick(repository)
+                SocialGroupNotifier.tick(repository)
+                runCatching { WeeklySummaryNotifier.tick(repository) } // 82차: 매주 일요일 20시, 내부적으로 날짜 가드됨
+                runCatching { repository.runDailyMaintenanceIfNeeded() } // 82차: 12개월 정리+클라우드 백업 자동화, 내부적으로 날짜 가드됨
+            }
             delay(7_000L)
         }
     }
 
+    // 79차(사용자 요청): "정말 종료?" 20문항 확인 절차는 관리(차단) 기능의 꼼수 방지 장치이지 앱
+    // 전체 필수 기능은 아니라는 판단 — 설정 > 관리 탭에서 껐다면 이 확인 없이 바로 종료.
+    fun doExit() {
+        runCatching { intentionalExitFlagFile().createNewFile() }
+        repository.flushPendingUsage()
+        exitApplication()
+    }
     Tray(
         icon = SunriseIcon,
         state = trayState,
@@ -181,7 +211,7 @@ private fun startApp() = application {
         onAction = { mainWindowVisible = true },
         menu = {
             Item("열기", onClick = { mainWindowVisible = true })
-            Item("종료", onClick = { exitConfirmVisible = true })
+            Item("종료", onClick = { if (repository.exitConfirmEnabled) exitConfirmVisible = true else doExit() })
         }
     )
 
@@ -191,12 +221,12 @@ private fun startApp() = application {
             title = "갓생살기종합세트",
             icon = SunriseIcon
         ) {
-            PhoneLockTheme(themeMode) {
+            PhoneLockTheme(palette) {
                 // MaterialTheme은 색상 팔레트만 정의할 뿐 실제로 캔버스를 칠하진 않는다 — 이 Surface가
                 // 없으면 MainScreen이 덮지 않는 여백(패딩 등)이 Window 기본 배경(흰색)으로 비쳐 보인다.
                 Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
                     AccountGate(repository) {
-                        MainScreen(repository, onThemeChange = { themeMode = it })
+                        MainScreen(repository, onThemeChange = { themeMode = it; themeRefreshTick++ })
                     }
                 }
             }
@@ -211,7 +241,7 @@ private fun startApp() = application {
             alwaysOnTop = true,
             state = rememberWindowState(placement = WindowPlacement.Maximized)
         ) {
-            PhoneLockTheme(themeMode) {
+            PhoneLockTheme(palette) {
                 BlockScreen(req.reason, req.blockAttempts) { blockRequest = null }
             }
         }
@@ -233,7 +263,7 @@ private fun startApp() = application {
                 window.toFront()
                 window.requestFocus()
             }
-            PhoneLockTheme(themeMode) {
+            PhoneLockTheme(palette) {
                 studyLockStatus?.let { status ->
                     StudyLockScreen(
                         status = status,
@@ -274,12 +304,11 @@ private fun startApp() = application {
             alwaysOnTop = true,
             state = rememberWindowState(placement = WindowPlacement.Maximized)
         ) {
-            PhoneLockTheme(themeMode) {
+            PhoneLockTheme(palette) {
                 ExitConfirmScreen(
                     onConfirmExit = {
-                        runCatching { intentionalExitFlagFile().createNewFile() }
-                        repository.flushPendingUsage()
-                        exitApplication()
+                        exitConfirmVisible = false
+                        doExit()
                     },
                     onCancel = { exitConfirmVisible = false }
                 )
@@ -295,12 +324,14 @@ private fun startApp() = application {
             alwaysOnTop = true,
             focusable = false,
             resizable = false,
-            state = rememberWindowState(
-                position = WindowPosition(Alignment.TopEnd),
-                size = DpSize(160.dp, 64.dp)
-            )
+            transparent = true,
+            state = rememberWindowState(placement = WindowPlacement.Maximized)
         ) {
-            overlayStatus?.let { status -> PhoneLockTheme(themeMode) { UsageOverlayContent(status) } }
+            // 안드로이드/브라우저 확장은 pointer-events:none으로 전체화면 위에 덮지만, Compose Desktop
+            // 창은 클릭까지 가로챈다 — 창 자체를 진짜 투명(transparent=true)하게 만들고 Win32
+            // WS_EX_TRANSPARENT로 클릭 통과까지 줘야 아래 프로그램을 그대로 쓸 수 있다.
+            LaunchedEffect(Unit) { makeClickThrough(window) }
+            overlayStatus?.let { status -> PhoneLockTheme(palette) { UsageOverlayContent(status) } }
         }
     }
 
@@ -322,11 +353,13 @@ private fun startApp() = application {
                 window.toFront()
                 window.requestFocus()
             }
-            PhoneLockTheme(themeMode) {
+            PhoneLockTheme(palette) {
                 ConfirmScreen(
                     processName = req.processName,
                     waitSeconds = req.waitSeconds,
                     level = remember(req.groupId) { repository.getGroup(req.groupId)?.let { repository.getCurrentLevel(it) } ?: 0 },
+                    repository = repository,
+                    groupId = req.groupId,
                     onYes = {
                         req.result.complete(true)
                         confirmRequest = null

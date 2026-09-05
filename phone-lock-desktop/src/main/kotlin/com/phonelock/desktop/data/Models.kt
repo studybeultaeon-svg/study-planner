@@ -59,12 +59,19 @@ data class Group(
     val groupOffPending: Boolean = false,
     /** 지금까지 확인(예를 누름)한 회유 멘트 개수 (다음에 보여줄 멘트의 인덱스이기도 함). */
     val groupOffMessageIndex: Int = 0,
-    /** 스누즈(전문가 종합분석 보고서 #1) 한 번에 몇 분간 임시 해제할지. 회유 절차 없이 즉시 적용되므로
-     *  하루 3회로 제한된다(snoozeUsedDate/snoozeUsedCount, LockEvaluator.isSnoozeActive 참고). */
+    /** 스누즈(전문가 종합분석 보고서 #1) 관리 종류 자체의 on/off(87차, 사용자 요청 — scheduleEnabled와
+     *  같은 패턴, 안드로이드판과 대칭). false면 그룹 목록의 스누즈 버튼이 감춰지고, LockEvaluator도 남아있는
+     *  스누즈 상태를 무시한다. */
+    val snoozeEnabled: Boolean = true,
+    /** 스누즈 한 번에 몇 분간 임시 해제할지. 회유 절차 없이 즉시 적용되므로 하루 횟수 제한이 있다
+     *  (snoozeDailyLimit, snoozeUsedDate/snoozeUsedCount, LockEvaluator.isSnoozeActive 참고). */
     val snoozeMinutes: Int = 30,
+    /** 하루에 몇 번까지 스누즈를 쓸 수 있는지(87차, 사용자 요청 — 기존엔 SNOOZE_DAILY_LIMIT=3으로
+     *  고정이었다). 회유 절차 없이 바로 임시 해제되는 예외라 무제한은 허용하지 않는다. */
+    val snoozeDailyLimit: Int = 3,
     /** 지금 스누즈가 적용 중이면 그 종료 시각(epoch millis). 지났으면 무시. */
     val snoozedUntilEpochMillis: Long? = null,
-    /** 스누즈 하루 횟수 제한(3회)을 세는 날짜/카운트 — dailyResetHour 기준 "오늘"이 바뀌면 0으로 리셋. */
+    /** 스누즈 하루 횟수 제한을 세는 날짜/카운트 — dailyResetHour 기준 "오늘"이 바뀌면 0으로 리셋. */
     val snoozeUsedDate: String = "",
     val snoozeUsedCount: Int = 0,
     /** 기간 지정 자동 강화(#7, 시험기간 등) — 이 날짜 범위(yyyy-MM-dd, 포함) 안에서는 groupEnabled를
@@ -76,8 +83,13 @@ data class Group(
     val blockAttemptDate: String = "",
     val blockAttemptCount: Int = 0,
     val processNames: List<String> = emptyList(),
-    val domains: List<String> = emptyList()
+    val domains: List<String> = emptyList(),
+    /** "미래의 나에게" 예약 메시지(82차, §11, 안드로이드판과 대칭) — 순수 로컬 텍스트, 동기화 안 함. */
+    val selfMessageText: String = ""
 )
+
+/** 회유 멘트 성공률 통계(82차, §9/§11, 안드로이드판과 대칭) — 판정 로직과 무관한 순수 로컬 기록. */
+data class QuoteOutcome(val tier: Int, val quoteText: String, val choice: String, val timestampMillis: Long)
 
 data class UsageRecord(val groupId: Long, val date: String, val usedSeconds: Int)
 
@@ -113,23 +125,25 @@ data class TimerRunState(
     val breakExtraUsed: Boolean = false
 )
 
-data class StudyLogEntry(val dateKey: String, val taskName: String, val seconds: Int, val startedAt: Long, val note: String = "")
+data class StudyLogEntry(val dateKey: String, val taskName: String, val seconds: Int, val startedAt: Long, val note: String = "", val tag: String = "")
 
 /** 모임(소셜 그룹) 하나에 무엇을 공유할지 — 62차엔 앱 전체 공통 토글 3개였지만 75차+에 모임마다 다르게
- *  설정하도록 확장, 항목도 루틴/공부/스트릭 3종에서 오늘 일정/공부중 여부/현재 작동 중인 관리 그룹까지
- *  6종으로 확대(안드로이드 AppPreferences.GroupShareSettings와 대칭). */
+ *  설정하도록 확장, 항목도 루틴/공부/스트릭 3종에서 오늘 일정/공부중 여부까지 5종으로 확대(안드로이드
+ *  AppPreferences.GroupShareSettings와 대칭). "현재 작동 중인 관리 그룹"은 77차에 추가됐다가 81차에
+ *  완전히 제외됨(사용자 요청). */
 data class GroupShareSettings(
     val shareRoutines: Boolean = true,
     val shareStudy: Boolean = true,
     val shareStreak: Boolean = true,
     val shareSchedule: Boolean = true,
-    val shareStudyingNow: Boolean = true,
-    val shareActiveGroup: Boolean = true
+    val shareStudyingNow: Boolean = true
 )
 
 /**
  * 네이티브 캘린더(2단계)의 날짜별 일정 한 건. 웹앱 index.html의 calTasks[dateKey][] 항목을 그대로 이식.
- * color는 51차에 8단계 무지개로 확장됨(white=1회독~purple=8회독, DECISIONS.md 참고).
+ * color는 현재 red/yellow/green 3단계로 축소돼 있음(과거 8단계 무지개 서술은 낡은 기록) — 83차(다회독
+ * 상세화)부터는 passIndex/passTotal/passIntervalsCsv가 실제 회독 진행/색상의 원천이고, color는
+ * passTotal==3인 기본 케이스의 하위호환 라벨로만 쓰인다(안드로이드판과 대칭).
  * linkedCalc/progressStep은 계산기 연동용 필드(51차에 UI 추가) — linkedCalc는 연결된 계산기 업무 이름,
  * progressStep은 이 일정을 완료하면 그 업무 progress에 더해질 양(예: "51~60쪽" → "10").
  */
@@ -140,7 +154,15 @@ data class CalendarTask(
     val status: String? = null,
     val nextDays: Int? = null,
     val linkedCalc: String? = null,
-    val progressStep: String? = null
+    val progressStep: String? = null,
+    /** 완료(O) 시 다음 회독을 자동 생성할지(79차, 사용자 요청) — 기본 off, 켜야만 [Repository.applyCalendarAutoSchedule]이 동작한다. */
+    val multiPassEnabled: Boolean = false,
+    /** 이 시리즈에서 0-based 현재 회독 번호(83차, 다회독 상세화). */
+    val passIndex: Int = 0,
+    /** 이 시리즈의 총 회독 수(3~8). */
+    val passTotal: Int = 3,
+    /** 회독 간 간격(일수) CSV, 길이 = passTotal-1. */
+    val passIntervalsCsv: String = com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV
 )
 
 /**
@@ -160,7 +182,18 @@ data class CalcTask(
     val fri: String = "", val sat: String = "", val sun: String = "",
     val holidays: List<String> = emptyList(),
     val modifiedAt: String = "",
-    val modifiedAtTs: Long = 0L
+    val modifiedAtTs: Long = 0L,
+    /** 캘린더 일정 자동 생성 on/off(82차, 사용자 지정 스펙, 안드로이드판과 대칭) — 켜면 연동 일정을 완료할 때마다 다음 배치를 자동으로 만든다. */
+    val autoGenEnabled: Boolean = false,
+    /** 자동 생성 배치 크기. */
+    val autoGenBatchSize: Int = 0,
+    /** 다회독 상세화(83차) — 이 업무를 캘린더에 연동할 때 몇 회독으로 만들지(3~8). */
+    val passCount: Int = com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT,
+    /** 회독 간 간격(일수) CSV, 길이 = passCount-1. */
+    val passIntervalsCsv: String = com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV,
+    /** 다회독 사용 여부(85차, 사용자 요청, 안드로이드판과 대칭) — OFF면 캘린더 연동 시 passCount를
+     *  무시하고 단회독(1회독)만 생성한다. */
+    val multiPassUsageEnabled: Boolean = true
 )
 
 /**
@@ -255,6 +288,8 @@ data class AppData(
     /** 타이머 시작 전 "뽀모도로 모드" 토글의 마지막 선택값(탭을 이동했다 돌아와도 유지). */
     var pomodoroModeEnabled: Boolean = false,
     val studyLog: MutableList<StudyLogEntry> = mutableListOf(),
+    /** 회유 멘트 성공률 통계(82차, §9/§11). */
+    val quoteOutcomes: MutableList<QuoteOutcome> = mutableListOf(),
     /** 공부 잠금 중 예외로 허용할 프로그램 실행파일명(이전엔 웹앱 타이머 탭 → Firebase에서만 관리했음). */
     var studyLockAllowedApps: MutableList<String> = mutableListOf(),
     /** 공부 잠금 중 예외로 허용할 사이트(도메인) — 안드로이드와 Firebase로 공유. */
@@ -264,6 +299,8 @@ data class AppData(
     val calendarTasks: MutableList<CalendarTask> = mutableListOf(),
     /** 캘린더 전체 문서 단위 LWW 타임스탬프 — 웹앱의 studyCalendarTasks_ts에 대응. */
     var calendarTs: Long = 0L,
+    /** 85차: 계산기 기본 다회독값/일일 초기화 시각 설정 동기화용 문서 단위 LWW 타임스탬프(안드로이드판과 대칭). */
+    var settingsTs: Long = 0L,
     /** 네이티브 계산기(3단계) — 입력 중인 draft 업무 카드들과 그 LWW 타임스탬프(웹앱 tasks/tasksTs). */
     val calcTasks: MutableList<CalcTask> = mutableListOf(),
     var calcTasksTs: Long = 0L,
@@ -290,8 +327,23 @@ data class AppData(
     val routineLogs: MutableList<RoutineLog> = mutableListOf(),
     /** 루틴 전체 문서 단위 LWW 타임스탬프(51차, 캘린더의 calendarTs와 동일 패턴) — users/{user}/routines. */
     var routinesTs: Long = 0L,
-    /** 앱 전체 테마 선택(설정 화면) — ThemeMode.LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE. */
+    /** 앱 전체 테마 선택(설정 화면) — ThemeMode.LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE 등, CUSTOM이면 아래 두 값을 씀. */
     var themeMode: String = "LIGHT_GREEN",
+    /** 커스텀 테마(79차)의 배경/포인트 색 — "#RRGGBB". */
+    var customThemeBackground: String = "#FAFBF6",
+    var customThemeAccent: String = "#8BC34A",
+    /** 앱 완전 종료 시 회유 멘트 20개 확인 절차를 거칠지(79차) — 기본 꺼짐(사용자 요청). */
+    var exitConfirmEnabled: Boolean = false,
+    /** 캘린더 새 일정을 추가할 때 "다회독"(완료 시 다음 회독 자동 생성) 기본값 — 기본 꺼짐, 공부 설정에서 사용자가 변경. */
+    var defaultMultiPassEnabled: Boolean = false,
+    /** 계산기 연동이 아닌, 캘린더에서 직접 추가하는 일정의 기본 회독 수(3~8)·회독별 간격(83차, 다회독 상세화). */
+    var defaultPassCount: Int = com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT,
+    var defaultPassIntervalsCsv: String = com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV,
+    // ---- 자동 백업/정리(82차, §9, 안드로이드판과 대칭) ----
+    var cloudBackupEnabled: Boolean = false,
+    var lastCloudBackupDate: String = "",
+    var lastCloudBackupResult: String = "",
+    var lastAutoStatsPruneDate: String = "",
     /** "모임"(소셜 그룹)별 공유 설정 — groupId -> GroupShareSettings. 모임 가입 자체가 공유 의도이므로
      *  각 항목 기본값은 true, 설정은 각 모임 화면의 "🔒 공유 설정"에서 모임 단위로 바꾼다(74차 무전기
      *  설정을 전역→모임별로 옮긴 것과 동일한 선례). */

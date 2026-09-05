@@ -66,6 +66,12 @@ private fun exportUsageCsvToFile(repository: Repository) {
 fun StatsScreen(repository: Repository) {
     var rows by remember { mutableStateOf(emptyList<GroupUsage>()) }
     var selectedName by remember { mutableStateOf<String?>(null) }
+    var quoteOutcomes by remember { mutableStateOf(emptyList<com.phonelock.desktop.data.QuoteOutcome>()) }
+
+    // 82차(§9/§11 "회유 멘트 성공률 통계") — 목록처럼 자주 갱신될 필요 없어 1회만 로드.
+    LaunchedEffect(Unit) {
+        quoteOutcomes = repository.getAllQuoteOutcomesOnce()
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -115,6 +121,18 @@ fun StatsScreen(repository: Repository) {
                         }
                     }
                 }
+            }
+            if (quoteOutcomes.isNotEmpty()) {
+                Spacer(Modifier.height(Spacing.md))
+                val overallStop = quoteOutcomes.count { it.choice == "STOP" }
+                val overallRate = Math.round(overallStop * 100.0 / quoteOutcomes.size).toInt()
+                Text("회유 멘트 성공률", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(Spacing.xs))
+                Text(
+                    "문구가 뜬 상태에서 \"중단\"(저항)을 고른 비율: ${overallRate}% (${overallStop}/${quoteOutcomes.size})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
         Spacer(Modifier.width(Spacing.md))

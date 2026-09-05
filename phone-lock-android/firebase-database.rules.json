@@ -75,6 +75,20 @@
           "$uid": {
             ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && auth.uid === $uid"
           }
+        },
+
+        "announcement": {
+          ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && (root.child('groups').child($groupId).child('info').child('ownerUid').val() === auth.uid || root.child('groups').child($groupId).child('admins').child(auth.uid).val() === true)"
+        },
+
+        "goal": {
+          ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && (root.child('groups').child($groupId).child('info').child('ownerUid').val() === auth.uid || root.child('groups').child($groupId).child('admins').child(auth.uid).val() === true)"
+        },
+
+        "quoteStats": {
+          "$uid": {
+            ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && auth.uid === $uid"
+          }
         }
       }
     },
@@ -83,6 +97,13 @@
       "$code": {
         ".read": "auth != null && root.child('allowedUsers').child(auth.uid).exists()",
         ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists()"
+      }
+    },
+
+    "backups": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid && root.child('allowedUsers').child(auth.uid).exists()",
+        ".write": "auth != null && auth.uid === $uid && root.child('allowedUsers').child(auth.uid).exists()"
       }
     }
   }

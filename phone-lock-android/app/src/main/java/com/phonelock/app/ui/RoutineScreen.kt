@@ -3,6 +3,11 @@ package com.phonelock.app.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -36,11 +41,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.data.*
 import com.phonelock.app.data.Routine
 import com.phonelock.app.routine.RoutineEngine
 import com.phonelock.app.ui.theme.Spacing
@@ -120,7 +128,10 @@ fun RoutineScreen(repository: PhoneLockRepository) {
             // 않고) 한 화면에 들어오게 바꿨다. FilterChip 대신 여백이 작은 커스텀 칩을 써서 좁은 칸에서도
             // 요일+날짜 두 줄이 다 보인다.
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { weekOffset-- }, modifier = Modifier.width(28.dp)) { Text("◀") }
+                IconButton(
+                    onClick = { weekOffset-- },
+                    modifier = Modifier.width(28.dp).semantics { contentDescription = "이전 주" }
+                ) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null) }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     weekDates.forEachIndexed { i, d ->
                         val selected = d == selectedDate
@@ -145,7 +156,10 @@ fun RoutineScreen(repository: PhoneLockRepository) {
                         }
                     }
                 }
-                IconButton(onClick = { weekOffset++ }, modifier = Modifier.width(28.dp)) { Text("▶") }
+                IconButton(
+                    onClick = { weekOffset++ },
+                    modifier = Modifier.width(28.dp).semantics { contentDescription = "다음 주" }
+                ) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null) }
             }
             Spacer(Modifier.height(Spacing.sm))
         }
@@ -455,17 +469,21 @@ private fun RoutineRow(
             }
             if (onMoveUp != null || onMoveDown != null) {
                 Column {
-                    Text(
-                        "▲", fontSize = 10.sp,
-                        modifier = Modifier.clickable(enabled = onMoveUp != null) { onMoveUp?.invoke() }.padding(2.dp)
+                    com.phonelock.app.ui.components.IconChip(
+                        Icons.Filled.KeyboardArrowUp,
+                        enabled = onMoveUp != null,
+                        contentDescription = "위로 이동",
+                        onClick = { onMoveUp?.invoke() }
                     )
-                    Text(
-                        "▼", fontSize = 10.sp,
-                        modifier = Modifier.clickable(enabled = onMoveDown != null) { onMoveDown?.invoke() }.padding(2.dp)
+                    com.phonelock.app.ui.components.IconChip(
+                        Icons.Filled.KeyboardArrowDown,
+                        enabled = onMoveDown != null,
+                        contentDescription = "아래로 이동",
+                        onClick = { onMoveDown?.invoke() }
                     )
                 }
             }
-            IconButton(onClick = onEdit) { Text("✏️") }
+            IconButton(onClick = onEdit, modifier = Modifier.semantics { contentDescription = "수정" }) { Text("✏️") }
         }
     }
 }

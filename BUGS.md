@@ -4,11 +4,154 @@
 
 ---
 
-## Open (77차 세션 종료 시점)
+## Fixed (2026-09-04, 86차 세션)
 
-### Firebase RTDB 보안 규칙 재게시 안 됨 — 관리자 승격 후 이름수정/내쫓기가 권한 거부로 실패
-- **상황**: 77차에 추가한 모임장/관리자 권한 시스템(`groups/{id}/info` 쓰기 규칙, `members/{uid}` 쓰기 규칙 확장)이 `phone-lock-android/firebase-database.rules.json` 파일엔 반영됐지만 Firebase 콘솔에 아직 재게시되지 않았다. 모임장 계정은 기존 블랜킷 규칙으로 이미 동작하지만, 모임장이 승격시킨 일반 관리자는 이름수정/내쫓기 시도 시 서버에서 권한 거부로 실패한다.
-- **해결 방법**: Firebase 콘솔 → Realtime Database → 규칙 탭에서 `phone-lock-android/firebase-database.rules.json` 최신 내용을 붙여넣고 게시. Claude는 Firebase 콘솔 자격증명/API 접근이 없어 직접 재게시하거나 재게시 여부를 검증할 수 없음 — 사용자가 직접 확인 필요.
+### 캘린더 계산기 연동 일정을 "미완료"로 바꿔도 이미 반영된 진행량이 롤백되지 않음
+- **경위**: 사용자가 실사용 중 "계산기 연동 일정을 완료했다가 미완료 버튼으로 바꾸면 진행량이 자동으로 늘었던 게 취소돼야 하는데 그게 안 된다"고 제보.
+- **원인**: `setCalendarTaskStatus`(양 플랫폼)의 진행량 롤백 코드가 "완료(O) 버튼을 다시 눌러 취소하는 경우"(`task.status == targetStatus` 분기)에만 있었다 — 완료(O)에서 미완료(X) 버튼으로 곧장 전환하는 경우(`else` 분기, targetStatus="X")는 자동생성된 다음 회독만 되돌리고 계산기 진행량 반영분은 그대로 남겨뒀다.
+- **해결**: 롤백 조건을 "완료(O) 상태를 벗어나는 모든 경우"로 옮겨서, 목적지가 어디든(재클릭으로 null이 되든, 미완료(X)로 바뀌든) 항상 먼저 되돌리도록 수정(안드로이드 `PhoneLockRepository.Calendar.kt`, 데스크탑 `Repository.Calendar.kt`). "완료 버튼을 다시 눌러 취소"하는 경로는 기존에도 정상이었음(재확인 완료).
+
+### 캘린더 일정별 계산기 업무 연결을 나중에 바꾸거나 해제할 방법이 없음
+- **경위**: 사용자 요청 — 계산기 업무 연결은 캘린더 일정을 새로 만들 때(`LinkedCalcSection`)만 설정할 수 있어서, 이미 만든 일정의 연결을 나중에 바꾸거나 해제하거나 연동 대상 계산기 업무의 회독 설정이 바뀐 경우 다시 맞출 방법이 없었음. 완료 시 반영될 할당량(progressStep)도 생성 시 [from,to] 범위로만 정해지고 나중에 수정 불가능했음.
+- **해결**: 각 캘린더 일정 행에 공간을 거의 안 차지하는 작은 토글 버튼("🔗 업무 연결" 또는 연결된 업무 이름) 신규 — 누르면 계산기 업무 선택/할당량 입력/적용/연결 해제 4가지를 처리하는 작은 패널이 펼쳐진다. `Repository.setCalendarTaskLink`(양 플랫폼) 신규 — 연결 대상을 바꾸면 그 업무의 현재 다회독 설정(회독 수/간격)을 다시 복사해 오므로, 같은 업무를 다시 선택하는 것만으로 "회독 설정이 바뀐 경우의 초기화" 역할도 겸한다. 이미 완료 처리된 상태에서 연결을 바꾸면 기존 반영분을 먼저 되돌리고 새 연동으로 다시 반영.
+
+### 공부앱 일정표 업무 이름이 길면 값이 화면 밖으로 밀리거나(안드로이드) 줄바꿈된 두 번째 줄이 잘림(데스크탑)
+- **경위**: 사용자가 "일정표에서 업무 이름이 줄바꿈되면서 다 보이지 않는다"고 제보.
+- **원인**: 안드로이드 `TimetableScreen.kt`(+모임 멤버 상세의 동일 사본 `SocialGroupMemberDetailScreen.kt`)가 이름/값 두 `Text`를 `weight` 없이 `Arrangement.SpaceBetween`으로만 배치해, 이름이 길면 오른쪽 값 텍스트가 화면 폭 밖으로 밀려 안 보였다. 데스크탑 `TimetableScreen.kt`의 주간 표는 업무명 칸(`TtCell`)이 `width=140dp`+고정 `height=44dp`라, 이름이 길어 줄바꿈되면 두 번째 줄이 고정 높이 밖으로 잘렸다.
+- **해결**: 안드로이드 2곳은 이름 `Text`에 `weight(1f, fill=false)`를 줘서 값 쪽 자연폭을 먼저 확보하고 이름은 남는 폭에서 줄바꿈되게 함. 데스크탑은 이름 칸 폭을 180dp로 넓히고 `TtCell`의 `height`를 `heightIn(min=)`으로 바꿔 긴 이름이 있는 행만 자연스럽게 늘어나도록 함.
+
+### 커스텀 테마/브라우저 확장 배경·포인트색이 6종 삭제된 옛 팔레트 그대로 남아있고 CUSTOM 테마는 아예 미지원
+- **경위**: "브라우저 확장 프로그램도 지금까지 해온 업데이트 반영됐는지 확인" 요청으로 점검.
+- **원인**: `browser-extension/theme.js`가 85차에 앱 쪽에서 삭제된 라벤더/민트/로즈/미드나잇/포레스트 6종 팔레트를 그대로 갖고 있었고, 79차에 신규였던 CUSTOM(배경/포인트 직접 지정) 테마는 애초에 반영된 적이 없어 CUSTOM 선택 시 확장 페이지는 기본값(라이트·그린)으로 폴백됐다.
+- **해결**: 죽은 팔레트 6종 제거, `LocalApiServer.handleTheme()`이 `customThemeBackground`/`customThemeAccent`도 함께 응답하도록 확장, `theme.js`에 `Color.kt`의 `buildCustomPalette`와 동일한 blend 알고리즘을 JS로 포팅해 CUSTOM 테마를 실제로 반영(`overlay.js` 호출부도 새 파라미터 전달하도록 수정). 아울러 설정 화면의 커스텀 테마 미리보기 상자를 누르면 헥스 직접 입력 대신 프리셋 팔레트에서 고를 수 있는 `ColorPaletteDialog`(양 플랫폼) 신규.
+
+---
+
+## Fixed (2026-09-04, 85차 세션)
+
+### 캘린더 기본 정렬이 숫자를 문자 단위로만 비교해 "문제10"이 "문제2"보다 앞에 옴
+- **경위**: 사용자가 "새로 추가만 한 일정의 기본 정렬(사전식+숫자순+회독 내림차순)이 제대로 안 되는 것 같다"고 제보.
+- **원인**: 회독 내림차순 정렬 자체는 정상 동작했지만, 이름 비교에 순수 `Collator`만 써서 문자 단위 사전식 비교라 "문제10" < "문제2"(문자 '1' < '2')로 잘못 정렬됨. 추가로 안드로이드판 `applyCalendarAutoSchedule`/`applyIncompleteCarryOver`(자동 다음 회독 생성/미완료 다음날 이월)가 데스크탑판과 달리 `resortCalendarDay` 호출이 아예 빠져있어 정렬 없이 그냥 맨 뒤에 추가됐음(플랫폼 비대칭).
+- **해결**: `:shared`에 숫자 구간은 값으로, 나머지는 Collator로 비교하는 `NaturalOrder` 신설, 양 플랫폼 정렬 비교자를 이걸로 교체. 안드로이드 `applyCalendarAutoSchedule`/`applyIncompleteCarryOver`에 누락된 `resortCalendarDay` 호출 추가(데스크탑판과 대칭).
+
+### 자체 업데이트가 실패해도 사용자에게 아무 피드백 없이 조용히 멈춤
+- **경위**: 사용자가 "업데이트 버튼을 눌러도 제대로 안 되는 경우가 흔하다(안드로이드는 설치 창이 안 뜨고 배너만 반복, 데스크탑은 원인 불명)"고 제보.
+- **원인**: 안드로이드는 다운로드 후 설치 인텐트를 처리할 앱이 없어도(일부 커스텀 롬/관리형 기기) `startActivity`가 예외 없이 조용히 아무 일도 안 함, 실패 시 Toast만(짧게 사라져 놓치기 쉬움) 뜨고 배너 자체엔 남는 표시가 없었음. 데스크탑은 다운로드/설치 실행 함수(`downloadAndRunInstaller`)가 `Boolean`만 반환하고 실패 사유를 `getOrDefault(false)`로 완전히 삼켜버려 실패해도 버튼만 조용히 다시 눌리는 상태가 됐고, 다운로드 스트림에 타임아웃도 없어 네트워크가 멈추면 무기한 대기.
+- **해결**: 안드로이드는 설치 인텐트 `resolveActivity` 사전 확인(못 열면 명시적 오류) + 배너 안에 계속 남는 오류 텍스트 추가(Toast와 별개). 데스크탑은 실패 사유를 문자열로 반환하도록 바꾸고 배너에 인라인으로 표시, 다운로드에 연결/읽기 타임아웃(15초/60초) 추가.
+- **알려진 한계(미해결)**: 안드로이드는 업데이트 배너가 `MainActivity`(앱 진입 시 1회 읽음)와 `SettingsScreen`(별도 "지금 확인" 버튼)에 각각 독립된 상태로 떠 있어, 한쪽에서 다운로드/설치를 시작해도 다른 쪽 배너 상태는 갱신되지 않는다 — 근본적으로 고치려면 두 배너가 상태를 공유하도록 리팩터링 필요(이번 세션 범위 밖). 데스크탑은 30초 폴링이라 이 문제는 없음.
+
+### 데스크탑에서 계산기 업무의 다회독 설정(회독 수/간격)이 재시작하면 초기화됨
+- **경위**: 사용자가 "회독 설정을 해놓은 게 자꾸 초기화된다"고 제보.
+- **원인**: 데스크탑 로컬 저장 파일(`JsonStore.kt`의 `toJsonObject()`, `%APPDATA%\PhoneLockDesktop\data.json`에 쓰는 실제 로컬 영속화 경로)이 `CalcTask.passCount`/`passIntervalsCsv`와 `CalendarTask.passIndex`/`passTotal`/`passIntervalsCsv`를 저장할 때 `put()`을 빠뜨리고 있었다 — Firebase 동기화 쪽(`Repository.Calc.kt`/`Repository.Calendar.kt`의 `calcTaskToJson`/`calendarTasksToJson`)은 이미 정상 포함돼 있어서 헷갈리기 쉬웠지만, 로컬 저장/재시작 시 읽어들이는 경로가 별개였고 그쪽이 누락돼 있었다. 그래서 앱을 껐다 켤 때마다(또는 로컬 파일이 다시 쓰여질 때마다) 이 필드들이 기본값(3회독, "3,4")으로 되돌아갔다.
+- **해결**: `JsonStore.kt`의 `toJsonObject()`(저장 쪽)에 두 필드 세트의 `put()` 추가. 안드로이드는 Room이 컬럼을 직접 관리해 이 종류의 버그가 구조적으로 발생할 수 없음(로컬 저장 경로 확인 결과 이상 없었음).
+
+---
+
+## Fixed (2026-09-03, 83차 세션)
+
+### 캘린더 일정 자동 생성이 요일별 목표량/휴일 설정을 무시하고 무조건 "내일"에 생성됨
+- **경위**: 사용자가 "캘린더 일정 자동 생성 기능이 명확해 보이지 않는다"고 지적 → 조사 결과 기능 자체는 82차에 이미 구현돼 있었음(계산기 연동 업무의 1회독 완료 시 다음 배치를 자동으로 다음날에 생성)이 확인됐고, 그 "다음날" 계산이 요일/휴일을 무시하는 게 실제 문제였음.
+- **원인**: `maybeAutoGenerateNextLinkedTask`(양 플랫폼)가 `nextScheduleDateKey(dateKey, 1)`(무조건 dateKey+1일)만 썼다 — `TimetableScreen`/계산기 결과 화면이 이미 존중하는 `CalcTask.mon~sun`(요일별 목표)·`holidaysCsv`/`holidays`(휴일 제외)를 자동생성 경로만 빼먹고 있었다.
+- **해결**: `:shared`에 `PassSchedule.nextScheduledDate(from, dayGoals, holidays, maxLookaheadDays=90)` 신규(요일별 목표>0이고 휴일이 아닌 첫 날짜를 찾음, 90일 내 없으면 null로 무한루프 방지) — `maybeAutoGenerateNextLinkedTask`(양 플랫폼)가 이 함수로 실제 예정된 다음 날짜를 찾아 그날에 생성하도록 수정.
+
+---
+
+## Fixed (2026-09-02, 82차 세션, 감사 후속/릴리스 빌드)
+
+### 로컬 API 토큰 비교가 타이밍 공격에 취약(데스크탑, LOW)
+- **경위**: 감사 후속 항목("net/ApiToken.kt 인증 범위 재확인") 점검 중 발견.
+- **원인**: `LocalApiServer.isAuthorizedStateChange()`가 토큰을 `token == ApiToken.value`(Kotlin/Java의 일반 `String.equals`, 앞에서부터 문자가 다르면 즉시 반환)로 비교 — 이론적으로 응답 시간차를 재서 토큰을 한 글자씩 추측하는 타이밍 공격이 가능. 루프백 전용 서버라 실질 위험은 낮았음.
+- **해결**: `MessageDigest.isEqual()`(상수 시간 비교)로 교체. 그 외 인증 로직(모든 상태변경 엔드포인트가 POST+토큰 필수인지, 확장의 CORS 출처 제한이 실제로 걸려있는지)은 재확인 결과 문제 없었음.
+
+### AGP Lint가 composite build(`:shared`) 의존성을 못 찾아 안드로이드 release 빌드가 실패함
+- **경위**: 82차에 `:shared` composite build 모듈을 도입한 뒤 `assembleRelease`가 `generateReleaseLintVitalReportModel`에서 "Could not find jar for project :shared"로 실패.
+- **원인**: AGP(8.5.2)의 Lint 아티팩트 해석기가 `includeBuild`로 치환된 프로젝트 의존성의 jar 경로를 못 찾는 알려진 한계.
+- **해결**: `app/build.gradle.kts`에 `android { lint { checkReleaseBuilds = false } }` 추가 — lintVital을 release 조립 태스크에서 분리. `gradle lint`로 수동 실행은 여전히 가능. 자세한 배경은 [[DECISIONS.md]] "`:shared` composite build 모듈 도입" 참고.
+
+---
+
+## Fixed (2026-09-02, 82차 세션)
+
+### Room 마이그레이션이 fallbackToDestructiveMigration()의 실제 동작을 오해하고 있었음(안드로이드, 잠재적 데이터 손실 버그)
+- **경위**: 82차 작업 중 calc_task/study_log_entry/quote_outcome 스키마 변경(v30~v32)에 명시적 마이그레이션 없이 `fallbackToDestructiveMigration()`에 의존하면서, 주석에 "Firebase 동기화 테이블만 파괴적으로 마이그레이션된다"고 적어뒀던 게 스스로 틀렸음을 발견.
+- **원인**: Room의 `fallbackToDestructiveMigration()`은 **테이블 단위가 아니라 데이터베이스 전체**를 지우고 새로 만든다. 즉 calc_task나 study_log_entry처럼 Firebase에 재동기화되는 테이블의 스키마만 바뀌어도, **동기화 안 되는 app_group(사용자가 직접 만든 차단 그룹) 등 모든 테이블이 함께 삭제**된다 — HANDOFF.md가 명시적으로 경고해온 "그룹 데이터를 파괴적 마이그레이션으로 날리면 안 된다"는 원칙과 정면으로 충돌하는 실수였다.
+- **영향**: v29(기존 배포본)에서 v30~v32(이번 세션 신규 코드)로 업데이트했다면, 다음 실행 시 사용자의 모든 차단 그룹이 삭제될 뻔했다. **실제 배포 전에 발견해 수정** — 아직 사용자에게 영향 없음.
+- **해결**: `AppDatabase.kt`에 `MIGRATION_29_30`/`MIGRATION_30_31`/`MIGRATION_31_32`/`MIGRATION_32_33`을 전부 명시적 `ALTER TABLE`/`CREATE TABLE`로 작성해 `addMigrations()`에 등록. `fallbackToDestructiveMigration()`은 이 마이그레이션 경로를 벗어난 미지의 버전 점프에 대한 최후 폴백으로만 남김.
+- **교훈**: 앞으로 Room 엔티티 스키마를 바꿀 때마다(신규 테이블 포함) **반드시 명시적 Migration을 작성할 것** — "이 테이블은 Firebase 동기화 대상이라 괜찮다"는 판단은 틀렸다.
+
+---
+
+## Open
+
+### 안드로이드/데스크탑 Firebase Web API Key가 서로 다른 값 (82차 감사 발견)
+- **경위**: 82차 아키텍처 감사에서 `AppPreferences.kt`(안드로이드)의 `DEFAULT_FB_API_KEY`와 `Models.kt`(데스크탑)의 `DEFAULT_FB_API_KEY`가 다른 문자열임을 발견.
+- **원인**: 미확인 — 같은 Firebase 프로젝트라면 Web API Key가 보통 하나뿐이라 의도적 분리가 아니라면 한쪽이 오래된/다른 프로젝트 키일 가능성.
+- **영향**: 둘 중 하나가 만료되거나 다른 프로젝트를 가리키면 그 플랫폼만 조용히 동기화 실패 — "이 기기만 동기화 안 됨" 유형 문의로 나타날 수 있음.
+- **상태(2026-09-02, 사용자 판단으로 보류)**: 콘솔 확인 방법을 안내했으나, 두 플랫폼 간 동기화가 실제로는 잘 작동해왔다는 점에서 버그가 아니라 Firebase가 원래 안드로이드용/웹·REST용 키를 다르게 발급하는 정상 케이스일 가능성이 높다고 판단 — 클라우드 백업(기본 꺼짐, MED 등급)에만 영향 있는 낮은 우선순위 항목이라 지금은 확인하지 않기로 함. "이 기기만 동기화 이상함" 같은 실제 증상이 생기거나 클라우드 백업을 쓰고 싶을 때 재검토할 것. 코드는 건드리지 않음(잘못 통일하면 오히려 동기화를 깨뜨릴 위험).
+
+---
+
+## Fixed (2026-09-01, 81차 세션)
+
+### 안드로이드 자체 업데이트 다운로드가 "다운로드 중"에서 멈추고 아무 반응이 없음
+- **경위**: 사용자가 방금 배포된 새 버전으로 "업데이트" 버튼을 눌렀는데 "업데이트 다운로드 중..."만 뜨고 성공도 실패도 없이 계속 그 상태라고 제보.
+- **원인(추정, 실제 재현으로 확인된 건 아님)**: `UpdateBanner.kt`가 `DownloadManager`로 다운로드를 걸고 상태(`RUNNING`/`PENDING`)를 1초 간격으로 최대 5분 폴링하는데, 데이터 절약 모드 등으로 다운로드가 `STATUS_PAUSED`에 들어가면 이 상태를 진행 중으로도 실패로도 처리하지 않아 루프를 즉시 빠져나가면서도 `STATUS_SUCCESSFUL`이 아니라서 실패 토스트가 뜨긴 했어야 했다 — 그런데도 "아무 반응 없다"는 제보라 다른 원인(느린 네트워크로 5분을 다 채우기 전, 또는 토스트를 놓침)일 가능성도 남아있다.
+- **해결**: `DownloadManager.Request`에 `setAllowedOverMetered(true)`/`setAllowedOverRoaming(true)` 추가(데이터 절약 모드로 인한 정지 방지), `PAUSED` 상태도 "대기 중"으로 취급해 계속 폴링, 실제 진행률(%)을 배너 문구에 표시, 실패 시 상태 코드/사유(`COLUMN_REASON`)를 토스트에 그대로 노출(진단용).
+- **검증**: 코드 컴파일/빌드/GitHub 릴리스 게시(android-1788190404) 완료. **실제로 다운로드가 끝까지 진행되는지는 미검증** — 여전히 안 되면 GitHub 릴리스 페이지에서 apk 수동 설치로 우회 가능하다고 안내할 것.
+
+---
+
+## Fixed (2026-08-31, 80차 세션)
+
+### 안드로이드 캘린더 "다회독" 토글을 눌러도 화면에 바로 반영되지 않고 다른 화면 갔다 와야 바뀜
+- **경위**: 사용자가 "버튼을 눌러도 바로 안 바뀌다가 다른 창을 갔다가 돌아와야 변하는 현상이 여럿 있다"고 보고, 다회독 토글을 대표 사례로 지목.
+- **원인**: `CalendarScreen.kt`의 `DayDetailSection`이 그날 일정 목록을 `LaunchedEffect(dateKey)`로 한 번만 읽어 로컬 `mutableStateOf` 리스트에 담아두는 구조라, 항목별 액션이 DB만 갱신하고 이 로컬 리스트를 다시 안 읽어오면 화면엔 그대로 남는다. 같은 화면의 다른 모든 액션(이동/색상/완료/삭제 등)은 전부 뒤에 `onChanged()`를 호출해 `refreshDay()`로 다시 읽어오는데, 다회독 토글 클릭 핸들러(`setCalendarTaskMultiPass` 호출부)에만 `onChanged()` 호출이 빠져 있었다 — `dateKey`가 바뀌는 시점(다른 날짜 선택, 화면 재진입 등)에 `LaunchedEffect`가 다시 돌 때만 우연히 반영됐다.
+- **해결**: 해당 클릭 핸들러에 `onChanged()` 호출 추가. 데스크탑판 `CalendarScreen.kt`은 애초에 정상 호출 중이었음(안드로이드만의 문제).
+- **점검 범위**: `CalculatorScreen`/`RoutineScreen`/`SocialGroupMembersScreen`의 동일 패턴(리스트 1회 로드 + 항목별 액션)도 함께 점검 — 전부 정상적으로 `onChanged()`/`refresh()`/`reload()`를 호출하고 있어 추가로 발견된 문제는 없었음.
+- **검증**: 컴파일/빌드/GitHub 릴리스 게시 완료, 실사용(토글 클릭 시 화면이 즉시 바뀌는지) 재현 검증은 미검증.
+
+---
+
+## Fixed (2026-08-31, 79차 세션, 추가)
+
+### 데스크탑 자체 업데이트가 무한 반복됨 — "업데이트" 눌러도 안 되고 배너가 계속 다시 뜸
+- **경위**: 사용자가 "업데이트를 해도 안 되고 배너가 또 뜨고, 눌러도 계속 반복된다"고 보고.
+- **원인**: `UpdateBanner.kt`의 "업데이트" 버튼이 설치파일을 다운로드해 실행시킨 뒤 `exitProcess(0)`로 앱을 종료하는데, 이때 트레이 "종료"와 달리 `intentional_exit.flag`를 남기지 않았다. 감시 프로세스(Watchdog)는 이 표식이 없으면 "비정상 종료"로 보고 2초 안에 옛 버전 exe를 즉시 되살리는데, 그 시점엔 사용자가 설치 마법사를 다 클릭하기도 전이라 옛 버전이 새로 설치될 파일들을 다시 잠가버린다 — 결과적으로 설치가 제대로 안 끝나고, 되살아난 옛 버전이 곧 "새 버전 있음" 배너를 또 띄우면서 영원히 반복.
+- **해결**: 설치파일 실행 직후 `exitProcess(0)` 전에 `intentionalExitFlagFile().createNewFile()` 호출 추가(트레이 "종료"와 동일 절차) — 감시 프로세스가 되살리지 않으므로 설치 마법사가 방해 없이 끝까지 진행되고, 설치된 새 버전이 다음에 켜지면 이 표식은 자동으로 지워진다(`Main.kt`의 정상 시작 절차).
+- **주의**: 이 버그를 가진 "구버전"이 이미 설치돼서 반복 루프에 빠진 사용자는, 그 구버전의 업데이트 버튼 자체가 여전히 이 레이스 컨디션을 타므로 인앱 업데이트로는 못 빠져나올 수 있다 — 트레이 "종료"로 완전히 끈 뒤 [최신 릴리스](https://github.com/studybeultaeon-svg/study-planner/releases)의 msi를 수동으로 다운로드/설치하는 것을 권장.
+- **검증**: 컴파일/빌드/이 호스트 재배포 완료, 실사용(실제 반복 루프 재현 후 해결 확인)은 미검증.
+
+## Fixed (2026-08-31, 79차 세션)
+
+### 데스크탑 msi 설치 후 바탕화면/시작메뉴에 아이콘이 안 생김
+- **원인**: `build.gradle.kts`의 `compose.desktop.application.nativeDistributions.windows` 블록에 `shortcut`/`menu`/`menuGroup` 설정이 없어서 jpackage가 바로가기를 생성하지 않음. 개발자 본인은 지금까지 `createDistributable` 결과물을 robocopy로 직접 배포해왔지 실제 msi 설치 경로를 써본 적이 없어서 발견이 늦어짐 — 사용자가 친구에게 msi를 준 뒤 "바탕화면에 앱이 없다"는 보고를 받고서야 확인됨.
+- **해결**: `windows { shortcut = true; menu = true; menuGroup = "PhoneLockDesktop" }` 추가 후 재빌드, 이 호스트 재배포 + 새 msi로 GitHub 릴리스 재게시([desktop-1788168805](https://github.com/studybeultaeon-svg/study-planner/releases/tag/desktop-1788168805)).
+- **주의**: 이전 릴리스(`desktop-1788167727`)는 바로가기가 안 생기는 구버전 msi이므로, 앞으로 다른 사람에게 배포용 링크를 안내할 땐 항상 최신 태그인지 확인할 것.
+
+## Fixed (2026-08-31, 78차 세션)
+
+### Firebase RTDB 보안 규칙 재게시 — 사용자 확인
+- **상황**: 77차에 추가한 모임장/관리자 권한 시스템(`groups/{id}/info` 쓰기 규칙, `members/{uid}` 쓰기 규칙 확장)이 파일엔 반영됐지만 Firebase 콘솔에 재게시가 안 된 상태였음.
+- **해결**: 사용자가 78차 세션에 "이미 게시했을 것"이라고 확인. **주의**: Claude는 Firebase 콘솔 접근 권한이 없어 콘솔 화면과 직접 대조하지는 못했음 — 관리자(비-모임장)의 이름수정/내쫓기/무전기가 이후에도 권한 거부(401 등)로 계속 실패하면 이 항목부터 재점검할 것.
+
+### 태블릿에서 릴스/쇼츠 차단이 전혀 안 됨
+- **원인**: `AppMonitorAccessibilityService.containsSelectedKeyword()`가 "선택된 탭" 노드를 화면 하단 12% 영역에서만 찾음(폰의 하단 탭바 기준) — 태블릿은 Instagram/YouTube가 좌측 세로 내비게이션 레일을 쓰기 때문에 선택된 릴스/쇼츠 탭이 이 영역 밖에 있어 계속 걸러짐.
+- **해결**: 하단 밴드 조건에 좌/우측 16% 폭의 사이드 레일 밴드도 OR로 추가. [[DECISIONS.md]] 78차 참고.
+- **검증**: 컴파일/빌드/배포 완료. **실기기(태블릿) 검증 아직 안 됨.**
+
+### 데스크탑 무전기 TTS가 PC 기본 음성에 따라 한글을 영어 음성으로 읽을 수 있었음
+- **원인**: `TtsPlayer.kt`(desktop)가 `SpeechSynthesizer.Speak()`를 호출하기 전 한 번도 명시적으로 음성을 선택한 적이 없어서, 그 PC의 SAPI 기본 음성이 영어(예: Microsoft Zira)로 설정돼 있으면 한국어 텍스트를 영어 음성 엔진으로 읽었음. 사용자가 "지금 보이스는 영어 보이스"라고 지적해서 발견(빌드 호스트 자체는 기본값이 한국어라 재현 안 됐었음).
+- **해결**: 성별 설정과 무관하게 항상 한국어(`ko`) 문화권 음성을 먼저 찾아 선택하도록 변경, 한국어 음성이 하나도 없을 때만 시스템 기본값 사용. [[DECISIONS.md]] 78차 참고.
+- **검증**: PowerShell로 격리 테스트(설치된 Heami/Zira/David 중 항상 Heami 선택됨) 확인 + 컴파일/배포 완료.
+
+### `AndroidBuilds\phone-lock-desktop\build.gradle.kts`가 75차 이전 버전으로 방치돼 데스크탑 컴파일 실패
+- **원인**: `robocopy /MIR`로 `src/` 폴더만 반복 동기화해왔는데, 75차에 추가된 `generateBuildInfo` Gradle 태스크는 `build.gradle.kts`(src 밖) 안에 있어서 그동안 한 번도 AndroidBuilds 사본에 반영되지 않았음 — `compileKotlin`이 `Unresolved reference: BuildInfo`로 계속 실패.
+- **해결**: OneDrive 원본의 `build.gradle.kts`를 AndroidBuilds 사본에 직접 복사. **앞으로 빌드 스크립트 자체가 바뀌는 세션 이후엔 `src/` 뿐 아니라 `build.gradle.kts`/`settings.gradle.kts` diff도 같이 확인할 것.**
+- **검증**: 재동기화 후 `compileKotlin` BUILD SUCCESSFUL 확인.
+
+### (버그는 아니지만 절차 문서화) 데스크탑 앱은 `Stop-Process` 직후 자기 자신을 즉시 재기동한다
+- **상황**: 배포 전 `Stop-Process -Name PhoneLockDesktop`으로 종료해도, 앱 내부의 인메모리 워치독이 1초 이내에 스스로 재기동해서 이후 robocopy가 실행 중인 exe를 못 옮기고(`ERROR 32`) 30초 간격으로 무한 재시도에 빠질 수 있음. Windows 예약 작업(스케줄된 태스크) 기반이 아니라 앱 코드 자체의 자기 복구 로직임을 확인.
+- **대응**: 재시도를 기다리지 말고 즉시 `Stop-Process`를 한 번 더 실행(이번엔 재기동 타이밍을 놓쳐 완전히 죽음)한 뒤 곧바로 robocopy할 것. [[HANDOFF.md]] "현재 주의사항" 참고.
 
 ---
 

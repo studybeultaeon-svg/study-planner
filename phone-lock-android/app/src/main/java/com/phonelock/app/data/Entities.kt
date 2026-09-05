@@ -2,6 +2,7 @@ package com.phonelock.app.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.phonelock.shared.calc.PassSchedule
 
 /**
  * scheduleDaysMask: bit 0 = 월요일 ... bit 6 = 일요일. 기본값 127 = 매일.
@@ -63,12 +64,19 @@ data class AppGroup(
     val groupOffPending: Boolean = false,
     /** 지금까지 확인(예를 누름)한 회유 멘트 개수 (다음에 보여줄 멘트의 인덱스이기도 함). */
     val groupOffMessageIndex: Int = 0,
-    /** 스누즈(전문가 종합분석 보고서 #1) 한 번에 몇 분간 임시 해제할지. 회유 절차 없이 즉시 적용되므로
-     *  하루 3회로 제한된다(snoozeUsedDate/snoozeUsedCount, LockEvaluator.isSnoozeActive 참고). */
+    /** 스누즈(전문가 종합분석 보고서 #1) 관리 종류 자체의 on/off(87차, 사용자 요청 — scheduleEnabled와
+     *  같은 패턴). false면 그룹 목록의 스누즈 버튼이 감춰지고, LockEvaluator도 남아있는 스누즈 상태를
+     *  무시한다(scheduleEnabled가 꺼지면 스케줄 판정 자체를 건너뛰는 것과 동일한 방식). */
+    val snoozeEnabled: Boolean = true,
+    /** 스누즈 한 번에 몇 분간 임시 해제할지. 회유 절차 없이 즉시 적용되므로 하루 횟수 제한이 있다
+     *  (snoozeDailyLimit, snoozeUsedDate/snoozeUsedCount, LockEvaluator.isSnoozeActive 참고). */
     val snoozeMinutes: Int = 30,
+    /** 하루에 몇 번까지 스누즈를 쓸 수 있는지(87차, 사용자 요청 — 기존엔 SNOOZE_DAILY_LIMIT=3으로
+     *  고정이었다). 회유 절차 없이 바로 임시 해제되는 예외라 무제한은 허용하지 않는다. */
+    val snoozeDailyLimit: Int = 3,
     /** 지금 스누즈가 적용 중이면 그 종료 시각(epoch millis). 지났으면 무시. */
     val snoozedUntilEpochMillis: Long? = null,
-    /** 스누즈 하루 횟수 제한(3회)을 세는 날짜/카운트 — dailyResetHour 기준 "오늘"이 바뀌면 0으로 리셋. */
+    /** 스누즈 하루 횟수 제한을 세는 날짜/카운트 — dailyResetHour 기준 "오늘"이 바뀌면 0으로 리셋. */
     val snoozeUsedDate: String = "",
     val snoozeUsedCount: Int = 0,
     /** 기간 지정 자동 강화(#7, 시험기간 등) — 이 날짜 범위(yyyy-MM-dd, 포함) 안에서는 groupEnabled를
@@ -78,7 +86,10 @@ data class AppGroup(
     /** 잠김(스케줄/일일한도) 화면 조롱 문구 강도용 — 오늘 이 그룹을 열려고 시도한 횟수/날짜.
      *  dailyResetHour 기준 "오늘"이 바뀌면 0으로 리셋(snoozeUsedDate/snoozeUsedCount와 같은 패턴). */
     val blockAttemptDate: String = "",
-    val blockAttemptCount: Int = 0
+    val blockAttemptCount: Int = 0,
+    /** "미래의 나에게" 예약 메시지(82차, §11 창의적 기능) — 지금의 내가 남긴 문구를 이 그룹이 잠길 때
+     *  회유 멘트 대신/함께 보여준다. 비어있으면 기존처럼 랜덤 문구만 표시. 순수 로컬 텍스트, 동기화 안 함. */
+    val selfMessageText: String = ""
 )
 
 @Entity(tableName = "group_member", primaryKeys = ["groupId", "packageName"])
@@ -131,13 +142,18 @@ data class StudyLogEntry(
     val taskName: String,
     val seconds: Int,
     val startedAt: Long,
-    val note: String = ""
+    val note: String = "",
+    /** 포모도로 세션 태그(82차, §9 "포모도로 세션 태그") — 과목 등 자유 입력, 통계 탭에서 태그별 집계에 사용. */
+    val tag: String = ""
 )
 
 /**
  * 네이티브 캘린더(2단계)의 날짜별 일정 한 건. 웹앱 index.html의 calTasks[dateKey][] 항목을 그대로 이식.
- * color는 51차에 8단계 무지개로 확장됨(white=1회독~purple=8회독, DECISIONS.md 참고). sortOrder는 Room에
- * 배열 순서 개념이 없어 대신 쓰는 정수 순번(같은 dateKey 안에서만 의미 있음).
+ * color는 현재 red/yellow/green 3단계로 축소돼 있음(과거 8단계 무지개 서술은 낡은 기록이었음) — 다회독
+ * 상세화(83차)부터는 passIndex/passTotal/passIntervalsCsv가 실제 회독 진행/색상 렌더링의 원천이고,
+ * color는 passTotal==3인 기본 케이스의 하위호환 라벨로만 계속 쓰인다(레거시 코드가 "red"/"yellow"/
+ * "green" 문자열을 직접 비교하는 곳이 많아 필드 자체는 유지). sortOrder는 Room에 배열 순서 개념이 없어
+ * 대신 쓰는 정수 순번(같은 dateKey 안에서만 의미 있음).
  * linkedCalc/progressStep은 계산기 연동용 필드(51차에 UI 추가) — linkedCalc는 연결된 계산기 업무 이름,
  * progressStep은 이 일정을 완료하면 그 업무 progress에 더해질 양(예: "51~60쪽" → "10").
  */
@@ -151,7 +167,15 @@ data class CalendarTask(
     val nextDays: Int? = null,
     val linkedCalc: String? = null,
     val progressStep: String? = null,
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    /** 완료(O) 시 다음 회독을 자동 생성할지(79차, 사용자 요청) — 기본 off. */
+    val multiPassEnabled: Boolean = false,
+    /** 이 시리즈에서 0-based 현재 회독 번호(83차, 다회독 상세화). 레거시 데이터는 마이그레이션에서 color 기준으로 채움. */
+    val passIndex: Int = 0,
+    /** 이 시리즈의 총 회독 수(3~8). */
+    val passTotal: Int = 3,
+    /** 회독 간 간격(일수) CSV, 길이 = passTotal-1. 생성 시점 CalcTask/설정 기본값에서 복사되어 다음 회독까지 그대로 이어짐. */
+    val passIntervalsCsv: String = PassSchedule.DEFAULT_INTERVALS_CSV
 )
 
 /**
@@ -175,7 +199,18 @@ data class CalcTask(
     val holidaysCsv: String = "",
     val modifiedAt: String = "",
     val modifiedAtTs: Long = 0L,
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    /** 캘린더 일정 자동 생성 on/off(82차, 사용자 지정 스펙) — 켜면 연동 일정을 완료할 때마다 다음 배치를 자동으로 만든다. */
+    val autoGenEnabled: Boolean = false,
+    /** 자동 생성 배치 크기(예: 10을 넣으면 "51~60쪽"처럼 10단위씩 다음 일정을 만든다). */
+    val autoGenBatchSize: Int = 0,
+    /** 다회독 상세화(83차) — 이 업무를 캘린더에 연동할 때 몇 회독으로 만들지(3~8). */
+    val passCount: Int = PassSchedule.DEFAULT_PASS_COUNT,
+    /** 회독 간 간격(일수) CSV, 길이 = passCount-1. */
+    val passIntervalsCsv: String = PassSchedule.DEFAULT_INTERVALS_CSV,
+    /** 다회독 사용 여부(85차, 사용자 요청) — OFF면 캘린더 연동 시 passCount를 무시하고 단회독(1회독)만
+     *  생성한다. 기존 데이터는 true가 기본값이라 이전처럼 passCount 그대로 다회독으로 연동된다. */
+    val multiPassUsageEnabled: Boolean = true
 )
 
 /**
@@ -237,4 +272,19 @@ data class Routine(
 data class RoutineLog(
     val routineId: Long,
     val dateKey: String
+)
+
+/**
+ * 회유 멘트 성공률 통계(82차, §9/§11) — 재확인/차단 화면에서 어떤 문구가 뜬 상태에서 사용자가
+ * "진행"(자기통제 실패, 앱을 열기로 함)/"중단"(자기통제 성공, 포기)을 골랐는지 순수 기록. 판정
+ * 로직(ConfirmationGate)과 무관 — 이미 결정된 선택을 로깅만 한다.
+ */
+@Entity(tableName = "quote_outcome")
+data class QuoteOutcome(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val tier: Int,
+    val quoteText: String,
+    /** "PROCEED"(진행, 굴복) | "STOP"(중단, 저항). */
+    val choice: String,
+    val timestampMillis: Long
 )
