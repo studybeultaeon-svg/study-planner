@@ -64,6 +64,14 @@ compose.desktop {
     application {
         mainClass = "com.phonelock.desktop.MainKt"
 
+        // jvmToolchain(21)이 만드는 Java 21 바이트코드(클래스 버전 65)를 Compose Multiplatform 1.6.11이
+        // 기본으로 받아오는 ProGuard 7.2.2(최대 Java 18=버전 62)가 못 읽어서 releaseMsi/releaseExe 빌드가
+        // 항상 실패하던 버그(2026-09-05 발견) — ProGuard 버전을 Java 21을 지원하는 7.4.2로 올려 해결.
+        buildTypes.release.proguard {
+            version.set("7.4.2")
+            configurationFiles.from(project.file("proguard-rules.pro"))
+        }
+
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
             packageName = "PhoneLockDesktop"
