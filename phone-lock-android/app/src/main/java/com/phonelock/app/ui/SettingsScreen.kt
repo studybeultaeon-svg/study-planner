@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
@@ -97,6 +98,9 @@ private fun syncElapsedLabel(atMillis: Long): String {
     }
 }
 
+// 태블릿 무대응(의도적 판단, 84차): 데스크탑판 SettingsScreen.kt도 동일한 TabRow + 세로 스크롤
+// Column/SectionCard 나열 구조뿐이고 ResponsiveSplit 등 좌우 분할을 쓰지 않는다 — 포팅할 desktop
+// 전용 레이아웃이 없다.
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
@@ -111,6 +115,8 @@ fun SettingsScreen(
     var themeMode by remember { mutableStateOf(prefs.themeMode) }
     var customBgText by remember { mutableStateOf(prefs.customThemeBackground) }
     var customAccentText by remember { mutableStateOf(prefs.customThemeAccent) }
+    var showBgPalette by remember { mutableStateOf(false) }
+    var showAccentPalette by remember { mutableStateOf(false) }
     var accessibilityEnabled by remember { mutableStateOf(AccessibilityServiceChecker.isEnabled(context)) }
     var deviceAdminActive by remember { mutableStateOf(isDeviceAdminActive(context)) }
     var batteryOptIgnored by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
@@ -333,10 +339,13 @@ fun SettingsScreen(
                             modifier = Modifier.weight(1f),
                             singleLine = true
                         )
+                        // 86차(사용자 요청): 미리보기 상자를 누르면 헥스 직접 입력 대신 프리셋 팔레트에서
+                        // 골라 고를 수 있다.
                         Box(
                             Modifier.size(36.dp)
                                 .background(bgPreview ?: Color.Gray, MaterialTheme.shapes.small)
                                 .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                .clickable { showBgPalette = true }
                         )
                     }
                     Spacer(Modifier.height(Spacing.sm))
@@ -359,14 +368,39 @@ fun SettingsScreen(
                             Modifier.size(36.dp)
                                 .background(accentPreview ?: Color.Gray, MaterialTheme.shapes.small)
                                 .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                .clickable { showAccentPalette = true }
                         )
                     }
                     Spacer(Modifier.height(Spacing.xs))
                     Text(
-                        "\"#RRGGBB\" 형식(예: #FF9800)으로 입력하세요. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
+                        "직접 입력하거나, 오른쪽 색상 상자를 눌러 팔레트에서 고를 수 있습니다. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (showBgPalette) {
+                        com.phonelock.app.ui.components.ColorPaletteDialog(
+                            title = "배경색 고르기",
+                            currentHex = customBgText,
+                            onSelect = { hex ->
+                                customBgText = hex
+                                prefs.customThemeBackground = hex
+                                onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                            },
+                            onDismiss = { showBgPalette = false }
+                        )
+                    }
+                    if (showAccentPalette) {
+                        com.phonelock.app.ui.components.ColorPaletteDialog(
+                            title = "포인트색 고르기",
+                            currentHex = customAccentText,
+                            onSelect = { hex ->
+                                customAccentText = hex
+                                prefs.customThemeAccent = hex
+                                onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                            },
+                            onDismiss = { showAccentPalette = false }
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(Spacing.md))

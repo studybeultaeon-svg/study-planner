@@ -161,15 +161,33 @@ fun SocialGroupScreen(repository: PhoneLockRepository, onOpenGroup: (String) -> 
 
     Scaffold(topBar = { TopAppBar(title = { Text("👥 모임") }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(Spacing.md)) {
-            Text(
-                "함께 갓생 사는 사람들과 서로 진행 상황을 확인해요",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(Spacing.sm))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                Button(onClick = { showCreateDialog = true }, modifier = Modifier.weight(1f)) { Text("+ 모임 만들기") }
-                Button(onClick = { showJoinDialog = true }, modifier = Modifier.weight(1f)) { Text("참여하기") }
+            if (com.phonelock.app.ui.components.isTabletWidth()) {
+                // 84차: 데스크탑판 SocialGroupScreen.kt처럼 부제와 버튼을 한 줄에 SpaceBetween으로 —
+                // 폰처럼 버튼을 꽉 채운 두 줄로 쌓지 않고 넓은 화면을 가로로 활용한다.
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "함께 갓생 사는 사람들과 서로 진행 상황을 확인해요",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(Spacing.md))
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        androidx.compose.material3.OutlinedButton(onClick = { showJoinDialog = true }) { Text("참여하기") }
+                        Button(onClick = { showCreateDialog = true }) { Text("+ 모임 만들기") }
+                    }
+                }
+            } else {
+                Text(
+                    "함께 갓생 사는 사람들과 서로 진행 상황을 확인해요",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Button(onClick = { showCreateDialog = true }, modifier = Modifier.weight(1f)) { Text("+ 모임 만들기") }
+                    Button(onClick = { showJoinDialog = true }, modifier = Modifier.weight(1f)) { Text("참여하기") }
+                }
             }
             Spacer(Modifier.height(Spacing.md))
             errorMessage?.let { msg ->

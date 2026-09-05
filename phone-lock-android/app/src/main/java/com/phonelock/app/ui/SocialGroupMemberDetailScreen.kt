@@ -720,7 +720,14 @@ private fun MemberStudyTimetableTab(s: SocialGroupSyncClient.MemberStats) {
                 dayTotal += v
                 val achieved = v > 0 && memberIsLinkedGoalAchieved(s, cursor.toString(), t.name, v)
                 Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(t.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    // 86차 버그 수정(TimetableScreen.kt와 동일 원인/대칭 수정): weight 없는 SpaceBetween만
+                    // 쓰면 이름이 길 때 값 Text가 화면 밖으로 밀려 안 보였다.
+                    Text(
+                        t.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f, fill = false).padding(end = Spacing.xs)
+                    )
                     Text(
                         if (v > 0) "${memberTimetableFmtDec(v)}${t.unit}" + if (achieved) " ✅" else "" else "—",
                         style = MaterialTheme.typography.bodyMedium,

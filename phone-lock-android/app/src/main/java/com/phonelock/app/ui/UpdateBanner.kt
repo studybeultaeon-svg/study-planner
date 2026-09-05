@@ -31,9 +31,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * "설정탭 초기화 시간이 지나면 그날 새 버전이 올라왔는지 확인해서 업데이트 문구를 띄워달라"는 요청으로
- * 신규 추가(2026-08-30). [com.phonelock.app.data.PhoneLockRepository.checkForUpdateIfNeeded]가 하루
- * 1회 GitHub Releases를 확인해 남겨둔 URL을 그냥 보여주기만 하며, 실제 다운로드/설치는 여기서
+ * "새 버전이 올라오면 업데이트 문구를 띄워달라"는 요청으로 신규 추가(2026-08-30).
+ * [com.phonelock.app.data.PhoneLockRepository.checkForUpdateIfNeeded]가 짧은 주기로 GitHub Releases를
+ * 확인해(2026-09-05: 하루 1회 → updateCheckIntervalMs 주기로 변경, 새 빌드가 다음 날 초기화까지 안
+ * 기다리고 곧바로 뜨도록) 남겨둔 URL을 그냥 보여주기만 하며, 실제 다운로드/설치는 여기서
  * DownloadManager + 설치 인텐트로 처리한다("최종 설치 확인"만 사용자가 누르면 됨 — Android 정책상
  * 완전 무인 설치는 불가능).
  */

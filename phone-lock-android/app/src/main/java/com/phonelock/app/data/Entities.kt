@@ -64,12 +64,19 @@ data class AppGroup(
     val groupOffPending: Boolean = false,
     /** 지금까지 확인(예를 누름)한 회유 멘트 개수 (다음에 보여줄 멘트의 인덱스이기도 함). */
     val groupOffMessageIndex: Int = 0,
-    /** 스누즈(전문가 종합분석 보고서 #1) 한 번에 몇 분간 임시 해제할지. 회유 절차 없이 즉시 적용되므로
-     *  하루 3회로 제한된다(snoozeUsedDate/snoozeUsedCount, LockEvaluator.isSnoozeActive 참고). */
+    /** 스누즈(전문가 종합분석 보고서 #1) 관리 종류 자체의 on/off(87차, 사용자 요청 — scheduleEnabled와
+     *  같은 패턴). false면 그룹 목록의 스누즈 버튼이 감춰지고, LockEvaluator도 남아있는 스누즈 상태를
+     *  무시한다(scheduleEnabled가 꺼지면 스케줄 판정 자체를 건너뛰는 것과 동일한 방식). */
+    val snoozeEnabled: Boolean = true,
+    /** 스누즈 한 번에 몇 분간 임시 해제할지. 회유 절차 없이 즉시 적용되므로 하루 횟수 제한이 있다
+     *  (snoozeDailyLimit, snoozeUsedDate/snoozeUsedCount, LockEvaluator.isSnoozeActive 참고). */
     val snoozeMinutes: Int = 30,
+    /** 하루에 몇 번까지 스누즈를 쓸 수 있는지(87차, 사용자 요청 — 기존엔 SNOOZE_DAILY_LIMIT=3으로
+     *  고정이었다). 회유 절차 없이 바로 임시 해제되는 예외라 무제한은 허용하지 않는다. */
+    val snoozeDailyLimit: Int = 3,
     /** 지금 스누즈가 적용 중이면 그 종료 시각(epoch millis). 지났으면 무시. */
     val snoozedUntilEpochMillis: Long? = null,
-    /** 스누즈 하루 횟수 제한(3회)을 세는 날짜/카운트 — dailyResetHour 기준 "오늘"이 바뀌면 0으로 리셋. */
+    /** 스누즈 하루 횟수 제한을 세는 날짜/카운트 — dailyResetHour 기준 "오늘"이 바뀌면 0으로 리셋. */
     val snoozeUsedDate: String = "",
     val snoozeUsedCount: Int = 0,
     /** 기간 지정 자동 강화(#7, 시험기간 등) — 이 날짜 범위(yyyy-MM-dd, 포함) 안에서는 groupEnabled를

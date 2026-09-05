@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -113,7 +114,10 @@ fun TimetableScreen(repository: Repository) {
         }
 
         val dayTotals = DoubleArray(7)
-        val nameColWidth = 140.dp
+        // 86차 버그 수정: 업무명 칸이 좁고(140dp) 높이가 고정(44dp)이라, 이름이 길어 줄바꿈되면 두 번째
+        // 줄이 고정 높이 밖으로 잘려 안 보였다(사용자 실사용 확인) — 폭을 넓히고, 아래 TtCell의 고정
+        // height를 heightIn(min=)으로 바꿔 이름이 길면 그 행만 자연스럽게 늘어나도록 함.
+        val nameColWidth = 180.dp
         val dayColWidth = 92.dp
         val totalColWidth = 92.dp
         val border = MaterialTheme.colorScheme.outlineVariant
@@ -178,7 +182,7 @@ private fun TtCell(text: String, width: androidx.compose.ui.unit.Dp, header: Boo
     Column(
         Modifier
             .width(width)
-            .height(if (header) 52.dp else 44.dp)
+            .heightIn(min = if (header) 52.dp else 44.dp)
             .background(if (highlight) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f) else Color.Transparent)
             .padding(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

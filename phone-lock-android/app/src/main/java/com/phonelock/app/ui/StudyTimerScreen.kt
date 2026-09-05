@@ -208,15 +208,9 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
         )
     }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.md)
-    ) {
-        Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(Spacing.md))
-
-        TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
-        Spacer(Modifier.height(Spacing.md))
-
+    // 태블릿은 데스크탑 StudyTimerScreen.kt와 같은 좌(타이머 본체)/우(허용 앱·사이트+오늘 기록) 분할이라
+    // 두 영역을 각각 재사용 가능한 람다로 뽑아 phone/tablet 두 분기에서 그대로 호출한다(83차 이후 패턴).
+    val timerCardContent: @Composable () -> Unit = {
         // 이 기기 타이머가 꺼져 있어도 다른 기기가 재고 있으면(신선한 신호일 때만) 그 값을 그대로
         // 미러링해서 보여준다 — 사용자 요청: 데스크탑에서 시작하면 모바일도 시작 없이 같은 숫자를 보여줄 것.
         val remoteActive = remoteStudying || remoteResting
@@ -415,8 +409,8 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                 }
             }
         }
-        Spacer(Modifier.height(Spacing.md))
-
+    }
+    val extrasContent: @Composable () -> Unit = {
         AllowedAppsCollapsibleSection()
         Spacer(Modifier.height(Spacing.md))
 
@@ -450,6 +444,37 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                     StudyLogRow(name = "합계", seconds = todayLog.sumOf { it.seconds }.toLong(), isTotal = true)
                 }
             }
+        }
+    }
+
+    if (com.phonelock.app.ui.components.isTabletWidth()) {
+        // 태블릿은 데스크탑 StudyTimerScreen.kt와 같은 좌(타이머 본체)/우(허용 앱·사이트+오늘 기록)
+        // 분할 — 데스크탑도 넓은 화면에서 세로로 다 쌓지 않고 역할별로 좌우로 나눠 쓴다.
+        Column(Modifier.fillMaxSize().padding(Spacing.md)) {
+            Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(Spacing.md))
+            TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
+            Spacer(Modifier.height(Spacing.md))
+            com.phonelock.app.ui.components.ResponsiveSplit(
+                modifier = Modifier.weight(1f),
+                left = { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { timerCardContent() } },
+                right = { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { extrasContent() } }
+            )
+        }
+    } else {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.md)
+        ) {
+            Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(Spacing.md))
+
+            TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
+            Spacer(Modifier.height(Spacing.md))
+
+            timerCardContent()
+            Spacer(Modifier.height(Spacing.md))
+
+            extrasContent()
         }
     }
 }

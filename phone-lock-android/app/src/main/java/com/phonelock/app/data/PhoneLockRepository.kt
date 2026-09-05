@@ -22,9 +22,6 @@ internal fun effectiveDate(resetHour: Int, now: LocalDateTime = LocalDateTime.no
 /** Firebase 일일 사용시간 동기화(`dailyUsage/{date}/{그룹}/{device}`)에서 이 기기를 가리키는 키. */
 private const val DAILY_USAGE_DEVICE = "android"
 
-/** 스누즈(#1)를 하루에 그룹당 최대 몇 번까지 쓸 수 있는지 — 회유 절차 없이 바로 임시 해제되는 예외라 무제한이면 사실상 실행확인을 무력화하게 된다. */
-private const val SNOOZE_DAILY_LIMIT = 3
-
 /** 네이티브 공부 타이머(1단계)의 실행 상태. taskName/mode/phase 등은 [AppPreferences]에 낱개 필드로
  *  저장돼 있어(SharedPreferences 친화적), 조회 시 이 값으로 묶어서 돌려준다. */
 data class TimerRunState(
@@ -38,6 +35,10 @@ data class TimerRunState(
 )
 
 class PhoneLockRepository(context: Context) {
+    /** [checkForUpdateIfNeeded] 자동 확인 주기 — 새 빌드가 올라오면 하루 초기화를 기다리지 않고
+     *  이 주기 안에 배너가 뜨도록 짧게 잡되, GitHub 비인증 API 요청 한도(시간당 60회)를 넘지 않게 한다. */
+    private val updateCheckIntervalMs = 15 * 60 * 1000L
+
     internal val appContext = context.applicationContext
     internal val db = AppDatabase.getInstance(context)
     private val groupDao = db.appGroupDao()
@@ -144,14 +145,15 @@ class PhoneLockRepository(context: Context) {
     }
 
     /**
-     * GitHub Releases(공부앱과 같은 저장소)에 새 안드로이드 APK가 올라왔는지 하루 1회(dailyResetHour
-     * 기준 "오늘"이 바뀔 때) 확인한다 — applyDailyGroupResetIfNeeded와 동일한 lastXxxDate 가드 패턴.
+     * GitHub Releases(공부앱과 같은 저장소)에 새 안드로이드 APK가 올라왔는지 짧은 주기(updateCheckIntervalMs)로
+     * 확인한다. 예전엔 dailyResetHour 기준 "오늘"이 바뀔 때 하루 1회만 확인했는데, 그러면 새 빌드가 올라와도
+     * 다음 날 초기화 시점까지 배너가 안 뜨는 문제가 있어(2026-09-05) 시각 기반 가드로 바꿨다.
      * 결과는 [AppPreferences]에 남기고 [pendingUpdateApkUrl]로 네트워크 호출 없이 조회한다.
      */
     suspend fun checkForUpdateIfNeeded() {
-        val today = effectiveDate(dailyResetHour).toString()
-        if (preferences.lastUpdateCheckDate == today) return
-        preferences.lastUpdateCheckDate = today
+        val now = System.currentTimeMillis()
+        if (now - preferences.lastUpdateCheckAtMillis < updateCheckIntervalMs) return
+        preferences.lastUpdateCheckAtMillis = now
         val result = com.phonelock.app.service.UpdateChecker.checkLatestAndroidRelease()
         val latest = result.getOrNull()
         if (latest != null && latest.versionCode > BuildConfig.VERSION_CODE) {
@@ -203,7 +205,7 @@ class PhoneLockRepository(context: Context) {
     fun currentVersionCode(): Long = BuildConfig.VERSION_CODE.toLong()
 
     /**
-     * 설정 화면 "지금 확인" 버튼 전용 — [checkForUpdateIfNeeded]의 하루 1회 가드를 무시하고 즉시
+     * 설정 화면 "지금 확인" 버튼 전용 — [checkForUpdateIfNeeded]의 주기 가드를 무시하고 즉시
      * GitHub Releases를 확인한다. 2026-08-30 발견: 예전엔 확인 실패(네트워크 오류, GitHub 요청 한도
      * 초과 등)와 "정말 최신 버전"을 구분 못 해서 실패해도 화면에 "최신 버전입니다"라고 잘못 표시됐다 —
      * 이제 세 가지 결과(업데이트 있음/최신 버전/확인 실패)를 명확히 구분해 돌려준다.
@@ -215,7 +217,7 @@ class PhoneLockRepository(context: Context) {
     }
 
     suspend fun checkForUpdateNow(): UpdateCheckOutcome {
-        preferences.lastUpdateCheckDate = effectiveDate(dailyResetHour).toString()
+        preferences.lastUpdateCheckAtMillis = System.currentTimeMillis()
         val result = com.phonelock.app.service.UpdateChecker.checkLatestAndroidRelease()
         val latest = result.getOrNull()
         return if (latest != null && latest.versionCode > BuildConfig.VERSION_CODE) {
@@ -306,7 +308,9 @@ class PhoneLockRepository(context: Context) {
                     groupEnabled = row.bool("groupEnabled", true),
                     groupOffPending = row.bool("groupOffPending", false),
                     groupOffMessageIndex = row.optInt("groupOffMessageIndex", 0),
+                    snoozeEnabled = row.bool("snoozeEnabled", true),
                     snoozeMinutes = row.optInt("snoozeMinutes", 30),
+                    snoozeDailyLimit = row.optInt("snoozeDailyLimit", 3),
                     snoozedUntilEpochMillis = row.longOrNull("snoozedUntilEpochMillis"),
                     snoozeUsedDate = row.optString("snoozeUsedDate", ""),
                     snoozeUsedCount = row.optInt("snoozeUsedCount", 0),
@@ -353,15 +357,17 @@ class PhoneLockRepository(context: Context) {
         return restored
     }
 
-    /** 스누즈(#1) — 회유 절차 없이 group.snoozeMinutes만큼 즉시 임시 해제한다. 하루 3회 초과면 false.
+    /** 스누즈(#1) — 회유 절차 없이 group.snoozeMinutes만큼 즉시 임시 해제한다. group.snoozeEnabled가
+     *  꺼져 있거나 하루 한도(group.snoozeDailyLimit, 87차부터 그룹별로 설정 가능)를 넘으면 false.
      *  다른 기기와 합산한 오늘 사용 횟수([mergedSnooze])를 기준으로 한도를 판정해서, 데스크탑/안드로이드
-     *  양쪽에서 나눠 눌러도 총 3회를 넘지 못하게 한다. */
+     *  양쪽에서 나눠 눌러도 총 한도를 넘지 못하게 한다. */
     suspend fun snoozeGroup(id: Long): Boolean = snoozeMutex.withLock {
         val group = groupDao.getById(id) ?: return@withLock false
+        if (!group.snoozeEnabled) return@withLock false
         val today = effectiveDate(dailyResetHour).toString()
         val merged = mergedSnooze(group)
         val usedToday = if (merged.usedDate == today) merged.usedCount else 0
-        if (usedToday >= SNOOZE_DAILY_LIMIT) return@withLock false
+        if (usedToday >= group.snoozeDailyLimit) return@withLock false
         val updated = SnoozeState(
             untilEpochMillis = System.currentTimeMillis() + group.snoozeMinutes * 60_000L,
             usedDate = today,
@@ -380,13 +386,15 @@ class PhoneLockRepository(context: Context) {
         true
     }
 
-    /** 오늘 이 그룹에 남은 스누즈 횟수(0~3) — UI에 "오늘 n/3" 표시용. 그룹 목록 화면이 매 리컴포지션마다
-     *  호출하므로 네트워크 호출 없이 로컬 값만 본다(다른 기기의 스누즈는 [mergedSnooze]가 백그라운드
-     *  판정 시점에 이미 로컬로 병합해둔 값을 통해 뒤늦게 반영된다). */
+    /** 오늘 이 그룹에 남은 스누즈 횟수(0~group.snoozeDailyLimit) — UI에 "오늘 n/한도" 표시용. 그룹 목록
+     *  화면이 매 리컴포지션마다 호출하므로 네트워크 호출 없이 로컬 값만 본다(다른 기기의 스누즈는
+     *  [mergedSnooze]가 백그라운드 판정 시점에 이미 로컬로 병합해둔 값을 통해 뒤늦게 반영된다).
+     *  snoozeEnabled가 꺼져 있으면 항상 0. */
     fun snoozeRemainingToday(group: AppGroup): Int {
+        if (!group.snoozeEnabled) return 0
         val today = effectiveDate(dailyResetHour).toString()
         val usedToday = if (group.snoozeUsedDate == today) group.snoozeUsedCount else 0
-        return (SNOOZE_DAILY_LIMIT - usedToday).coerceAtLeast(0)
+        return (group.snoozeDailyLimit - usedToday).coerceAtLeast(0)
     }
 
     private val blockAttemptMutex = Mutex()

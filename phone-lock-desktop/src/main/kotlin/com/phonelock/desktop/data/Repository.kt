@@ -9,9 +9,6 @@ import java.time.LocalDateTime
 /** Firebase 일일 사용시간 동기화(`dailyUsage/{date}/{그룹}/{device}`)에서 이 기기를 가리키는 키. */
 private const val DAILY_USAGE_DEVICE = "desktop"
 
-/** 스누즈(#1)를 하루에 그룹당 최대 몇 번까지 쓸 수 있는지 — 회유 절차 없이 바로 임시 해제되는 예외라 무제한이면 사실상 실행확인을 무력화하게 된다. */
-private const val SNOOZE_DAILY_LIMIT = 3
-
 /** 일일 사용 한도의 "오늘" 날짜를 계산한다. resetHour 이전이면 아직 전날로 취급한다. */
 internal fun effectiveDate(resetHour: Int, now: LocalDateTime = LocalDateTime.now()): LocalDate =
     if (now.hour < resetHour) now.toLocalDate().minusDays(1) else now.toLocalDate()
@@ -192,17 +189,19 @@ class Repository {
         }.start()
     }
 
-    /** 스누즈(#1) — 회유 절차 없이 group.snoozeMinutes만큼 즉시 임시 해제한다. 하루 3회 초과면 false.
+    /** 스누즈(#1) — 회유 절차 없이 group.snoozeMinutes만큼 즉시 임시 해제한다. group.snoozeEnabled가
+     *  꺼져 있거나 하루 한도(group.snoozeDailyLimit, 87차부터 그룹별로 설정 가능)를 넘으면 false.
      *  다른 기기와 합산한 오늘 사용 횟수([mergedSnooze])를 기준으로 한도를 판정해서, 데스크탑/안드로이드
-     *  양쪽에서 나눠 눌러도 총 3회를 넘지 못하게 한다. */
+     *  양쪽에서 나눠 눌러도 총 한도를 넘지 못하게 한다. */
     fun snoozeGroup(id: Long): Boolean = synchronized(lock) {
         val index = data.groups.indexOfFirst { it.id == id }
         if (index < 0) return@synchronized false
+        if (!data.groups[index].snoozeEnabled) return@synchronized false
         val today = effectiveDate(data.dailyResetHour).toString()
         val merged = mergedSnooze(data.groups[index])
         val usedToday = if (merged.usedDate == today) merged.usedCount else 0
-        if (usedToday >= SNOOZE_DAILY_LIMIT) return@synchronized false
         val group = data.groups[index]
+        if (usedToday >= group.snoozeDailyLimit) return@synchronized false
         val updated = SnoozeState(
             untilEpochMillis = System.currentTimeMillis() + group.snoozeMinutes * 60_000L,
             usedDate = today,
@@ -219,13 +218,15 @@ class Repository {
         true
     }
 
-    /** 오늘 이 그룹에 남은 스누즈 횟수(0~3) — UI에 "오늘 n/3" 표시용. 그룹 목록 화면이 매 리컴포지션마다
-     *  호출하므로 네트워크 호출 없이 로컬 값만 본다(다른 기기의 스누즈는 [mergedSnooze]가 백그라운드
-     *  판정 시점에 이미 로컬로 병합해둔 값을 통해 뒤늦게 반영된다). */
+    /** 오늘 이 그룹에 남은 스누즈 횟수(0~group.snoozeDailyLimit) — UI에 "오늘 n/한도" 표시용. 그룹 목록
+     *  화면이 매 리컴포지션마다 호출하므로 네트워크 호출 없이 로컬 값만 본다(다른 기기의 스누즈는
+     *  [mergedSnooze]가 백그라운드 판정 시점에 이미 로컬로 병합해둔 값을 통해 뒤늦게 반영된다).
+     *  snoozeEnabled가 꺼져 있으면 항상 0. */
     fun snoozeRemainingToday(group: Group): Int = synchronized(lock) {
+        if (!group.snoozeEnabled) return@synchronized 0
         val today = effectiveDate(data.dailyResetHour).toString()
         val usedToday = if (group.snoozeUsedDate == today) group.snoozeUsedCount else 0
-        (SNOOZE_DAILY_LIMIT - usedToday).coerceAtLeast(0)
+        (group.snoozeDailyLimit - usedToday).coerceAtLeast(0)
     }
 
     /** 회유 멘트 성공률 통계(82차, §9/§11, 안드로이드판과 대칭) — 판정 로직과 무관한 순수 로깅. */

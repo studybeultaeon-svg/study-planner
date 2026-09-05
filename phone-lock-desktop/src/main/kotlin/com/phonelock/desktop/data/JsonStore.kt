@@ -320,7 +320,9 @@ object JsonStore {
                     groupEnabled = g.optBoolean("groupEnabled", g.optBoolean("scheduleEnabled", true)),
                     groupOffPending = g.optBoolean("groupOffPending", g.optBoolean("scheduleOffPending", false)),
                     groupOffMessageIndex = g.optInt("groupOffMessageIndex", g.optInt("scheduleOffMessageIndex", 0)),
+                    snoozeEnabled = g.optBoolean("snoozeEnabled", true),
                     snoozeMinutes = g.optInt("snoozeMinutes", 30),
+                    snoozeDailyLimit = g.optInt("snoozeDailyLimit", 3),
                     snoozedUntilEpochMillis = if (g.isNull("snoozedUntilEpochMillis")) null else g.optLong("snoozedUntilEpochMillis", 0L).let { if (it == 0L) null else it },
                     snoozeUsedDate = g.optString("snoozeUsedDate", ""),
                     snoozeUsedCount = g.optInt("snoozeUsedCount", 0),
@@ -582,7 +584,9 @@ object JsonStore {
             gj.put("groupEnabled", g.groupEnabled)
             gj.put("groupOffPending", g.groupOffPending)
             gj.put("groupOffMessageIndex", g.groupOffMessageIndex)
+            gj.put("snoozeEnabled", g.snoozeEnabled)
             gj.put("snoozeMinutes", g.snoozeMinutes)
+            gj.put("snoozeDailyLimit", g.snoozeDailyLimit)
             gj.put("snoozedUntilEpochMillis", g.snoozedUntilEpochMillis ?: JSONObject.NULL)
             gj.put("snoozeUsedDate", g.snoozeUsedDate)
             gj.put("snoozeUsedCount", g.snoozeUsedCount)

@@ -52,6 +52,11 @@ import com.phonelock.app.ui.theme.Spacing
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+// 태블릿 무대응(의도적 판단, 84차): 데스크탑판 GroupListScreen.kt 자체도 리스트 하나뿐인 동일한
+// Column/LazyColumn 레이아웃이고, 데스크탑에서 보이는 좌(목록)/우(편집) 마스터-디테일 분할은 이 파일이
+// 아니라 한 단계 위(DesktopApp.kt MainScreen)에서 selectedGroupId로 조립된다. 안드로이드 쪽의 대응되는
+// 상위 조립(MainActivity.kt NavigationRail + group_edit 네비게이션)은 83차에서 이미 처리됐고, 이 화면
+// 자체엔 desktop 대비 추가할 좌우 분할이 없다.
 @Composable
 fun GroupListScreen(
     repository: PhoneLockRepository,
@@ -233,10 +238,10 @@ private fun GroupRow(
                 )
                 Switch(checked = group.groupEnabled, onCheckedChange = onGroupToggle)
             }
-            if (!pending && group.groupEnabled && (restrictingNow || snoozeActive)) {
+            if (!pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)) {
                 Spacer(Modifier.height(Spacing.xs))
                 OutlinedButton(onClick = onSnooze, enabled = !snoozeActive && snoozeRemainingToday > 0) {
-                    Text(if (snoozeActive) "😴 스누즈 중" else "😴 스누즈 ${group.snoozeMinutes}분 ($snoozeRemainingToday/3)")
+                    Text(if (snoozeActive) "😴 스누즈 중" else "😴 스누즈 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})")
                 }
             }
             if (pending) {

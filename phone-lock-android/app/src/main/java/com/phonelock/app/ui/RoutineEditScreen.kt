@@ -63,6 +63,10 @@ private fun isValidTimeSlot(text: String): Boolean {
 /**
  * 루틴 추가/수정 다이얼로그(데스크탑판과 대칭, 47~48차 설계 DECISIONS.md 참고). 그룹 편집처럼 별도
  * 화면이 아니라 다이얼로그 — 필드가 적어 화면 전환이 과함.
+ *
+ * 태블릿 무대응(의도적 판단, 84차): 데스크탑판도 AlertDialog 안에 세로 Column 하나뿐이고
+ * ResponsiveSplit 등 좌우 분할이 없다 — 애초에 필드가 적어 다이얼로그로 처리한다는 설계 자체가
+ * 폭에 따라 레이아웃을 바꿀 이유를 없앤다.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

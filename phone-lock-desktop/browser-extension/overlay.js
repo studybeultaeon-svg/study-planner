@@ -145,7 +145,7 @@ async function refreshThemeIfDue() {
   try {
     const res = await fetchWithTimeout(`${API_BASE}/theme`, {}, OVERLAY_FETCH_TIMEOUT_MS);
     const data = await res.json();
-    currentPalette = getThemePalette(data.themeMode);
+    currentPalette = getThemePalette(data.themeMode, data.customThemeBackground, data.customThemeAccent);
   } catch (e) {
     // 통신 실패 시 이전에 확인된 팔레트를 그대로 유지.
   }

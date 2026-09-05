@@ -461,11 +461,12 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putBoolean("perm_social", value).apply()
 
     // ---- 자체 업데이트 확인(GitHub Releases, 2026-08-30) ----
-    /** 마지막으로 GitHub Releases를 확인한 날짜(effectiveDate 기준) — 하루 1회만 네트워크 호출하기 위한 가드,
-     *  lastGroupAutoResetDate와 동일 패턴. */
-    var lastUpdateCheckDate: String?
-        get() = prefs.getString("last_update_check_date", null)
-        set(value) = prefs.edit().putString("last_update_check_date", value).apply()
+    /** 마지막으로 GitHub Releases를 확인한 시각(epoch millis) — 하루 1회(날짜 기준) 가드였던 것을
+     *  새 빌드가 올라오면 하루 초기화를 기다리지 않고 곧바로 뜨도록 짧은 주기(UPDATE_CHECK_INTERVAL_MS)
+     *  가드로 바꿨다(2026-09-05). */
+    var lastUpdateCheckAtMillis: Long
+        get() = prefs.getLong("last_update_check_at_millis", 0L)
+        set(value) = prefs.edit().putLong("last_update_check_at_millis", value).apply()
 
     /** GitHub Releases에서 발견한 최신 안드로이드 릴리스의 versionCode. 0이면 "새 버전 없음". */
     var updateAvailableVersionCode: Long

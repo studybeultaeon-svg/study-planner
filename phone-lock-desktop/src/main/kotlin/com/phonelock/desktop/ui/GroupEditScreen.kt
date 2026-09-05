@@ -107,7 +107,9 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
     var confirmDaysMask by remember { mutableStateOf(127) }
     var usageOverlayEnabled by remember { mutableStateOf(true) }
     var overlayLevelStepsToMaxText by remember { mutableStateOf("5") }
+    var snoozeEnabled by remember { mutableStateOf(true) }
     var snoozeMinutesText by remember { mutableStateOf("30") }
+    var snoozeDailyLimitText by remember { mutableStateOf("3") }
     var forceEnabledFromText by remember { mutableStateOf("") }
     var forceEnabledUntilText by remember { mutableStateOf("") }
     var pomodoroUnlockEnabled by remember { mutableStateOf(false) }
@@ -178,7 +180,9 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 confirmDaysMask = group.confirmDaysMask
                 usageOverlayEnabled = group.usageOverlayEnabled
                 overlayLevelStepsToMaxText = group.overlayLevelStepsToMax.toString()
+                snoozeEnabled = group.snoozeEnabled
                 snoozeMinutesText = group.snoozeMinutes.toString()
+                snoozeDailyLimitText = group.snoozeDailyLimit.toString()
                 forceEnabledFromText = group.forceEnabledFrom ?: ""
                 forceEnabledUntilText = group.forceEnabledUntil ?: ""
                 pomodoroUnlockEnabled = group.pomodoroUnlockEnabled
@@ -267,6 +271,13 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 description = "켜면 실행할 때마다 확인창이 뜨고, 확인할 때마다 대기시간이 늘어납니다.",
                 checked = confirmEnabled,
                 onCheckedChange = { confirmEnabled = it }
+            )
+            Spacer(Modifier.height(Spacing.sm))
+            ToggleRow(
+                title = "스누즈",
+                description = "그룹 목록 화면에서 회유 절차 없이 즉시 임시 해제할 수 있는 버튼을 켭니다.",
+                checked = snoozeEnabled,
+                onCheckedChange = { snoozeEnabled = it }
             )
         }
         Spacer(Modifier.height(Spacing.md))
@@ -465,22 +476,31 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
         Spacer(Modifier.height(Spacing.md))
 
-        SectionCard("일시정지(스누즈) 시간") {
-            Text(
-                "그룹 목록 화면의 \"😴 스누즈\" 버튼으로 회유 절차 없이 즉시 이 시간만큼 임시 해제할 수 있습니다. " +
-                    "남용을 막기 위해 하루 3회까지만 쓸 수 있습니다(자정이 아니라 위 일일 한도 초기화 시각 기준).",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(Spacing.sm))
-            OutlinedTextField(
-                value = snoozeMinutesText,
-                onValueChange = { snoozeMinutesText = it },
-                label = { Text("스누즈 시간(분)") },
-                modifier = Modifier.fillMaxWidth()
-            )
+        if (snoozeEnabled) {
+            SectionCard("일시정지(스누즈) 설정") {
+                Text(
+                    "그룹 목록 화면의 \"😴 스누즈\" 버튼으로 회유 절차 없이 즉시 임시 해제할 수 있습니다. " +
+                        "남용을 막기 위해 아래 설정한 횟수까지만 쓸 수 있습니다(자정이 아니라 위 일일 한도 초기화 시각 기준).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                OutlinedTextField(
+                    value = snoozeMinutesText,
+                    onValueChange = { snoozeMinutesText = it },
+                    label = { Text("스누즈 시간(분)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                OutlinedTextField(
+                    value = snoozeDailyLimitText,
+                    onValueChange = { snoozeDailyLimitText = it },
+                    label = { Text("하루 스누즈 횟수") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Spacer(Modifier.height(Spacing.md))
         }
-        Spacer(Modifier.height(Spacing.md))
 
         SectionCard("기간 지정 자동 강화 (시험기간 등)") {
             Text(
@@ -703,7 +723,9 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                         confirmDaysMask = confirmDaysMask,
                         usageOverlayEnabled = usageOverlayEnabled,
                         overlayLevelStepsToMax = overlayLevelStepsToMaxText.trim().toIntOrNull()?.coerceAtLeast(1) ?: 5,
+                        snoozeEnabled = snoozeEnabled,
                         snoozeMinutes = snoozeMinutesText.trim().toIntOrNull()?.coerceAtLeast(1) ?: 30,
+                        snoozeDailyLimit = snoozeDailyLimitText.trim().toIntOrNull()?.coerceAtLeast(1) ?: 3,
                         snoozedUntilEpochMillis = originalGroup?.snoozedUntilEpochMillis,
                         snoozeUsedDate = originalGroup?.snoozeUsedDate ?: "",
                         snoozeUsedCount = originalGroup?.snoozeUsedCount ?: 0,

@@ -3,6 +3,7 @@ package com.phonelock.app.ui
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +17,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -27,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.ui.components.formatHms
 import com.phonelock.app.ui.theme.Spacing
@@ -47,6 +50,9 @@ private const val ANOMALY_MULTIPLIER = 1.5
 fun StatsScreen(repository: PhoneLockRepository) {
     var rows by remember { mutableStateOf(emptyList<GroupUsage>()) }
     var quoteOutcomes by remember { mutableStateOf(emptyList<com.phonelock.app.data.QuoteOutcome>()) }
+    // 84차: 태블릿 좌(목록 요약)/우(선택 그룹 상세) 분할에서 어느 그룹이 선택됐는지 — 데스크탑판
+    // StatsScreen.kt의 selectedName과 동일한 역할.
+    var selectedName by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -100,6 +106,84 @@ fun StatsScreen(repository: PhoneLockRepository) {
             Column(Modifier.fillMaxSize().padding(padding).padding(Spacing.md)) {
                 Text("아직 기록된 사용 데이터가 없습니다.")
             }
+        } else if (com.phonelock.app.ui.components.isTabletWidth()) {
+            // 84차: 데스크탑 StatsScreen.kt와 같은 좌(그룹별 요약 목록, 선택 가능)/우(선택한 그룹 상세)
+            // 분할 — 데스크탑도 "관리앱 좌우 분할" 아이디어(32차)로 같은 데이터를 목록/확대 두 벌로 보여준다.
+            com.phonelock.app.ui.components.ResponsiveSplit(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(Spacing.md),
+                left = {
+                    Column(Modifier.fillMaxSize()) {
+                        LazyColumn(Modifier.weight(1f)) {
+                            items(rows, key = { it.name }) { row ->
+                                val selected = row.name == selectedName
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)
+                                        .clickable { selectedName = row.name },
+                                    shape = MaterialTheme.shapes.medium,
+                                    color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceVariant,
+                                    border = if (selected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null
+                                ) {
+                                    Column(Modifier.padding(Spacing.sm)) {
+                                        Text(row.name, style = MaterialTheme.typography.titleMedium)
+                                        Spacer(Modifier.height(Spacing.xs))
+                                        if (row.limitSeconds != null) {
+                                            val progress = (row.usedSeconds.toFloat() / row.limitSeconds).coerceIn(0f, 1f)
+                                            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                                        } else {
+                                            Text("오늘 ${formatHms(row.usedSeconds)} 사용", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+                            }
+                            if (quoteOutcomes.isNotEmpty()) {
+                                item {
+                                    Spacer(Modifier.height(Spacing.md))
+                                    QuoteOutcomesSection(quoteOutcomes)
+                                }
+                            }
+                        }
+                    }
+                },
+                right = {
+                    val detail = rows.firstOrNull { it.name == selectedName }
+                    if (detail == null) {
+                        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            Text(
+                                "그룹을 선택하면 상세 사용량을 볼 수 있습니다.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Column(Modifier.fillMaxSize().padding(Spacing.md)) {
+                            Text(detail.name, style = MaterialTheme.typography.headlineSmall)
+                            Spacer(Modifier.height(Spacing.md))
+                            if (detail.limitSeconds != null) {
+                                val progress = (detail.usedSeconds.toFloat() / detail.limitSeconds).coerceIn(0f, 1f)
+                                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                                Spacer(Modifier.height(Spacing.sm))
+                                Text("${formatHms(detail.usedSeconds)} / ${formatHms(detail.limitSeconds)}", style = MaterialTheme.typography.titleMedium)
+                            } else {
+                                Text("오늘 ${formatHms(detail.usedSeconds)} 사용", style = MaterialTheme.typography.titleMedium)
+                            }
+                            Spacer(Modifier.height(Spacing.md))
+                            Text(
+                                "🔓 재확인 통과 횟수: 오늘 ${detail.confirmCountToday}회 (어제 ${detail.confirmCountYesterday}회)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (detail.recentAverageSeconds > 0 && detail.usedSeconds > detail.recentAverageSeconds * ANOMALY_MULTIPLIER) {
+                                Spacer(Modifier.height(Spacing.sm))
+                                Text(
+                                    "⚠️ 오늘 사용이 최근 7일 평균(${formatHms(detail.recentAverageSeconds)})보다 눈에 띄게 많아요.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                }
+            )
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(padding).padding(Spacing.md)) {
                 items(rows) { row ->
@@ -131,45 +215,52 @@ fun StatsScreen(repository: PhoneLockRepository) {
                 }
                 if (quoteOutcomes.isNotEmpty()) {
                     item {
-                        Text("회유 멘트 성공률", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(Spacing.xs))
-                        Text(
-                            "문구가 뜬 상태에서 \"중단\"(저항)을 고른 비율입니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        val overallStop = quoteOutcomes.count { it.choice == "STOP" }
-                        val overallRate = Math.round(overallStop * 100.0 / quoteOutcomes.size).toInt()
-                        Text("전체: ${overallRate}% (${overallStop}/${quoteOutcomes.size})", style = MaterialTheme.typography.bodyMedium)
-                        Spacer(Modifier.height(Spacing.sm))
-                        val byTier = quoteOutcomes.groupBy { it.tier }.toSortedMap()
-                        byTier.forEach { (tier, outcomes) ->
-                            val stopCount = outcomes.count { it.choice == "STOP" }
-                            val rate = Math.round(stopCount * 100.0 / outcomes.size).toInt()
-                            Text(
-                                "${tierLabel(tier)}: ${rate}% (${stopCount}/${outcomes.size})",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Spacer(Modifier.height(Spacing.sm))
-                        val hardestQuotes = quoteOutcomes.groupBy { it.quoteText }
-                            .filter { (_, v) -> v.size >= 2 }
-                            .mapValues { (_, v) -> v.count { it.choice == "PROCEED" } * 100.0 / v.size }
-                            .toList().sortedByDescending { it.second }.take(3)
-                        if (hardestQuotes.isNotEmpty()) {
-                            Text("가장 많이 굴복한 문구", style = MaterialTheme.typography.labelMedium)
-                            hardestQuotes.forEach { (quote, rate) ->
-                                Text("\"$quote\" — ${Math.round(rate)}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        Spacer(Modifier.height(Spacing.md))
+                        QuoteOutcomesSection(quoteOutcomes)
                     }
                 }
             }
         }
     }
+}
+
+/** "회유 멘트 성공률" 섹션(82차) — 전체/티어별 성공률 + 가장 많이 굴복한 문구 3개. 폰의 LazyColumn
+ * item과 태블릿 좌측 패널 둘 다에서 재사용한다. */
+@Composable
+private fun QuoteOutcomesSection(quoteOutcomes: List<com.phonelock.app.data.QuoteOutcome>) {
+    Text("회유 멘트 성공률", style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(Spacing.xs))
+    Text(
+        "문구가 뜬 상태에서 \"중단\"(저항)을 고른 비율입니다.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(Spacing.sm))
+    val overallStop = quoteOutcomes.count { it.choice == "STOP" }
+    val overallRate = Math.round(overallStop * 100.0 / quoteOutcomes.size).toInt()
+    Text("전체: ${overallRate}% (${overallStop}/${quoteOutcomes.size})", style = MaterialTheme.typography.bodyMedium)
+    Spacer(Modifier.height(Spacing.sm))
+    val byTier = quoteOutcomes.groupBy { it.tier }.toSortedMap()
+    byTier.forEach { (tier, outcomes) ->
+        val stopCount = outcomes.count { it.choice == "STOP" }
+        val rate = Math.round(stopCount * 100.0 / outcomes.size).toInt()
+        Text(
+            "${tierLabel(tier)}: ${rate}% (${stopCount}/${outcomes.size})",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+    Spacer(Modifier.height(Spacing.sm))
+    val hardestQuotes = quoteOutcomes.groupBy { it.quoteText }
+        .filter { (_, v) -> v.size >= 2 }
+        .mapValues { (_, v) -> v.count { it.choice == "PROCEED" } * 100.0 / v.size }
+        .toList().sortedByDescending { it.second }.take(3)
+    if (hardestQuotes.isNotEmpty()) {
+        Text("가장 많이 굴복한 문구", style = MaterialTheme.typography.labelMedium)
+        hardestQuotes.forEach { (quote, rate) ->
+            Text("\"$quote\" — ${Math.round(rate)}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    Spacer(Modifier.height(Spacing.md))
 }
 
 private fun tierLabel(tier: Int): String = when (tier) {

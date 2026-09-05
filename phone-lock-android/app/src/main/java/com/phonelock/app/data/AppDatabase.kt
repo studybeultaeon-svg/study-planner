@@ -24,7 +24,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // passIndex/passTotal/passIntervalsCsv 추가. 기존 색상(red/yellow/green) 기준으로 passIndex를
     // 역산해 채워 넣어 진행 중이던 회독 상태를 보존한다(MIGRATION_33_34 참고).
     // 85차: v35 — calc_task에 multiPassUsageEnabled(다회독 ON/OFF, 기본 true로 기존 동작 유지) 추가.
-    version = 35,
+    // 87차: v36 — app_group에 snoozeEnabled(기본 true로 기존 동작 유지)/snoozeDailyLimit(기본 3, 기존
+    // 하드코딩 SNOOZE_DAILY_LIMIT과 동일값) 추가.
+    version = 36,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -99,6 +101,12 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE calc_task ADD COLUMN multiPassUsageEnabled INTEGER NOT NULL DEFAULT 1")
             }
         }
+        private val MIGRATION_35_36 = object : Migration(35, 36) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE app_group ADD COLUMN snoozeEnabled INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE app_group ADD COLUMN snoozeDailyLimit INTEGER NOT NULL DEFAULT 3")
+            }
+        }
 
         fun getInstance(context: Context): AppDatabase =
             instance ?: synchronized(this) {
@@ -108,7 +116,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "phone_lock.db"
                 ).addMigrations(
                     MIGRATION_27_28, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
-                    MIGRATION_33_34, MIGRATION_34_35
+                    MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36
                 )
                     .fallbackToDestructiveMigration().build().also { instance = it }
             }

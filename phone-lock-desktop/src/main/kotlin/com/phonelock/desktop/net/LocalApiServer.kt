@@ -175,10 +175,19 @@ class LocalApiServer(private val repository: Repository) {
     }
 
     /** 사용자 요청(2026-08-14)으로 브라우저 확장(confirm.html/blocked.html/onboarding.html/overlay.js)도
-     *  데스크탑 앱의 테마 3종(설정 화면에서 선택)을 그대로 따라가도록 추가. overlay-status와 같은 이유로
-     *  콘텐츠 스크립트가 임의 페이지 출처에서 호출하므로 openCors로 연다. */
+     *  데스크탑 앱의 테마(설정 화면에서 선택)를 그대로 따라가도록 추가. overlay-status와 같은 이유로
+     *  콘텐츠 스크립트가 임의 페이지 출처에서 호출하므로 openCors로 연다. 86차: CUSTOM 테마(79차 신규,
+     *  당시엔 확장에 반영 안 됨)일 때 필요한 배경/포인트 헥스값도 함께 실어 보낸다 — theme.js가
+     *  buildCustomPalette와 동일한 알고리즘으로 나머지 색을 그 자리에서 계산한다.
+     */
     private fun handleTheme(exchange: HttpExchange) {
-        respondJson(exchange, "{\"themeMode\":\"${repository.themeMode}\"}", openCors = true)
+        respondJson(
+            exchange,
+            "{\"themeMode\":\"${repository.themeMode}\"," +
+                "\"customThemeBackground\":\"${repository.customThemeBackground}\"," +
+                "\"customThemeAccent\":\"${repository.customThemeAccent}\"}",
+            openCors = true
+        )
     }
 
     /** 실행확인에서 "진행"을 고르고 통과한 뒤 남은 시간/레벨을 브라우저 오버레이가 물어보는 API. */

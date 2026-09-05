@@ -197,13 +197,18 @@ suspend fun PhoneLockRepository.revertIncompleteCarryOver(dateKey: String, task:
  * 주면 미완료 처리(자동으로 다음날에 같은 업무 복사, 원본은 그대로 남김 — 35차 세션 신규).
  */
 suspend fun PhoneLockRepository.setCalendarTaskStatus(task: CalendarTask, targetStatus: String) {
-    if (task.status == "O") revertCalendarAutoSchedule(task.dateKey, task)
-    if (task.status == "X") revertIncompleteCarryOver(task.dateKey, task)
-    if (task.status == targetStatus) {
-        // 완료 취소 — 계산기 연동 항목이었다면(1회독=red일 때만 최초 반영했으므로 그때만) 진행량을 되돌린다.
-        if (task.status == "O" && task.linkedCalc != null && task.color == "red") {
+    if (task.status == "O") {
+        revertCalendarAutoSchedule(task.dateKey, task)
+        // 86차 버그 수정: 계산기 연동 항목이었다면(1회독=red일 때만 최초 반영했으므로 그때만) 완료(O)
+        // 상태를 벗어나는 모든 경우에 진행량을 되돌려야 한다 — 예전엔 "완료" 버튼을 다시 눌러 취소하는
+        // 경우(아래 동일 분기)만 되돌리고, "미완료" 버튼으로 바로 O→X 전환하는 경우엔 반영분이 그대로
+        // 남아있던 버그(사용자 실사용 확인).
+        if (task.linkedCalc != null && task.color == "red") {
             adjustLinkedCalcProgress(task.linkedCalc, -linkedProgressAmount(task))
         }
+    }
+    if (task.status == "X") revertIncompleteCarryOver(task.dateKey, task)
+    if (task.status == targetStatus) {
         calendarTaskDao.update(task.copy(status = null))
     } else {
         val updated = task.copy(status = targetStatus)
@@ -262,6 +267,45 @@ suspend fun PhoneLockRepository.addLinkedCalendarTask(dateKey: String, calcTaskN
         )
     )
     resortCalendarDay(dateKey)
+    pushCalendarToFirebase()
+}
+
+/**
+ * 캘린더 일정 하나의 계산기 연동 설정을 바꾼다(51차엔 생성 시에만 가능했던 걸 86차에 개별 일정마다
+ * 수정 가능하도록 확장 — 사용자 요청: "업무 연결 자체를 해제하거나 다른 업무랑 연결하거나 연동된
+ * 업무의 회독 설정이 바뀌었을 때 초기화"). newLinkedCalc를 null로 주면 연결 해제, 다른 계산기 업무
+ * 이름을 주면 그 업무로 재연결(같은 이름을 다시 줘도 아래 회독 재동기화는 그대로 적용되므로 "연동된
+ * 계산기 업무의 회독 설정이 바뀐 경우"의 초기화 용도로도 쓰인다). 이미 완료(O) 처리돼 진행량이 반영된
+ * 상태에서 링크를 바꾸면 기존 반영분을 먼저 되돌리고 새 연동으로 다시 반영한다(color=="red"일 때만
+ * 반영하는 setCalendarTaskStatus의 규칙과 동일하게 유지).
+ */
+suspend fun PhoneLockRepository.setCalendarTaskLink(task: CalendarTask, newLinkedCalc: String?, newProgressStep: String?) {
+    val appliedBefore = task.status == "O" && task.linkedCalc != null && task.color == "red"
+    if (appliedBefore) adjustLinkedCalcProgress(task.linkedCalc!!, -linkedProgressAmount(task))
+
+    var updated = task.copy(linkedCalc = newLinkedCalc, progressStep = newProgressStep)
+    if (newLinkedCalc != null) {
+        // 연동 대상 계산기 업무의 현재 다회독 설정을 이 일정에 다시 복사(addLinkedCalendarTask와 동일
+        // 규칙) — 같은 업무를 다시 선택해도 실행되므로, 그 업무의 회독 수/간격이 나중에 바뀐 경우
+        // 이 버튼으로 다시 맞출 수 있다.
+        val calcTask = calcTaskDao.getAll().find { it.name == newLinkedCalc }
+        if (calcTask != null) {
+            val newPassTotal = if (calcTask.multiPassUsageEnabled) calcTask.passCount else 1
+            val clampedIndex = updated.passIndex.coerceIn(0, newPassTotal - 1)
+            updated = updated.copy(
+                multiPassEnabled = calcTask.multiPassUsageEnabled && preferences.defaultMultiPassEnabled,
+                passTotal = newPassTotal,
+                passIndex = clampedIndex,
+                passIntervalsCsv = calcTask.passIntervalsCsv,
+                color = legacyColorLabel(clampedIndex, newPassTotal)
+            )
+        }
+    }
+    calendarTaskDao.update(updated)
+
+    val appliedAfter = updated.status == "O" && updated.linkedCalc != null && updated.color == "red"
+    if (appliedAfter) adjustLinkedCalcProgress(updated.linkedCalc!!, linkedProgressAmount(updated))
+    resortCalendarDay(task.dateKey)
     pushCalendarToFirebase()
 }
 

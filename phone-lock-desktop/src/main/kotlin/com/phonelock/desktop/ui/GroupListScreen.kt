@@ -177,9 +177,9 @@ private fun GroupRow(
                         }
                     }
                 }
-                if (!pending && group.groupEnabled && (restrictingNow || snoozeActive)) {
+                if (!pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)) {
                     OutlinedButton(onClick = onSnooze, enabled = !snoozeActive && snoozeRemainingToday > 0) {
-                        Text(if (snoozeActive) "😴 스누즈 중" else "😴 스누즈 ${group.snoozeMinutes}분 ($snoozeRemainingToday/3)")
+                        Text(if (snoozeActive) "😴 스누즈 중" else "😴 스누즈 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})")
                     }
                     Spacer(Modifier.width(Spacing.sm))
                 }

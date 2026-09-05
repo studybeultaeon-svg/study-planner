@@ -52,18 +52,23 @@ class LockEvaluator(private val repository: Repository) {
 
     fun isForceEnabledNow(group: Group, now: LocalDateTime = LocalDateTime.now()): Boolean = isForceEnabled(group, now)
 
-    /** 스누즈(#1)가 지금 적용 중인지 — 회유 절차 없이 하루 3회까지만 임시 해제할 수 있는 자기 승인 예외.
-     *  다른 기기의 스누즈도 반영하도록 [Repository.syncedSnoozeUntil]을 거친다(네트워크 I/O 포함) —
-     *  EnforcementService/SiteEnforcement의 백그라운드 판정 경로에서만 호출할 것. */
+    /** 스누즈(#1)가 지금 적용 중인지 — 회유 절차 없이 그룹별 한도까지만 임시 해제할 수 있는 자기 승인
+     *  예외. group.snoozeEnabled가 꺼져 있으면(87차, 안드로이드판과 대칭) scheduleEnabled와 같은 방식으로
+     *  판정 자체를 건너뛰어 남아있는 스누즈 상태를 즉시 무시한다. 다른 기기의 스누즈도 반영하도록
+     *  [Repository.syncedSnoozeUntil]을 거친다(네트워크 I/O 포함) — EnforcementService/SiteEnforcement의
+     *  백그라운드 판정 경로에서만 호출할 것. */
     private fun isSnoozed(group: Group): Boolean {
+        if (!group.snoozeEnabled) return false
         val until = repository.syncedSnoozeUntil(group)
         return until > 0 && System.currentTimeMillis() < until
     }
 
     /** UI 표시 전용(그룹 목록 "😴 스누즈 중" 배지) — Compose 리컴포지션마다 직접 호출되므로 네트워크 호출
      *  없이 로컬 값만 본다. 다른 기기의 스누즈는 [isSnoozed]가 판정 시점에 로컬로 병합·저장해둔 뒤에야
-     *  이 함수에도 반영된다(즉시 반영 아님, 확인 레벨 동기화와 동일한 지연 특성). */
+     *  이 함수에도 반영된다(즉시 반영 아님, 확인 레벨 동기화와 동일한 지연 특성). snoozeEnabled가 꺼져
+     *  있으면 항상 false. */
     fun isSnoozeActive(group: Group): Boolean {
+        if (!group.snoozeEnabled) return false
         val until = group.snoozedUntilEpochMillis ?: return false
         return System.currentTimeMillis() < until
     }

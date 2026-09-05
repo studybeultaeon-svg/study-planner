@@ -2,6 +2,7 @@ package com.phonelock.desktop.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -86,6 +87,8 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
     var themeMode by remember { mutableStateOf(repository.themeMode) }
     var customBgText by remember { mutableStateOf(repository.customThemeBackground) }
     var customAccentText by remember { mutableStateOf(repository.customThemeAccent) }
+    var showBgPalette by remember { mutableStateOf(false) }
+    var showAccentPalette by remember { mutableStateOf(false) }
     // 79차(사용자 요청): "종료 확인 절차"는 관리(차단) 기능의 꼼수 방지 장치이므로 켜고 끌 수 있게 하되,
     // 켜짐→꺼짐으로 바꾸는 것 자체를 같은 회유 멘트 20개 절차로 보호한다(showExitConfirmGate).
     var exitConfirmEnabled by remember { mutableStateOf(repository.exitConfirmEnabled) }
@@ -304,10 +307,13 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                                     modifier = Modifier.weight(1f),
                                     singleLine = true
                                 )
+                                // 86차(사용자 요청): 미리보기 상자를 누르면 헥스 직접 입력 대신 프리셋
+                                // 팔레트에서 골라 고를 수 있다(안드로이드판과 대칭).
                                 Box(
                                     Modifier.size(36.dp)
                                         .background(bgPreview ?: Color.Gray, MaterialTheme.shapes.small)
                                         .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                        .clickable { showBgPalette = true }
                                 )
                             }
                             Spacer(Modifier.height(Spacing.sm))
@@ -330,14 +336,39 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                                     Modifier.size(36.dp)
                                         .background(accentPreview ?: Color.Gray, MaterialTheme.shapes.small)
                                         .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                        .clickable { showAccentPalette = true }
                                 )
                             }
                             Spacer(Modifier.height(Spacing.xs))
                             Text(
-                                "\"#RRGGBB\" 형식(예: #FF9800)으로 입력하세요. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
+                                "직접 입력하거나, 오른쪽 색상 상자를 눌러 팔레트에서 고를 수 있습니다. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            if (showBgPalette) {
+                                com.phonelock.desktop.ui.components.ColorPaletteDialog(
+                                    title = "배경색 고르기",
+                                    currentHex = customBgText,
+                                    onSelect = { hex ->
+                                        customBgText = hex
+                                        repository.customThemeBackground = hex
+                                        onThemeChange(themeMode)
+                                    },
+                                    onDismiss = { showBgPalette = false }
+                                )
+                            }
+                            if (showAccentPalette) {
+                                com.phonelock.desktop.ui.components.ColorPaletteDialog(
+                                    title = "포인트색 고르기",
+                                    currentHex = customAccentText,
+                                    onSelect = { hex ->
+                                        customAccentText = hex
+                                        repository.customThemeAccent = hex
+                                        onThemeChange(themeMode)
+                                    },
+                                    onDismiss = { showAccentPalette = false }
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(Spacing.md))

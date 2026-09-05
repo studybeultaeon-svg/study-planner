@@ -463,6 +463,85 @@ private fun LinkedCalcSection(repository: Repository, dateKey: String, onChanged
     }
 }
 
+/**
+ * 캘린더 일정 하나의 계산기 연동 설정 편집(86차 신규, 안드로이드판 LinkEditorPanel과 대칭) — 생성 시
+ * (LinkedCalcSection)에만 정할 수 있던 연결을 업무마다 나중에 바꿀 수 있게 하는 작은 패널. 다른 계산기
+ * 업무로 재연결, 완전 해제, 완료 시 반영될 할당량(progressStep) 수정을 한 곳에서 처리한다. "적용"은
+ * 선택된 업무가 지금 연결과 같아도 실행되므로, 그 업무의 회독 설정이 나중에 바뀐 경우 다시 맞추는
+ * 초기화 용도로도 쓰인다.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun LinkEditorPanel(
+    repository: Repository,
+    dateKey: String,
+    ordinal: Int,
+    task: CalendarTask,
+    onChanged: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val calcTasks = remember(task) { repository.getCalcTasks().filter { it.name.isNotBlank() } }
+    var selected by remember(task) { mutableStateOf(task.linkedCalc) }
+    var amountText by remember(task) { mutableStateOf(task.progressStep ?: "") }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), MaterialTheme.shapes.small)
+            .padding(Spacing.sm)
+            .padding(top = Spacing.xs)
+    ) {
+        Text("업무 연결 설정", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(Spacing.xs))
+        if (calcTasks.isEmpty()) {
+            Text("등록된 계산기 업무가 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+            ) {
+                calcTasks.forEach { t ->
+                    val isSelected = selected == t.name
+                    OutlinedButton(
+                        onClick = { selected = t.name },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        colors = if (isSelected) {
+                            ButtonDefaults.outlinedButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.primary
+                            )
+                        } else ButtonDefaults.outlinedButtonColors()
+                    ) { Text(t.name, style = MaterialTheme.typography.labelSmall) }
+                }
+            }
+        }
+        Spacer(Modifier.height(Spacing.xs))
+        OutlinedTextField(
+            value = amountText,
+            onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' } },
+            label = { Text("완료 시 반영될 할당량") },
+            enabled = selected != null,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(Spacing.xs))
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+            Button(
+                onClick = {
+                    val name = selected ?: return@Button
+                    repository.setCalendarTaskLink(dateKey, ordinal, name, amountText.ifBlank { null })
+                    onChanged()
+                },
+                enabled = selected != null
+            ) { Text("적용") }
+            OutlinedButton(onClick = {
+                repository.setCalendarTaskLink(dateKey, ordinal, null, null)
+                onChanged()
+            }) { Text("연결 해제") }
+            TextButton(onClick = onCancel) { Text("취소") }
+        }
+    }
+}
+
 @Composable
 private fun CalendarTaskRow(
     repository: Repository,
@@ -479,6 +558,7 @@ private fun CalendarTaskRow(
     var showColorPicker by remember(task) { mutableStateOf(false) }
     var showMoveCopy by remember(task) { mutableStateOf<String?>(null) }
     var targetDateText by remember(task) { mutableStateOf("") }
+    var showLinkEditor by remember(task) { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxWidth()
@@ -588,11 +668,38 @@ private fun CalendarTaskRow(
                 TextButton(onClick = { editingName = false; nameText = task.name }) { Text("취소") }
             }
         } else {
-            TextButton(
-                onClick = { editingName = true },
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                modifier = Modifier.padding(top = 2.dp)
-            ) { Text("✏️ 이름 수정", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    onClick = { editingName = true },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(top = 2.dp)
+                ) { Text("✏️ 이름 수정", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                // 86차: 계산기 업무 연결은 생성 시(LinkedCalcSection)에만 설정할 수 있었는데, 업무마다
+                // 개별적으로 연결 해제/변경/할당량 수정이 가능하도록 작은 버튼 하나만 추가(안드로이드판과
+                // 대칭, 사용자 요청 — 공간을 많이 차지하지 않게).
+                TextButton(
+                    onClick = { showLinkEditor = !showLinkEditor },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    Text(
+                        if (task.linkedCalc != null) "🔗 ${task.linkedCalc}" else "🔗 업무 연결",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (task.linkedCalc != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        if (showLinkEditor) {
+            LinkEditorPanel(
+                repository = repository,
+                dateKey = dateKey,
+                ordinal = ordinal,
+                task = task,
+                onChanged = { showLinkEditor = false; onChanged() },
+                onCancel = { showLinkEditor = false }
+            )
         }
 
         // 웹앱 .modal-actions .modal-btn — 버튼 5개가 flex:1로 균등하게 폭을 나눠 차지하고,
