@@ -159,10 +159,16 @@ class MainActivity : ComponentActivity() {
             var themeRefreshTick by remember { mutableStateOf(0) }
             val prefs = remember(themeRefreshTick) { AppPreferences(applicationContext) }
             var showOnboarding by remember { mutableStateOf(!AppPreferences(applicationContext).onboardingShown) }
+            // 그림으로 보는 기능 안내(신규) — 권한 온보딩과 별개로 최초 1회 자동 표시, 이후 설정 탭에서 다시 열 수 있음.
+            var showGuide by remember { mutableStateOf(!AppPreferences(applicationContext).hasSeenGuide) }
             PhoneLockTheme(themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
                 Surface(modifier = Modifier) {
                     AccountGate(repository) {
-                        PhoneLockApp(repository, onThemeChange = { themeMode = it; themeRefreshTick++ })
+                        PhoneLockApp(
+                            repository,
+                            onThemeChange = { themeMode = it; themeRefreshTick++ },
+                            onShowGuide = { showGuide = true }
+                        )
                     }
                 }
                 if (showOnboarding) {
@@ -171,6 +177,13 @@ class MainActivity : ComponentActivity() {
                             AppPreferences(applicationContext).onboardingShown = true
                             showOnboarding = false
                             requestNotificationPermissionIfNeeded()
+                        }
+                    )
+                } else if (showGuide) {
+                    GuideScreen(
+                        onDismiss = {
+                            AppPreferences(applicationContext).hasSeenGuide = true
+                            showGuide = false
                         }
                     )
                 }
@@ -203,7 +216,7 @@ private fun OnboardingDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String) -> Unit = {}) {
+private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String) -> Unit = {}, onShowGuide: () -> Unit = {}) {
     val navController = rememberNavController()
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { AppPreferences(context) }
@@ -272,7 +285,8 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                 SettingsScreen(
                     repository,
                     onNavigateToStudyLockApps = { navController.navigate("study_lock_apps") },
-                    onThemeChange = onThemeChange
+                    onThemeChange = onThemeChange,
+                    onShowGuide = onShowGuide
                 )
             }
             composable("study_lock_apps") {

@@ -17,6 +17,12 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("onboarding_shown", false)
         set(value) = prefs.edit().putBoolean("onboarding_shown", value).apply()
 
+    /** 그림으로 보는 기능 사용법 안내(GuideScreen)를 이미 봤는지 — onboardingShown(권한 안내)과는
+     *  별개 목적이라 따로 둔다. 최초 1회 자동 표시 후, 설정 화면 "도움말"에서 언제든 다시 볼 수 있다. */
+    var hasSeenGuide: Boolean
+        get() = prefs.getBoolean("guide_shown", false)
+        set(value) = prefs.edit().putBoolean("guide_shown", value).apply()
+
     // ---- 동기화 상태 대시보드(82차, 감사보고서 §10①) ----
     /** 가장 최근에 Firebase 동기화(어느 SyncClient든)가 성공한 시각. 설정 화면 상단 배지용, 판정 로직과 무관. */
     var lastSyncSuccessAtMillis: Long

@@ -41,7 +41,7 @@ private enum class TopSection { MANAGE, STUDY, ROUTINE, SOCIAL_GROUP, SETTINGS }
  * 데스크탑다운 구조로, 모바일(하단 탭)과는 별개로 유지한다.
  */
 @Composable
-fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
+fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onShowGuide: () -> Unit = {}) {
     // 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임)에 맞춰 보이는 섹션만 남긴다 — 설정은 항상
     // 보임(로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 Repository가 전부 true를
     // 기본값으로 주므로 이 필터링으로 인한 회귀는 없다.
@@ -280,7 +280,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                     }
                     TopSection.SETTINGS -> {
                         Box(Modifier.weight(1f)) {
-                            SettingsScreen(repository, onThemeChange = onThemeChange)
+                            SettingsScreen(repository, onThemeChange = onThemeChange, onShowGuide = onShowGuide)
                         }
                     }
                 }

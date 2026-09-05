@@ -265,6 +265,9 @@ data class AppData(
     var nextGroupId: Long = 1,
     /** 일일 사용 한도(dailyLimitMinutes)의 "하루" 기준이 되는 시각 (0~23시, 기본값 0 = 자정). */
     var dailyResetHour: Int = 0,
+    /** 그림으로 보는 기능 사용법 안내(GuideScreen)를 이미 봤는지 — 안드로이드 AppPreferences.hasSeenGuide와
+     *  같은 목적. 데스크탑은 최초 실행 온보딩 자체가 없었어서 이번에 신규로 둔다. */
+    var hasSeenGuide: Boolean = false,
     /** 브라우저 확장프로그램이 URL 패턴(youtube.com/shorts, instagram.com/reels)으로 감지해서 차단할지 여부. */
     var blockReels: Boolean = false,
     var blockShorts: Boolean = false,

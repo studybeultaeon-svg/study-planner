@@ -504,6 +504,13 @@ class Repository {
             persist()
         }
 
+    var hasSeenGuide: Boolean
+        get() = synchronized(lock) { data.hasSeenGuide }
+        set(value) = synchronized(lock) {
+            data.hasSeenGuide = value
+            persist()
+        }
+
     var themeMode: String
         get() = synchronized(lock) { data.themeMode }
         set(value) = synchronized(lock) {

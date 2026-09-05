@@ -106,7 +106,8 @@ private fun syncElapsedLabel(atMillis: Long): String {
 fun SettingsScreen(
     repository: PhoneLockRepository,
     onNavigateToStudyLockApps: () -> Unit = {},
-    onThemeChange: (String) -> Unit = {}
+    onThemeChange: (String) -> Unit = {},
+    onShowGuide: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1111,6 +1112,19 @@ fun SettingsScreen(
                         }
                         else -> {}
                     }
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+
+            SectionCard("도움말") {
+                Text(
+                    "그림으로 보는 사용법 안내를 다시 볼 수 있습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                Button(onClick = onShowGuide, modifier = Modifier.fillMaxWidth()) {
+                    Text("앱 사용법 다시 보기")
                 }
             }
             Spacer(Modifier.height(Spacing.md))

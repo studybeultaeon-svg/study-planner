@@ -82,7 +82,7 @@ private enum class SettingsSubTab { COMMON, ROUTINE, STUDY, MANAGE, SOCIAL }
  */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
+fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onShowGuide: () -> Unit = {}) {
     var settingsSubTab by remember { mutableIntStateOf(0) }
     var themeMode by remember { mutableStateOf(repository.themeMode) }
     var customBgText by remember { mutableStateOf(repository.customThemeBackground) }
@@ -775,6 +775,17 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {})
                                 else -> {}
                             }
                         }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    SectionCard("도움말") {
+                        Text(
+                            "그림으로 보는 사용법 안내를 다시 볼 수 있습니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        Button(onClick = onShowGuide) { Text("앱 사용법 다시 보기") }
                     }
                     Spacer(Modifier.height(Spacing.md))
 
