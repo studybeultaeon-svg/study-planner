@@ -3,6 +3,8 @@ package com.phonelock.app.ui
 import android.content.Intent
 import android.provider.Settings
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
@@ -41,7 +44,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -52,9 +57,12 @@ import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.app.data.AppGroup
 import com.phonelock.app.data.ImportableGroupSetting
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.data.applyGroupSettingsJson
 import com.phonelock.app.data.fetchImportableGroupSettings
+import com.phonelock.app.data.findRemoteGroupSettingByName
 import com.phonelock.app.data.importGroupSetting
 import com.phonelock.app.data.syncGroupSettingsFromFirebase
+import org.json.JSONObject
 import com.phonelock.app.service.AccessibilityServiceChecker
 import com.phonelock.app.service.LockEvaluator
 import com.phonelock.app.ui.components.formatHms
@@ -85,6 +93,10 @@ fun GroupListScreen(
     }
 
     var showImportDialog by remember { mutableStateOf(false) }
+    // 동기화 on/off 켜기 시 이름 충돌 확인(94차 신규, 95차에 편집 화면에서 목록 화면으로 이동) — 켜려는
+    // 그룹과, 이름이 일치한 원격 항목을 함께 들고 있다가 다이얼로그에서 예/아니오로 처리한다.
+    var pendingSyncToggleGroup by remember { mutableStateOf<AppGroup?>(null) }
+    var pendingSyncToggleEntry by remember { mutableStateOf<JSONObject?>(null) }
 
     var accessibilityEnabled by remember { mutableStateOf(AccessibilityServiceChecker.isEnabled(context)) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -212,12 +224,53 @@ fun GroupListScreen(
                             repository.updateGroupFireAndForget(
                                 group.copy(groupEnabled = true, groupOffPending = false, groupOffMessageIndex = 0)
                             )
+                        },
+                        onSyncToggle = { newValue ->
+                            if (newValue) {
+                                scope.launch {
+                                    val remoteMatch = repository.findRemoteGroupSettingByName(group.name)
+                                    if (remoteMatch != null) {
+                                        pendingSyncToggleGroup = group
+                                        pendingSyncToggleEntry = remoteMatch
+                                    } else {
+                                        repository.updateGroupFireAndForget(group.copy(syncEnabled = true))
+                                    }
+                                }
+                            } else {
+                                repository.updateGroupFireAndForget(group.copy(syncEnabled = false))
+                            }
                         }
                     )
                 }
                 }
             }
         }
+    }
+
+    // 로컬 전용 규칙의 동기화를 켜려는데 같은 이름이 이미 불러오기 목록에 있을 때(94차, 95차에 이 화면
+    // 으로 이동) — "예"면 이 규칙의 설정을 그 원격 내용으로 바로 덮어쓰고 동기화를 켠다, "아니오"면 취소.
+    val collisionGroup = pendingSyncToggleGroup
+    val collisionEntry = pendingSyncToggleEntry
+    if (collisionGroup != null && collisionEntry != null) {
+        AlertDialog(
+            onDismissRequest = { pendingSyncToggleGroup = null; pendingSyncToggleEntry = null },
+            title = { Text("동기화") },
+            text = {
+                Text("이미 같은 이름의 차단 규칙이 불러오기 목록에 있습니다. 이 규칙과 동기화하시겠습니까? " +
+                    "\"예\"를 선택하면 이 차단 규칙의 설정이 불러온 내용으로 바뀝니다.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val updated = collisionGroup.applyGroupSettingsJson(collisionEntry).copy(syncEnabled = true)
+                    repository.updateGroupFireAndForget(updated)
+                    pendingSyncToggleGroup = null
+                    pendingSyncToggleEntry = null
+                }) { Text("예") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSyncToggleGroup = null; pendingSyncToggleEntry = null }) { Text("아니오") }
+            }
+        )
     }
 }
 
@@ -231,7 +284,8 @@ private fun GroupRow(
     onSnooze: () -> Unit,
     onGroupToggle: (Boolean) -> Unit,
     onConfirmMessage: () -> Unit,
-    onCancelPending: () -> Unit
+    onCancelPending: () -> Unit,
+    onSyncToggle: (Boolean) -> Unit
 ) {
     val pending = group.groupEnabled && group.groupOffPending
 
@@ -256,19 +310,27 @@ private fun GroupRow(
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs),
+        // 꺼진 차단 규칙은 줄 전체를 흐리게 해서 한눈에 "꺼져 있다"가 보이게 한다(95차, 사용자 요청).
+        // 고정 회색을 새로 칠하는 대신 Modifier.alpha로 카드 전체(배경+글자+아이콘)를 낮은 불투명도로
+        // 내려서 지금 테마(라이트/다크/커스텀 무엇이든) 배경이 그대로 비쳐 보이게 한다 — 항상 테마에
+        // 맞는 "흐려진" 색이 저절로 나온다.
+        modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)
+            .alpha(if (group.groupEnabled) 1f else 0.55f),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceVariant,
         onClick = onClick
     ) {
         Column(Modifier.padding(Spacing.md)) {
+            // 이름+배지는 고정폭(더 이상 weight로 넓게 안 잡음), 잠깐 풀기 버튼은 그 오른쪽 남는 여백
+            // 안에서 왼쪽 붙여 배치, 동기화 칩은 켜짐/꺼짐 Switch 바로 옆(맨 오른쪽)에 배치한다(95차,
+            // 사용자 확정 — "동기화는 on/off 옆에, 잠깐 풀기는 여백 왼쪽에").
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(group.name, style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(Spacing.xs))
+                Column {
                     // 이 화면에서 사용자가 가장 먼저 알고 싶은 건 "지금 이 그룹이 실제로 걸려 있는가"인데,
                     // 예전엔 그 상태가 가장 작고(labelSmall) 가장 흐린(onSurfaceVariant) 텍스트라 그룹
                     // 이름에 완전히 묻혔다 — 상태별 색 배지로 올려 시각적 우선순위를 바로잡는다.
+                    Text(group.name, style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(Spacing.xs))
                     GroupStatusBadge(
                         text = when {
                             pending -> "(%d/%d) 확인 필요".format(group.groupOffMessageIndex + 1, PERSUASION_MESSAGES.size)
@@ -287,13 +349,30 @@ private fun GroupRow(
                     )
                 }
                 Spacer(Modifier.width(Spacing.sm))
-                Switch(checked = group.groupEnabled, onCheckedChange = onGroupToggle)
-            }
-            if (!pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)) {
-                Spacer(Modifier.height(Spacing.xs))
-                OutlinedButton(onClick = onSnooze, enabled = !snoozeActive && snoozeRemainingToday > 0) {
-                    Text(if (snoozeActive) "😴 잠깐 풀기 중" else "😴 잠깐 풀기 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})")
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (!pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)) {
+                        OutlinedButton(onClick = onSnooze, enabled = !snoozeActive && snoozeRemainingToday > 0) {
+                            Text(if (snoozeActive) "😴 잠깐 풀기 중" else "😴 잠깐 풀기 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})")
+                        }
+                    }
                 }
+                // 칩 모양은 공부앱 캘린더의 "N회독" 토글(색 배경 알약+굵은 글씨, CalendarScreen.kt
+                // 참고)과 같은 스타일이되, 이모지는 "🔁"(N회독)과 헷갈리지 않는 "☁️"(클라우드 동기화)를 쓴다.
+                Text(
+                    if (group.syncEnabled) "☁️동기화 ON" else "☁️동기화 OFF",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .background(
+                            (if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.15f),
+                            RoundedCornerShape(50)
+                        )
+                        .clickable { onSyncToggle(!group.syncEnabled) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+                Spacer(Modifier.width(Spacing.sm))
+                Switch(checked = group.groupEnabled, onCheckedChange = onGroupToggle)
             }
             if (pending) {
                 val messageIndex = group.groupOffMessageIndex.coerceIn(0, PERSUASION_MESSAGES.lastIndex)

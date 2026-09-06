@@ -166,15 +166,16 @@ fun GroupEditScreen(
     var memberTab by remember { mutableIntStateOf(0) }
     var originalGroup by remember { mutableStateOf<AppGroup?>(null) }
     var weakeningInfoExpanded by remember { mutableStateOf(false) }
-    // 동기화(94차 신규) — 이 그룹을 크로스디바이스 설정 동기화에 참여시킬지. 이름 충돌 시 확인 절차는
-    // 아래 pendingCreateCollisionEntry/pendingSyncToggleCollisionEntry가 담당한다.
+    // 동기화(94차 신규) — 이 그룹을 크로스디바이스 설정 동기화에 참여시킬지. on/off 스위치 자체는
+    // 95차부터 이 편집 화면이 아니라 GroupListScreen(잠깐 풀기 버튼 옆)에 있다 — 여기서는 저장 시
+    // 기존 값을 그대로 유지해 전달하는 용도로만 상태를 들고 있는다. 새 규칙 생성 시 이름 충돌 확인은
+    // 아래 pendingCreateCollisionEntry가 담당한다.
     var syncEnabled by remember { mutableStateOf(false) }
     var pendingCreateCollisionEntry by remember { mutableStateOf<JSONObject?>(null) }
-    var pendingSyncToggleCollisionEntry by remember { mutableStateOf<JSONObject?>(null) }
 
-    // 원격 설정 항목을 화면의 입력 필드들에 반영한다 — 최초 로드(기존 그룹 편집)와 "동기화하시겠습니까?"
-    // 확인창에서 "예"를 눌렀을 때 둘 다 이 함수를 쓴다(94차). name/syncEnabled/selfMessageText는
-    // 동기화 대상이 아니므로 여기서 건드리지 않는다.
+    // 원격 설정 항목을 화면의 입력 필드들에 반영한다 — 최초 로드(기존 그룹 편집)와 새 규칙 생성 시
+    // 이름 충돌 확인창에서 쓴다(94차). name/syncEnabled/selfMessageText는 동기화 대상이 아니므로
+    // 여기서 건드리지 않는다.
     fun applyGroupToForm(group: AppGroup) {
         description = group.description
         scheduleEnabled = group.scheduleEnabled
@@ -538,35 +539,6 @@ fun GroupEditScreen(
                         checked = confirmEnabled,
                         onCheckedChange = { confirmEnabled = it }
                     )
-                    Spacer(Modifier.height(Spacing.sm))
-                    ToggleRow(
-                        title = "잠깐 풀기",
-                        description = "차단 규칙 목록 화면에서 확인 질문 절차 없이 즉시 임시 해제할 수 있는 버튼을 켭니다.",
-                        checked = snoozeEnabled,
-                        onCheckedChange = { snoozeEnabled = it }
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                    ToggleRow(
-                        title = "동기화",
-                        description = "켜면 이 차단 규칙의 설정(시간대/한도/실행 전 대기 등)이 다른 기기와 자동으로 맞춰지고, " +
-                            "\"불러오기\" 목록에도 나타나 다른 기기에서 가져갈 수 있습니다. 끄면 이 기기에만 있는 로컬 전용 규칙입니다. " +
-                            "제어할 앱/사이트 목록과 켜짐/꺼짐 스위치 자체는 항상 기기별로 따로입니다.",
-                        checked = syncEnabled,
-                        onCheckedChange = { newValue ->
-                            if (newValue && !syncEnabled) {
-                                scope.launch {
-                                    val remoteMatch = repository.findRemoteGroupSettingByName(name.ifBlank { "이름 없는 그룹" })
-                                    if (remoteMatch != null) {
-                                        pendingSyncToggleCollisionEntry = remoteMatch
-                                    } else {
-                                        syncEnabled = true
-                                    }
-                                }
-                            } else {
-                                syncEnabled = newValue
-                            }
-                        }
-                    )
                 }
                 Spacer(Modifier.height(Spacing.md))
 
@@ -577,6 +549,42 @@ fun GroupEditScreen(
                         checked = pomodoroUnlockEnabled,
                         onCheckedChange = { pomodoroUnlockEnabled = it }
                     )
+                }
+                Spacer(Modifier.height(Spacing.md))
+
+                // "관리 종류"(스케줄/일일한도/실행 전 대기)와 성격이 달라 별도 섹션으로 분리(95차,
+                // 사용자 지적) — 켜고 끄는 스위치와 세부 설정(시간/횟수)을 한 카드에 같이 둔다. 동기화
+                // on/off 스위치는 편집 화면이 아니라 목록 화면(잠깐 풀기 버튼 옆)으로 이동했다.
+                SectionCard("잠깐 풀기") {
+                    ToggleRow(
+                        title = "잠깐 풀기 사용",
+                        description = "차단 규칙 목록 화면에서 확인 질문 절차 없이 즉시 임시 해제할 수 있는 버튼을 켭니다.",
+                        checked = snoozeEnabled,
+                        onCheckedChange = { snoozeEnabled = it }
+                    )
+                    if (snoozeEnabled) {
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(
+                            "차단 규칙 목록 화면의 \"😴 잠깐 풀기\" 버튼으로 확인 질문 절차 없이 즉시 임시 해제할 수 있습니다. " +
+                                "남용을 막기 위해 아래 설정한 횟수까지만 쓸 수 있습니다(자정이 아니라 위 일일 한도 초기화 시각 기준).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        OutlinedTextField(
+                            value = snoozeMinutesText,
+                            onValueChange = { snoozeMinutesText = it },
+                            label = { Text("잠깐 풀기 시간(분)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        OutlinedTextField(
+                            value = snoozeDailyLimitText,
+                            onValueChange = { snoozeDailyLimitText = it },
+                            label = { Text("하루 잠깐 풀기 횟수") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
                 Spacer(Modifier.height(Spacing.md))
 
@@ -749,31 +757,6 @@ fun GroupEditScreen(
                     Spacer(Modifier.height(Spacing.md))
                 }
 
-                if (snoozeEnabled) {
-                    SectionCard("일시정지(잠깐 풀기) 설정") {
-                        Text(
-                            "차단 규칙 목록 화면의 \"😴 잠깐 풀기\" 버튼으로 확인 질문 절차 없이 즉시 임시 해제할 수 있습니다. " +
-                                "남용을 막기 위해 아래 설정한 횟수까지만 쓸 수 있습니다(자정이 아니라 위 일일 한도 초기화 시각 기준).",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        OutlinedTextField(
-                            value = snoozeMinutesText,
-                            onValueChange = { snoozeMinutesText = it },
-                            label = { Text("잠깐 풀기 시간(분)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        OutlinedTextField(
-                            value = snoozeDailyLimitText,
-                            onValueChange = { snoozeDailyLimitText = it },
-                            label = { Text("하루 잠깐 풀기 횟수") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-                }
 
                 SectionCard("이 기간엔 끄기 금지 (시험기간 등)") {
                     Text(
@@ -959,27 +942,4 @@ fun GroupEditScreen(
         )
     }
 
-    // 로컬 전용 규칙의 동기화를 켜려는데 같은 이름이 이미 불러오기 목록에 있을 때(94차) — "예"면 화면의
-    // 설정을 그 원격 내용으로 바꾸고 토글을 켠다(저장을 눌러야 실제로 적용됨), "아니오"면 토글을 취소한다.
-    pendingSyncToggleCollisionEntry?.let { remoteEntry ->
-        AlertDialog(
-            onDismissRequest = { pendingSyncToggleCollisionEntry = null },
-            title = { Text("동기화") },
-            text = {
-                Text("이미 같은 이름의 차단 규칙이 불러오기 목록에 있습니다. 이 규칙과 동기화하시겠습니까? " +
-                    "\"예\"를 선택하면 지금 화면의 설정이 불러온 내용으로 바뀝니다(저장을 눌러야 실제로 적용됩니다).")
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val tempGroup = AppGroup(name = name.ifBlank { "이름 없는 그룹" }).applyGroupSettingsJson(remoteEntry)
-                    applyGroupToForm(tempGroup)
-                    syncEnabled = true
-                    pendingSyncToggleCollisionEntry = null
-                }) { Text("예") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingSyncToggleCollisionEntry = null }) { Text("아니오") }
-            }
-        )
-    }
 }

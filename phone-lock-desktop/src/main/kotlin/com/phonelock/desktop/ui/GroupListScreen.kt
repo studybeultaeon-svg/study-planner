@@ -1,6 +1,8 @@
 package com.phonelock.desktop.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,7 +34,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Box
@@ -41,7 +45,9 @@ import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.desktop.data.Group
 import com.phonelock.desktop.data.ImportableGroupSetting
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.applyGroupSettingsJson
 import com.phonelock.desktop.data.fetchImportableGroupSettings
+import com.phonelock.desktop.data.findRemoteGroupSettingByName
 import com.phonelock.desktop.data.importGroupSetting
 import com.phonelock.desktop.monitor.LockEvaluator
 import com.phonelock.desktop.ui.components.formatHms
@@ -50,6 +56,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 @Composable
 fun GroupListScreen(
@@ -60,8 +67,12 @@ fun GroupListScreen(
     onEditClick: (Long) -> Unit
 ) {
     val evaluator = remember { LockEvaluator(repository) }
+    val scope = rememberCoroutineScope()
     var penaltyMessage by remember { mutableStateOf<String?>(null) }
     var showImportDialog by remember { mutableStateOf(false) }
+    // 동기화 on/off 켜기 시 이름 충돌 확인(94차 신규, 95차에 편집 화면에서 목록 화면으로 이동) — 안드로이드판과 대칭.
+    var pendingSyncToggleGroup by remember { mutableStateOf<Group?>(null) }
+    var pendingSyncToggleEntry by remember { mutableStateOf<JSONObject?>(null) }
 
     Column(Modifier.fillMaxSize().padding(Spacing.md)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -151,11 +162,54 @@ fun GroupListScreen(
                             repository.updateGroup(
                                 group.copy(groupEnabled = true, groupOffPending = false, groupOffMessageIndex = 0)
                             )
+                        },
+                        onSyncToggle = { newValue ->
+                            if (newValue) {
+                                scope.launch {
+                                    val remoteMatch = withContext(Dispatchers.IO) {
+                                        repository.findRemoteGroupSettingByName(group.name)
+                                    }
+                                    if (remoteMatch != null) {
+                                        pendingSyncToggleGroup = group
+                                        pendingSyncToggleEntry = remoteMatch
+                                    } else {
+                                        repository.updateGroup(group.copy(syncEnabled = true))
+                                    }
+                                }
+                            } else {
+                                repository.updateGroup(group.copy(syncEnabled = false))
+                            }
                         }
                     )
                 }
             }
         }
+    }
+
+    // 로컬 전용 규칙의 동기화를 켜려는데 같은 이름이 이미 불러오기 목록에 있을 때(94차, 95차에 이 화면
+    // 으로 이동) — "예"면 이 규칙의 설정을 그 원격 내용으로 바로 덮어쓰고 동기화를 켠다, "아니오"면 취소.
+    val collisionGroup = pendingSyncToggleGroup
+    val collisionEntry = pendingSyncToggleEntry
+    if (collisionGroup != null && collisionEntry != null) {
+        AlertDialog(
+            onDismissRequest = { pendingSyncToggleGroup = null; pendingSyncToggleEntry = null },
+            title = { Text("동기화") },
+            text = {
+                Text("이미 같은 이름의 차단 규칙이 불러오기 목록에 있습니다. 이 규칙과 동기화하시겠습니까? " +
+                    "\"예\"를 선택하면 이 차단 규칙의 설정이 불러온 내용으로 바뀝니다.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val updated = collisionGroup.applyGroupSettingsJson(collisionEntry).copy(syncEnabled = true)
+                    repository.updateGroup(updated)
+                    pendingSyncToggleGroup = null
+                    pendingSyncToggleEntry = null
+                }) { Text("예") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSyncToggleGroup = null; pendingSyncToggleEntry = null }) { Text("아니오") }
+            }
+        )
     }
 }
 
@@ -254,7 +308,8 @@ private fun GroupRow(
     onSnooze: () -> Unit,
     onGroupToggle: (Boolean) -> Unit,
     onConfirmMessage: () -> Unit,
-    onCancelPending: () -> Unit
+    onCancelPending: () -> Unit,
+    onSyncToggle: (Boolean) -> Unit
 ) {
     val pending = group.groupEnabled && group.groupOffPending
 
@@ -268,15 +323,22 @@ private fun GroupRow(
 
     // 선택한 그룹은 오른쪽에서 편집 중임을 알 수 있도록 accent 테두리로 강조(마스터-디테일 레이아웃).
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs),
+        // 꺼진 차단 규칙은 줄 전체를 흐리게 해서 한눈에 "꺼져 있다"가 보이게 한다(95차, 사용자 요청).
+        // 고정 회색을 새로 칠하는 대신 Modifier.alpha로 카드 전체(배경+글자+아이콘)를 낮은 불투명도로
+        // 내려서 지금 테마(라이트/다크/커스텀 무엇이든) 배경이 그대로 비쳐 보이게 한다.
+        modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)
+            .alpha(if (group.groupEnabled) 1f else 0.55f),
         shape = MaterialTheme.shapes.medium,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceVariant,
         border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
         onClick = onClick
     ) {
         Column(Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
+            // 이름+배지+정보 줄은 고정폭(더 이상 weight로 넓게 안 잡음), 잠깐 풀기 버튼은 그 오른쪽
+            // 남는 여백 안에서 왼쪽 붙여 배치, 동기화 칩은 켜짐/꺼짐 Switch 바로 옆(맨 오른쪽)에
+            // 배치한다(95차, 사용자 확정 — "동기화는 on/off 옆에, 잠깐 풀기는 여백 왼쪽에").
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+                Column {
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
                         Text(group.name, style = MaterialTheme.typography.titleMedium)
                         // 이 화면에서 사용자가 가장 먼저 알고 싶은 건 "지금 이 그룹이 실제로 걸려 있는가"인데,
@@ -313,12 +375,30 @@ private fun GroupRow(
                         }
                     }
                 }
-                if (!pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)) {
-                    OutlinedButton(onClick = onSnooze, enabled = !snoozeActive && snoozeRemainingToday > 0) {
-                        Text(if (snoozeActive) "😴 잠깐 풀기 중" else "😴 잠깐 풀기 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})")
+                Spacer(Modifier.width(Spacing.sm))
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (!pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)) {
+                        OutlinedButton(onClick = onSnooze, enabled = !snoozeActive && snoozeRemainingToday > 0) {
+                            Text(if (snoozeActive) "😴 잠깐 풀기 중" else "😴 잠깐 풀기 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})")
+                        }
                     }
-                    Spacer(Modifier.width(Spacing.sm))
                 }
+                // 칩 모양은 공부앱 캘린더의 "N회독" 토글(색 배경 알약+굵은 글씨, CalendarScreen.kt
+                // 참고)과 같은 스타일이되, 이모지는 "🔁"(N회독)과 헷갈리지 않는 "☁️"(클라우드 동기화)를 쓴다.
+                Text(
+                    if (group.syncEnabled) "☁️동기화 ON" else "☁️동기화 OFF",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .background(
+                            (if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.15f),
+                            RoundedCornerShape(50)
+                        )
+                        .clickable { onSyncToggle(!group.syncEnabled) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+                Spacer(Modifier.width(Spacing.sm))
                 Switch(checked = group.groupEnabled, onCheckedChange = onGroupToggle)
             }
             if (pending) {
