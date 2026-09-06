@@ -504,10 +504,10 @@ class Repository {
             persist()
         }
 
-    var hasSeenGuide: Boolean
-        get() = synchronized(lock) { data.hasSeenGuide }
+    var lastSeenGuideVersion: Long
+        get() = synchronized(lock) { data.lastSeenGuideVersion }
         set(value) = synchronized(lock) {
-            data.hasSeenGuide = value
+            data.lastSeenGuideVersion = value
             persist()
         }
 

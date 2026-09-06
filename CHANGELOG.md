@@ -4,6 +4,51 @@
 
 ---
 
+## 2026-09-06 (91차 세션) — 90차 지정 9개 작업 중 4건(도움말 표시 조건, 홈 화면 삭제, 루틴 상세 패널, 접근성 배너, 업데이트 배너 한글 필터) + 문서 정리 + 양 플랫폼 릴리스 빌드
+
+사용자 요청: 89차에 추가한 도움말 화면이 지금은 "최초 1회"만 뜨는데, 업데이트를 막 했을 때도 다시 뜨게 해달라는 요청.
+
+- **`hasSeenGuide: Boolean` → `lastSeenGuideVersion: Long`으로 필드 교체**(양 플랫폼): 단순 "봤다/안 봤다" 플래그 대신 "마지막으로 본 시점의 버전"을 저장해, 이 값이 현재 실행 중인 버전과 다르면(최초 설치 포함, 기본값이 실제 버전과 절대 안 겹치는 sentinel) 자동으로 다시 표시되게 함 — 안드로이드는 이미 자체 업데이트 체크에 쓰던 `versionCode`(`Repository.currentVersionCode()`), 데스크탑은 `BuildInfo.BUILD_TIMESTAMP`(`Repository.currentBuildTimestamp()`)를 그대로 재사용해 새 의존성/새 버전 식별자 없이 구현. 안드로이드 `AppPreferences.hasSeenGuide`(SharedPreferences Boolean, 기본 false) → `lastSeenGuideVersion`(Long, 기본 -1L), 데스크탑 `AppData.hasSeenGuide`(JsonStore Boolean, 기본 false) → `lastSeenGuideVersion`(Long, 기본 0L) + `Repository.hasSeenGuide` → `Repository.lastSeenGuideVersion` 프로퍼티 교체. 옛 필드는 이 두 지점(표시 조건 계산/`onDismiss`)에서만 쓰이던 걸 확인하고 완전히 제거(하위호환 별칭 없음) — SharedPreferences/JsonStore 둘 다 스키마리스 키-값이라 마이그레이션 불필요(Room DB 버전과 무관).
+- **설정 화면 "도움말" 카드로 다시 열기는 그대로 유지** — 이번 변경은 자동 표시 조건만 바꿨고, 수동으로 다시 보는 경로(`onShowGuide`)는 손대지 않음.
+- 안드로이드 `compileDebugKotlin`, 데스크탑 `compileKotlin` 양쪽 컴파일 확인 완료(스크래치 경로 `C:\build\phonelock-android`/`C:\build\phonelock-desktop`). 릴리스 빌드/배포/실기기 검증은 아직 안 함.
+
+### 홈 화면 완전 삭제(90차 지정 다음 세션 필수 작업 4번)
+
+사용자 요청: 90차에 신설한 홈 화면(오늘 상태 요약 카드)을 실사용해보니 불필요하다고 판단, 완전히 제거.
+
+- **`HomeScreen.kt` 삭제**(양 플랫폼): 90차에 신설된 파일을 그대로 삭제. 다른 화면이 이 파일의 내부 로직을 가져다 쓴 게 없어(전부 기존 `repository`/`RoutineEngine`/`LockEvaluator` 함수를 호출만 했음) 부작용 없음.
+- **최상위 네비게이션에서 "홈" 항목 제거**: 안드로이드 `MainActivity.kt`의 `Tab` sealed class에서 `Tab.Home` 제거 + `visibleTabs()`에서 맨 앞에 끼워넣던 `Tab.Home,` 제거 + `NavHost`의 `composable(Tab.Home.route){...}` 블록 제거. 데스크탑 `MainScreen.kt`의 `TopSection` enum에서 `HOME` 제거 + `visibleSections` 목록에서 `TopSection.HOME,` 제거 + 무조건 표시되던 홈 `NavigationRailItem` 제거 + `when(section)`의 `TopSection.HOME -> {...}` 분기 제거.
+- **시작 화면 자동 복원**: 90차는 "홈"을 목록 맨 앞에 끼워넣기만 했을 뿐 별도의 "시작 화면" 플래그를 추가하지 않았다 — 양 플랫폼 모두 시작 화면은 여전히 `visibleSections.first()`/`tabs.first().route`로 계산되므로, 끼워넣은 한 줄만 지우면 90차 이전의 첫 번째 보이는 섹션으로 자동 복원된다. 별도 되돌리기 로직 불필요.
+- **부수 원복**: `RoutineScreen.kt`(양 플랫폼)의 `isScheduledOn` 함수가 홈 화면에서 "오늘 예정된 루틴 수"를 계산하려고 `private`에서 `internal`로 열렸던 것을, 홈 화면 삭제로 더 이상 외부에서 안 쓰이므로 `private`로 원복(관련 KDoc 주석도 제거).
+- 안드로이드 `compileDebugKotlin`, 데스크탑 `compileKotlin` 양쪽 컴파일 확인 완료. 릴리스 빌드/배포/실기기 검증은 아직 안 함.
+
+### 데스크탑/태블릿 루틴 화면 오른쪽 컬럼을 마스터-디테일로 교체(90차 지정 3번)
+
+사용자 요청: 90차에 넣은 오른쪽 컬럼 "오늘 요약"(연속 기록/완료율)을 빼고, 루틴을 클릭하면 그 루틴의 상세 페이지가 뜨도록 바꿔달라는 요청.
+
+- **`RoutineRow`에 클릭 선택 추가**(데스크탑): 기존엔 체크박스(완료 토글)와 ✏️ 아이콘(편집)만 상호작용 가능했는데, 행 전체에 `selected`/`onSelect` 파라미터를 추가해 클릭하면 선택 상태가 되고(강조 배경/테두리), 체크박스·편집 버튼은 각자 자기 클릭만 소비해 기존 동작과 충돌 없음.
+- **오른쪽 컬럼을 `RoutineDetailPanel`로 교체**: 선택된 루틴이 없으면 안내 문구, 있으면 제목/아이콘, 반복 요일(`daysMask` 디코드), 시간대, 기간(시작~종료일), 알림 on/off, 최근 30일 완료 일수, "✏️ 수정" 버튼(기존 `RoutineEditDialog` 재사용)을 보여준다.
+- **루틴 하나만의 연속 기록(`routineOwnStreak`) 신규**: 기존 `RoutineEngine.currentStreak()`는 "그날 예정된 루틴 전부"를 기준으로 하는 전역 스트릭이라 이 용도엔 안 맞음 — 오늘부터 거슬러 올라가며 이 루틴이 예정된 날만 보고 완료 여부를 확인하는 별도 함수를 `RoutineScreen.kt`(데스크탑) 안에 추가(무한 루프 방지용 3650일 상한).
+- 안드로이드는 이 화면에 애초에 좌우 분할(`ResponsiveSplit`)이 없어(태블릿도 세로 목록 하나) 이번 변경 대상 아님.
+- 안드로이드 `compileDebugKotlin`, 데스크탑 `compileKotlin` 양쪽 컴파일 확인 완료. 릴리스 빌드/배포/실기기 검증은 아직 안 함.
+
+### 공부(타이머) 탭 접근성 경고 배너 추가 + 업데이트 배너 한글 필터 + 문서 정리(90차 지정 9·7·8번)
+
+- **공부(타이머) 탭 접근성 경고 배너(9번, 안드로이드)**: `StudyTimerScreen.kt`에 `GroupListScreen.kt`와 같은 `AccessibilityServiceChecker.isEnabled` 패턴의 배너를 phone/tablet 레이아웃 양쪽에 추가 — 관리(차단) 규칙을 하나도 안 쓰고 공부 타이머만 쓰는 사용자도 접근성 서비스가 꺼지면 알 수 있게 됨.
+- **자체 업데이트 배너 한글 필터(7번, 안드로이드)**: 조사 결과 GitHub 자동생성 "What's Changed" 텍스트가 아니라, 세션마다 `gh release create --notes`를 영어/한글 섞어 채워온 게 원인이었음(데스크탑은 애초에 이 텍스트를 표시하지 않음). `UpdateBanner.kt`에서 표시 직전에 한글 음절이 하나도 없는 값은 빈 문자열로 처리해 숨기도록 필터 추가 — 과거 영어 릴리스 노트 자체를 고칠 방법은 없어 앞으로의 릴리스부터 정상 표시된다.
+- **문서 정리(8번)**: `HANDOFF.md`의 "현재 진행 중인 작업"에 81~88차 세션별 상세 서술이 그대로 누적돼 500줄에 육박했는데, 전부 이 CHANGELOG.md에 이미 기록된 내용이라 회차별 한 줄 요약으로 압축(미검증 항목은 원래도 "다음 작업 우선순위"에 별도로 있어 정보 손실 없음).
+- 안드로이드 `compileDebugKotlin`, 데스크탑 `compileKotlin` 양쪽 컴파일 확인 완료. 릴리스 빌드/배포/실기기 검증은 아직 안 함.
+
+### 릴리스 빌드(사용자 요청: "빌드하고 세션 마무리해")
+
+위 4건(도움말 조건/홈 삭제/루틴 상세 패널/접근성 배너/업데이트 배너 필터) 전부를 반영해 양 플랫폼 릴리스 빌드 완료.
+
+- **안드로이드**: `AndroidBuilds\phone-lock-android`에 최신 소스+`shared` 미러 후 `assembleRelease`(versionCode `1788661502`) — `AndroidBuilds\phone-lock-app-release.apk`/OneDrive 원본 `app\build\outputs\apk\release\`/`vm-build-output\android` 3곳 해시 일치 확인.
+- **데스크탑**: `C:\build\phone-lock-desktop`에 최신 소스+`shared` 미러(89차 교훈대로 낡은 `build/` 폴더 삭제 후) `packageMsi createDistributable`(BuildInfo `1788661637`) — `vm-build-output\PhoneLockDesktop`에 robocopy 반영(FAILED 0 확인).
+- **이번엔 "빌드"만 요청받아 다음은 하지 않음**: 이 호스트에서 실제로 돌아가는 데스크탑 앱 교체(watchdog 끄기→프로세스 종료→재실행)와 GitHub 릴리스 게시. `feedback_github_upload_means_release`/`feedback_host_live_deploy_standard` 메모리 기준으로 "빌드"는 이 둘과 구분되는 좁은 범위라고 판단 — 다음에 "배포해줘"/"깃허브에 올려"라고 하면 그때 진행.
+
+---
+
 ## 2026-09-06 (90차 세션) — 전체 UX/UI 개편(감사→네비게이션→용어→레이아웃) + 타이머 버그 3건 수정
 
 사용자 요청: "실제 사용자처럼 앱을 탐색해서 UX/UI를 개선해달라"는 포괄적 요청으로 시작해, 세션 도중 사용자가 직접 데스크탑 앱을 써보며 추가 피드백을 여러 차례 줘서 순차적으로 반영. 핵심 기능/데이터 구조/판정 로직은 전혀 안 건드리고 화면 레이아웃·문구·네비게이션만 다뤘다. 배경 에이전트 4개(UX 감사, 네비게이션+용어 감사, 용어 반영, 레이아웃 확장)를 순차 실행하고 그 사이사이 메인 세션이 직접 후속 수정을 진행하는 방식으로 작업했다.

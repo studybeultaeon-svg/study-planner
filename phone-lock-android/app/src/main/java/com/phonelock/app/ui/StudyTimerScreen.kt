@@ -43,6 +43,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,10 +54,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.provider.Settings
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.phonelock.app.service.AccessibilityServiceChecker
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.*
 import com.phonelock.app.data.CalcTask
@@ -111,6 +118,46 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     var stopNoteText by remember { mutableStateOf("") }
     var stopTagText by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // 91차(90차 지정 9번): 접근성 서비스는 관리(차단) 그룹뿐 아니라 공부 잠금(checkStudyLock())도
+    // 이 서비스로 동작하는데, 지금까지 이 경고는 GroupListScreen.kt에만 있었다 — 관리 그룹을 하나도
+    // 안 쓰고 공부 타이머만 쓰는 사용자는 접근성이 꺼져도 알 방법이 없어서 여기도 같은 배너를 추가한다.
+    var accessibilityEnabled by remember { mutableStateOf(AccessibilityServiceChecker.isEnabled(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                accessibilityEnabled = AccessibilityServiceChecker.isEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val accessibilityBanner: @Composable () -> Unit = {
+        if (!accessibilityEnabled) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.sm),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.errorContainer
+            ) {
+                Column(Modifier.padding(Spacing.md)) {
+                    Text(
+                        "⚠ 접근성 서비스가 꺼져 있습니다 — 지금 공부 잠금이 동작하지 않습니다",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                    Button(
+                        onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("설정에서 켜기")
+                    }
+                }
+            }
+        }
+    }
 
     fun refreshLog() {
         scope.launch { todayLog = repository.getTodayStudyLog() }
@@ -449,6 +496,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
         Column(Modifier.fillMaxSize().padding(Spacing.md)) {
             Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(Spacing.md))
+            accessibilityBanner()
             TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
             Spacer(Modifier.height(Spacing.md))
             com.phonelock.app.ui.components.ResponsiveSplit(
@@ -463,6 +511,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
         ) {
             Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(Spacing.md))
+            accessibilityBanner()
 
             TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
             Spacer(Modifier.height(Spacing.md))

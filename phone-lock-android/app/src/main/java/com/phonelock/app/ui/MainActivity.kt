@@ -56,7 +56,6 @@ import java.util.concurrent.TimeUnit
 /** 하단 탭은 "관리앱"(그룹/통계)/"공부앱"(타이머/캘린더/계산기)/"설정" 3개로만 두고, 그 안을
  * 서브탭으로 나눈다 — 데스크탑판(왼쪽 사이드바 + 서브탭)과 같은 2단 구조를 모바일에서는 하단 탭으로 구현. */
 private sealed class Tab(val route: String, val label: String, val emoji: String) {
-    object Home : Tab("home", "홈", "🏠")
     object Manage : Tab("manage", "관리", "🗂️")
     object Study : Tab("study", "공부", "📘")
     object Routine : Tab("routine", "루틴", "🌱")
@@ -68,9 +67,6 @@ private sealed class Tab(val route: String, val label: String, val emoji: String
  *  (로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 [AppPreferences]가 전부 true를
  *  기본값으로 주므로 이 필터링으로 인한 회귀는 없다. */
 private fun visibleTabs(prefs: AppPreferences): List<Tab> = listOfNotNull(
-    // 90차: 맨 앞의 "홈"(오늘 요약)이 기본 시작 화면 — 설정과 마찬가지로 권한 필터링 대상이 아니고,
-    // 홈 안의 카드들이 각자 권한에 따라 보이고 숨는다.
-    Tab.Home,
     Tab.Routine.takeIf { prefs.permRoutine },
     Tab.Study.takeIf { prefs.permStudy },
     Tab.Manage.takeIf { prefs.permManage },
@@ -163,8 +159,10 @@ class MainActivity : ComponentActivity() {
             var themeRefreshTick by remember { mutableStateOf(0) }
             val prefs = remember(themeRefreshTick) { AppPreferences(applicationContext) }
             var showOnboarding by remember { mutableStateOf(!AppPreferences(applicationContext).onboardingShown) }
-            // 그림으로 보는 기능 안내(신규) — 권한 온보딩과 별개로 최초 1회 자동 표시, 이후 설정 탭에서 다시 열 수 있음.
-            var showGuide by remember { mutableStateOf(!AppPreferences(applicationContext).hasSeenGuide) }
+            // 그림으로 보는 기능 안내(신규) — 권한 온보딩과 별개로 최초 설치 시 자동 표시, 이후 설정 탭에서
+            // 다시 열 수 있음. 91차: 마지막으로 본 버전과 현재 버전이 다르면(최초 설치 포함) 업데이트 직후에도
+            // 다시 뜨도록 확장 — repository.currentVersionCode()는 이미 자체 업데이트 체크에 쓰이던 값.
+            var showGuide by remember { mutableStateOf(AppPreferences(applicationContext).lastSeenGuideVersion != repository.currentVersionCode()) }
             PhoneLockTheme(themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
                 Surface(modifier = Modifier) {
                     AccountGate(repository) {
@@ -186,7 +184,7 @@ class MainActivity : ComponentActivity() {
                 } else if (showGuide) {
                     GuideScreen(
                         onDismiss = {
-                            AppPreferences(applicationContext).hasSeenGuide = true
+                            AppPreferences(applicationContext).lastSeenGuideVersion = repository.currentVersionCode()
                             showGuide = false
                         }
                     )
@@ -242,27 +240,6 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             startDestination = tabs.first().route,
             modifier = navModifier
         ) {
-            composable(Tab.Home.route) {
-                // 탭 이동은 하단 바와 같은 방식(startDestination까지 popUpTo + 상태 저장/복원)으로 통일한다.
-                val goTab: (Tab) -> Unit = { tab ->
-                    navController.navigate(tab.route) {
-                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                }
-                HomeScreen(
-                    repository = repository,
-                    showManage = tabs.contains(Tab.Manage),
-                    showStudy = tabs.contains(Tab.Study),
-                    showRoutine = tabs.contains(Tab.Routine),
-                    showSocial = tabs.contains(Tab.Group),
-                    onGoManage = { goTab(Tab.Manage) },
-                    onGoStudy = { goTab(Tab.Study) },
-                    onGoRoutine = { goTab(Tab.Routine) },
-                    onGoSocial = { goTab(Tab.Group) }
-                )
-            }
             composable(Tab.Manage.route) {
                 ManageSection(repository, navController)
             }

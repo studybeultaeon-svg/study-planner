@@ -33,7 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-private enum class TopSection { HOME, MANAGE, STUDY, ROUTINE, SOCIAL_GROUP, SETTINGS }
+private enum class TopSection { MANAGE, STUDY, ROUTINE, SOCIAL_GROUP, SETTINGS }
 
 /**
  * 데스크탑 전용 레이아웃: 왼쪽 사이드바(NavigationRail)로 관리앱/공부앱/설정을 고르고, 관리앱·공부앱은
@@ -45,11 +45,8 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onS
     // 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임)에 맞춰 보이는 섹션만 남긴다 — 설정은 항상
     // 보임(로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 Repository가 전부 true를
     // 기본값으로 주므로 이 필터링으로 인한 회귀는 없다.
-    // 90차: 맨 앞에 "홈"(오늘 요약)을 두고 기본 시작 화면으로 삼는다 — 어느 기능을 쓰든 공통이므로
-    // 설정과 마찬가지로 권한 필터링 대상이 아니다(홈 안의 카드들이 각자 권한에 따라 보이고 숨는다).
     val visibleSections = remember {
         listOfNotNull(
-            TopSection.HOME,
             TopSection.ROUTINE.takeIf { repository.permRoutine },
             TopSection.STUDY.takeIf { repository.permStudy },
             TopSection.MANAGE.takeIf { repository.permManage },
@@ -126,13 +123,6 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onS
 
         Row(Modifier.weight(1f).fillMaxWidth()) {
             NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
-                NavigationRailItem(
-                    selected = section == TopSection.HOME,
-                    onClick = { section = TopSection.HOME },
-                    icon = { Text("🏠") },
-                    label = { Text("홈") },
-                    colors = railColors
-                )
                 if (TopSection.ROUTINE in visibleSections) {
                     NavigationRailItem(
                         selected = section == TopSection.ROUTINE,
@@ -196,21 +186,6 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onS
                 }
 
                 when (section) {
-                    TopSection.HOME -> {
-                        Box(Modifier.weight(1f)) {
-                            HomeScreen(
-                                repository = repository,
-                                showManage = TopSection.MANAGE in visibleSections,
-                                showStudy = TopSection.STUDY in visibleSections,
-                                showRoutine = TopSection.ROUTINE in visibleSections,
-                                showSocial = TopSection.SOCIAL_GROUP in visibleSections,
-                                onGoManage = { section = TopSection.MANAGE; manageSubTab = 0; refresh() },
-                                onGoStudy = { section = TopSection.STUDY; studySubTab = 0 },
-                                onGoRoutine = { section = TopSection.ROUTINE },
-                                onGoSocial = { section = TopSection.SOCIAL_GROUP }
-                            )
-                        }
-                    }
                     TopSection.MANAGE -> {
                         TabRow(
                             selectedTabIndex = manageSubTab,

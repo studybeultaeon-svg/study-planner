@@ -60,8 +60,7 @@ private val ROUTINE_WEEKDAYS_KO = arrayOf("월", "화", "수", "목", "금", "�
 private val ROUTINE_WEEKDAYS_SUN_FIRST = arrayOf("일", "월", "화", "수", "목", "금", "토")
 
 private fun bitIndexFor(date: LocalDate): Int = date.dayOfWeek.value - 1
-/** 홈 화면(HomeScreen.kt)도 "오늘 예정된 루틴"을 세려면 같은 판정이 필요해 internal로 열어둔다. */
-internal fun isScheduledOn(routine: Routine, date: LocalDate): Boolean {
+private fun isScheduledOn(routine: Routine, date: LocalDate): Boolean {
     routine.startDate?.let { if (date.isBefore(LocalDate.parse(it))) return false }
     routine.endDate?.let { if (date.isAfter(LocalDate.parse(it))) return false }
     return (routine.daysMask shr bitIndexFor(date)) and 1 == 1
