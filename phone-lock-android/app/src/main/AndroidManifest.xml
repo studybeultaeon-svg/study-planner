@@ -17,6 +17,12 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- 자체 업데이트(UpdateBanner.kt) 설치 인텐트가 API 30+ 패키지 가시성 제한 때문에
+             resolveActivity()에서 설치 프로그램을 못 찾는 걸 방지 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
     </queries>
 
     <application
@@ -103,6 +109,18 @@
             android:name=".service.WalkieTalkieService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- 자체 업데이트(UpdateBanner.kt)가 직접 내려받은 update.apk를 설치 화면(다른 앱)에
+             content:// URI로 넘겨주기 위한 FileProvider. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_file_paths" />
+        </provider>
 
         <receiver
             android:name=".service.PhoneLockDeviceAdminReceiver"
