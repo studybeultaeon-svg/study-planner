@@ -112,6 +112,14 @@ fun StudyTimerScreen(repository: Repository) {
     var studyMinText by remember { mutableStateOf(repository.pomodoroStudyMinutes.toString()) }
     var breakMinText by remember { mutableStateOf(repository.pomodoroBreakMinutes.toString()) }
     var todayLog by remember { mutableStateOf(repository.getTodayStudyLog()) }
+    // 92차(사용자 요청, "타이머 화면이 여전히 비어보인다"): 스트릭/주간 그래프 2개를 채우려고 추가.
+    // `getAllStudyLogOnce()`는 이 기기 로컬 기록만 반환해서(다른 기기가 그날 올린 기록은
+    // `remoteStudyLogCache`에만 있고 안 섞여 있음, `getTodayStudyLog()`/`getStudyLogForDate()`만
+    // 그 캐시를 합쳐 반환함) 그대로 쓰면 다른 기기에서만 공부한 날이 0으로 보이는 동기화 버그가 된다 —
+    // 그래서 날짜별로 `syncStudyLogFromFirebase(dateKey)` 동기화 후 `getStudyLogForDate(dateKey)`로
+    // 합산해야 한다(아래 `daySeconds()`/`refreshStreakAndWeek()` 참고).
+    var last7Days by remember { mutableStateOf(listOf<Pair<LocalDate, Long>>()) }
+    var studyStreak by remember { mutableStateOf(0) }
     var calcTasksForSummary by remember { mutableStateOf(repository.getCalcTasks()) }
     var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var remoteStudying by remember { mutableStateOf(false) }
@@ -125,7 +133,37 @@ fun StudyTimerScreen(repository: Repository) {
     var stopNoteText by remember { mutableStateOf("") }
     var stopTagText by remember { mutableStateOf("") }
 
+    // 92차: 특정 날짜의 "모든 기기 합산" 공부시간 — 오늘은 이미 5초마다 동기화되는 todayLog를 그대로
+    // 쓰고(더 자주 갱신돼 신선함), 과거 날짜만 그 자리에서 동기화 후 합산한다.
+    suspend fun daySecondsSynced(dateKey: String): Long {
+        if (dateKey == repository.todayCalendarDateKey()) return todayLog.sumOf { it.seconds }.toLong()
+        return withContext(Dispatchers.IO) {
+            repository.syncStudyLogFromFirebase(dateKey)
+            repository.getStudyLogForDate(dateKey).sumOf { it.seconds }.toLong()
+        }
+    }
+    suspend fun refreshStreakAndWeek() {
+        val today = LocalDate.parse(repository.todayCalendarDateKey())
+        val week = (6 downTo 0).map { offset ->
+            val d = today.minusDays(offset.toLong())
+            d to daySecondsSynced(d.toString())
+        }
+        last7Days = week
+        // 스트릭: 오늘부터 거슬러 올라가며 끊기는 지점까지 — 위에서 이미 동기화한 최근 7일은 재사용하고,
+        // 그보다 더 길면 하루씩 추가로 동기화(무한 네트워크 호출 방지용 60일 상한).
+        var streak = 0
+        var d = today
+        while (streak < 60) {
+            val seconds = if (streak < week.size) week[week.size - 1 - streak].second else daySecondsSynced(d.toString())
+            if (seconds <= 0) break
+            streak++
+            d = d.minusDays(1)
+        }
+        studyStreak = streak
+    }
+
     LaunchedEffect(Unit) {
+        refreshStreakAndWeek()
         while (true) {
             delay(1000)
             nowMillis = System.currentTimeMillis()
@@ -164,6 +202,10 @@ fun StudyTimerScreen(repository: Repository) {
                 todayLog = repository.getTodayStudyLog()
                 calcTasksForSummary = repository.getCalcTasks()
                 if (run == null) todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
+            }
+            // 30초마다 스트릭/주간 그래프 갱신 — 과거 날짜 동기화는 매 5초씩 하기엔 비용이 커서 더 낮은 주기로.
+            if (tickCount % 30 == 0) {
+                refreshStreakAndWeek()
             }
         }
     }
@@ -245,6 +287,17 @@ fun StudyTimerScreen(repository: Repository) {
             illustrationRun == null -> "공부를 시작하면 여기에 진행 상황이 표시됩니다"
             illustrationRun.phase == "break" -> "휴식 중 — 잠시 쉬어가세요"
             else -> "공부 중 — 이 시간이 아래 기록으로 쌓입니다"
+        }
+
+        // studyStreak/last7Days는 위 refreshStreakAndWeek()가 채우는 state — 다른 기기 기록까지
+        // 합산해야 해서(위 주석 참고) 여기서 파생 계산하지 않는다.
+        // 92차: 오늘 과목(태그)별 공부시간 — 태그를 안 남겼으면 업무 이름으로 대신 묶는다. 이건
+        // todayLog(이미 getTodayStudyLog()가 다른 기기 기록과 합쳐 반환) 그대로 써도 정확하다.
+        val todaySubjects = remember(todayLog) {
+            todayLog.groupBy { it.tag.ifBlank { it.taskName.ifBlank { "기타" } } }
+                .mapValues { (_, entries) -> entries.sumOf { it.seconds }.toLong() }
+                .toList()
+                .sortedByDescending { it.second }
         }
 
         // 79차: 창이 좁아지면 위아래로 쌓는 ResponsiveSplit(사용자 요청, CalendarScreen/CalculatorScreen과 동일 패턴).
@@ -462,6 +515,21 @@ fun StudyTimerScreen(repository: Repository) {
                     caption = illustrationCaption
                 )
                 Spacer(Modifier.height(Spacing.md))
+
+                StreakCard(streak = studyStreak)
+                Spacer(Modifier.height(Spacing.md))
+
+                SectionCard("📈 최근 7일 공부시간") {
+                    WeekBarChart(days = last7Days)
+                }
+                Spacer(Modifier.height(Spacing.md))
+
+                if (todaySubjects.isNotEmpty()) {
+                    SectionCard("🥧 오늘 과목별 공부시간") {
+                        SubjectPieChart(subjects = todaySubjects)
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+                }
 
                 SectionCard("📊 오늘의 공부 기록") {
                     if (todayLog.isEmpty()) {
@@ -691,6 +759,134 @@ private fun TimerIllustration(progress: Float?, secondHandAngle: Float? = null, 
             )
         }
     }
+}
+
+/** 92차(사용자 요청, "타이머 화면이 여전히 비어보인다"): 오늘부터 거슬러 센 연속 공부일 카드. */
+@Composable
+private fun StreakCard(streak: Int) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = if (streak > 0) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, if (streak > 0) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(Spacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            Text(if (streak > 0) "🔥" else "💤", style = MaterialTheme.typography.headlineMedium)
+            Column {
+                Text(
+                    if (streak > 0) "연속 공부 ${streak}일째" else "오늘부터 연속 기록을 시작해보세요",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (streak > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text("하루라도 공부 시간이 기록되면 이어집니다", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** 92차: 최근 7일(오늘 포함) 공부시간 막대그래프 — 요일 라벨 + 시간 툴팁 없이 값 자체를 막대 위에 표기. */
+@Composable
+private fun WeekBarChart(days: List<Pair<LocalDate, Long>>) {
+    val accent = MaterialTheme.colorScheme.primary
+    val maxSeconds = (days.maxOfOrNull { it.second } ?: 0L).coerceAtLeast(1L)
+    val dowLabels = listOf("월", "화", "수", "목", "금", "토", "일")
+    Row(
+        Modifier.fillMaxWidth().height(120.dp),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+    ) {
+        days.forEach { (date, seconds) ->
+            val fraction = (seconds.toFloat() / maxSeconds.toFloat()).coerceIn(0f, 1f)
+            val isToday = date == LocalDate.now()
+            Column(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Bottom
+            ) {
+                Text(
+                    if (seconds > 0) formatHmsShort(seconds) else "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(2.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth(0.6f)
+                        .fillMaxHeight(0.72f * fraction.coerceAtLeast(0.03f))
+                        .background(
+                            if (isToday) accent else accent.copy(alpha = 0.55f),
+                            RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
+                        )
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    dowLabels[date.dayOfWeek.value - 1],
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isToday) accent else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+    if (maxSeconds <= 1L && days.all { it.second == 0L }) {
+        Spacer(Modifier.height(Spacing.sm))
+        Text("최근 7일간 기록된 공부 시간이 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** 92차: 오늘 과목(태그)별 공부시간 도넛 차트 + 범례. */
+@Composable
+private fun SubjectPieChart(subjects: List<Pair<String, Long>>) {
+    val palette = listOf(
+        MaterialTheme.colorScheme.primary,
+        MaterialTheme.colorScheme.secondary,
+        SUBJECT_COLOR_3, SUBJECT_COLOR_4, SUBJECT_COLOR_5, SUBJECT_COLOR_6
+    )
+    val total = subjects.sumOf { it.second }.coerceAtLeast(1L)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.foundation.Canvas(Modifier.size(100.dp)) {
+            val strokeWidth = 18.dp.toPx()
+            val diameter = size.minDimension - strokeWidth
+            val topLeft = androidx.compose.ui.geometry.Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
+            val arcSize = androidx.compose.ui.geometry.Size(diameter, diameter)
+            var startAngle = -90f
+            subjects.forEachIndexed { idx, (_, seconds) ->
+                val sweep = 360f * (seconds.toFloat() / total.toFloat())
+                drawArc(
+                    color = palette[idx % palette.size],
+                    startAngle = startAngle, sweepAngle = sweep, useCenter = false,
+                    topLeft = topLeft, size = arcSize,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth)
+                )
+                startAngle += sweep
+            }
+        }
+        Spacer(Modifier.width(Spacing.md))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            subjects.take(6).forEachIndexed { idx, (name, seconds) ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.size(10.dp).background(palette[idx % palette.size], CircleShape))
+                    Text(name, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                    Text(formatHmsShort(seconds), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+private val SUBJECT_COLOR_3 = Color(0xFFF59E0B)
+private val SUBJECT_COLOR_4 = Color(0xFFA78BFA)
+private val SUBJECT_COLOR_5 = Color(0xFF34D399)
+private val SUBJECT_COLOR_6 = Color(0xFFEC4899)
+
+private fun formatHmsShort(totalSeconds: Long): String {
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    return if (h > 0) "${h}h ${m}m" else "${m}m"
 }
 
 /** 웹앱의 "입력창 + 추가 버튼 + 목록(항목마다 ✕ 삭제)" 패턴 — 허용 프로그램/사이트 둘 다 같은 UI. */

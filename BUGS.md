@@ -4,6 +4,15 @@
 
 ---
 
+## Fixed (2026-09-06, 92차 세션)
+
+### 타이머 탭 신규 통계 위젯(스트릭/최근 7일 그래프)이 다른 기기가 올린 공부 기록을 놓침
+- **경위**: 같은 세션에서 막 추가한 위젯들을 "동기화 관련해서 문제 없는지 살펴봐"라는 요청으로 재검토하다가 발견.
+- **원인**: `getAllStudyLogOnce()`(양 플랫폼)가 이 기기 로컬 `StudyLogEntry`만 반환 — 다른 기기가 올린 기록은 `remoteStudyLogCache`(날짜별로 `syncStudyLogFromFirebase(dateKey)`가 채우는 별도 맵)에만 있고, `getTodayStudyLog()`/`getStudyLogForDate()`만 그 캐시를 합쳐 반환한다. 새 위젯이 `getAllStudyLogOnce()`를 그대로 써서, 다른 기기에서만 공부한 과거 날짜가 항상 0으로 집계됐음.
+- **해결**: `daySecondsSynced(dateKey)`(양 플랫폼 신규) — 오늘은 5초마다 갱신되는 `todayLog`를 재사용하고, 과거 날짜는 그 자리에서 `syncStudyLogFromFirebase(dateKey)` 후 `getStudyLogForDate(dateKey)`로 합산. 스트릭/주간 그래프 전용 갱신 함수(`refreshStreakAndWeek()`)를 30초 주기로 호출(5초 주기는 네트워크 비용이 너무 큼, 스트릭은 60일 상한으로 무한 호출 방지). [[CHANGELOG.md]] 92차 참고.
+
+---
+
 ## Fixed (2026-09-05, 87차 세션)
 
 ### 데스크탑 release 패키징(`packageReleaseMsi`/`packageReleaseExe`)이 애초에 한 번도 성공한 적 없는 상태였음

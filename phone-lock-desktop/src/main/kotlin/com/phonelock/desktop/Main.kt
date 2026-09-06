@@ -299,6 +299,7 @@ private fun startApp() = application {
                 studyLockStatus?.let { status ->
                     StudyLockScreen(
                         status = status,
+                        repository = repository,
                         toastMessage = studyLockToast,
                         onLaunchApp = { appName ->
                             val resolved = resolveAppPath(appName)
