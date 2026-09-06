@@ -4,22 +4,23 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /**
- * 그룹 설정 크로스디바이스 동기화(87차+ 세션, 사용자 요청, 데스크탑 Repository.GroupSync.kt와 대칭) —
- * 그룹 이름·설명·시간대/한도/실행확인·스누즈·기간지정 강화 등 "설정값"만 동기화하고, 아래는 절대
- * 이 채널에 안 실린다(사용자 명시 요구):
+ * 그룹 설정 크로스디바이스 동기화(87차+ 세션, 94차에 opt-in 방식으로 전면 개편 — 데스크탑
+ * Repository.GroupSync.kt와 대칭) — 그룹 이름·설명·시간대/한도/실행확인·스누즈·기간지정 강화 등
+ * "설정값"만 동기화 대상이고, 아래는 절대 이 채널에 안 실린다(사용자 명시 요구):
  * - 제어할 앱/사이트(GroupMember/GroupSite 별도 테이블) — 기기마다 다르게 두는 게 원래 목적.
  * - groupEnabled(그룹 전체 on/off) — "그룹 목록" 화면 스위치는 기기별로 따로 켜고 끌 수 있어야 함.
  * - groupOffPending/groupOffMessageIndex — 회유 절차 진행 중 여부, 그 자리에서만 의미 있는 임시 UI 상태.
  * - snoozedUntilEpochMillis/snoozeUsedDate/snoozeUsedCount — 이미 snoozeSync 채널이 별도로 기기 간
  *   최신값 병합을 하고 있어 여기서 같이 다루면 두 메커니즘이 서로 다르게 덮어쓸 위험이 있음.
  * - selfMessageText — 원래부터 "순수 로컬 텍스트, 동기화 안 함"으로 설계된 필드(Entities.kt 주석 참고).
+ * - syncEnabled 자체 — 이 그룹을 동기화에 참여시킬지는 기기마다 따로 정하는 로컬 스위치라 동기화 대상이
+ *   아니다(94차 신규).
  *
- * 루틴/캘린더와 같은 "전체 문서 단위 LWW"(users/{user}/groupSettings)이지만, 그룹은 기기마다 로컬
- * 전용인 앱/사이트 목록(GroupMember/GroupSite)을 물고 있어서 루틴처럼 delete+insert로 전체 대체하면
- * 안 된다 — 원격에 없는 이름의 로컬 그룹을 지웠다간 그 그룹의 앱/사이트 목록이 영영 사라진다. 그래서
- * 병합 방식이 다르다: 원격에 있는 이름은 로컬을 찾아 설정 필드만 갱신(없으면 앱/사이트 없이 새로 생성)
- * 하고, 원격에 없는 이름의 로컬 그룹은 그대로 둔다(삭제 전파 없음 — 그룹 삭제/앱-사이트 편집은 항상
- * 기기별 로컬 판단).
+ * **94차 전면 개편**: 88차의 "그룹 화면에 들어가면 원격에 있는 모든 이름을 자동으로 로컬에 병합"하는
+ * 방식이 사용자 의도와 안 맞아(원치 않는 규칙까지 저절로 생김) 그룹별 opt-in(syncEnabled) 방식으로
+ * 바꿨다. syncEnabled=false인 그룹은 원격에 올라가지도, 원격 값으로 갱신되지도 않는다 — 완전히 로컬
+ * 전용. 새로 원격 규칙을 로컬로 들여오는 건 "불러오기" 화면(GroupImportScreen)에서 사용자가 직접
+ * 골라야 한다. 이름 충돌 시 확인 절차는 GroupEditScreen이 [findRemoteGroupSettingByName]으로 처리한다.
  */
 
 private var PhoneLockRepository.groupSettingsTs: Long
@@ -60,8 +61,8 @@ private fun AppGroup.toGroupSettingsJson(): JSONObject = JSONObject().apply {
 }
 
 /** 원격 JSON 한 그룹분을 [AppGroup]에 적용한다 — GroupMember/GroupSite·groupEnabled·groupOffPending류·
- *  스누즈 진행상태·selfMessageText는 건드리지 않고 나머지 설정 필드만 덮어쓴다. */
-private fun AppGroup.applyGroupSettingsJson(json: JSONObject): AppGroup = copy(
+ *  스누즈 진행상태·selfMessageText·syncEnabled는 건드리지 않고 나머지 설정 필드만 덮어쓴다. */
+fun AppGroup.applyGroupSettingsJson(json: JSONObject): AppGroup = copy(
     description = json.optString("description", description),
     dailyLimitSeconds = if (json.isNull("dailyLimitSeconds")) null else json.optInt("dailyLimitSeconds"),
     dailyLimitApplyStartMinute = if (json.isNull("dailyLimitApplyStartMinute")) null else json.optInt("dailyLimitApplyStartMinute"),
@@ -93,21 +94,18 @@ private fun AppGroup.applyGroupSettingsJson(json: JSONObject): AppGroup = copy(
     blockAttemptCount = json.optInt("blockAttemptCount", blockAttemptCount)
 )
 
-/** 새 이름의 원격 그룹을 로컬에 만들 때 쓰는 기본값 — 앱/사이트는 비워두고(기기별 로컬 입력을 기다림),
- *  groupEnabled는 기본 꺼짐(이 기기에 원래 없던 규칙이 동기화로 갑자기 켜진 채 나타나지 않도록, 사용자
- *  확인 후 직접 켜게 함), 스누즈 진행상태/groupOffPending류는 초기값. */
-private fun newGroupFromSettingsJson(json: JSONObject): AppGroup =
-    AppGroup(name = json.optString("name", ""), groupEnabled = false).applyGroupSettingsJson(json)
+/** "불러오기" 화면에 보여줄 원격 항목 한 건. */
+data class ImportableGroupSetting(val name: String, val json: JSONObject)
 
 suspend fun PhoneLockRepository.groupSettingsToJson(): JSONObject {
     val root = JSONObject()
-    groupDao.getAllOnce().forEach { g ->
+    groupDao.getAllOnce().filter { it.syncEnabled }.forEach { g ->
         root.put(com.phonelock.app.service.PomodoroSyncClient.groupSettingsSafeKey(g.name), g.toGroupSettingsJson())
     }
     return root
 }
 
-/** 변경 직후 fire-and-forget으로 Firebase에 전체 그룹 설정 문서를 올린다. */
+/** 변경 직후 fire-and-forget으로 Firebase에 전체 그룹 설정 문서를 올린다(syncEnabled=true인 그룹만 포함). */
 fun PhoneLockRepository.pushGroupSettingsToFirebase() {
     val ts = System.currentTimeMillis()
     groupSettingsTs = ts
@@ -118,31 +116,62 @@ fun PhoneLockRepository.pushGroupSettingsToFirebase() {
 }
 
 /**
- * 그룹 화면 진입 시 호출 — 원격이 로컬보다 최신이면(문서 단위 LWW) 이름이 일치하는 로컬 그룹의 설정
- * 필드만 덮어쓰고(GroupMember/GroupSite·groupEnabled 등은 그대로), 이름이 없는 원격 그룹은 앱/사이트
- * 없이 새로 만든다. 로컬에만 있는 그룹(원격 문서에 이름이 없음)은 삭제하지 않는다. 로컬이 더 최신이면
- * 반대로 원격에 푸시한다.
+ * 그룹 화면 진입 시 호출 — **이미 syncEnabled=true인 로컬 그룹만** 원격 최신값으로 갱신한다(문서 단위
+ * LWW). syncEnabled=false인 로컬 그룹은 전혀 건드리지 않고, 원격에만 있고 로컬에 없는 이름을 새로
+ * 만드는 일도 없다(94차 — 그건 "불러오기" 화면에서 사용자가 명시적으로 골라야 한다). 로컬이 더
+ * 최신이면 반대로 원격에 푸시한다.
  */
 suspend fun PhoneLockRepository.syncGroupSettingsFromFirebase() {
     val result = com.phonelock.app.service.PomodoroSyncClient.readGroupSettings(fbDatabaseUrl, fbApiKey) ?: return
     if (result.ts > groupSettingsTs) {
-        val local = groupDao.getAllOnce()
-        val keys = result.groupsJson.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            if (key == "_ts") continue
-            val entry = result.groupsJson.optJSONObject(key) ?: continue
-            val name = entry.optString("name", "")
-            if (name.isBlank()) continue
-            val existing = local.find { it.name == name }
-            if (existing != null) {
-                groupDao.update(existing.applyGroupSettingsJson(entry))
-            } else {
-                groupDao.insert(newGroupFromSettingsJson(entry))
-            }
+        val locallySynced = groupDao.getAllOnce().filter { it.syncEnabled }
+        locallySynced.forEach { g ->
+            val entry = result.groupsJson.optJSONObject(com.phonelock.app.service.PomodoroSyncClient.groupSettingsSafeKey(g.name)) ?: return@forEach
+            groupDao.update(g.applyGroupSettingsJson(entry))
         }
         groupSettingsTs = result.ts
     } else if (groupSettingsTs > result.ts) {
         pushGroupSettingsToFirebase()
     }
+}
+
+/**
+ * "불러오기" 화면용 — 원격 문서에 있는 항목 중, 이 기기에 아직 동기화로 연결되지 않은(=같은 이름의
+ * 로컬 그룹이 없거나, 있어도 syncEnabled가 꺼져 있는) 것들만 골라 돌려준다.
+ */
+suspend fun PhoneLockRepository.fetchImportableGroupSettings(): List<ImportableGroupSetting> {
+    val result = com.phonelock.app.service.PomodoroSyncClient.readGroupSettings(fbDatabaseUrl, fbApiKey) ?: return emptyList()
+    val locallySyncedNames = groupDao.getAllOnce().filter { it.syncEnabled }.map { it.name }.toSet()
+    val list = mutableListOf<ImportableGroupSetting>()
+    val keys = result.groupsJson.keys()
+    while (keys.hasNext()) {
+        val key = keys.next()
+        if (key == "_ts") continue
+        val entry = result.groupsJson.optJSONObject(key) ?: continue
+        val name = entry.optString("name", "")
+        if (name.isBlank() || name in locallySyncedNames) continue
+        list.add(ImportableGroupSetting(name, entry))
+    }
+    return list
+}
+
+/** 선택한 원격 규칙을 로컬로 불러온다 — 같은 이름의 로컬 그룹이 있으면 설정만 덮어쓰고 syncEnabled를
+ *  켠다(앱/사이트 목록은 그대로 유지), 없으면 앱/사이트 없이 새로 만든다. */
+suspend fun PhoneLockRepository.importGroupSetting(entry: JSONObject) {
+    val name = entry.optString("name", "")
+    if (name.isBlank()) return
+    val existing = groupDao.getAllOnce().find { it.name == name }
+    if (existing != null) {
+        groupDao.update(existing.applyGroupSettingsJson(entry).copy(syncEnabled = true))
+    } else {
+        groupDao.insert(AppGroup(name = name, syncEnabled = true).applyGroupSettingsJson(entry))
+    }
+}
+
+/** 이름이 일치하는 원격 그룹 설정 항목을 찾는다 — 새 규칙 생성/동기화 토글 켜기 시 이름 충돌 확인용. */
+suspend fun PhoneLockRepository.findRemoteGroupSettingByName(name: String): JSONObject? {
+    if (name.isBlank()) return null
+    val result = com.phonelock.app.service.PomodoroSyncClient.readGroupSettings(fbDatabaseUrl, fbApiKey) ?: return null
+    return result.groupsJson.optJSONObject(com.phonelock.app.service.PomodoroSyncClient.groupSettingsSafeKey(name))
+        ?.takeIf { it.optString("name", "") == name }
 }

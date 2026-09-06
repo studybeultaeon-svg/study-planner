@@ -17,7 +17,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -47,7 +50,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.phonelock.shared.PERSUASION_MESSAGES
 import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.app.data.AppGroup
+import com.phonelock.app.data.ImportableGroupSetting
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.data.fetchImportableGroupSettings
+import com.phonelock.app.data.importGroupSetting
 import com.phonelock.app.data.syncGroupSettingsFromFirebase
 import com.phonelock.app.service.AccessibilityServiceChecker
 import com.phonelock.app.service.LockEvaluator
@@ -78,6 +84,8 @@ fun GroupListScreen(
         repository.syncGroupSettingsFromFirebase()
     }
 
+    var showImportDialog by remember { mutableStateOf(false) }
+
     var accessibilityEnabled by remember { mutableStateOf(AccessibilityServiceChecker.isEnabled(context)) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -98,12 +106,26 @@ fun GroupListScreen(
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            Text(
-                "🗂️ 차단 규칙",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "🗂️ 차단 규칙",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { showImportDialog = true }) {
+                    Text("⬇ 불러오기")
+                }
+            }
+            if (showImportDialog) {
+                GroupImportDialog(
+                    repository = repository,
+                    onDismiss = { showImportDialog = false }
+                )
+            }
             // 접근성 서비스는 그룹 차단뿐 아니라 릴스/쇼츠 감지·공부 잠금 등 그룹 개수와 무관한 기능도
             // 전부 이 서비스로 동작하므로, 그룹이 0개라 아래가 빈 화면이어도 경고는 항상 보여야 한다.
             if (!accessibilityEnabled) {
@@ -346,4 +368,67 @@ private fun GroupStatusBadge(text: String, color: androidx.compose.ui.graphics.C
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
         )
     }
+}
+
+/**
+ * "불러오기" 화면(94차 신규) — 원격에 있고 이 기기엔 아직 동기화로 연결 안 된 차단 규칙 이름들을
+ * 보여주고, 고른 것만 로컬로 불러온다(같은 이름의 로컬 규칙이 있으면 설정만 덮어쓰고 동기화를 켠다).
+ * 자동으로 전부 병합하던 기존 방식(88차)을 사용자 요청으로 opt-in 방식으로 바꾼 핵심 화면.
+ */
+@Composable
+private fun GroupImportDialog(repository: PhoneLockRepository, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var loading by remember { mutableStateOf(true) }
+    var items by remember { mutableStateOf(listOf<ImportableGroupSetting>()) }
+    var importedNames by remember { mutableStateOf(setOf<String>()) }
+
+    LaunchedEffect(Unit) {
+        items = repository.fetchImportableGroupSettings()
+        loading = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("불러오기") },
+        text = {
+            Column {
+                Text(
+                    "다른 기기에서 동기화를 켠 차단 규칙 중, 이 기기엔 아직 없는 것들입니다. 원하는 것만 골라 불러오세요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                when {
+                    loading -> Box(Modifier.fillMaxWidth().padding(Spacing.md), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                    items.isEmpty() -> Text("불러올 수 있는 차단 규칙이 없습니다.", style = MaterialTheme.typography.bodyMedium)
+                    else -> {
+                        items.forEach { item ->
+                            val imported = item.name in importedNames
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = Spacing.xs),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(item.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                if (imported) {
+                                    Text("불러옴", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                } else {
+                                    OutlinedButton(onClick = {
+                                        scope.launch {
+                                            repository.importGroupSetting(item.json)
+                                            importedNames = importedNames + item.name
+                                        }
+                                    }) {
+                                        Text("불러오기")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } }
+    )
 }

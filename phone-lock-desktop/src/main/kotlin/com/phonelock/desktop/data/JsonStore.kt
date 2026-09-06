@@ -332,7 +332,8 @@ object JsonStore {
                     blockAttemptCount = g.optInt("blockAttemptCount", 0),
                     processNames = processNames,
                     domains = domains,
-                    selfMessageText = g.optString("selfMessageText", "")
+                    selfMessageText = g.optString("selfMessageText", ""),
+                    syncEnabled = g.optBoolean("syncEnabled", false)
                 )
             )
         }
@@ -597,6 +598,7 @@ object JsonStore {
             gj.put("processNames", JSONArray(g.processNames))
             gj.put("domains", JSONArray(g.domains))
             gj.put("selfMessageText", g.selfMessageText)
+            gj.put("syncEnabled", g.syncEnabled)
             groupsJson.put(gj)
         }
         json.put("groups", groupsJson)
