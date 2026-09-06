@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -321,11 +323,18 @@ private fun GroupRow(
         onClick = onClick
     ) {
         Column(Modifier.padding(Spacing.md)) {
-            // 이름+배지는 고정폭(더 이상 weight로 넓게 안 잡음), 잠깐 풀기 버튼은 그 오른쪽 남는 여백
-            // 안에서 왼쪽 붙여 배치, 동기화 칩은 켜짐/꺼짐 Switch 바로 옆(맨 오른쪽)에 배치한다(95차,
-            // 사용자 확정 — "동기화는 on/off 옆에, 잠깐 풀기는 여백 왼쪽에").
+            // 안드로이드 좁은 화면에서 잠깐 풀기 버튼(글자가 길어질 수 있는 OutlinedButton)을 동기화
+            // 칩과 한 Row에 나란히 두면 UI가 깨진다는 사용자 지적(95차) — 오른쪽을 세로로 두 줄로
+            // 쌓는 구조로 바꾼다. 위 줄엔 동기화 칩 + 켜짐/꺼짐 Switch를 이름 줄과 나란히 붙이고, 그
+            // 아래(이름+배지 두 줄이 이 위 줄 한 줄보다 길어서 생기는 빈 공간)에 잠깐 풀기를 놓는다.
+            // 잠깐 풀기도 세로 크기(높이)를 동기화 칩과 똑같이 맞추기 위해 OutlinedButton 대신 같은
+            // 알약(배경+패딩) 스타일로 통일한다 — 텍스트 길이는 달라도 상하 패딩이 같아 높이는 같다.
+            // 왼쪽 Row를 Top 정렬로 두면 잠깐 풀기가 없을 때 이름+배지(2줄)가 오른쪽 스택(1줄)보다
+            // 길어져 왼쪽 블록이 위로 쏠려 보인다는 지적(95차) — CenterVertically로 두면 두 블록 중
+            // 더 짧은 쪽이 항상 전체 줄 높이(칸이 늘어나 잠깐 풀기가 추가되면 그만큼 커진 높이 포함)
+            // 가운데에 자동으로 맞춰진다.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column {
+                Column(Modifier.weight(1f)) {
                     // 이 화면에서 사용자가 가장 먼저 알고 싶은 건 "지금 이 그룹이 실제로 걸려 있는가"인데,
                     // 예전엔 그 상태가 가장 작고(labelSmall) 가장 흐린(onSurfaceVariant) 텍스트라 그룹
                     // 이름에 완전히 묻혔다 — 상태별 색 배지로 올려 시각적 우선순위를 바로잡는다.
@@ -349,30 +358,53 @@ private fun GroupRow(
                     )
                 }
                 Spacer(Modifier.width(Spacing.sm))
-                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                    if (!pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)) {
-                        OutlinedButton(onClick = onSnooze, enabled = !snoozeActive && snoozeRemainingToday > 0) {
-                            Text(if (snoozeActive) "😴 잠깐 풀기 중" else "😴 잠깐 풀기 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 동기화 칩과 잠깐 풀기 칩을 스위치와 별개인 이 안쪽 Column에 함께 넣고
+                    // width(IntrinsicSize.Max)로 폭을 서로 맞춰서(둘 중 더 넓은 텍스트 기준) 두 칩의
+                    // 왼쪽·오른쪽 끝이 세로로 정확히 줄맞춤되게 한다(95차, 사용자 지적 — 전체 줄
+                    // 가로폭에 맞춰 늘어나는 건 원하는 게 아니라 "동기화 칩과 세로줄이 맞아야 한다"는 뜻이었음).
+                    Column(
+                        modifier = Modifier.width(IntrinsicSize.Max),
+                        horizontalAlignment = Alignment.End
+                    ) {
+                        // 칩 모양은 공부앱 캘린더의 "N회독" 토글(색 배경 알약+굵은 글씨, CalendarScreen.kt
+                        // 참고)과 같은 스타일이되, 이모지는 "🔁"(N회독)과 헷갈리지 않는 "☁️"(클라우드 동기화)를 쓴다.
+                        Text(
+                            if (group.syncEnabled) "☁️동기화 ON" else "☁️동기화 OFF",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            color = if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    (if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.15f),
+                                    RoundedCornerShape(50)
+                                )
+                                .clickable { onSyncToggle(!group.syncEnabled) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                        if (!pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)) {
+                            Spacer(Modifier.height(Spacing.xs))
+                            val snoozeClickable = !snoozeActive && snoozeRemainingToday > 0
+                            Text(
+                                if (snoozeActive) "😴 잠깐 풀기 중" else "😴 잠깐 풀기 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                color = STATUS_WARNING,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(STATUS_WARNING.copy(alpha = 0.15f), RoundedCornerShape(50))
+                                    .let { if (snoozeClickable) it.clickable(onClick = onSnooze) else it }
+                                    .alpha(if (snoozeClickable) 1f else 0.6f)
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
                         }
                     }
+                    Spacer(Modifier.width(Spacing.sm))
+                    Switch(checked = group.groupEnabled, onCheckedChange = onGroupToggle)
                 }
-                // 칩 모양은 공부앱 캘린더의 "N회독" 토글(색 배경 알약+굵은 글씨, CalendarScreen.kt
-                // 참고)과 같은 스타일이되, 이모지는 "🔁"(N회독)과 헷갈리지 않는 "☁️"(클라우드 동기화)를 쓴다.
-                Text(
-                    if (group.syncEnabled) "☁️동기화 ON" else "☁️동기화 OFF",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .background(
-                            (if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.15f),
-                            RoundedCornerShape(50)
-                        )
-                        .clickable { onSyncToggle(!group.syncEnabled) }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-                Spacer(Modifier.width(Spacing.sm))
-                Switch(checked = group.groupEnabled, onCheckedChange = onGroupToggle)
             }
             if (pending) {
                 val messageIndex = group.groupOffMessageIndex.coerceIn(0, PERSUASION_MESSAGES.lastIndex)
