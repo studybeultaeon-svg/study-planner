@@ -605,7 +605,7 @@ private fun CalendarTaskRow(
             // 79차: 완료(O) 시 다음 회독을 자동 생성할지 업무마다 켜고 끌 수 있는 토글(기본 off, 사용자 요청).
             // 꺼져 있으면 아래 ⏱(nextDays) 입력은 의미가 없으므로 숨긴다.
             Text(
-                if (task.multiPassEnabled) "🔁다회독" else "🔁off",
+                if (task.multiPassEnabled) "🔁N회독" else "🔁off",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -751,26 +751,30 @@ private fun CalendarTaskRow(
         }
 
         if (showMoveCopy != null) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = Spacing.xs)) {
-                OutlinedTextField(
+            Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = Spacing.xs)) {
+                // 92차: 수동 "YYYY-MM-DD" 텍스트 입력 대신 계산기 업무 입력(83차)과 같은 미니 캘린더
+                // 날짜 선택 버튼(DatePickerField)으로 교체(안드로이드판 CalendarScreen.kt와 대칭).
+                com.phonelock.desktop.ui.components.DatePickerField(
                     value = targetDateText,
                     onValueChange = { targetDateText = it },
-                    label = { Text("대상 날짜 (YYYY-MM-DD)") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
+                    label = "대상 날짜",
+                    modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(Spacing.xs))
-                Button(onClick = {
-                    val target = targetDateText.trim()
-                    if (target.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
-                        if (showMoveCopy == "move") repository.moveCalendarTaskToDate(dateKey, ordinal, target)
-                        else repository.copyCalendarTaskToDate(dateKey, ordinal, target)
-                        showMoveCopy = null
-                        targetDateText = ""
-                        onChanged()
-                    }
-                }) { Text("확인") }
-                TextButton(onClick = { showMoveCopy = null }) { Text("취소") }
+                Button(
+                    onClick = {
+                        val target = targetDateText.trim()
+                        if (target.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
+                            if (showMoveCopy == "move") repository.moveCalendarTaskToDate(dateKey, ordinal, target)
+                            else repository.copyCalendarTaskToDate(dateKey, ordinal, target)
+                            showMoveCopy = null
+                            targetDateText = ""
+                            onChanged()
+                        }
+                    },
+                    modifier = Modifier.height(56.dp)
+                ) { Text("확인") }
+                TextButton(onClick = { showMoveCopy = null; targetDateText = "" }, modifier = Modifier.height(56.dp)) { Text("취소") }
             }
         }
     }

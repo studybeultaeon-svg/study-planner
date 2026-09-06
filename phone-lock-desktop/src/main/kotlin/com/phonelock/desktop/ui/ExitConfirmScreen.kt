@@ -58,7 +58,7 @@ fun ExitConfirmScreen(
 
     WatchAndWaitScreen(
         title = title,
-        message = "회유 멘트 (%d/%d)".format(messageIndex + 1, PERSUASION_MESSAGES.size),
+        message = "확인 질문 (%d/%d)".format(messageIndex + 1, PERSUASION_MESSAGES.size),
         quote = PERSUASION_MESSAGES[messageIndex],
         countdownSeconds = null,
         primaryEnabled = !stepStarted,

@@ -65,7 +65,7 @@ object RoutineNotifier {
                 repository.zeroStreakDays = if (broken) 0 else repository.zeroStreakDays + 1
                 message = RoutineQuotes.forZeroStreak(repository.zeroStreakDays, broken)
             }
-            DesktopNotifier.notify("🌱 루틴 스트릭", message)
+            DesktopNotifier.notify("🌱 루틴 연속 기록", message)
             repository.lastRoutineStreak = streak
         }
     }

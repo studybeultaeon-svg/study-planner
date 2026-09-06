@@ -17,6 +17,13 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("onboarding_shown", false)
         set(value) = prefs.edit().putBoolean("onboarding_shown", value).apply()
 
+    /** 그림으로 보는 기능 사용법 안내(GuideScreen)를 마지막으로 본 시점의 versionCode — onboardingShown(권한 안내)과는
+     *  별개 목적이라 따로 둔다. 이 값이 현재 versionCode와 다르면(최초 설치 포함, 기본값 -1은 절대 일치 안 함)
+     *  자동으로 다시 표시되고, 설정 화면 "도움말"에서도 언제든 다시 볼 수 있다. */
+    var lastSeenGuideVersion: Long
+        get() = prefs.getLong("last_seen_guide_version", -1L)
+        set(value) = prefs.edit().putLong("last_seen_guide_version", value).apply()
+
     // ---- 동기화 상태 대시보드(82차, 감사보고서 §10①) ----
     /** 가장 최근에 Firebase 동기화(어느 SyncClient든)가 성공한 시각. 설정 화면 상단 배지용, 판정 로직과 무관. */
     var lastSyncSuccessAtMillis: Long
@@ -258,6 +265,12 @@ class AppPreferences(context: Context) {
         get() = prefs.getLong("routines_ts", 0L)
         set(value) = prefs.edit().putLong("routines_ts", value).apply()
 
+    /** 그룹 설정(제어할 앱/사이트·groupEnabled·스누즈 진행상태 등 제외) 전체 문서 단위 Firebase LWW
+     *  타임스탬프(87차+, 데스크탑판 groupSettingsTs와 동일 패턴) — users/{user}/groupSettings. */
+    var groupSettingsTs: Long
+        get() = prefs.getLong("group_settings_ts", 0L)
+        set(value) = prefs.edit().putLong("group_settings_ts", value).apply()
+
     // ---- 네이티브 계산기(3단계) ----
     var calcTasksTs: Long
         get() = prefs.getLong("calc_tasks_ts", 0L)
@@ -300,6 +313,7 @@ class AppPreferences(context: Context) {
         calcSavedTs = 0L
         calcFolderTs = 0L
         calcFolderOrderTs = 0L
+        groupSettingsTs = 0L
     }
 
     /** 접힌 폴더 경로 집합(calcPathToOrderKey로 인코딩) — 기기별 UI 상태라 Firebase엔 올리지 않는다. */

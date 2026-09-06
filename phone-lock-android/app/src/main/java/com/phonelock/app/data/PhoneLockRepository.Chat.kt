@@ -1,0 +1,34 @@
+package com.phonelock.app.data
+
+/**
+ * "소셜" 개편 Phase 1 — 모임 "💬 대화" 채널의 [PhoneLockRepository] 얇은 pass-through.
+ * [PhoneLockRepository.Social.kt]와 같은 패턴(로컬 캐싱 없이 화면 진입 시마다 Firebase 직접 조회).
+ */
+
+suspend fun PhoneLockRepository.sendGroupChatMessage(groupId: String, text: String) =
+    com.phonelock.app.service.ChatSyncClient.sendGroupMessage(fbDatabaseUrl, fbApiKey, groupId, text)
+
+suspend fun PhoneLockRepository.readGroupChatMessages(groupId: String) =
+    com.phonelock.app.service.ChatSyncClient.readGroupMessages(fbDatabaseUrl, fbApiKey, groupId)
+
+suspend fun PhoneLockRepository.toggleGroupChatReaction(groupId: String, msgId: String, emoji: String, alreadySet: Boolean) =
+    com.phonelock.app.service.ChatSyncClient.toggleGroupMessageReaction(fbDatabaseUrl, fbApiKey, groupId, msgId, emoji, alreadySet)
+
+/** "소셜" 개편 Phase 2 — 1:1 DM(커스텀 아이디 전역 검색). */
+suspend fun PhoneLockRepository.searchDmUserByCode(code: String) =
+    com.phonelock.app.service.ChatSyncClient.searchUserByCode(fbDatabaseUrl, fbApiKey, code)
+
+suspend fun PhoneLockRepository.ensureDmChat(otherUid: String, otherLabel: String) =
+    com.phonelock.app.service.ChatSyncClient.ensureDmChat(fbDatabaseUrl, fbApiKey, otherUid, otherLabel)
+
+suspend fun PhoneLockRepository.readMyDmChats() =
+    com.phonelock.app.service.ChatSyncClient.readMyDmChats(fbDatabaseUrl, fbApiKey)
+
+suspend fun PhoneLockRepository.sendDmChatMessage(chatId: String, peerUid: String, text: String) =
+    com.phonelock.app.service.ChatSyncClient.sendDmMessage(fbDatabaseUrl, fbApiKey, chatId, peerUid, text)
+
+suspend fun PhoneLockRepository.readDmChatMessages(chatId: String) =
+    com.phonelock.app.service.ChatSyncClient.readDmMessages(fbDatabaseUrl, fbApiKey, chatId)
+
+suspend fun PhoneLockRepository.toggleDmChatReaction(chatId: String, msgId: String, emoji: String, alreadySet: Boolean) =
+    com.phonelock.app.service.ChatSyncClient.toggleDmMessageReaction(fbDatabaseUrl, fbApiKey, chatId, msgId, emoji, alreadySet)

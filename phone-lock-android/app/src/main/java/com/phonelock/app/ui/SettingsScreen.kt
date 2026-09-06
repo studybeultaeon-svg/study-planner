@@ -14,6 +14,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -98,15 +101,16 @@ private fun syncElapsedLabel(atMillis: Long): String {
     }
 }
 
-// 태블릿 무대응(의도적 판단, 84차): 데스크탑판 SettingsScreen.kt도 동일한 TabRow + 세로 스크롤
-// Column/SectionCard 나열 구조뿐이고 ResponsiveSplit 등 좌우 분할을 쓰지 않는다 — 포팅할 desktop
-// 전용 레이아웃이 없다.
+// 태블릿 무대응(의도적 판단, 84차 → 90차 재확인): 안드로이드는 이번 90차 데스크탑 레이아웃 확장
+// (설정 카드 2열 배치)의 대상이 아니라 지금까지처럼 TabRow + 세로 스크롤 Column/SectionCard 나열
+// 구조를 그대로 유지한다.
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     repository: PhoneLockRepository,
     onNavigateToStudyLockApps: () -> Unit = {},
-    onThemeChange: (String) -> Unit = {}
+    onThemeChange: (String) -> Unit = {},
+    onShowGuide: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -130,6 +134,8 @@ fun SettingsScreen(
         mutableStateOf(com.phonelock.shared.calc.PassSchedule.parsePassIntervals(prefs.defaultPassIntervalsCsv, prefs.defaultPassCount))
     }
     var settingsSubTab by remember { mutableIntStateOf(0) }
+    // 90차: 타이머 탭에서 옮겨온 "공부 잠금 허용 사이트"(공부 서브탭) — 저장 위치는 그대로다.
+    var studyAllowedSites by remember { mutableStateOf(prefs.studyLockAllowedSites.toList()) }
     var dailyResetHourText by remember { mutableStateOf(prefs.dailyResetHour.toString()) }
     // 85차: 설정 화면 진입 시 다른 기기에서 바꾼 다회독 기본값/일일 초기화 시각을 받아와 로컬 상태를 갱신.
     LaunchedEffect(Unit) {
@@ -214,7 +220,7 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showRestoreConfirmDialog = false },
             title = { Text("복원 확인") },
-            text = { Text("복원하면 현재 그룹이 백업 파일 내용으로 대체됩니다. 계속할까요?") },
+            text = { Text("복원하면 현재 차단 규칙이 백업 파일 내용으로 대체됩니다. 계속할까요?") },
             confirmButton = {
                 TextButton(onClick = {
                     val uri = pendingRestoreUri
@@ -272,7 +278,7 @@ fun SettingsScreen(
             // 해당 서브탭만 보여준다 — "공통"은 로그아웃 등 항상 필요한 항목이라 예외로 항상 표시.
             // 본문 각 섹션은 여전히 고정 인덱스(0~4)로 분기하므로 숨긴 탭은 그냥 선택 불가능해질 뿐이다.
             TabRow(selectedTabIndex = settingsSubTab) {
-                MaterialTab(selected = settingsSubTab == 0, onClick = { settingsSubTab = 0 }, text = { Text("공통") })
+                MaterialTab(selected = settingsSubTab == 0, onClick = { settingsSubTab = 0 }, text = { Text("앱 전체") })
                 if (prefs.permRoutine) {
                     MaterialTab(selected = settingsSubTab == 1, onClick = { settingsSubTab = 1 }, text = { Text("루틴") })
                 }
@@ -294,9 +300,24 @@ fun SettingsScreen(
                 .padding(Spacing.md)
         ) {
           if (settingsSubTab == 0) {
+            // "도움말"은 원래 공통 탭 스크롤 맨 아래(업데이트 카드 다음)에 있어서, 정작 사용법을
+            // 모를 때 찾기가 가장 어려운 자리였다 — 탭을 열면 바로 보이도록 맨 위로 올린다.
+            SectionCard("도움말") {
+                Text(
+                    "그림으로 보는 사용법 안내를 다시 볼 수 있습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                Button(onClick = onShowGuide, modifier = Modifier.fillMaxWidth()) {
+                    Text("앱 사용법 다시 보기")
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+
             SectionCard("테마") {
                 Text(
-                    "앱 전체 배경/포인트 색과 차단/실행확인 화면 강조색, 홈 화면 위젯 색까지 함께 바뀝니다.",
+                    "앱 전체 배경/포인트 색과 차단/실행 전 대기 화면 강조색, 홈 화면 위젯 색까지 함께 바뀝니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -448,7 +469,7 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyLarge
                 )
                 Text(
-                    "그룹 잠금/실행 확인 기능이 동작하려면 켜야 합니다.",
+                    "차단 규칙 잠금/실행 전 대기 기능이 동작하려면 켜야 합니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -587,7 +608,7 @@ fun SettingsScreen(
           if (settingsSubTab == 4) {
             SectionCard("모임 공유 설정") {
                 Text(
-                    "모임마다 공개할 내 정보(루틴/공부/스트릭/오늘 일정/공부중 여부/작동 중인 관리 그룹)를 " +
+                    "모임마다 공개할 내 정보(루틴/공부/연속 기록/오늘 일정/공부중 여부/작동 중인 차단 규칙)를 " +
                         "다르게 정할 수 있어, 여기가 아니라 각 모임 화면의 ⚙ 공유 설정에서 모임별로 관리합니다. " +
                         "특정 멤버에게만 내 정보를 숨기거나 특정 멤버의 정보를 안 보이게 하는 것도 그 " +
                         "멤버의 상세 화면에서 따로 설정할 수 있습니다.",
@@ -596,8 +617,8 @@ fun SettingsScreen(
                 )
             }
             Text(
-                "무전기(음성/텍스트 메시지) 수신 설정도 모임마다 다르게 정할 수 있어 여기가 아니라 각 모임 " +
-                    "화면의 ⚙ 무전기 설정에서 관리합니다.",
+                "깨우기 메시지(음성/텍스트) 수신 설정도 모임마다 다르게 정할 수 있어 여기가 아니라 각 모임 " +
+                    "화면의 ⚙ 깨우기 메시지 설정에서 관리합니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -615,7 +636,7 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    "이 시각이 되면 그룹별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
+                    "이 시각이 되면 차단 규칙별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -648,11 +669,11 @@ fun SettingsScreen(
             Spacer(Modifier.height(Spacing.md))
 
             if (autoBackups.isNotEmpty()) {
-                SectionCard("⚠ 그룹 데이터 복구") {
+                SectionCard("⚠ 차단 규칙 데이터 복구") {
                     Text(
-                        "앱 업데이트로 로컬 데이터가 초기화됐을 때 자동으로 만들어진 백업이 있습니다. 그룹(차단 " +
+                        "앱 업데이트로 로컬 데이터가 초기화됐을 때 자동으로 만들어진 백업이 있습니다. 차단 규칙(차단 " +
                             "대상 앱/사이트 목록)은 동기화되지 않는 데이터라 지워졌다면 이 백업에서만 복구할 수 " +
-                            "있습니다. 그룹이 이미 정상적으로 보이면 누르지 마세요(같은 그룹이 중복으로 추가됩니다).",
+                            "있습니다. 차단 규칙이 이미 정상적으로 보이면 누르지 마세요(같은 차단 규칙이 중복으로 추가됩니다).",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -667,10 +688,10 @@ fun SettingsScreen(
                                 groupRestoreResult = "백업 파일을 읽지 못했습니다."
                             } else {
                                 val count = repository.restoreGroupsFromBackup(json)
-                                groupRestoreResult = "그룹 ${count}개 복구 완료. 앱을 재시작해주세요."
+                                groupRestoreResult = "차단 규칙 ${count}개 복구 완료. 앱을 재시작해주세요."
                             }
                         }
-                    }) { Text("이 백업에서 그룹 복구") }
+                    }) { Text("이 백업에서 차단 규칙 복구") }
                     groupRestoreResult?.let {
                         Spacer(Modifier.height(Spacing.sm))
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
@@ -679,7 +700,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(Spacing.md))
             }
 
-            SectionCard("백업 / 복원") {
+            SectionCard("백업 · 복원") {
                 Button(
                     onClick = { backupLauncher.launch("phone_lock_backup.json") },
                     modifier = Modifier.fillMaxWidth()
@@ -738,9 +759,9 @@ fun SettingsScreen(
           }
 
           if (settingsSubTab == 1) {
-            SectionCard("루틴 스트릭 알림") {
+            SectionCard("루틴 연속 기록 알림") {
                 ToggleRow(
-                    title = "스트릭 알림 받기",
+                    title = "연속 기록 알림 받기",
                     checked = routineStreakNotifyEnabled,
                     onCheckedChange = { checked ->
                         routineStreakNotifyEnabled = checked
@@ -753,7 +774,7 @@ fun SettingsScreen(
                     }
                 )
                 Text(
-                    "하루 중 랜덤한 시각에 어제 루틴 스트릭 상태를 알려줍니다.",
+                    "하루 중 랜덤한 시각에 어제 루틴 연속 기록 상태를 알려줍니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -764,7 +785,7 @@ fun SettingsScreen(
           if (settingsSubTab == 0) {
             SectionCard("계정 동기화 (로그인 필수)") {
                 Text(
-                    "동기화(실행확인 레벨/스누즈/일일사용량/캘린더/계산기/루틴)는 이제 로그인이 있어야만 " +
+                    "동기화(실행 전 대기 단계/잠깐 풀기/일일사용량/캘린더/계산기/루틴)는 이제 로그인이 있어야만 " +
                         "작동합니다. 같은 계정으로 로그인한 기기끼리 자동으로 연결됩니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1047,22 +1068,8 @@ fun SettingsScreen(
             }
           }
 
-          if (settingsSubTab == 3) {
-            SectionCard("공부 잠금 허용 앱") {
-                Text(
-                    "공부앱 타이머가 \"공부\" 페이즈로 진행 중일 때(휴식 중엔 아님) 여기서 고른 앱 외에는 열자마자 " +
-                        "감지해서 잠금 화면으로 돌려보냅니다. 기기 소유자 권한이 없어 진짜 실행 차단은 아니고, " +
-                        "감지 후 재차단하는 베스트 에포트 방식입니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                Button(onClick = onNavigateToStudyLockApps, modifier = Modifier.fillMaxWidth()) {
-                    Text("허용 앱 선택")
-                }
-            }
-            Spacer(Modifier.height(Spacing.md))
-          }
+          // 90차: "공부 잠금 허용 앱" 카드는 공부 서브탭(settingsSubTab == 2)으로 옮겼다 —
+          // 공부 기능 설정이 관리 탭에 있을 이유가 없고, 타이머 탭에서 옮겨온 목록과 한자리에 모인다.
 
           if (settingsSubTab == 0) {
             SectionCard("업데이트") {
@@ -1115,11 +1122,11 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(Spacing.md))
 
-            SectionCard("오래된 통계 데이터 정리") {
+            SectionCard("오래된 사용 기록 정리") {
                 var lastResult by remember { mutableStateOf<Int?>(null) }
                 Text(
                     "12개월 이상 지난 사용시간/재확인 통과 횟수/공부 기록을 영구 삭제합니다(되돌리기 없음). " +
-                        "캘린더 일정과 스트릭 계산에는 영향을 주지 않습니다.",
+                        "캘린더 일정과 연속 기록 계산에는 영향을 주지 않습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1138,9 +1145,9 @@ fun SettingsScreen(
           }
 
           if (settingsSubTab == 2) {
-            SectionCard("캘린더 다회독 기본값") {
+            SectionCard("캘린더 N회독 기본값") {
                 ToggleRow(
-                    title = "새 일정을 다회독으로 시작",
+                    title = "새 일정을 N회독으로 시작",
                     checked = defaultMultiPassEnabled,
                     onCheckedChange = { checked ->
                         defaultMultiPassEnabled = checked
@@ -1198,10 +1205,35 @@ fun SettingsScreen(
                     }
                 }
             }
+            Spacer(Modifier.height(Spacing.md))
+
+            // 90차(사용자 요청): 타이머 탭 안에 있던 "공부 잠금 허용 앱/사이트"를 여기로 옮겼다 —
+            // 매번 보는 화면이 아니라 한 번 정해두는 설정이라 설정 탭이 제자리다. 저장 위치
+            // (studyLockAllowedPackages/studyLockAllowedSites)와 재사용 컴포넌트는 그대로다.
+            // 원래 "관리" 탭에 따로 있던 "허용 앱 선택"(전체화면) 카드도 여기로 합쳤다(중복 제거).
+            AllowedAppsCollapsibleSection(onOpenFullScreen = onNavigateToStudyLockApps)
+            Spacer(Modifier.height(Spacing.md))
+
+            SectionCard("🌐 공부 잠금 허용 사이트") {
+                Text(
+                    "허용된 앱(브라우저)이 열려 있어도 여기 등록 안 된 사이트는 따로 차단됩니다. 이 기기에만 " +
+                        "적용되며, 데스크탑에는 데스크탑 앱 설정에서 따로 등록해야 합니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                LockListEditor(
+                    items = studyAllowedSites,
+                    placeholder = "예: google.com",
+                    onAdd = { name -> studyAllowedSites = studyAllowedSites + name; prefs.studyLockAllowedSites = studyAllowedSites.toSet() },
+                    onRemove = { idx -> studyAllowedSites = studyAllowedSites.toMutableList().apply { removeAt(idx) }; prefs.studyLockAllowedSites = studyAllowedSites.toSet() }
+                )
+            }
+            Spacer(Modifier.height(Spacing.md))
           }
 
           if (settingsSubTab == 1) {
-            SectionCard("루틴 내보내기 / 가져오기") {
+            SectionCard("루틴 내보내기 · 가져오기") {
                 Text(
                     "루틴 목록과 체크 기록을 파일로 저장하거나 불러옵니다. 루틴은 이미 Firebase로 기기 간 자동 " +
                         "동기화되지만, 기기 초기화 전 별도 백업을 남기거나 다른 계정으로 옮길 때 씁니다.",
@@ -1225,6 +1257,64 @@ fun SettingsScreen(
             }
           }
         }
+        }
+    }
+}
+
+/**
+ * "공부 잠금 허용 앱" 접이식 선택 — 앱 목록/검색 로직은 [StudyLockAppsScreen.kt]의
+ * `AllowedAppsPickerBody`를 그대로 재사용한다(전체화면판과 코드 중복 없이 공유). 기본은 접힌
+ * 상태로 시작해서 헤더를 눌러야만 펼쳐진다(설치 앱이 수십~수백 개라 항상 펼쳐두면 설정 탭이
+ * 지나치게 길어짐). 32차에 타이머 탭 인라인 섹션으로 만들어졌다가 90차에 설정 > 공부 탭으로
+ * 옮겨왔고, 그때 관리 탭에 따로 있던 "허용 앱 선택"(전체화면) 버튼도 여기로 합쳤다.
+ */
+@Composable
+private fun AllowedAppsCollapsibleSection(onOpenFullScreen: () -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { AppPreferences(context) }
+    var expanded by remember { mutableStateOf(false) }
+    val allowedCount = prefs.studyLockAllowedPackages.size
+
+    androidx.compose.material3.Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        tonalElevation = 0.dp
+    ) {
+        Column(Modifier.padding(Spacing.md)) {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                androidx.compose.material3.Icon(
+                    if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = Spacing.xs)
+                )
+                Text(
+                    "🔒 공부 잠금 허용 앱" + if (allowedCount > 0) " ($allowedCount)" else "",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            if (expanded) {
+                Spacer(Modifier.height(Spacing.sm))
+                Text(
+                    "공부앱 타이머가 \"공부\" 페이즈로 진행 중일 때(휴식 중엔 아님) 여기서 고른 앱 외에는 열자마자 " +
+                        "감지해서 잠금 화면으로 돌려보냅니다. 기기 소유자 권한이 없어 진짜 실행 차단은 아니고, " +
+                        "감지 후 재차단하는 베스트 에포트 방식입니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                AllowedAppsPickerBody(prefs = prefs, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(Spacing.sm))
+                Button(onClick = onOpenFullScreen, modifier = Modifier.fillMaxWidth()) {
+                    Text("전체 화면에서 고르기")
+                }
+            }
         }
     }
 }

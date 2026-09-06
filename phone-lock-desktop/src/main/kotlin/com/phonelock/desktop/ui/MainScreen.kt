@@ -27,8 +27,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.syncGroupSettingsFromFirebase
 import com.phonelock.desktop.ui.theme.Spacing
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private enum class TopSection { MANAGE, STUDY, ROUTINE, SOCIAL_GROUP, SETTINGS }
 
@@ -38,7 +41,7 @@ private enum class TopSection { MANAGE, STUDY, ROUTINE, SOCIAL_GROUP, SETTINGS }
  * 데스크탑다운 구조로, 모바일(하단 탭)과는 별개로 유지한다.
  */
 @Composable
-fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
+fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onShowGuide: () -> Unit = {}) {
     // 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임)에 맞춰 보이는 섹션만 남긴다 — 설정은 항상
     // 보임(로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 Repository가 전부 true를
     // 기본값으로 주므로 이 필터링으로 인한 회귀는 없다.
@@ -59,6 +62,8 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
     var groups by remember { mutableStateOf(repository.getGroups()) }
     var extensionWarning by remember { mutableStateOf(false) }
     var selectedSocialGroupId by remember { mutableStateOf<String?>(null) }
+    // 92차 소셜 개편 Phase 2: 1:1 DM 채팅방 진입 상태(chatId, peerUid, peerLabel).
+    var selectedDmChat by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     var updateInstallerUrl by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
@@ -69,6 +74,10 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
     // 28차 세션의 좌우 분할처럼 그룹 목록은 편집 중에도 항상 왼쪽에 보이므로, 편집 여부와 무관하게 갱신한다.
     LaunchedEffect(section, manageSubTab) {
         if (section == TopSection.MANAGE && manageSubTab == 0) {
+            // 그룹 탭 진입 시 1회 그룹 설정(제어할 앱/사이트·groupEnabled 등 제외) 동기화 — RoutineScreen의
+            // syncRoutinesFromFirebase() 진입 시 호출과 동일 패턴(87차+).
+            withContext(Dispatchers.IO) { repository.syncGroupSettingsFromFirebase() }
+            refresh()
             while (true) {
                 delay(1000)
                 refresh()
@@ -148,7 +157,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                         selected = section == TopSection.SOCIAL_GROUP,
                         onClick = { section = TopSection.SOCIAL_GROUP },
                         icon = { Text("👥") },
-                        label = { Text("모임") },
+                        label = { Text("소셜") },
                         colors = railColors
                     )
                 }
@@ -188,9 +197,11 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                             Tab(
                                 selected = manageSubTab == 0,
                                 onClick = { manageSubTab = 0; editingGroupId = null; isCreatingNew = false; refresh() },
-                                text = { Text("그룹") }
+                                // 공부 섹션 서브탭만 이모지가 있고 관리 섹션엔 없어서 같은 자리의 탭 줄인데도
+                                // 서로 다르게 보였다 — 두 섹션의 서브탭 표기를 통일한다.
+                                text = { Text("🗂️ 차단 규칙") }
                             )
-                            Tab(selected = manageSubTab == 1, onClick = { manageSubTab = 1; refresh() }, text = { Text("통계") })
+                            Tab(selected = manageSubTab == 1, onClick = { manageSubTab = 1; refresh() }, text = { Text("📊 사용 기록") })
                         }
                         Box(Modifier.weight(1f)) {
                             when (manageSubTab) {
@@ -221,7 +232,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                                             } else {
                                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                                     Text(
-                                                        "그룹을 선택하면 여기서 편집할 수 있습니다.",
+                                                        "차단 규칙을 선택하면 여기서 편집할 수 있습니다.",
                                                         style = MaterialTheme.typography.bodyMedium,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
@@ -240,11 +251,11 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                             containerColor = MaterialTheme.colorScheme.background,
                             contentColor = MaterialTheme.colorScheme.onBackground
                         ) {
-                            Tab(selected = studySubTab == 0, onClick = { studySubTab = 0 }, text = { Text("⏱️ 시간 측정") })
+                            Tab(selected = studySubTab == 0, onClick = { studySubTab = 0 }, text = { Text("⏱️ 타이머") })
                             Tab(selected = studySubTab == 1, onClick = { studySubTab = 1 }, text = { Text("📅 캘린더") })
                             Tab(selected = studySubTab == 2, onClick = { studySubTab = 2 }, text = { Text("🧮 계산기") })
                             Tab(selected = studySubTab == 3, onClick = { studySubTab = 3 }, text = { Text("🗓️ 일정표") })
-                            Tab(selected = studySubTab == 4, onClick = { studySubTab = 4 }, text = { Text("📈 통계") })
+                            Tab(selected = studySubTab == 4, onClick = { studySubTab = 4 }, text = { Text("📈 학습 통계") })
                         }
                         Box(Modifier.weight(1f)) {
                             when (studySubTab) {
@@ -263,17 +274,25 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                     }
                     TopSection.SOCIAL_GROUP -> {
                         Box(Modifier.weight(1f)) {
+                            val dmChat = selectedDmChat
                             val groupId = selectedSocialGroupId
-                            if (groupId != null) {
+                            if (dmChat != null) {
+                                val (chatId, peerUid, peerLabel) = dmChat
+                                DmChatScreen(repository, chatId, peerUid, peerLabel, onBack = { selectedDmChat = null })
+                            } else if (groupId != null) {
                                 SocialGroupMembersScreen(repository, groupId, onBack = { selectedSocialGroupId = null })
                             } else {
-                                SocialGroupScreen(repository, onSelectGroup = { selectedSocialGroupId = it })
+                                SocialGroupScreen(
+                                    repository,
+                                    onSelectGroup = { selectedSocialGroupId = it },
+                                    onOpenDm = { chatId, peerUid, peerLabel -> selectedDmChat = Triple(chatId, peerUid, peerLabel) }
+                                )
                             }
                         }
                     }
                     TopSection.SETTINGS -> {
                         Box(Modifier.weight(1f)) {
-                            SettingsScreen(repository, onThemeChange = onThemeChange)
+                            SettingsScreen(repository, onThemeChange = onThemeChange, onShowGuide = onShowGuide)
                         }
                     }
                 }

@@ -77,20 +77,27 @@ class Repository {
         return if (lastAt == 0L) nowMillis - appStartAtMillis > graceMs else nowMillis - lastAt > graceMs
     }
 
-    fun createGroup(group: Group): Long = synchronized(lock) {
-        val id = data.nextGroupId
-        data.nextGroupId += 1
-        data.groups.add(group.copy(id = id))
-        persist()
-        id
+    fun createGroup(group: Group): Long {
+        val id = synchronized(lock) {
+            val newId = data.nextGroupId
+            data.nextGroupId += 1
+            data.groups.add(group.copy(id = newId))
+            persist()
+            newId
+        }
+        pushGroupSettingsToFirebase()
+        return id
     }
 
-    fun updateGroup(group: Group) = synchronized(lock) {
-        val index = data.groups.indexOfFirst { it.id == group.id }
-        if (index >= 0) {
-            data.groups[index] = group
-            persist()
+    fun updateGroup(group: Group) {
+        synchronized(lock) {
+            val index = data.groups.indexOfFirst { it.id == group.id }
+            if (index >= 0) {
+                data.groups[index] = group
+                persist()
+            }
         }
+        pushGroupSettingsToFirebase()
     }
 
     /** 설정한 초기화 시간(dailyResetHour)이 지나면, 사용자가 꺼둔 그룹(groupEnabled=false)도 자동으로
@@ -239,15 +246,19 @@ class Repository {
 
     /** 잠김(스케줄/일일한도) 화면 조롱 문구 강도용 — 오늘 이 그룹을 열려고 시도한 횟수를 1 늘리고
      *  늘린 뒤의 값을 반환한다(dailyResetHour 기준 날짜가 바뀌면 1부터 다시 센다). */
-    fun recordBlockAttempt(groupId: Long): Int = synchronized(lock) {
-        val index = data.groups.indexOfFirst { it.id == groupId }
-        if (index < 0) return@synchronized 0
-        val today = effectiveDate(data.dailyResetHour).toString()
-        val group = data.groups[index]
-        val count = if (group.blockAttemptDate == today) group.blockAttemptCount + 1 else 1
-        data.groups[index] = group.copy(blockAttemptDate = today, blockAttemptCount = count)
-        persist()
-        count
+    fun recordBlockAttempt(groupId: Long): Int {
+        val count = synchronized(lock) {
+            val index = data.groups.indexOfFirst { it.id == groupId }
+            if (index < 0) return@synchronized 0
+            val today = effectiveDate(data.dailyResetHour).toString()
+            val group = data.groups[index]
+            val newCount = if (group.blockAttemptDate == today) group.blockAttemptCount + 1 else 1
+            data.groups[index] = group.copy(blockAttemptDate = today, blockAttemptCount = newCount)
+            persist()
+            newCount
+        }
+        if (count > 0) pushGroupSettingsToFirebase()
+        return count
     }
 
     data class SnoozeState(val untilEpochMillis: Long, val usedDate: String, val usedCount: Int)
@@ -477,7 +488,7 @@ class Repository {
     fun exportUsageCsv(): String = synchronized(lock) {
         val header = "date,group,usedSeconds"
         val rows = data.usageRecords.sortedByDescending { it.date }.map { r ->
-            val groupName = data.groups.find { it.id == r.groupId }?.name ?: "(삭제된 그룹 ${r.groupId})"
+            val groupName = data.groups.find { it.id == r.groupId }?.name ?: "(삭제된 차단 규칙 ${r.groupId})"
             "${r.date},${csvEscape(groupName)},${r.usedSeconds}"
         }
         (listOf(header) + rows).joinToString("\n")
@@ -490,6 +501,13 @@ class Repository {
         get() = synchronized(lock) { data.dailyResetHour }
         set(value) = synchronized(lock) {
             data.dailyResetHour = value
+            persist()
+        }
+
+    var lastSeenGuideVersion: Long
+        get() = synchronized(lock) { data.lastSeenGuideVersion }
+        set(value) = synchronized(lock) {
+            data.lastSeenGuideVersion = value
             persist()
         }
 

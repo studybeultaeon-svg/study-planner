@@ -78,6 +78,9 @@ fun RoutineScreen(repository: Repository) {
     var showAddDialog by remember { mutableStateOf(false) }
     var weekOffset by remember { mutableStateOf(0) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    // 91차(90차 지정 3번, 사용자 요청): 오른쪽 컬럼의 "오늘 요약" 통계 대신, 루틴을 클릭하면 그 루틴의
+    // 상세 정보가 뜨는 마스터-디테일 패턴으로 변경. GroupListScreen/GroupEditScreen과 같은 방식.
+    var selectedRoutineId by remember { mutableStateOf<Long?>(null) }
     // 체크박스를 눌러도 Routine 목록 자체(제목/요일 등)는 안 바뀌어서 routines를 재할당해도 값이 구조적으로
     // 동일하면 Compose가 변경으로 인식하지 못해 화면이 갱신 안 되는 버그가 있었다(그룹 탭에서도 같은 패턴이
     // 있었음, MainScreen.kt 참고). refreshTick은 매번 다른 값이 되므로 key()로 감싸 확실히 재구성시킨다.
@@ -109,7 +112,7 @@ fun RoutineScreen(repository: Repository) {
             contentColor = MaterialTheme.colorScheme.onBackground
         ) {
             Tab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("오늘") })
-            Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("통계") })
+            Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("🔥 연속 기록") })
         }
         Spacer(Modifier.height(Spacing.sm))
 
@@ -126,9 +129,17 @@ fun RoutineScreen(repository: Repository) {
                             selected = d == selectedDate,
                             onClick = { selectedDate = d },
                             label = {
+                                // 다른 주로 이동하면 "오늘"이 어디였는지 알 방법이 전혀 없었다 —
+                                // 선택 표시와 별개로 오늘 날짜는 항상 굵게+포인트 색으로 구분한다(안드로이드판과 동일).
+                                val isRealToday = d == realToday
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(ROUTINE_WEEKDAYS_SUN_FIRST[i], style = MaterialTheme.typography.labelSmall)
-                                    Text("${d.dayOfMonth}", style = MaterialTheme.typography.labelSmall)
+                                    Text(
+                                        "${d.dayOfMonth}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = if (isRealToday) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isRealToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
                                 }
                             }
                         )
@@ -156,7 +167,9 @@ fun RoutineScreen(repository: Repository) {
                             repository, routines, selectedDate,
                             onEdit = { editing = it },
                             onChanged = { refresh() },
-                            onSwap = { a, b -> repository.swapRoutineOrder(a, b); refresh() }
+                            onSwap = { a, b -> repository.swapRoutineOrder(a, b); refresh() },
+                            selectedRoutineId = selectedRoutineId,
+                            onSelect = { selectedRoutineId = it }
                         )
                         1 -> RoutineStatsTab(repository, routines)
                     }
@@ -190,7 +203,9 @@ private fun RoutineTodayTab(
     selectedDate: LocalDate,
     onEdit: (Routine) -> Unit,
     onChanged: () -> Unit,
-    onSwap: (Long, Long) -> Unit
+    onSwap: (Long, Long) -> Unit,
+    selectedRoutineId: Long?,
+    onSelect: (Long?) -> Unit
 ) {
     val realToday = remember { LocalDate.now() }
     val isToday = selectedDate == realToday
@@ -201,49 +216,123 @@ private fun RoutineTodayTab(
     // 시간대 없는 루틴만 순서를 사용자가 직접 정할 수 있다(52차) — 시간대 지정 루틴은 항상 시간순이라
     // ▲/▼로 옮겨도 다시 시간순으로 재정렬되며 눈에 보이는 변화가 없다.
     val untimed = todays.filter { it.timeSlot == null }
-    val doneCount = todays.count { repository.isRoutineCompleted(it.id, dateKey) }
-    val completedByRoutine = remember(routines) {
-        routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
-    }
-    val currentStreak = RoutineEngine.currentStreak(routines, completedByRoutine, realToday)
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+    // 90차(사용자 요청): 넓은 창에서 루틴 목록만 세로로 쌓이던 걸 좌(목록)/우(상세)로 나눴다.
+    // 목록이 주인공이라 좌:우 = 2:1, 좁아지면 ResponsiveSplit이 알아서 위아래로 쌓는다.
+    com.phonelock.desktop.ui.components.ResponsiveSplit(leftWeight = 2f, rightWeight = 1f, left = {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Text(
                 "${selectedDate.monthValue}월 ${selectedDate.dayOfMonth}일 (${ROUTINE_WEEKDAYS_KO[bitIndexFor(selectedDate)]})" + if (isToday) " · 오늘" else "",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            if (todays.isNotEmpty()) {
-                Text(
-                    "🔥 ${currentStreak}일 연속" + if (doneCount == todays.size) "" else " · $doneCount/${todays.size}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.secondary
-                )
+            Spacer(Modifier.height(Spacing.sm))
+
+            if (todays.isEmpty()) {
+                Text("이 날 예정된 루틴이 없습니다", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                todays.forEach { routine ->
+                    val done = repository.isRoutineCompleted(routine.id, dateKey)
+                    val untimedIdx = if (routine.timeSlot == null) untimed.indexOfFirst { it.id == routine.id } else -1
+                    RoutineRow(
+                        routine = routine,
+                        done = done,
+                        selected = routine.id == selectedRoutineId,
+                        onToggle = { repository.toggleRoutineLog(routine.id, dateKey); onChanged() },
+                        onEdit = { onEdit(routine) },
+                        onSelect = { onSelect(routine.id) },
+                        onMoveUp = if (untimedIdx > 0) ({ onSwap(routine.id, untimed[untimedIdx - 1].id) }) else null,
+                        onMoveDown = if (untimedIdx in 0 until untimed.lastIndex) ({ onSwap(routine.id, untimed[untimedIdx + 1].id) }) else null
+                    )
+                    Spacer(Modifier.height(Spacing.xs))
+                }
             }
         }
-        Spacer(Modifier.height(Spacing.sm))
-
-        if (todays.isEmpty()) {
-            Text("이 날 예정된 루틴이 없습니다", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            return
+    }, right = {
+        // 91차: "그날 요약"(연속 기록/완료율) 대신, 왼쪽에서 고른 루틴의 상세 정보를 보여주는
+        // 마스터-디테일 패턴으로 교체(사용자 요청) — 통계는 이미 "🔥 연속 기록" 탭에서 볼 수 있다.
+        val selected = routines.find { it.id == selectedRoutineId }
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            if (selected == null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "루틴을 선택하면 여기서 상세 정보를 볼 수 있습니다.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                RoutineDetailPanel(repository, selected, onEdit = { onEdit(selected) })
+            }
         }
+    })
+}
 
-        todays.forEach { routine ->
-            val done = repository.isRoutineCompleted(routine.id, dateKey)
-            val untimedIdx = if (routine.timeSlot == null) untimed.indexOfFirst { it.id == routine.id } else -1
-            RoutineRow(
-                routine = routine,
-                done = done,
-                onToggle = { repository.toggleRoutineLog(routine.id, dateKey); onChanged() },
-                onEdit = { onEdit(routine) },
-                onMoveUp = if (untimedIdx > 0) ({ onSwap(routine.id, untimed[untimedIdx - 1].id) }) else null,
-                onMoveDown = if (untimedIdx in 0 until untimed.lastIndex) ({ onSwap(routine.id, untimed[untimedIdx + 1].id) }) else null
+/** 91차 신규: 오른쪽 컬럼에서 선택한 루틴 하나의 상세 정보(요일/시간대/기간/연속 기록). */
+@Composable
+private fun RoutineDetailPanel(repository: Repository, routine: Routine, onEdit: () -> Unit) {
+    val today = remember { LocalDate.now() }
+    val completedDates = remember(routine.id) { repository.getRoutineCompletedDateKeys(routine.id) }
+    val ownStreak = remember(routine.id, completedDates) { routineOwnStreak(routine, completedDates, today) }
+    val scheduledDays = (0..6).filter { (routine.daysMask shr it) and 1 == 1 }.joinToString(", ") { ROUTINE_WEEKDAYS_KO[it] }
+
+    Text(
+        if (routine.icon.isNotBlank()) "${routine.icon} ${routine.title}" else routine.title,
+        style = MaterialTheme.typography.titleLarge,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Spacer(Modifier.height(Spacing.md))
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+    ) {
+        Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("현재 연속 기록", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "${ownStreak}일" + if (ownStreak > 0) " 🔥" else "",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
             )
-            Spacer(Modifier.height(Spacing.xs))
         }
     }
+    Spacer(Modifier.height(Spacing.md))
+    RoutineDetailRow("반복 요일", if (scheduledDays.isEmpty()) "없음" else scheduledDays)
+    RoutineDetailRow("시간대", routine.timeSlot ?: "지정 안 함")
+    if (routine.startDate != null || routine.endDate != null) {
+        RoutineDetailRow("기간", "${routine.startDate ?: "제한 없음"} ~ ${routine.endDate ?: "제한 없음"}")
+    }
+    RoutineDetailRow("알림", if (routine.notifyEnabled) "켜짐" else "꺼짐")
+    RoutineDetailRow("최근 30일 완료", "${completedDates.count { it >= today.minusDays(29).toString() }}일")
+    Spacer(Modifier.height(Spacing.md))
+    OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("✏️ 수정") }
+}
+
+@Composable
+private fun RoutineDetailRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1.5f))
+    }
+}
+
+/** 이 루틴 하나만 놓고 오늘부터 거슬러 올라가며 세는 연속 완료 일수 — 예정 안 된 날은 건너뛴다.
+ *  RoutineEngine의 currentStreak()는 "그날 예정된 루틴 전부"를 기준으로 하는 전역 스트릭이라 이 용도엔 안 맞는다. */
+private fun routineOwnStreak(routine: Routine, completedDates: Set<String>, today: LocalDate): Int {
+    var streak = 0
+    var d = today
+    var daysChecked = 0
+    while (daysChecked < 3650) {
+        if (isScheduledOn(routine, d)) {
+            if (d.toString() in completedDates) streak++ else break
+        }
+        d = d.minusDays(1)
+        daysChecked++
+    }
+    return streak
 }
 
 private data class RoutineDayStat(val date: LocalDate, val scheduled: Int, val done: Int)
@@ -302,6 +391,8 @@ private fun RoutineStatsTab(repository: Repository, routines: List<Routine>) {
     }
     val maxDayCnt = maxOf(1, dayStats.maxOf { it.scheduled })
 
+    // 90차: StudyStatsScreen과 같은 좌(요약 지표)/우(그래프) 분할.
+    com.phonelock.desktop.ui.components.ResponsiveSplit(leftWeight = 1f, rightWeight = 1.4f, left = {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         // 현재 스트릭을 가장 위, 가장 크게 — 최고 스트릭은 아래 타일 중 하나로.
         Surface(
@@ -311,7 +402,7 @@ private fun RoutineStatsTab(repository: Repository, routines: List<Routine>) {
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
         ) {
             Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("현재 스트릭", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("현재 연속 기록", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     "${currentStreak}일" + if (currentStreak > 0) " 🔥" else "",
                     style = MaterialTheme.typography.displaySmall,
@@ -325,7 +416,7 @@ private fun RoutineStatsTab(repository: Repository, routines: List<Routine>) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             RoutineStatTile("오늘 완료", "$doneToday / ${scheduledToday.size}", Modifier.weight(1f), accentColor = Color(0xFF34D399))
             RoutineStatTile("오늘 완료율", "$todayRate%", Modifier.weight(1f), accentColor = Color(0xFFFBBF24))
-            RoutineStatTile("최고 스트릭", "${bestStreak}일" + if (bestStreak > 0) "🔥" else "", Modifier.weight(1f), accentColor = MaterialTheme.colorScheme.secondary)
+            RoutineStatTile("최고 연속 기록", "${bestStreak}일" + if (bestStreak > 0) "🔥" else "", Modifier.weight(1f), accentColor = MaterialTheme.colorScheme.secondary)
         }
         Spacer(Modifier.height(Spacing.md))
 
@@ -354,9 +445,10 @@ private fun RoutineStatsTab(repository: Repository, routines: List<Routine>) {
                     )
                 }
             }
-            Spacer(Modifier.height(Spacing.md))
         }
-
+    }
+    }, right = {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         SectionCard("최근 30일 완료 추이 (막대 높이 = 예정 개수, 색상 = 완료율)") {
             Row(Modifier.fillMaxWidth().height(90.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 dayStats.forEach { ds ->
@@ -393,6 +485,7 @@ private fun RoutineStatsTab(repository: Repository, routines: List<Routine>) {
             }
         }
     }
+    })
 }
 
 @Composable
@@ -421,14 +514,20 @@ private fun RoutineRow(
     done: Boolean,
     onToggle: () -> Unit,
     onEdit: () -> Unit,
+    selected: Boolean = false,
+    onSelect: (() -> Unit)? = null,
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null
 ) {
     Surface(
-        Modifier.fillMaxWidth(),
+        if (onSelect != null) Modifier.fillMaxWidth().clickable(onClick = onSelect) else Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        color = if (done) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        color = when {
+            selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+            done -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+            else -> MaterialTheme.colorScheme.surfaceVariant
+        },
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
     ) {
         Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = done, onCheckedChange = { onToggle() })

@@ -57,11 +57,11 @@ fun GroupWalkieSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("🎙️ 무전기 설정") },
+        title = { Text("🎙️ 깨우기 메시지 설정") },
         text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("이 모임의 무전기 수신", style = MaterialTheme.typography.bodyLarge)
+                    Text("이 모임의 깨우기 메시지 수신", style = MaterialTheme.typography.bodyLarge)
                     Switch(checked = enabled, onCheckedChange = { enabled = it })
                 }
                 if (enabled) {
@@ -71,7 +71,7 @@ fun GroupWalkieSettingsDialog(
                         FilterChip(
                             selected = mode == "FORCED",
                             onClick = { mode = "FORCED" },
-                            label = { Text("즉시 재생(무전기)") }
+                            label = { Text("즉시 재생") }
                         )
                         FilterChip(
                             selected = mode == "MESSAGE_ONLY",

@@ -28,6 +28,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab as MaterialTab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -123,6 +125,8 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
     var showSettingsMenu by remember { mutableStateOf(false) }
     var showEditInfoDialog by remember { mutableStateOf(false) }
     var showMemberManageDialog by remember { mutableStateOf(false) }
+    // 92차 소셜 개편 Phase 4(관리 기능 강화, IDEAS.md 77차, 안드로이드판과 대칭) — 소유권 승계 확인 대상.
+    var transferTarget by remember { mutableStateOf<Pair<String, String>?>(null) } // uid to 표시이름
     var admins by remember { mutableStateOf(emptySet<String>()) }
     var viewWeekly by remember { mutableStateOf(false) }
     var announcement by remember { mutableStateOf<SocialGroupSyncClient.Announcement?>(null) }
@@ -136,6 +140,8 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
     // 😴 깨우기 대상 — wakeTarget이 있는 동안 wakeStep("options"/"voice"/"text")에 따라 다이얼로그가 뜬다.
     var wakeTarget by remember { mutableStateOf<Pair<String, String>?>(null) } // uid to 표시이름
     var wakeStep by remember { mutableStateOf<String?>(null) }
+    // 92차 소셜 개편 Phase 1: "멤버"/"💬 대화" 채널 전환(안드로이드판 SocialGroupMembersScreen.kt와 대칭).
+    var channelTab by remember { mutableStateOf(0) }
     fun cancelWakeFlow() { wakeTarget = null; wakeStep = null }
 
     val myUid = AuthManager.currentUid
@@ -278,7 +284,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
     val clipboard = LocalClipboardManager.current
     val groupGoalTodaySeconds = stats.filter { it.shareStudy }.sumOf { it.studyTodaySeconds }
 
-    Row(Modifier.fillMaxSize()) {
+    Row(Modifier.fillMaxSize().background(socialGradientBackground())) {
         Column(Modifier.weight(1f).fillMaxHeight().padding(Spacing.md)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onBack) { Text("< 목록") }
@@ -296,7 +302,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                                 onClick = { showSettingsMenu = false; showShareSettingsDialog = true }
                             )
                             androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("🎙️ 무전기") },
+                                text = { Text("🎙️ 깨우기 메시지") },
                                 onClick = { showSettingsMenu = false; showWalkieSettingsDialog = true }
                             )
                             androidx.compose.material3.DropdownMenuItem(
@@ -324,6 +330,18 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
             }
             Text(info?.name ?: "", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(Spacing.sm))
+
+            TabRow(selectedTabIndex = channelTab) {
+                MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
+                MaterialTab(selected = channelTab == 1, onClick = { channelTab = 1 }, text = { Text("💬 대화") })
+            }
+            Spacer(Modifier.height(Spacing.sm))
+
+            if (channelTab == 1) {
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    GroupChatScreen(repository, groupId)
+                }
+            } else {
 
             if (voiceInbox.isNotEmpty()) {
                 Surface(
@@ -463,7 +481,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
             if (quoteStats.isNotEmpty()) {
                 Surface(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceVariant) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
-                        Text("😤 모임 랭킹 (회유 멘트 저항률)", style = MaterialTheme.typography.labelLarge)
+                        Text("😤 모임 랭킹 (확인 질문 저항률)", style = MaterialTheme.typography.labelLarge)
                         Spacer(Modifier.height(Spacing.xs))
                         quoteStats.sortedByDescending { it.stopRatePercent }.forEachIndexed { idx, qs ->
                             Text("${idx + 1}위 ${qs.displayName} — ${qs.stopRatePercent}% (${qs.totalCount}회 중)", style = MaterialTheme.typography.bodySmall)
@@ -517,7 +535,8 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                             Column(Modifier.weight(1f)) {
                                 Text(m.displayName + if (isSelfRow) " (나)" else "", style = MaterialTheme.typography.bodyLarge)
                                 if (m.shareStreak && m.streak > 0) {
-                                    Text("🔥 ${m.streak}일", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(Modifier.height(2.dp))
+                                    SectionPill("🔥 ${m.streak}일", color = androidx.compose.ui.graphics.Color(0xFFFF9800))
                                 }
                                 if (ratio != null) {
                                     Spacer(Modifier.height(2.dp))
@@ -528,7 +547,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                                 }
                             }
                             Spacer(Modifier.width(Spacing.sm))
-                            Text(percentLabel, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                            SectionPill(percentLabel)
                             if (!isSelfRow) {
                                 Spacer(Modifier.width(Spacing.xs))
                                 TextButton(onClick = {
@@ -539,6 +558,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                         }
                     }
                 }
+            }
             }
         }
 
@@ -648,6 +668,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                                 TextButton(onClick = {
                                     Thread { SocialGroupSyncClient.setGroupAdmin(url, key, groupId, m.uid, !targetIsAdmin); refresh() }.start()
                                 }) { Text(if (targetIsAdmin) "관리자 해제" else "관리자 지정") }
+                                TextButton(onClick = { transferTarget = m.uid to m.displayName }) { Text("👑 승계") }
                             }
                             if (!targetIsOwner) {
                                 TextButton(onClick = {
@@ -659,6 +680,33 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                 }
             },
             confirmButton = { TextButton(onClick = { showMemberManageDialog = false } ) { Text("닫기") } }
+        )
+    }
+
+    transferTarget?.let { (targetUid, targetName) ->
+        var transferError by remember { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { transferTarget = null },
+            title = { Text("모임장 넘기기") },
+            text = {
+                Column {
+                    Text("\"$targetName\"님에게 모임장을 넘길까요? 나는 자동으로 관리자가 됩니다.")
+                    transferError?.let {
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    Thread {
+                        val result = SocialGroupSyncClient.transferOwnership(url, key, groupId, targetUid)
+                        result.onSuccess { transferTarget = null; showMemberManageDialog = false; refresh() }
+                        result.onFailure { e -> transferError = e.message ?: "소유권 승계에 실패했습니다." }
+                    }.start()
+                }) { Text("넘기기") }
+            },
+            dismissButton = { TextButton(onClick = { transferTarget = null }) { Text("취소") } }
         )
     }
 

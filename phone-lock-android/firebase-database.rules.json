@@ -32,6 +32,12 @@
           "$groupId": {
             ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && (auth.uid === $uid || root.child('groups').child($groupId).child('info').child('ownerUid').val() === auth.uid || root.child('groups').child($groupId).child('admins').child(auth.uid).val() === true)"
           }
+        },
+
+        "dmChatIds": {
+          "$chatId": {
+            ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && (auth.uid === $uid || root.child('dmChats').child($chatId).child('info').child('participants').child(auth.uid).exists())"
+          }
         }
       }
     },
@@ -88,6 +94,46 @@
         "quoteStats": {
           "$uid": {
             ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && auth.uid === $uid"
+          }
+        }
+      }
+    },
+
+    "groupChats": {
+      "$groupId": {
+        ".read": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && root.child('groups').child($groupId).child('members').child(auth.uid).exists()",
+
+        "messages": {
+          "$msgId": {
+            ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && root.child('groups').child($groupId).child('members').child(auth.uid).exists() && (data.exists() ? data.child('senderUid').val() === auth.uid : newData.child('senderUid').val() === auth.uid)",
+
+            "reactions": {
+              "$uid": {
+                ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && root.child('groups').child($groupId).child('members').child(auth.uid).exists() && auth.uid === $uid"
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "dmChats": {
+      "$chatId": {
+        ".read": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && data.child('info').child('participants').child(auth.uid).exists()",
+
+        "info": {
+          ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && !data.exists() && newData.child('participants').child(auth.uid).exists()"
+        },
+
+        "messages": {
+          "$msgId": {
+            ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && root.child('dmChats').child($chatId).child('info').child('participants').child(auth.uid).exists() && (data.exists() ? data.child('senderUid').val() === auth.uid : newData.child('senderUid').val() === auth.uid)",
+
+            "reactions": {
+              "$uid": {
+                ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && root.child('dmChats').child($chatId).child('info').child('participants').child(auth.uid).exists() && auth.uid === $uid"
+              }
+            }
           }
         }
       }

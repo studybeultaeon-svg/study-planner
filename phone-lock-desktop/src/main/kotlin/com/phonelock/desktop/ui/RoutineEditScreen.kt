@@ -160,7 +160,7 @@ fun RoutineEditDialog(routine: Routine?, onDismiss: () -> Unit, onSave: (Routine
                 }
                 Spacer(Modifier.height(Spacing.sm))
                 Text(
-                    "스트릭은 하루 단위로 자동 집계됩니다 — 오늘 예정된 루틴을 전부 완료해야 그날이 스트릭에 더해지고, 하나라도 놓치면 끊깁니다.",
+                    "연속 기록은 하루 단위로 자동 집계됩니다 — 오늘 예정된 루틴을 전부 완료해야 그날이 연속 기록에 더해지고, 하나라도 놓치면 끊깁니다.",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

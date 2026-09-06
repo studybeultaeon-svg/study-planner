@@ -216,7 +216,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.md)
     ) {
         Text(
-            if (groupId == null) "그룹 추가" else "그룹 편집",
+            if (groupId == null) "차단 규칙 추가" else "차단 규칙 편집",
             style = MaterialTheme.typography.headlineMedium
         )
         Spacer(Modifier.height(Spacing.md))
@@ -225,30 +225,35 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("그룹 이름") },
+                label = { Text("차단 규칙 이름") },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(Spacing.sm))
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
-                label = { Text("설명 (선택, \"모임\"에 이 그룹 이름과 함께 표시됩니다)") },
+                label = { Text("설명 (선택, \"모임\"에 이 차단 규칙 이름과 함께 표시됩니다)") },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(Spacing.sm))
             OutlinedTextField(
                 value = selfMessageText,
                 onValueChange = { selfMessageText = it },
-                label = { Text("미래의 나에게 (선택, 이 그룹이 잠길 때 문구와 함께 보여줍니다)") },
+                label = { Text("미래의 나에게") },
                 placeholder = { Text("예: 오늘 밤 11시 이후엔 진짜 그만 봐. 내일 시험이야.") },
                 modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                "선택 사항입니다. 이 차단 규칙이 잠길 때 문구와 함께 보여줍니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Spacer(Modifier.height(Spacing.md))
 
         SectionCard("관리 종류") {
             Text(
-                "이 그룹에 적용할 관리 종류를 선택하세요.",
+                "이 차단 규칙에 적용할 관리 종류를 선택하세요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -261,21 +266,21 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
             )
             Spacer(Modifier.height(Spacing.sm))
             ToggleRow(
-                title = "일일 사용한도 설정",
+                title = "일일 사용 한도",
                 checked = dailyLimitEnabled,
                 onCheckedChange = { dailyLimitEnabled = it }
             )
             Spacer(Modifier.height(Spacing.sm))
             ToggleRow(
-                title = "실행 확인",
+                title = "실행 전 대기",
                 description = "켜면 실행할 때마다 확인창이 뜨고, 확인할 때마다 대기시간이 늘어납니다.",
                 checked = confirmEnabled,
                 onCheckedChange = { confirmEnabled = it }
             )
             Spacer(Modifier.height(Spacing.sm))
             ToggleRow(
-                title = "스누즈",
-                description = "그룹 목록 화면에서 회유 절차 없이 즉시 임시 해제할 수 있는 버튼을 켭니다.",
+                title = "잠깐 풀기",
+                description = "차단 규칙 목록 화면에서 확인 질문 절차 없이 즉시 임시 해제할 수 있는 버튼을 켭니다.",
                 checked = snoozeEnabled,
                 onCheckedChange = { snoozeEnabled = it }
             )
@@ -285,7 +290,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         SectionCard("뽀모도로 연동") {
             ToggleRow(
                 title = "뽀모도로 휴식 시 자동 해제",
-                description = "공부앱(설정 메뉴에서 Firebase 연동 필요)의 뽀모도로 휴식 시간 동안 이 그룹의 잠금을 임시로 해제합니다. 실행 확인 on/off와 무관하게 작동합니다.",
+                description = "공부앱(설정 메뉴에서 로그인 필요)의 뽀모도로 휴식 시간 동안 이 차단 규칙의 잠금을 임시로 해제합니다. 실행 전 대기 on/off와 무관하게 작동합니다.",
                 checked = pomodoroUnlockEnabled,
                 onCheckedChange = { pomodoroUnlockEnabled = it }
             )
@@ -294,7 +299,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
 
         if (scheduleEnabled) {
             SectionCard("스케줄") {
-                Text("차단 시간대 (비워두면 미적용)", style = MaterialTheme.typography.bodySmall)
+                Text("적용 시간대 (비워두면 미적용)", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(Spacing.xs))
                 OutlinedTextField(
                     value = scheduleStartText,
@@ -316,7 +321,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
 
         if (dailyLimitEnabled) {
-            SectionCard("일일 사용한도 설정") {
+            SectionCard("일일 사용 한도") {
                 DurationFieldsRow(
                     label = "일일 사용 한도",
                     hoursText = dailyLimitHoursText,
@@ -354,7 +359,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
 
         if (confirmEnabled) {
-            SectionCard("실행 확인") {
+            SectionCard("실행 전 대기") {
                 Text("적용 시간대 (비워두면 하루 종일 적용)", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(Spacing.xs))
                 OutlinedTextField(
@@ -379,7 +384,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 DayMaskRow(mask = confirmDaysMask, onMaskChange = { confirmDaysMask = it })
                 Spacer(Modifier.height(Spacing.sm))
                 DurationFieldsRow(
-                    label = "초기 대기시간",
+                    label = "처음 대기시간",
                     hoursText = initialWaitHoursText,
                     onHoursChange = { initialWaitHoursText = it },
                     minutesText = initialWaitMinutesText,
@@ -389,7 +394,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 )
                 Spacer(Modifier.height(Spacing.sm))
                 DurationFieldsRow(
-                    label = "확인마다 늘어나는 시간",
+                    label = "재확인마다 늘어나는 시간",
                     hoursText = waitIncrementHoursText,
                     onHoursChange = { waitIncrementHoursText = it },
                     minutesText = waitIncrementMinutesText,
@@ -399,7 +404,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 )
                 Spacer(Modifier.height(Spacing.sm))
                 DurationFieldsRow(
-                    label = "재확인까지 유예시간",
+                    label = "다시 묻지 않는 시간",
                     hoursText = confirmCooldownHoursText,
                     onHoursChange = { confirmCooldownHoursText = it },
                     minutesText = confirmCooldownMinutesText,
@@ -408,21 +413,21 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                     onSecondsChange = { confirmCooldownSecondsText = it }
                 )
                 Text(
-                    "유예시간 동안은 같은 그룹의 다른 프로그램/사이트도 다시 묻지 않습니다.",
+                    "이 시간 동안은 같은 차단 규칙의 다른 프로그램/사이트도 다시 묻지 않습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(Spacing.sm))
                 ToggleRow(
-                    title = "레벨 차감 사용",
-                    description = "켜면 마지막 진행 완료 이후 아래 간격이 지날 때마다 대기시간 레벨이 1씩 자연히 줄어듭니다.",
+                    title = "시간 지나면 자동 완화",
+                    description = "켜면 마지막 진행 완료 이후 아래 간격이 지날 때마다 대기시간이 한 단계씩 자연히 줄어듭니다.",
                     checked = levelDecayEnabled,
                     onCheckedChange = { levelDecayEnabled = it }
                 )
                 if (levelDecayEnabled) {
                     Spacer(Modifier.height(Spacing.sm))
                     DurationFieldsRow(
-                        label = "레벨 차감 간격",
+                        label = "완화 간격",
                         hoursText = levelDecayHoursText,
                         onHoursChange = { levelDecayHoursText = it },
                         minutesText = levelDecayMinutesText,
@@ -431,15 +436,15 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                         onSecondsChange = { levelDecaySecondsText = it }
                     )
                     Text(
-                        "정해진 시각이 아니라, 마지막 진행 완료 시점부터 이 간격이 지날 때마다 레벨이 1씩 줄어듭니다.",
+                        "정해진 시각이 아니라, 마지막 진행 완료 시점부터 이 간격이 지날 때마다 대기시간이 한 단계씩 줄어듭니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Spacer(Modifier.height(Spacing.sm))
                 ToggleRow(
-                    title = "사용 중 남은 시간 오버레이 표시",
-                    description = "확인을 통과한 뒤 유예시간 동안 프로그램을 쓰는 중에 화면 구석에 남은 시간을 표시합니다.",
+                    title = "사용 중 남은 시간 화면 덮개 표시",
+                    description = "확인을 통과한 뒤 다시 묻지 않는 시간 동안 프로그램을 쓰는 중에 화면 구석에 남은 시간을 표시합니다.",
                     checked = usageOverlayEnabled,
                     onCheckedChange = { usageOverlayEnabled = it }
                 )
@@ -448,11 +453,11 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                     OutlinedTextField(
                         value = overlayLevelStepsToMaxText,
                         onValueChange = { overlayLevelStepsToMaxText = it },
-                        label = { Text("오버레이 최고 밝기까지 재확인 횟수") },
+                        label = { Text("몇 번 재확인하면 화면이 가장 진해질지") },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        "재확인을 이 횟수만큼 반복하면 오버레이가 최고 밝기에 도달합니다. 한 번 재확인할 때마다 오르는 밝기 폭은 이 값에 맞춰 자동으로 계산됩니다.",
+                        "재확인을 이 횟수만큼 반복하면 화면 덮개가 가장 진해집니다. 한 번 재확인할 때마다 진해지는 폭은 이 값에 맞춰 자동으로 계산됩니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -462,14 +467,14 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
 
         TextButton(onClick = { weakeningInfoExpanded = !weakeningInfoExpanded }) {
-            Text(if (weakeningInfoExpanded) "꼼수 방지 안내 접기" else "꼼수 방지 안내 자세히 보기")
+            Text(if (weakeningInfoExpanded) "제한을 약하게 바꿀 때 생기는 일 접기" else "제한을 약하게 바꿀 때 생기는 일 자세히 보기")
         }
         AnimatedVisibility(weakeningInfoExpanded) {
             Text(
-                "지금 제한이 걸려있는 도중에 제한을 약화시키는 수정(한도 늘리기, 시간대 바꾸기, 오늘 요일 빼기, " +
-                    "늘어나는 시간 줄이기, 유예시간 늘리기, 레벨 차감을 새로 켜거나 차감 간격 줄이기, 항목 삭제, " +
+                "지금 차단 중인 도중에 제한을 약화시키는 수정(한도 늘리기, 시간대 바꾸기, 오늘 요일 빼기, " +
+                    "늘어나는 시간 줄이기, 다시 묻지 않는 시간 늘리기, 자동 완화를 새로 켜거나 완화 간격 줄이기, 항목 삭제, " +
                     "적용 시간대 좁히기, 스케줄 관리 끄기 등)을 " +
-                    "하면 회유 멘트 20개에 하나씩 \"예\"를 눌러야 적용됩니다.",
+                    "하면 확인 질문 20개에 하나씩 \"예\"를 눌러야 적용됩니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -477,9 +482,9 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         Spacer(Modifier.height(Spacing.md))
 
         if (snoozeEnabled) {
-            SectionCard("일시정지(스누즈) 설정") {
+            SectionCard("일시정지(잠깐 풀기) 설정") {
                 Text(
-                    "그룹 목록 화면의 \"😴 스누즈\" 버튼으로 회유 절차 없이 즉시 임시 해제할 수 있습니다. " +
+                    "차단 규칙 목록 화면의 \"😴 잠깐 풀기\" 버튼으로 확인 질문 절차 없이 즉시 임시 해제할 수 있습니다. " +
                         "남용을 막기 위해 아래 설정한 횟수까지만 쓸 수 있습니다(자정이 아니라 위 일일 한도 초기화 시각 기준).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -488,24 +493,24 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 OutlinedTextField(
                     value = snoozeMinutesText,
                     onValueChange = { snoozeMinutesText = it },
-                    label = { Text("스누즈 시간(분)") },
+                    label = { Text("잠깐 풀기 시간(분)") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(Spacing.sm))
                 OutlinedTextField(
                     value = snoozeDailyLimitText,
                     onValueChange = { snoozeDailyLimitText = it },
-                    label = { Text("하루 스누즈 횟수") },
+                    label = { Text("하루 잠깐 풀기 횟수") },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
             Spacer(Modifier.height(Spacing.md))
         }
 
-        SectionCard("기간 지정 자동 강화 (시험기간 등)") {
+        SectionCard("이 기간엔 끄기 금지 (시험기간 등)") {
             Text(
-                "이 날짜 범위 안에서는 위 \"그룹 전체 사용\" 스위치를 꺼도 실제로는 계속 켜진 것으로 취급됩니다" +
-                    "(시간대/한도/실행확인 설정 자체는 그대로 따릅니다). 비워두면 평소처럼 스위치를 그대로 따릅니다.",
+                "이 날짜 범위 안에서는 위 \"차단 규칙 전체 사용\" 스위치를 꺼도 실제로는 계속 켜진 것으로 취급됩니다" +
+                    "(시간대/한도/실행 전 대기 설정 자체는 그대로 따릅니다). 비워두면 평소처럼 스위치를 그대로 따릅니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -667,7 +672,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 }
             }
             Text(
-                "지금 제한이 걸려있는 그룹의 삭제입니다 (%d/%d)".format(pendingDeleteMessageIndex + 1, PERSUASION_MESSAGES.size),
+                "지금 차단 중인 차단 규칙의 삭제입니다 (%d/%d)".format(pendingDeleteMessageIndex + 1, PERSUASION_MESSAGES.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

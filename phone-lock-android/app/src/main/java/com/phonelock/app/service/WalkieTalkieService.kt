@@ -164,13 +164,13 @@ class WalkieTalkieService : Service() {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (manager.getNotificationChannel(SERVICE_CHANNEL_ID) == null) {
                 manager.createNotificationChannel(
-                    NotificationChannel(SERVICE_CHANNEL_ID, "무전기 대기", NotificationManager.IMPORTANCE_MIN)
+                    NotificationChannel(SERVICE_CHANNEL_ID, "깨우기 메시지 대기", NotificationManager.IMPORTANCE_MIN)
                 )
             }
             if (manager.getNotificationChannel(MESSAGE_CHANNEL_ID) == null) {
                 // enableVibration 기본값은 false라서 명시적으로 켜야 한다 — 안 켜면 "메시지로 받기" 모드에서
                 // 알림만 조용히 뜨고 진동은 안 오는 문제가 있었다(RoutineReminderReceiver와 동일 패턴).
-                val channel = NotificationChannel(MESSAGE_CHANNEL_ID, "무전기 메시지", NotificationManager.IMPORTANCE_HIGH).apply {
+                val channel = NotificationChannel(MESSAGE_CHANNEL_ID, "깨우기 메시지", NotificationManager.IMPORTANCE_HIGH).apply {
                     enableVibration(true)
                     vibrationPattern = MESSAGE_VIBRATE_PATTERN
                 }
@@ -186,7 +186,7 @@ class WalkieTalkieService : Service() {
         )
         return NotificationCompat.Builder(this, SERVICE_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("무전기 대기 중")
+            .setContentTitle("깨우기 메시지 대기 중")
             .setContentText("모임 멤버의 음성메시지를 받을 수 있습니다")
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setContentIntent(pendingIntent)

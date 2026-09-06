@@ -59,7 +59,7 @@ private sealed class Tab(val route: String, val label: String, val emoji: String
     object Manage : Tab("manage", "관리", "🗂️")
     object Study : Tab("study", "공부", "📘")
     object Routine : Tab("routine", "루틴", "🌱")
-    object Group : Tab("group", "모임", "👥")
+    object Group : Tab("group", "소셜", "👥")
     object Settings : Tab("settings", "설정", "⚙️")
 }
 
@@ -159,10 +159,18 @@ class MainActivity : ComponentActivity() {
             var themeRefreshTick by remember { mutableStateOf(0) }
             val prefs = remember(themeRefreshTick) { AppPreferences(applicationContext) }
             var showOnboarding by remember { mutableStateOf(!AppPreferences(applicationContext).onboardingShown) }
+            // 그림으로 보는 기능 안내(신규) — 권한 온보딩과 별개로 최초 설치 시 자동 표시, 이후 설정 탭에서
+            // 다시 열 수 있음. 91차: 마지막으로 본 버전과 현재 버전이 다르면(최초 설치 포함) 업데이트 직후에도
+            // 다시 뜨도록 확장 — repository.currentVersionCode()는 이미 자체 업데이트 체크에 쓰이던 값.
+            var showGuide by remember { mutableStateOf(AppPreferences(applicationContext).lastSeenGuideVersion != repository.currentVersionCode()) }
             PhoneLockTheme(themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
                 Surface(modifier = Modifier) {
                     AccountGate(repository) {
-                        PhoneLockApp(repository, onThemeChange = { themeMode = it; themeRefreshTick++ })
+                        PhoneLockApp(
+                            repository,
+                            onThemeChange = { themeMode = it; themeRefreshTick++ },
+                            onShowGuide = { showGuide = true }
+                        )
                     }
                 }
                 if (showOnboarding) {
@@ -171,6 +179,13 @@ class MainActivity : ComponentActivity() {
                             AppPreferences(applicationContext).onboardingShown = true
                             showOnboarding = false
                             requestNotificationPermissionIfNeeded()
+                        }
+                    )
+                } else if (showGuide) {
+                    GuideScreen(
+                        onDismiss = {
+                            AppPreferences(applicationContext).lastSeenGuideVersion = repository.currentVersionCode()
+                            showGuide = false
                         }
                     )
                 }
@@ -190,10 +205,10 @@ private fun OnboardingDialog(onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
                 Text("이 앱이 제대로 동작하려면 다음 권한들이 필요합니다.")
-                Text("• 알림 — 루틴/스트릭/모임 알림을 보내려면 필요합니다.")
+                Text("• 알림 — 루틴/연속 기록/모임 알림을 보내려면 필요합니다.")
                 Text("• 접근성 서비스 — 차단 대상 앱이 켜졌는지 감지하려면 필요합니다(설정 탭에서 별도로 켤 수 있습니다).")
-                Text("• 다른 앱 위에 표시 — 차단 중 남은 시간 오버레이를 보여주려면 필요합니다(설정 탭에서 별도로 켤 수 있습니다).")
-                Text("접근성 서비스와 오버레이 권한은 나중에 설정 탭에서 언제든 켤 수 있습니다.")
+                Text("• 다른 앱 위에 표시 — 차단 중 남은 시간 화면 덮개를 보여주려면 필요합니다(설정 탭에서 별도로 켤 수 있습니다).")
+                Text("접근성 서비스와 화면 덮개 권한은 나중에 설정 탭에서 언제든 켤 수 있습니다.")
             }
         },
         confirmButton = {
@@ -203,7 +218,7 @@ private fun OnboardingDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String) -> Unit = {}) {
+private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String) -> Unit = {}, onShowGuide: () -> Unit = {}) {
     val navController = rememberNavController()
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { AppPreferences(context) }
@@ -243,7 +258,27 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                 RoutineScreen(repository)
             }
             composable(Tab.Group.route) {
-                SocialGroupScreen(repository) { groupId -> navController.navigate("social_group/$groupId") }
+                SocialGroupScreen(
+                    repository,
+                    onOpenGroup = { groupId -> navController.navigate("social_group/$groupId") },
+                    onOpenDm = { chatId, peerUid, peerLabel ->
+                        val encodedLabel = java.net.URLEncoder.encode(peerLabel, "UTF-8")
+                        navController.navigate("dm_chat/$chatId/$peerUid/$encodedLabel")
+                    }
+                )
+            }
+            composable(
+                "dm_chat/{chatId}/{peerUid}/{peerLabel}",
+                arguments = listOf(
+                    navArgument("chatId") { type = NavType.StringType },
+                    navArgument("peerUid") { type = NavType.StringType },
+                    navArgument("peerLabel") { type = NavType.StringType }
+                )
+            ) { entry ->
+                val chatId = entry.arguments?.getString("chatId") ?: ""
+                val peerUid = entry.arguments?.getString("peerUid") ?: ""
+                val peerLabel = java.net.URLDecoder.decode(entry.arguments?.getString("peerLabel") ?: "", "UTF-8")
+                DmChatScreen(repository, chatId, peerUid, peerLabel, onBack = { navController.popBackStack() })
             }
             composable(
                 "social_group/{groupId}",
@@ -272,7 +307,8 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                 SettingsScreen(
                     repository,
                     onNavigateToStudyLockApps = { navController.navigate("study_lock_apps") },
-                    onThemeChange = onThemeChange
+                    onThemeChange = onThemeChange,
+                    onShowGuide = onShowGuide
                 )
             }
             composable("study_lock_apps") {
@@ -343,9 +379,11 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
 private fun ManageSection(repository: PhoneLockRepository, navController: NavController) {
     var subTab by remember { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
+        // 공부 섹션 서브탭(아래 StudySection)만 이모지 아이콘이 있고 관리 섹션엔 없어서 같은 자리의
+        // 탭 줄인데도 높이/생김새가 서로 달라 보였다 — 두 섹션의 서브탭 표기를 통일한다.
         TabRow(selectedTabIndex = subTab) {
-            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("그룹") })
-            MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("통계") })
+            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("🗂️") }, text = { Text("차단 규칙") })
+            MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, icon = { Text("📊") }, text = { Text("사용 기록") })
         }
         Box(Modifier.weight(1f)) {
             when (subTab) {
@@ -368,11 +406,11 @@ private fun StudySection(repository: PhoneLockRepository) {
         // 글자가 잘리거나 두 줄로 밀린다(사용자 지적) — Tab의 icon/text 슬롯을 분리하면 Material3가
         // 이모지를 위, 라벨을 아래로 항상 세로로 쌓아준다.
         TabRow(selectedTabIndex = subTab) {
-            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("⏱️") }, text = { Text("시간 측정") })
+            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("⏱️") }, text = { Text("타이머") })
             MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, icon = { Text("📅") }, text = { Text("캘린더") })
             MaterialTab(selected = subTab == 2, onClick = { subTab = 2 }, icon = { Text("🧮") }, text = { Text("계산기") })
             MaterialTab(selected = subTab == 3, onClick = { subTab = 3 }, icon = { Text("🗓️") }, text = { Text("일정표") })
-            MaterialTab(selected = subTab == 4, onClick = { subTab = 4 }, icon = { Text("📈") }, text = { Text("통계") })
+            MaterialTab(selected = subTab == 4, onClick = { subTab = 4 }, icon = { Text("📈") }, text = { Text("학습 통계") })
         }
         Box(Modifier.weight(1f)) {
             when (subTab) {

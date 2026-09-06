@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,12 +53,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.provider.Settings
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.phonelock.app.service.AccessibilityServiceChecker
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.*
 import com.phonelock.app.data.CalcTask
@@ -88,12 +100,23 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     var run by remember { mutableStateOf(repository.getTimerRun()) }
     var todayTasks by remember { mutableStateOf(listOf<CalendarTask>()) }
     var taskName by remember { mutableStateOf(todayTasks.firstOrNull { it.name.isNotBlank() }?.name ?: "") }
+    // 93차(사용자 요청): "해당 없음"을 골라 taskName을 일부러 비웠는데, 아래 자동 채움 로직이
+    // "비어있으면 첫 일정으로 채운다"는 규칙 때문에 다음 목록 갱신 때 도로 채워버리는 문제가 있었다 —
+    // 사용자가 한 번이라도 직접 고르거나 입력했으면 그 뒤로는 자동 채움을 하지 않는다.
+    var taskNameTouchedByUser by remember { mutableStateOf(false) }
     var taskDropdownExpanded by remember { mutableStateOf(false) }
     var pomodoroEnabled by remember { mutableStateOf(repository.pomodoroModeEnabled) }
     var studyMinText by remember { mutableStateOf(repository.pomodoroStudyMinutes.toString()) }
     var breakMinText by remember { mutableStateOf(repository.pomodoroBreakMinutes.toString()) }
-    var allowedSites by remember { mutableStateOf(repository.studyLockAllowedSites.toList()) }
     var todayLog by remember { mutableStateOf(listOf<StudyLogEntry>()) }
+    // 92차(사용자 요청, "타이머 화면이 여전히 비어보인다"): 스트릭/주간 그래프 2개를 채우려고 추가.
+    // `getAllStudyLogOnce()`는 이 기기 로컬 기록만 반환해서(다른 기기가 그날 올린 기록은
+    // `remoteStudyLogCache`에만 있고 안 섞여 있음, `getTodayStudyLog()`/`getStudyLogForDate()`만
+    // 그 캐시를 합쳐 반환함) 그대로 쓰면 다른 기기에서만 공부한 날이 0으로 보이는 동기화 버그가 된다 —
+    // 그래서 날짜별로 `syncStudyLogFromFirebase(dateKey)` 동기화 후 `getStudyLogForDate(dateKey)`로
+    // 합산해야 한다(아래 `daySecondsSynced()`/`refreshStreakAndWeek()` 참고, 데스크탑판과 대칭).
+    var last7Days by remember { mutableStateOf(listOf<Pair<LocalDate, Long>>()) }
+    var studyStreak by remember { mutableStateOf(0) }
     var calcTasksForSummary by remember { mutableStateOf(listOf<CalcTask>()) }
     var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var remoteStudying by remember { mutableStateOf(false) }
@@ -107,15 +130,83 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     var stopNoteText by remember { mutableStateOf("") }
     var stopTagText by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // 91차(90차 지정 9번): 접근성 서비스는 관리(차단) 그룹뿐 아니라 공부 잠금(checkStudyLock())도
+    // 이 서비스로 동작하는데, 지금까지 이 경고는 GroupListScreen.kt에만 있었다 — 관리 그룹을 하나도
+    // 안 쓰고 공부 타이머만 쓰는 사용자는 접근성이 꺼져도 알 방법이 없어서 여기도 같은 배너를 추가한다.
+    var accessibilityEnabled by remember { mutableStateOf(AccessibilityServiceChecker.isEnabled(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                accessibilityEnabled = AccessibilityServiceChecker.isEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val accessibilityBanner: @Composable () -> Unit = {
+        if (!accessibilityEnabled) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.sm),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.errorContainer
+            ) {
+                Column(Modifier.padding(Spacing.md)) {
+                    Text(
+                        "⚠ 접근성 서비스가 꺼져 있습니다 — 지금 공부 잠금이 동작하지 않습니다",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                    Button(
+                        onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("설정에서 켜기")
+                    }
+                }
+            }
+        }
+    }
 
     fun refreshLog() {
         scope.launch { todayLog = repository.getTodayStudyLog() }
+    }
+
+    // 92차: 특정 날짜의 "모든 기기 합산" 공부시간 — 오늘은 이미 5초마다 동기화되는 todayLog를 그대로
+    // 쓰고(더 자주 갱신돼 신선함), 과거 날짜만 그 자리에서 동기화 후 합산한다(데스크탑판과 대칭).
+    suspend fun daySecondsSynced(dateKey: String): Long {
+        if (dateKey == repository.todayCalendarDateKey()) return todayLog.sumOf { it.seconds }.toLong()
+        repository.syncStudyLogFromFirebase(dateKey)
+        return repository.getStudyLogForDate(dateKey).sumOf { it.seconds }.toLong()
+    }
+    suspend fun refreshStreakAndWeek() {
+        val today = LocalDate.parse(repository.todayCalendarDateKey())
+        val week = (6 downTo 0).map { offset ->
+            val d = today.minusDays(offset.toLong())
+            d to daySecondsSynced(d.toString())
+        }
+        last7Days = week
+        // 스트릭: 오늘부터 거슬러 올라가며 끊기는 지점까지 — 위에서 이미 동기화한 최근 7일은 재사용하고,
+        // 그보다 더 길면 하루씩 추가로 동기화(무한 네트워크 호출 방지용 60일 상한).
+        var streak = 0
+        var d = today
+        while (streak < 60) {
+            val seconds = if (streak < week.size) week[week.size - 1 - streak].second else daySecondsSynced(d.toString())
+            if (seconds <= 0) break
+            streak++
+            d = d.minusDays(1)
+        }
+        studyStreak = streak
     }
 
     LaunchedEffect(Unit) {
         todayLog = repository.getTodayStudyLog()
         todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
         calcTasksForSummary = repository.getCalcTasks()
+        refreshStreakAndWeek()
         while (true) {
             delay(1000)
             nowMillis = System.currentTimeMillis()
@@ -141,8 +232,17 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
             // 다른 기기의 기록은 별도로 계속 갱신돼야 하므로 run 상태와 무관하게 돈다.
             if (tickCount % 5 == 0) {
                 repository.syncStudyLogFromFirebase(repository.todayCalendarDateKey())
+                // 93차(사용자 요청): 다른 기기에서 오늘 캘린더 일정을 새로 추가해도 이 탭은
+                // CalendarScreen/StudyStatsScreen과 달리 진입 시 동기화를 한 번도 안 해서 로컬 데이터가
+                // 오래된 채로 남아있었다 — 새 일정이 드롭다운에 안 보이던 원인. 여기서도 동기화한다.
+                repository.syncCalendarFromFirebase()
                 todayLog = repository.getTodayStudyLog()
                 calcTasksForSummary = repository.getCalcTasks()
+                if (run == null) todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
+            }
+            // 30초마다 스트릭/주간 그래프 갱신 — 과거 날짜 동기화는 매 5초씩 하기엔 비용이 커서 더 낮은 주기로.
+            if (tickCount % 30 == 0) {
+                refreshStreakAndWeek()
             }
         }
     }
@@ -150,7 +250,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     // 1초마다 todayTasks를 새로 불러오는데, 그때마다 taskName을 무조건 첫 항목으로 되돌리면
     // 사용자가 고른 값이 계속 리셋된다. 현재 선택값이 여전히 목록에 유효할 때만 유지한다.
     LaunchedEffect(todayTasks) {
-        if (taskName.isBlank() || todayTasks.none { it.name == taskName }) {
+        if (!taskNameTouchedByUser && (taskName.isBlank() || todayTasks.none { it.name == taskName })) {
             taskName = todayTasks.firstOrNull { it.name.isNotBlank() }?.name ?: ""
         }
     }
@@ -216,25 +316,22 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
         val remoteActive = remoteStudying || remoteResting
         val mirrorFromRemote = run == null && remoteActive
         SectionCard("⏱️ 공부 타이머") {
-            if (run == null && todayTasks.isEmpty() && !mirrorFromRemote) {
-                Text(
-                    "캘린더에 오늘 일정을 추가하면 타이머를 사용할 수 있습니다.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else if (run == null && !mirrorFromRemote) {
-                // ExposedDropdownMenuBox 사용 — readOnly TextField에 Modifier.clickable만
-                // 얹은 예전 방식은 텍스트필드가 자체 포인터 입력을 먼저 가로채 항목을 눌러도
-                // 선택이 안 바뀌는 버그가 있었다(사용자 리포트로 발견).
+            if (run == null && !mirrorFromRemote) {
+                // 92차(사용자 요청): 91차에 "일정 없으면 자유 입력"으로 바꿨더니 일정이 있을 때도
+                // 드롭다운 선택 기능이 없어진 것처럼 보인다는 피드백 — 실제로는 남아있었지만,
+                // 아예 항상 "골라도 되고 직접 입력해도 되는" 입력칸으로 통합해 헷갈릴 여지를 없앤다.
+                // 이제 readOnly를 걸지 않아 일정이 있어도 자유롭게 고쳐 쓸 수 있고, 일정이 있으면
+                // 드롭다운 아이콘으로 목록에서 고를 수도 있다.
                 ExposedDropdownMenuBox(
                     expanded = taskDropdownExpanded,
                     onExpandedChange = { taskDropdownExpanded = it }
                 ) {
                     OutlinedTextField(
                         value = taskName,
-                        onValueChange = {},
-                        readOnly = true,
+                        onValueChange = { taskName = it; taskNameTouchedByUser = true },
+                        readOnly = false,
                         label = { Text("오늘 캘린더 일정") },
+                        placeholder = { Text("예: 수학 (선택, 비워둬도 됩니다)") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = taskDropdownExpanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
@@ -242,10 +339,16 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                         expanded = taskDropdownExpanded,
                         onDismissRequest = { taskDropdownExpanded = false }
                     ) {
+                        // 93차(사용자 요청): 빈칸으로 지우는 방법을 모르는 사용자를 위해 목록에서도
+                        // 명시적으로 고를 수 있는 "해당 없음" 항목을 항상 맨 위에 둔다.
+                        DropdownMenuItem(
+                            text = { Text("해당 없음") },
+                            onClick = { taskName = ""; taskNameTouchedByUser = true; taskDropdownExpanded = false }
+                        )
                         todayTasks.forEach { t ->
                             DropdownMenuItem(
                                 text = { Text(taskDropdownLabel(t)) },
-                                onClick = { taskName = t.name; taskDropdownExpanded = false }
+                                onClick = { taskName = t.name; taskNameTouchedByUser = true; taskDropdownExpanded = false }
                             )
                         }
                     }
@@ -305,6 +408,8 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                         Icons.Filled.PlayArrow, contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
+                    // 아이콘과 글자가 붙어 있어 "▶시작"처럼 한 덩어리로 보였다.
+                    Spacer(Modifier.width(Spacing.xs))
                     Text("시작")
                 }
             } else {
@@ -410,27 +515,62 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
             }
         }
     }
-    val extrasContent: @Composable () -> Unit = {
-        AllowedAppsCollapsibleSection()
-        Spacer(Modifier.height(Spacing.md))
+    // 92차(사용자 요청, "안드로이드도 데스크탑처럼"): 데스크탑 90차의 TimerIllustration을 그대로
+    // 대칭 이식 — 판정 로직과 무관한 순수 표시값이라 기존 run/remote* 상태를 그대로 재사용한다.
+    val illustrationRun = run ?: if (remoteStudying || remoteResting) TimerRunState(
+        taskName = remoteTaskName,
+        mode = remoteMode,
+        phase = if (remoteResting) "break" else "study",
+        phaseStartedAt = remotePhaseStartedAt,
+        phaseEndAt = remotePhaseEndAt,
+        cycleCount = 0,
+        breakExtraUsed = false
+    ) else null
+    val illustrationProgress = illustrationRun
+        ?.takeIf { it.mode == "pomodoro" && it.phaseEndAt > it.phaseStartedAt }
+        ?.let { ((nowMillis - it.phaseStartedAt).toFloat() / (it.phaseEndAt - it.phaseStartedAt).toFloat()).coerceIn(0f, 1f) }
+    val illustrationSecondHandAngle = illustrationRun
+        ?.takeIf { it.mode != "pomodoro" }
+        ?.let { ((nowMillis - it.phaseStartedAt) / 1000 % 60) * 6f }
+    val illustrationCaption = when {
+        illustrationRun == null -> "공부를 시작하면 여기에 진행 상황이 표시됩니다"
+        illustrationRun.phase == "break" -> "휴식 중 — 잠시 쉬어가세요"
+        else -> "공부 중 — 이 시간이 아래 기록으로 쌓입니다"
+    }
 
-        SectionCard("🌐 공부 잠금 허용 사이트") {
-            Text(
-                "허용된 앱(브라우저)이 열려 있어도 여기 등록 안 된 사이트는 따로 차단됩니다. 허용 앱 목록은 " +
-                    "위 \"공부 잠금 허용 앱\"에서 관리합니다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(Spacing.sm))
-            LockListEditor(
-                items = allowedSites,
-                placeholder = "예: google.com",
-                onAdd = { name -> allowedSites = allowedSites + name; repository.studyLockAllowedSites = allowedSites.toSet() },
-                onRemove = { idx -> allowedSites = allowedSites.toMutableList().apply { removeAt(idx) }; repository.studyLockAllowedSites = allowedSites.toSet() }
-            )
+    // studyStreak/last7Days는 위 refreshStreakAndWeek()가 채우는 state — 다른 기기 기록까지
+    // 합산해야 해서(위 주석 참고) 여기서 파생 계산하지 않는다.
+    // 92차: 오늘 과목(태그)별 공부시간 — 태그를 안 남겼으면 업무 이름으로 대신 묶는다. 이건
+    // todayLog(이미 getTodayStudyLog()가 다른 기기 기록과 합쳐 반환) 그대로 써도 정확하다.
+    val todaySubjects = remember(todayLog) {
+        todayLog.groupBy { it.tag.ifBlank { it.taskName.ifBlank { "기타" } } }
+            .mapValues { (_, entries) -> entries.sumOf { it.seconds }.toLong() }
+            .toList()
+            .sortedByDescending { it.second }
+    }
+
+    // 90차(사용자 요청): 허용 앱/사이트 편집은 설정 > 공부 탭으로 옮겼다 — 매번 보는 화면이 아니라
+    // 한 번 정해두는 설정이기 때문(데스크탑판과 동일한 이동). 92차: 빈 자리를 데스크탑과 대칭인
+    // TimerIllustration+스트릭/주간그래프/과목별 도넛으로 채운다.
+    val extrasContent: @Composable () -> Unit = {
+        TimerIllustration(
+            progress = illustrationProgress,
+            secondHandAngle = illustrationSecondHandAngle,
+            caption = illustrationCaption
+        )
+        Spacer(Modifier.height(Spacing.md))
+        StreakCard(streak = studyStreak)
+        Spacer(Modifier.height(Spacing.md))
+        SectionCard("📈 최근 7일 공부시간") {
+            WeekBarChart(days = last7Days)
         }
         Spacer(Modifier.height(Spacing.md))
-
+        if (todaySubjects.isNotEmpty()) {
+            SectionCard("🥧 오늘 과목별 공부시간") {
+                SubjectPieChart(subjects = todaySubjects)
+            }
+            Spacer(Modifier.height(Spacing.md))
+        }
         SectionCard("📊 오늘의 공부 기록") {
             if (todayLog.isEmpty()) {
                 Text("아직 오늘 기록된 공부 시간이 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -439,7 +579,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     byTask.entries.sortedByDescending { (_, entries) -> entries.sumOf { it.seconds } }.forEach { (name, entries) ->
                         val lastEntry = entries.maxByOrNull { it.startedAt }
-                        StudyLogRow(name = name, seconds = entries.sumOf { it.seconds }.toLong(), note = lastEntry?.note.orEmpty(), tag = lastEntry?.tag.orEmpty())
+                        StudyLogRow(name = name.ifBlank { "이름 없는 공부" }, seconds = entries.sumOf { it.seconds }.toLong(), note = lastEntry?.note.orEmpty(), tag = lastEntry?.tag.orEmpty())
                     }
                     StudyLogRow(name = "합계", seconds = todayLog.sumOf { it.seconds }.toLong(), isTotal = true)
                 }
@@ -453,6 +593,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
         Column(Modifier.fillMaxSize().padding(Spacing.md)) {
             Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(Spacing.md))
+            accessibilityBanner()
             TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
             Spacer(Modifier.height(Spacing.md))
             com.phonelock.app.ui.components.ResponsiveSplit(
@@ -467,6 +608,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
         ) {
             Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(Spacing.md))
+            accessibilityBanner()
 
             TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
             Spacer(Modifier.height(Spacing.md))
@@ -594,9 +736,217 @@ internal fun StudyLogRow(name: String, seconds: Long, isTotal: Boolean = false, 
     }
 }
 
-/** 웹앱의 "입력창 + 추가 버튼 + 목록(항목마다 ✕ 삭제)" 패턴. */
+/**
+ * 92차(사용자 요청, "안드로이드도 데스크탑처럼"): 데스크탑 90차 `TimerIllustration`(StudyTimerScreen.kt)의
+ * 대칭 이식 — 대기 중이면 정적인 시계(테두리 링 + 두 바늘), 뽀모도로 실행 중이면 진행률 호(arc), 일반
+ * 스톱워치 실행 중이면 경과 초에 맞춰 도는 초침을 덧그린다. 판정 로직과 무관한 순수 표시용.
+ */
 @Composable
-private fun LockListEditor(items: List<String>, placeholder: String, onAdd: (String) -> Unit, onRemove: (Int) -> Unit) {
+private fun TimerIllustration(progress: Float?, secondHandAngle: Float? = null, caption: String) {
+    val trackColor = MaterialTheme.colorScheme.outline
+    val accent = MaterialTheme.colorScheme.primary
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(Spacing.md),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            androidx.compose.foundation.Canvas(Modifier.size(132.dp)) {
+                val strokeWidth = 10.dp.toPx()
+                val diameter = size.minDimension - strokeWidth
+                val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
+                val arcSize = androidx.compose.ui.geometry.Size(diameter, diameter)
+                drawArc(
+                    color = trackColor.copy(alpha = 0.5f),
+                    startAngle = 0f, sweepAngle = 360f, useCenter = false,
+                    topLeft = topLeft, size = arcSize,
+                    style = Stroke(width = strokeWidth)
+                )
+                if (progress != null) {
+                    drawArc(
+                        color = accent,
+                        startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
+                        topLeft = topLeft, size = arcSize,
+                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                    )
+                } else {
+                    val center = Offset(size.width / 2f, size.height / 2f)
+                    val handStroke = 4.dp.toPx()
+                    listOf(
+                        (diameter * 0.34f) to 60.0,   // 분침(2시 방향)
+                        (diameter * 0.24f) to 300.0   // 시침(10시 방향)
+                    ).forEach { (length, clockDegrees) ->
+                        val rad = Math.toRadians(clockDegrees - 90.0)
+                        drawLine(
+                            color = accent.copy(alpha = 0.7f),
+                            start = center,
+                            end = Offset(center.x + (length * Math.cos(rad)).toFloat(), center.y + (length * Math.sin(rad)).toFloat()),
+                            strokeWidth = handStroke,
+                            cap = StrokeCap.Round
+                        )
+                    }
+                    if (secondHandAngle != null) {
+                        val rad = Math.toRadians(secondHandAngle - 90.0)
+                        val length = diameter * 0.4f
+                        drawLine(
+                            color = accent,
+                            start = center,
+                            end = Offset(center.x + (length * Math.cos(rad)).toFloat(), center.y + (length * Math.sin(rad)).toFloat()),
+                            strokeWidth = handStroke * 0.5f,
+                            cap = StrokeCap.Round
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            Text(
+                caption,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/** 92차(사용자 요청, "타이머 화면이 여전히 비어보인다"): 오늘부터 거슬러 센 연속 공부일 카드. 데스크탑판과 대칭. */
+@Composable
+private fun StreakCard(streak: Int) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = if (streak > 0) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, if (streak > 0) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(Spacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            Text(if (streak > 0) "🔥" else "💤", style = MaterialTheme.typography.headlineMedium)
+            Column {
+                Text(
+                    if (streak > 0) "연속 공부 ${streak}일째" else "오늘부터 연속 기록을 시작해보세요",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (streak > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text("하루라도 공부 시간이 기록되면 이어집니다", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** 92차: 최근 7일(오늘 포함) 공부시간 막대그래프. 데스크탑판과 대칭. */
+@Composable
+private fun WeekBarChart(days: List<Pair<LocalDate, Long>>) {
+    val accent = MaterialTheme.colorScheme.primary
+    val maxSeconds = (days.maxOfOrNull { it.second } ?: 0L).coerceAtLeast(1L)
+    val dowLabels = listOf("월", "화", "수", "목", "금", "토", "일")
+    Row(
+        Modifier.fillMaxWidth().height(120.dp),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+    ) {
+        days.forEach { (date, seconds) ->
+            val fraction = (seconds.toFloat() / maxSeconds.toFloat()).coerceIn(0f, 1f)
+            val isToday = date == LocalDate.now()
+            Column(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Bottom
+            ) {
+                Text(
+                    if (seconds > 0) formatHmsShort(seconds) else "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(2.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth(0.6f)
+                        .fillMaxHeight(0.72f * fraction.coerceAtLeast(0.03f))
+                        .background(
+                            if (isToday) accent else accent.copy(alpha = 0.55f),
+                            RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
+                        )
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    dowLabels[date.dayOfWeek.value - 1],
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isToday) accent else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+    if (maxSeconds <= 1L && days.all { it.second == 0L }) {
+        Spacer(Modifier.height(Spacing.sm))
+        Text("최근 7일간 기록된 공부 시간이 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** 92차: 오늘 과목(태그)별 공부시간 도넛 차트 + 범례. 데스크탑판과 대칭. */
+@Composable
+private fun SubjectPieChart(subjects: List<Pair<String, Long>>) {
+    val palette = listOf(
+        MaterialTheme.colorScheme.primary,
+        MaterialTheme.colorScheme.secondary,
+        SUBJECT_COLOR_3, SUBJECT_COLOR_4, SUBJECT_COLOR_5, SUBJECT_COLOR_6
+    )
+    val total = subjects.sumOf { it.second }.coerceAtLeast(1L)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.foundation.Canvas(Modifier.size(100.dp)) {
+            val strokeWidth = 18.dp.toPx()
+            val diameter = size.minDimension - strokeWidth
+            val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
+            val arcSize = androidx.compose.ui.geometry.Size(diameter, diameter)
+            var startAngle = -90f
+            subjects.forEachIndexed { idx, (_, seconds) ->
+                val sweep = 360f * (seconds.toFloat() / total.toFloat())
+                drawArc(
+                    color = palette[idx % palette.size],
+                    startAngle = startAngle, sweepAngle = sweep, useCenter = false,
+                    topLeft = topLeft, size = arcSize,
+                    style = Stroke(width = strokeWidth)
+                )
+                startAngle += sweep
+            }
+        }
+        Spacer(Modifier.width(Spacing.md))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            subjects.take(6).forEachIndexed { idx, (name, seconds) ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.size(10.dp).background(palette[idx % palette.size], CircleShape))
+                    Text(name, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                    Text(formatHmsShort(seconds), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+private val SUBJECT_COLOR_3 = Color(0xFFF59E0B)
+private val SUBJECT_COLOR_4 = Color(0xFFA78BFA)
+private val SUBJECT_COLOR_5 = Color(0xFF34D399)
+private val SUBJECT_COLOR_6 = Color(0xFFEC4899)
+
+private fun formatHmsShort(totalSeconds: Long): String {
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    return if (h > 0) "${h}h ${m}m" else "${m}m"
+}
+
+/**
+ * 웹앱의 "입력창 + 추가 버튼 + 목록(항목마다 ✕ 삭제)" 패턴. 90차부터 실제 사용처는
+ * 설정 > 공부 탭의 "공부 잠금 허용 사이트" 하나뿐이지만, 컴포넌트는 원래 자리에 그대로 둔다.
+ */
+@Composable
+internal fun LockListEditor(items: List<String>, placeholder: String, onAdd: (String) -> Unit, onRemove: (Int) -> Unit) {
     var input by remember { mutableStateOf("") }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         OutlinedTextField(
@@ -636,58 +986,6 @@ private fun LockListEditor(items: List<String>, placeholder: String, onAdd: (Str
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-/**
- * "공부 잠금 허용 앱" 인라인 선택 — 앱 목록/검색 로직은 [StudyLockAppsScreen.kt]의
- * `AllowedAppsPickerBody`를 그대로 재사용한다(설정 탭의 전체화면과 코드 중복 없이 공유). 기본
- * 접힌 상태로 시작해서 헤더를 눌러야만 앱 목록이 펼쳐진다 — 데스크탑 타이머 탭엔 허용 프로그램
- * 입력칸이 바로 보이는 것과 달리, 설치 앱이 수십~수백 개인 안드로이드에서 목록을 항상 펼쳐두면
- * 타이머 탭이 지나치게 길어지기 때문.
- */
-@Composable
-private fun AllowedAppsCollapsibleSection() {
-    val context = LocalContext.current
-    val prefs = remember { AppPreferences(context) }
-    var expanded by remember { mutableStateOf(false) }
-    val allowedCount = prefs.studyLockAllowedPackages.size
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        tonalElevation = 0.dp
-    ) {
-        Column(Modifier.padding(Spacing.md)) {
-            Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                androidx.compose.material3.Icon(
-                    if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = Spacing.xs)
-                )
-                Text(
-                    "🔒 공부 잠금 허용 앱" + if (allowedCount > 0) " ($allowedCount)" else "",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            if (expanded) {
-                Spacer(Modifier.height(Spacing.sm))
-                Text(
-                    "선택한 앱은 공부앱 타이머가 켜져 있는 동안에도 항상 열 수 있습니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                AllowedAppsPickerBody(prefs = prefs, modifier = Modifier.fillMaxWidth())
             }
         }
     }
