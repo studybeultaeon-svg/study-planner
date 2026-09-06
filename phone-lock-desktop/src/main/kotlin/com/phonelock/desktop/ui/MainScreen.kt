@@ -62,6 +62,8 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onS
     var groups by remember { mutableStateOf(repository.getGroups()) }
     var extensionWarning by remember { mutableStateOf(false) }
     var selectedSocialGroupId by remember { mutableStateOf<String?>(null) }
+    // 92차 소셜 개편 Phase 2: 1:1 DM 채팅방 진입 상태(chatId, peerUid, peerLabel).
+    var selectedDmChat by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     var updateInstallerUrl by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
@@ -155,7 +157,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onS
                         selected = section == TopSection.SOCIAL_GROUP,
                         onClick = { section = TopSection.SOCIAL_GROUP },
                         icon = { Text("👥") },
-                        label = { Text("모임") },
+                        label = { Text("소셜") },
                         colors = railColors
                     )
                 }
@@ -272,11 +274,19 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onS
                     }
                     TopSection.SOCIAL_GROUP -> {
                         Box(Modifier.weight(1f)) {
+                            val dmChat = selectedDmChat
                             val groupId = selectedSocialGroupId
-                            if (groupId != null) {
+                            if (dmChat != null) {
+                                val (chatId, peerUid, peerLabel) = dmChat
+                                DmChatScreen(repository, chatId, peerUid, peerLabel, onBack = { selectedDmChat = null })
+                            } else if (groupId != null) {
                                 SocialGroupMembersScreen(repository, groupId, onBack = { selectedSocialGroupId = null })
                             } else {
-                                SocialGroupScreen(repository, onSelectGroup = { selectedSocialGroupId = it })
+                                SocialGroupScreen(
+                                    repository,
+                                    onSelectGroup = { selectedSocialGroupId = it },
+                                    onOpenDm = { chatId, peerUid, peerLabel -> selectedDmChat = Triple(chatId, peerUid, peerLabel) }
+                                )
                             }
                         }
                     }

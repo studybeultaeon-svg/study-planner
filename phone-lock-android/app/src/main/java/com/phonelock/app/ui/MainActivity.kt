@@ -59,7 +59,7 @@ private sealed class Tab(val route: String, val label: String, val emoji: String
     object Manage : Tab("manage", "관리", "🗂️")
     object Study : Tab("study", "공부", "📘")
     object Routine : Tab("routine", "루틴", "🌱")
-    object Group : Tab("group", "모임", "👥")
+    object Group : Tab("group", "소셜", "👥")
     object Settings : Tab("settings", "설정", "⚙️")
 }
 
@@ -258,7 +258,27 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                 RoutineScreen(repository)
             }
             composable(Tab.Group.route) {
-                SocialGroupScreen(repository) { groupId -> navController.navigate("social_group/$groupId") }
+                SocialGroupScreen(
+                    repository,
+                    onOpenGroup = { groupId -> navController.navigate("social_group/$groupId") },
+                    onOpenDm = { chatId, peerUid, peerLabel ->
+                        val encodedLabel = java.net.URLEncoder.encode(peerLabel, "UTF-8")
+                        navController.navigate("dm_chat/$chatId/$peerUid/$encodedLabel")
+                    }
+                )
+            }
+            composable(
+                "dm_chat/{chatId}/{peerUid}/{peerLabel}",
+                arguments = listOf(
+                    navArgument("chatId") { type = NavType.StringType },
+                    navArgument("peerUid") { type = NavType.StringType },
+                    navArgument("peerLabel") { type = NavType.StringType }
+                )
+            ) { entry ->
+                val chatId = entry.arguments?.getString("chatId") ?: ""
+                val peerUid = entry.arguments?.getString("peerUid") ?: ""
+                val peerLabel = java.net.URLDecoder.decode(entry.arguments?.getString("peerLabel") ?: "", "UTF-8")
+                DmChatScreen(repository, chatId, peerUid, peerLabel, onBack = { navController.popBackStack() })
             }
             composable(
                 "social_group/{groupId}",

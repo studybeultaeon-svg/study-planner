@@ -3,6 +3,7 @@ package com.phonelock.app.ui
 import android.content.Intent
 import android.util.Base64
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.foundation.background
@@ -38,6 +39,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab as MaterialTab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -151,6 +154,8 @@ fun SocialGroupMembersScreen(
     var showSettingsMenu by remember { mutableStateOf(false) }
     var showEditInfoDialog by remember { mutableStateOf(false) }
     var showMemberManageDialog by remember { mutableStateOf(false) }
+    // 92차 소셜 개편 Phase 4(관리 기능 강화, IDEAS.md 77차) — 모임장 소유권 승계 확인 대상.
+    var transferTarget by remember { mutableStateOf<Pair<String, String>?>(null) } // uid to 표시이름
     var admins by remember { mutableStateOf(emptySet<String>()) }
     // 😴 깨우기 대상 — null이 아닌 동안 선택창(옵션→음성/텍스트) 흐름이 진행 중이다. wakeStep이
     // "options"/"voice"/"text" 중 어느 단계인지로 어느 다이얼로그를 띄울지 정한다(옵션 선택 후에도
@@ -161,6 +166,9 @@ fun SocialGroupMembersScreen(
     // SocialGroupMemberDetailScreen을 그대로 내장) 마스터-디테일 — 폰은 기존처럼 onOpenMember로 별도
     // 화면 네비게이션.
     var selectedUid by remember { mutableStateOf<String?>(null) }
+    // 92차 소셜 개편 Phase 1: "멤버"/"💬 대화" 채널 전환 — 디스코드식 "서버=모임, 채널=용도별 공간"
+    // 구조의 첫 단계(대화 채널만 우선 추가, 공유/관리 채널은 이후 단계에서 검토).
+    var channelTab by remember { mutableStateOf(0) }
     val recordPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (granted) wakeStep = "voice" }
@@ -366,6 +374,14 @@ fun SocialGroupMembersScreen(
             // weight(1f) LazyColumn으로 따로 스크롤되던 구조라, 화면이 작으면 카드들이 공간을 다 차지해
             // 멤버 목록이 거의 안 보이는 문제가 있었다 — 위쪽 카드들도 전부 item으로 넣어 하나의
             // LazyColumn으로 통합, 전체가 한 스크롤로 이어지게 함.
+            Column(Modifier.fillMaxSize().background(socialGradientBackground()).padding(padding)) {
+            TabRow(selectedTabIndex = channelTab) {
+                MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
+                MaterialTab(selected = channelTab == 1, onClick = { channelTab = 1 }, text = { Text("💬 대화") })
+            }
+            if (channelTab == 1) {
+                GroupChatScreen(repository, groupId)
+            } else {
             val displayRows = if (viewWeekly) rows.sortedWith(compareBy { it.weekRate ?: -1 }) else rows
             val membersListContent: @Composable (Modifier) -> Unit = { listModifier ->
             LazyColumn(
@@ -588,8 +604,9 @@ fun SocialGroupMembersScreen(
                         // 82차(§6 UX 폴리싱): "오늘"/"이번 주" 토글로 정렬이 바뀔 때 카드가 순간이동
                         // 대신 부드럽게 이동하도록 — 신규 의존성 없이 Compose foundation 기본 제공.
                         modifier = Modifier.fillMaxWidth().animateItemPlacement().clickable { onMemberClick(row.uid) },
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceVariant
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (row.uid == myUid) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant,
+                        border = if (row.uid == myUid) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)) else null
                     ) {
                         Row(
                             Modifier.fillMaxWidth().padding(Spacing.md),
@@ -600,10 +617,11 @@ fun SocialGroupMembersScreen(
                             Column(Modifier.weight(1f)) {
                                 Text(row.displayName + if (row.uid == myUid) " (나)" else "", style = MaterialTheme.typography.titleMedium)
                                 if (row.streak != null && row.streak > 0) {
-                                    Text("🔥 ${row.streak}일", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(Modifier.height(2.dp))
+                                    SectionPill("🔥 ${row.streak}일", color = androidx.compose.ui.graphics.Color(0xFFFF9800))
                                 }
                                 if (row.hasStats && rate != null) {
-                                    Spacer(Modifier.height(2.dp))
+                                    Spacer(Modifier.height(4.dp))
                                     LinearProgressIndicator(
                                         progress = { rate / 100f },
                                         modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
@@ -615,7 +633,7 @@ fun SocialGroupMembersScreen(
                             Spacer(Modifier.width(Spacing.sm))
                             if (row.hasStats) {
                                 val percentLabel = if (rate != null) "${rate}%" else if (row.shareRoutines) "-" else "비공개"
-                                Text(percentLabel, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                                SectionPill(percentLabel)
                             }
                             if (row.uid != myUid) {
                                 IconButton(
@@ -645,7 +663,7 @@ fun SocialGroupMembersScreen(
                 // 84차: 데스크탑 SocialGroupMembersScreen.kt와 같은 좌우 분할 — 오른쪽엔 이미 태블릿
                 // 대응된 SocialGroupMemberDetailScreen을 그대로 내장한다(uid만 바꿔주면 됨, 새 화면
                 // 아님). onBack은 "뒤로 화면 전환"이 아니라 "선택 해제"로 자연스럽게 대응된다.
-                Row(Modifier.fillMaxSize().padding(padding).padding(Spacing.md)) {
+                Row(Modifier.fillMaxSize().padding(Spacing.md)) {
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                         membersListContent(Modifier.fillMaxSize())
                     }
@@ -666,7 +684,9 @@ fun SocialGroupMembersScreen(
                     }
                 }
             } else {
-                membersListContent(Modifier.fillMaxSize().padding(padding).padding(Spacing.md))
+                membersListContent(Modifier.fillMaxSize().padding(Spacing.md))
+            }
+            }
             }
         }
     }
@@ -732,6 +752,7 @@ fun SocialGroupMembersScreen(
                                 TextButton(onClick = {
                                     scope.launch { repository.setSocialGroupAdmin(groupId, m.uid, !targetIsAdmin); reload() }
                                 }) { Text(if (targetIsAdmin) "관리자 해제" else "관리자 지정") }
+                                TextButton(onClick = { transferTarget = m.uid to m.displayName }) { Text("👑 승계") }
                             }
                             if (!targetIsOwner) {
                                 TextButton(onClick = {
@@ -743,6 +764,25 @@ fun SocialGroupMembersScreen(
                 }
             },
             confirmButton = { TextButton(onClick = { showMemberManageDialog = false }) { Text("닫기") } }
+        )
+    }
+
+    transferTarget?.let { (targetUid, targetName) ->
+        AlertDialog(
+            onDismissRequest = { transferTarget = null },
+            title = { Text("모임장 넘기기") },
+            text = { Text("\"$targetName\"님에게 모임장을 넘길까요? 나는 자동으로 관리자가 됩니다.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    transferTarget = null
+                    scope.launch {
+                        val result = repository.transferSocialGroupOwnership(groupId, targetUid)
+                        result.onFailure { e -> actionMessage = e.message ?: "소유권 승계에 실패했습니다." }
+                        result.onSuccess { showMemberManageDialog = false; reload() }
+                    }
+                }) { Text("넘기기") }
+            },
+            dismissButton = { TextButton(onClick = { transferTarget = null }) { Text("취소") } }
         )
     }
 

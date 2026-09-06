@@ -37,6 +37,9 @@ suspend fun PhoneLockRepository.setSocialGroupAdmin(groupId: String, targetUid: 
     com.phonelock.app.service.SocialGroupSyncClient.setGroupAdmin(fbDatabaseUrl, fbApiKey, groupId, targetUid, isAdmin)
 suspend fun PhoneLockRepository.kickSocialGroupMember(groupId: String, targetUid: String) =
     com.phonelock.app.service.SocialGroupSyncClient.kickMember(fbDatabaseUrl, fbApiKey, groupId, targetUid)
+/** 모임장 소유권 승계(92차 소셜 개편 Phase 4). */
+suspend fun PhoneLockRepository.transferSocialGroupOwnership(groupId: String, newOwnerUid: String) =
+    com.phonelock.app.service.SocialGroupSyncClient.transferOwnership(fbDatabaseUrl, fbApiKey, groupId, newOwnerUid)
 suspend fun PhoneLockRepository.updateSocialGroupName(groupId: String, newName: String) =
     com.phonelock.app.service.SocialGroupSyncClient.updateGroupName(fbDatabaseUrl, fbApiKey, groupId, newName)
 suspend fun PhoneLockRepository.regenerateSocialGroupInviteCode(groupId: String) =

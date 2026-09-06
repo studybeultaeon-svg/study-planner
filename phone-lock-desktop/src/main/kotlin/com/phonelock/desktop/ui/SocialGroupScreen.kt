@@ -35,11 +35,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.monitor.AuthManager
 import com.phonelock.desktop.monitor.SocialGroupSyncClient
 import com.phonelock.desktop.ui.theme.Spacing
+
+/** 소셜 화면 배경(사용자 지적으로 재디자인, 안드로이드판과 대칭) — 공부 잠금 화면과 같은 중앙 원형
+ *  `radialGradient`를 그대로 썼더니, 그 "빛나는 원"은 잠금 화면의 원형 진행률 링과 짝을 이루는
+ *  디자인이라 링이 없는 리스트 화면(소셜)에선 정체불명의 얼룩처럼 보인다는 지적을 받았다 — 잠금 화면
+ *  쪽은 그대로 두고, 소셜 쪽만 위→아래로 옅어지는 리니어 그라디언트(메신저 앱 상단 배너 톤)로 교체해
+ *  원형 "빛나는 점" 인상을 없앴다. */
+@Composable
+internal fun socialGradientBackground() = Brush.verticalGradient(
+    colors = listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.07f), MaterialTheme.colorScheme.background)
+)
+
+/** 섹션 제목/수치 옆에 붙는 작은 pill 라벨. */
+@Composable
+internal fun SectionPill(text: String, color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary) {
+    Surface(shape = RoundedCornerShape(50), color = color.copy(alpha = 0.12f)) {
+        Text(text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp))
+    }
+}
 
 /** 모임 이름 첫 글자를 원형 배지로 — 목록에서 항목을 시각적으로 구분하기 쉽게 한다. */
 @Composable
@@ -58,6 +78,21 @@ private fun GroupAvatar(name: String) {
 
 private data class GroupSummary(val id: String, val name: String, val memberCount: Int, val avgTodayPercent: Int)
 
+/** DM 상대 첫 글자를 원형 배지로(모임 [GroupAvatar]와 같은 패턴, 색만 secondary로 구분). */
+@Composable
+private fun DmAvatar(label: String) {
+    Box(
+        modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label.trim().firstOrNull()?.uppercase() ?: "?",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+    }
+}
+
 /** 각 멤버의 오늘 루틴 완료율 평균 — shareRoutines가 켜져있고 오늘 예정 루틴이 있는 멤버만 집계한다. */
 private fun averageTodayPercent(stats: List<SocialGroupSyncClient.MemberStats>): Int {
     val ratios = stats.filter { it.shareRoutines && it.routines.isNotEmpty() }
@@ -71,15 +106,23 @@ private fun averageTodayPercent(stats: List<SocialGroupSyncClient.MemberStats>):
  * 모임/멤버/통계는 로컬에 캐싱하지 않고 화면 진입 시마다 Firebase에서 직접 읽는다(DECISIONS.md 참고).
  */
 @Composable
-fun SocialGroupScreen(repository: Repository, onSelectGroup: (String) -> Unit) {
+fun SocialGroupScreen(repository: Repository, onSelectGroup: (String) -> Unit, onOpenDm: (String, String, String) -> Unit) {
     var loading by remember { mutableStateOf(true) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var summaries by remember { mutableStateOf<List<GroupSummary>>(emptyList()) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var showJoinDialog by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableStateOf(0) }
+    // 92차 소셜 개편 Phase 2: 1:1 DM — 커스텀 아이디 전역 검색으로 시작(안드로이드판과 대칭).
+    var dmChats by remember { mutableStateOf<List<com.phonelock.desktop.monitor.ChatSyncClient.DmChatPreview>>(emptyList()) }
+    var showNewDmDialog by remember { mutableStateOf(false) }
 
     fun refresh() { refreshTrigger++ }
+
+    fun reloadDmChats() {
+        val url = repository.fbDatabaseUrl; val key = repository.fbApiKey
+        Thread { dmChats = com.phonelock.desktop.monitor.ChatSyncClient.readMyDmChats(url, key) }.start()
+    }
 
     LaunchedEffect(refreshTrigger) {
         val url = repository.fbDatabaseUrl
@@ -96,6 +139,7 @@ fun SocialGroupScreen(repository: Repository, onSelectGroup: (String) -> Unit) {
         }
         loading = true
         errorMsg = null
+        reloadDmChats()
         Thread {
             val ids = SocialGroupSyncClient.readMyGroupIds(url, key)
             val result = ids.mapNotNull { id ->
@@ -195,7 +239,88 @@ fun SocialGroupScreen(repository: Repository, onSelectGroup: (String) -> Unit) {
         )
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.md)) {
+    if (showNewDmDialog) {
+        var codeText by remember { mutableStateOf("") }
+        var searching by remember { mutableStateOf(false) }
+        var searchError by remember { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { if (!searching) showNewDmDialog = false },
+            title = { Text("새 대화") },
+            text = {
+                Column {
+                    Text("상대의 커스텀 아이디를 입력하세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(Spacing.xs))
+                    OutlinedTextField(
+                        value = codeText, onValueChange = { codeText = it; searchError = null },
+                        label = { Text("커스텀 아이디") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+                    )
+                    searchError?.let {
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = codeText.isNotBlank() && !searching,
+                    onClick = {
+                        searching = true
+                        searchError = null
+                        val url = repository.fbDatabaseUrl; val key = repository.fbApiKey
+                        Thread {
+                            val found = com.phonelock.desktop.monitor.ChatSyncClient.searchUserByCode(url, key, codeText.trim())
+                            if (found == null) {
+                                searching = false
+                                searchError = "찾을 수 없습니다."
+                            } else {
+                                val (otherUid, otherLabel) = found
+                                val result = com.phonelock.desktop.monitor.ChatSyncClient.ensureDmChat(url, key, otherUid, otherLabel)
+                                searching = false
+                                result.onSuccess { chatId ->
+                                    showNewDmDialog = false
+                                    reloadDmChats()
+                                    onOpenDm(chatId, otherUid, otherLabel)
+                                }.onFailure { e -> searchError = e.message ?: "시작에 실패했습니다." }
+                            }
+                        }.start()
+                    }
+                ) { Text(if (searching) "찾는 중..." else "시작") }
+            },
+            dismissButton = { TextButton(enabled = !searching, onClick = { showNewDmDialog = false }) { Text("취소") } }
+        )
+    }
+
+    Column(Modifier.fillMaxSize().background(socialGradientBackground()).verticalScroll(rememberScrollState()).padding(Spacing.md)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            SectionPill("💬 1:1 대화")
+            TextButton(onClick = { showNewDmDialog = true }) { Text("+ 새 대화") }
+        }
+        Spacer(Modifier.height(Spacing.sm))
+        if (dmChats.isEmpty()) {
+            Text(
+                "아직 시작한 대화가 없습니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            dmChats.forEach { dm ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f)),
+                    onClick = { onOpenDm(dm.chatId, dm.peerUid, dm.peerLabel) }
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                        DmAvatar(dm.peerLabel)
+                        Spacer(Modifier.width(Spacing.sm))
+                        Text(dm.peerLabel, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(Spacing.lg))
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text("👥 모임", style = MaterialTheme.typography.headlineMedium)
@@ -249,9 +374,9 @@ fun SocialGroupScreen(repository: Repository, onSelectGroup: (String) -> Unit) {
             summaries.forEach { g ->
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
                     onClick = { onSelectGroup(g.id) }
                 ) {
                     Row(
@@ -270,14 +395,10 @@ fun SocialGroupScreen(repository: Repository, onSelectGroup: (String) -> Unit) {
                             )
                         }
                         Spacer(Modifier.width(Spacing.md))
-                        // 예전엔 진행바 옆에 숫자만 덩그러니 있어 무엇의 퍼센트인지 알 수 없었다 —
-                        // 무슨 수치인지 라벨을 붙인다(안드로이드판과 동일).
+                        // 92차 재디자인: 퍼센트를 알약 배지로(안드로이드판과 동일).
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                "${g.avgTodayPercent}%",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            SectionPill("${g.avgTodayPercent}%")
+                            Spacer(Modifier.height(2.dp))
                             Text(
                                 "오늘 루틴 평균",
                                 style = MaterialTheme.typography.labelSmall,

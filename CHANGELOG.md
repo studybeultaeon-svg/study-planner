@@ -4,6 +4,38 @@
 
 ---
 
+## 2026-09-06 (93차 세션) — "소셜" 개편(모임 탭을 메신저 형태로 확장): 그룹 대화 채널, 1:1 DM, 소유권 승계, 전체 디자인 통일
+
+사용자 요청: "모임" 섹션을 "소셜"로 개편 — 범위를 물으니 이름 변경뿐 아니라 카카오톡/인스타그램DM/디스코드/LINE 같은 메신저 형태로 목적 자체를 바꾸고 싶다는 답. 4개 메신저를 분석해 디스코드식 "서버=모임, 채널=용도별 공간" 구조를 제안하고 승인받아 단계별로 진행.
+
+### Phase 1 — 탭 리네이밍 + 그룹 "💬 대화" 채널
+- 안드로이드 `Tab.Group`/데스크탑 `TopSection.SOCIAL_GROUP` 표시 라벨을 "모임"→"소셜"로(개별 모임방 자체의 이름은 "모임"으로 유지 — 차단 규칙의 "그룹"과 구분하려던 기존 취지 보존).
+- 신규 `groupChats/{groupId}/messages/{msgId}` 스키마 — 별도 참여자 목록을 두지 않고 기존 `groups/{groupId}/members`를 보안 규칙에서 그대로 재사용(멤버십 변경 시 동기화할 것이 없어짐).
+- 신규 `ChatSyncClient.kt`(양 플랫폼, `SocialGroupSyncClient`와 동일 REST 패턴) + `PhoneLockRepository.Chat.kt`(안드로이드).
+- 신규 `GroupChatScreen.kt` — 텍스트 + 이모지 리액션(👍❤️😂😮😢🔥), 화면이 켜져있는 동안 4초 폴링(SSE/FCM 없이 기존 무전기 폴링과 같은 스타일). `SocialGroupMembersScreen.kt`에 "멤버"/"💬 대화" `TabRow` 추가.
+
+### Phase 2 — 1:1 DM(전역 검색)
+- 신규 `dmChats/{chatId}` 스키마(참여자 고정, 생성 후 불변) — DM 상대는 기존 로그인 시스템의 공개 인덱스(`usernames/{customId}`)로 검색, 새 공개 프로필 노출 없이 구현.
+- `users/{uid}/dmChatIds/{chatId}`로 내 대화 목록 인덱스(양쪽 참여자가 서로의 인덱스에 쓸 수 있도록 규칙 추가).
+- 신규 `DmChatScreen.kt`. 안드로이드/데스크탑 각각 `ChatThreadScreen.kt`(공용 메시지 스레드 UI)를 추출해 그룹 대화/DM이 함께 재사용 — UI는 완전히 같고 저장 경로(groupChats vs dmChats)만 다름.
+- "소셜" 탭 진입 화면(`SocialGroupScreen.kt`) 상단에 "1:1 대화" 목록 + "새 대화" 검색 다이얼로그 신설.
+
+### Phase 4 — 관리 기능 강화: 모임장 소유권 승계
+- IDEAS.md 77차 보류 항목 구현 — `SocialGroupSyncClient.transferOwnership()`(양 플랫폼), "👥 멤버 관리" 다이얼로그에 "👑 승계" 버튼. 넘긴 모임장은 자동으로 관리자가 됨. 기존 `groups/{id}/info` 쓰기 규칙이 이미 모임장/관리자 둘 다 허용해 별도 보안 규칙 추가 불필요.
+- (정보 공유 확장 — 오늘 일정표 공유는 78~79차에 이미 구현돼 있었음을 이번에 재확인, 중복 작업 없이 스킵.)
+
+### 소셜 화면 전체 재디자인
+- 92차 공부 잠금 화면(`StudyLockActivity`/`StudyLockScreen`)의 강조색 배지/카드형 언어를 소셜 관련 화면 전체(모임·DM 목록, 멤버 목록, 멤버 상세, 채팅방)에 통일 — 완료율/스트릭을 알약 배지로, 카드에 accent 톤 배경+테두리.
+- **배경 그라디언트 방향 수정(사용자 실사용 중 지적)**: 처음엔 공부 잠금 화면과 같은 `Brush.radialGradient`(중앙에 빛나는 원)를 그대로 썼는데, 그 모양은 잠금 화면의 원형 진행률 링과 짝을 이루는 디자인이라 링이 없는 리스트 화면(소셜)에는 안 어울린다는 지적을 받아 위→아래로 옅어지는 `Brush.verticalGradient`로 교체. 잠금 화면 쪽은 그대로 유지 — 프로젝트 전체에서 `radialGradient`를 쓰는 곳은 이제 잠금 화면 두 곳뿐임을 확인.
+
+### 그 외
+- **캘린더 일정 이동/복사 날짜 선택 개선**: `YYYY-MM-DD` 수동 텍스트 입력을 계산기 업무 입력에 쓰던 미니 캘린더 `DatePickerField`로 교체(양 플랫폼 `CalendarScreen.kt`) — 새 컴포넌트 없이 기존 것 재사용.
+- Firebase 규칙(`groupChats`/`dmChats`/`dmChatIds`) 2회 추가, 매번 사용자가 콘솔에 직접 게시(Claude는 콘솔 접근 권한 없음).
+- 빌드/배포: 여러 차례에 걸쳐 데스크탑 `packageMsi createDistributable`(최종 BuildInfo `1788695394`), 안드로이드 `assembleRelease`(최종 versionCode `1788695472`, 3곳 해시 일치) — 이 호스트 실제 배포 완료. GitHub 릴리스도 [android-1788695472](https://github.com/studybeultaeon-svg/study-planner/releases/tag/android-1788695472)/[desktop-1788695394](https://github.com/studybeultaeon-svg/study-planner/releases/tag/desktop-1788695394)로 게시.
+- 실사용 검증: 소셜 탭 진입/디자인은 사용자가 직접 확인(그라디언트 문제도 이 과정에서 발견). 그룹 대화/DM 메시지 송수신·리액션·소유권 승계는 아직 실사용 미검증.
+
+---
+
 ## 2026-09-06 (92차 세션) — 90차 지정 다음 세션 작업 중 1·2·5번(공부 잠금 화면 디자인 개편, 안드로이드 타이머 탭 대칭화, 빈 공간 통계 위젯) + 그 과정에서 발견한 크로스디바이스 동기화 버그 수정
 
 사용자 요청: 90차 지정 작업 중 "1. 공부 잠금 오버레이 UX/UI 개편"부터 시작 — 구체적 문제를 먼저 확인해달라는 요청에 "디자인이 밋밋하다/정보가 부족하다/허용 앱 목록 UX가 별로다"는 답을 받음.

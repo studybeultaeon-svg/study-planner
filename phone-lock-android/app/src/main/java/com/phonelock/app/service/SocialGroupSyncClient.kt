@@ -245,6 +245,26 @@ object SocialGroupSyncClient {
         }
     }
 
+    /** 모임장 소유권 승계(77차 IDEAS.md, 92차 소셜 개편 Phase 4 구현) — 모임장이 나가거나 넘기고 싶을 때
+     *  다른 멤버를 새 모임장으로 지정한다. 옛 모임장은 권한을 완전히 잃지 않도록 자동으로 관리자가 된다.
+     *  `groups/{id}/info`는 이미 "모임장 또는 관리자가 쓸 수 있다"는 규칙이라 별도 보안 규칙 추가 없이 동작한다. */
+    suspend fun transferOwnership(databaseUrl: String?, apiKey: String?, groupId: String, newOwnerUid: String): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, uid) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+                val base = databaseUrl.trimEnd('/')
+                val info = getRaw(URL("$base/groups/$groupId/info.json?auth=$token"))
+                    ?.takeIf { it.isNotBlank() && it != "null" }?.let { JSONObject(it) } ?: error("모임을 찾을 수 없습니다.")
+                if (info.optString("ownerUid") != uid) error("모임장만 소유권을 넘길 수 있습니다.")
+                putJson(URL("$base/groups/$groupId/info/ownerUid.json?auth=$token"), JSONObject.quote(newOwnerUid), raw = true)
+                putJson(URL("$base/groups/$groupId/admins/$uid.json?auth=$token"), "true", raw = true)
+            }
+        }
+    }
+
     /** 멤버 내쫓기(모임장/관리자만) — 대상의 members/stats/socialGroupIds/admins 항목을 모두 지운다. */
     suspend fun kickMember(databaseUrl: String?, apiKey: String?, groupId: String, targetUid: String): Result<Unit> {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {

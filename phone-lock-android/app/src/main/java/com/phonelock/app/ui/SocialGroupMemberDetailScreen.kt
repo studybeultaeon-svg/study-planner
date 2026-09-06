@@ -150,6 +150,7 @@ fun SocialGroupMemberDetailScreen(
         Column(
             Modifier
                 .fillMaxSize()
+                .background(socialGradientBackground())
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(Spacing.md)

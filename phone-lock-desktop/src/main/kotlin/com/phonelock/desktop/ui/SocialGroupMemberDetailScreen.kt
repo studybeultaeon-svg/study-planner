@@ -104,7 +104,7 @@ fun SocialGroupMemberDetailScreen(
     var hideMyInfoFromThem by remember(groupId, member.uid) { mutableStateOf(repository.hiddenFromUidsFor(groupId).contains(member.uid)) }
     var hideTheirInfoFromMe by remember(groupId, member.uid) { mutableStateOf(repository.hiddenPeerUidsFor(groupId).contains(member.uid)) }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.md)) {
+    Column(Modifier.fillMaxSize().background(socialGradientBackground()).verticalScroll(rememberScrollState()).padding(Spacing.md)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             MemberHeaderCard(member.displayName, member.updatedAt, Modifier.weight(1f))
             if (!isSelf) {

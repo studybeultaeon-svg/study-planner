@@ -1,0 +1,194 @@
+package com.phonelock.app.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.phonelock.app.service.ChatSyncClient
+import com.phonelock.app.ui.theme.Spacing
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "🔥")
+private const val POLL_INTERVAL_MS = 4_000L
+
+/**
+ * "💬 대화" 채널의 공용 메시지 스레드 UI(92차 소셜 개편 Phase 1=모임 대화, Phase 2=1:1 DM이 함께 씀) —
+ * 텍스트 + 이모지 리액션만(사용자 확정 범위). 실시간성은 "이 화면이 켜져있는 동안만"으로 확정돼 화면이
+ * 보이는 동안 [POLL_INTERVAL_MS] 주기로 폴링한다(무전기 7초 폴링과 같은 스타일, 새 SDK/FCM 없음).
+ * 그룹 대화/DM은 저장 경로(`groupChats` vs `dmChats`)만 다르고 UI는 완전히 같아 [loadMessages]/
+ * [sendMessage]/[toggleReaction] 콜백으로 차이를 흡수한다.
+ */
+@Composable
+fun ChatThreadScreen(
+    myUid: String?,
+    loadMessages: suspend () -> List<ChatSyncClient.ChatMessage>,
+    sendMessage: suspend (String) -> Unit,
+    toggleReaction: suspend (msgId: String, emoji: String, alreadySet: Boolean) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var messages by remember { mutableStateOf<List<ChatSyncClient.ChatMessage>>(emptyList()) }
+    var input by remember { mutableStateOf("") }
+    var openReactionsFor by remember { mutableStateOf<String?>(null) }
+    var sending by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            val latest = loadMessages()
+            if (latest != messages) {
+                val wasAtBottom = listState.firstVisibleItemIndex >= (messages.size - 2).coerceAtLeast(0)
+                messages = latest
+                if (wasAtBottom && messages.isNotEmpty()) {
+                    scope.launch { listState.scrollToItem(messages.size - 1) }
+                }
+            }
+            delay(POLL_INTERVAL_MS)
+        }
+    }
+
+    fun sendCurrentInput() {
+        val text = input.trim()
+        if (text.isBlank() || sending) return
+        input = ""
+        sending = true
+        scope.launch {
+            sendMessage(text)
+            messages = loadMessages()
+            if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
+            sending = false
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(socialGradientBackground())) {
+        if (messages.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    "아직 대화가 없습니다. 첫 메시지를 보내보세요.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(Spacing.md),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                items(messages, key = { it.msgId }) { msg ->
+                    val mine = msg.senderUid == myUid
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        horizontalAlignment = if (mine) Alignment.End else Alignment.Start
+                    ) {
+                        if (!mine) {
+                            Text(
+                                msg.senderName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = Spacing.xs, bottom = 2.dp)
+                            )
+                        }
+                        Surface(
+                            modifier = Modifier
+                                .widthIn(max = 280.dp)
+                                .clickable { openReactionsFor = if (openReactionsFor == msg.msgId) null else msg.msgId },
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                msg.text,
+                                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (mine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (msg.reactions.isNotEmpty()) {
+                            val counts = msg.reactions.values.groupingBy { it }.eachCount()
+                            Text(
+                                counts.entries.joinToString("  ") { (emoji, count) -> if (count > 1) "$emoji $count" else emoji },
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(start = Spacing.xs, end = Spacing.xs, top = 2.dp)
+                            )
+                        }
+                        if (openReactionsFor == msg.msgId) {
+                            Row(
+                                Modifier.padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+                            ) {
+                                QUICK_REACTIONS.forEach { emoji ->
+                                    val alreadySet = msg.reactions[myUid] == emoji
+                                    Text(
+                                        emoji,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier
+                                            .background(
+                                                if (alreadySet) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                                                RoundedCornerShape(8.dp)
+                                            )
+                                            .clickable {
+                                                openReactionsFor = null
+                                                scope.launch {
+                                                    toggleReaction(msg.msgId, emoji, alreadySet)
+                                                    messages = loadMessages()
+                                                }
+                                            }
+                                            .padding(4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("메시지 보내기") },
+                singleLine = true
+            )
+            Spacer(Modifier.width(Spacing.xs))
+            IconButton(onClick = { sendCurrentInput() }, enabled = input.isNotBlank() && !sending) {
+                Text("➤")
+            }
+        }
+    }
+}
