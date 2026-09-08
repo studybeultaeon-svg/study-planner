@@ -4,6 +4,28 @@
 
 ---
 
+## Fixed (2026-09-09, 96차 세션)
+
+### 소셜 탭 채팅을 치고 엔터를 눌러도 메시지가 안 올라감
+- **경위**: 사용자 제보 — "채팅 치고 엔터 치는데 채팅이 안올라감", 안드로이드/데스크탑 둘 다.
+- **원인**: `ChatThreadScreen.kt`(그룹 대화/DM 공용, 양 플랫폼)의 입력 `OutlinedTextField`에 키보드 전송 액션(`imeAction`/`keyboardActions`)이 전혀 연결돼 있지 않았다 — `singleLine=true`라 엔터를 눌러도 줄바꿈도 안 되고 전송도 안 되고 아무 일도 안 일어났음. 전송 버튼(➤)만 동작했음.
+- **해결**: `keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send)` + `keyboardActions = KeyboardActions(onSend = { sendCurrentInput() })` 추가(양 플랫폼).
+- **검증**: 컴파일/빌드/배포까지 완료, 실사용 미검증(엔터로 실제 전송되는지 확인 필요).
+
+### 앱 실행 확인(`ConfirmOpenActivity`) 화면이 커스텀 테마를 무시함
+- **경위**: 사용자 제보 — "커스텀 테마 미적용 부분(실행 확인 등)".
+- **원인**: `ConfirmOpenActivity.kt`의 앱(사이트 아닌) 실행 확인 경로가 `PhoneLockTheme(themeMode)`만 호출하고 `customThemeBackground`/`customThemeAccent`/`fontScale`을 안 넘겨서, 커스텀 테마 사용자에게 이 화면만 기본 프리셋 팔레트로 보였다. 사이트 확인 경로(같은 파일 45줄)는 이미 제대로 다 넘기고 있었음 — 복붙 누락으로 추정.
+- **해결**: 앱 확인 경로도 `AppPreferences`에서 커스텀 필드를 읽어 동일하게 전달하도록 수정.
+- **검증**: 컴파일 완료, 실사용 미검증(커스텀 테마 설정 후 앱 실행 확인 화면 색 확인 필요).
+
+### 태블릿에서 공부 잠금 화면의 "⏹ 타이머 정지" 버튼이 안 보임
+- **경위**: 사용자 제보.
+- **원인**: `StudyLockActivity.kt`가 화면을 `weight(1.1f)`/`weight(1f)` 두 `Column`으로 고정 분할하는데 스크롤이 없었다 — 태블릿(특히 가로 모드처럼 세로 폭이 좁은 화면)에서 배지+타이머 원형(220dp 고정)+태스크 칩+정지 버튼까지 다 그리기엔 위쪽 Column의 세로 공간이 부족해, 넘치는 만큼 그냥 잘려서 정지 버튼이 화면 밖으로 밀려났다.
+- **해결**: 위/아래 두 `Column` 모두에 `verticalScroll(rememberScrollState())` 추가 — 잘리지 않고 스크롤해서라도 항상 버튼에 닿을 수 있게 함.
+- **검증**: 컴파일 완료, 실사용 미검증(실제 태블릿/가로 모드에서 버튼이 보이고 스크롤되는지 확인 필요).
+
+---
+
 ## Fixed (2026-09-06, 93차 세션)
 
 ### 소셜 화면 배경이 공부 잠금 화면과 같은 "중앙에 빛나는 원" 디자인을 써서 겹쳐 보임

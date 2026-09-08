@@ -89,7 +89,11 @@ data class AppGroup(
     val blockAttemptCount: Int = 0,
     /** "미래의 나에게" 예약 메시지(82차, §11 창의적 기능) — 지금의 내가 남긴 문구를 이 그룹이 잠길 때
      *  회유 멘트 대신/함께 보여준다. 비어있으면 기존처럼 랜덤 문구만 표시. 순수 로컬 텍스트, 동기화 안 함. */
-    val selfMessageText: String = ""
+    val selfMessageText: String = "",
+    /** 이 차단 규칙을 크로스디바이스 설정 동기화에 참여시킬지(94차, 사용자 요청 — 자동 전체 동기화 폐지).
+     *  기본 꺼짐. 켜진 그룹만 원격에 올라가고("불러오기" 화면에서 다른 기기가 볼 수 있음), 원격 최신값을
+     *  받아온다. 꺼진 그룹은 완전히 로컬 전용으로 남는다. PhoneLockRepository.GroupSync.kt 참고. */
+    val syncEnabled: Boolean = false
 )
 
 @Entity(tableName = "group_member", primaryKeys = ["groupId", "packageName"])

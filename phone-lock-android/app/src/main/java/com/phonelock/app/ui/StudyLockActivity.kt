@@ -7,6 +7,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -215,8 +217,12 @@ private fun StudyLockScreen(
 
     Box(Modifier.fillMaxSize().background(bg)) {
         Column(modifier = Modifier.fillMaxSize()) {
+            // 96차 버그 수정: 태블릿(특히 가로 모드처럼 세로 폭이 좁은 화면)에서 이 위쪽 Column이
+            // 배지+타이머 원형+태스크 칩+"타이머 정지" 버튼까지 다 그리기엔 세로 공간이 부족한데,
+            // 예전엔 스크롤이 없어 넘치는 만큼 그냥 화면 밖으로 잘려 정지 버튼이 안 보였다(사용자 지적).
+            // verticalScroll을 추가해 안 잘리고 스크롤해서라도 항상 버튼에 닿을 수 있게 한다.
             Column(
-                modifier = Modifier.weight(1.1f).fillMaxWidth().padding(24.dp),
+                modifier = Modifier.weight(1.1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -279,7 +285,7 @@ private fun StudyLockScreen(
                 }
             }
             Column(
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Top
             ) {

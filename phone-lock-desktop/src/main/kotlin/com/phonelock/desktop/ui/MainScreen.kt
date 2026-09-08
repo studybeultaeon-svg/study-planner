@@ -255,7 +255,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onS
                             Tab(selected = studySubTab == 1, onClick = { studySubTab = 1 }, text = { Text("📅 캘린더") })
                             Tab(selected = studySubTab == 2, onClick = { studySubTab = 2 }, text = { Text("🧮 계산기") })
                             Tab(selected = studySubTab == 3, onClick = { studySubTab = 3 }, text = { Text("🗓️ 일정표") })
-                            Tab(selected = studySubTab == 4, onClick = { studySubTab = 4 }, text = { Text("📈 학습 통계") })
+                            Tab(selected = studySubTab == 4, onClick = { studySubTab = 4 }, text = { Text("📈 통계") })
                         }
                         Box(Modifier.weight(1f)) {
                             when (studySubTab) {

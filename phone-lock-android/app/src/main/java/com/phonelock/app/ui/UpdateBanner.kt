@@ -1,12 +1,12 @@
 package com.phonelock.app.ui
 
-import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.provider.Settings
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -26,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -122,56 +121,68 @@ fun UpdateBanner(apkUrl: String) {
     }
 }
 
-/** 성공하면 null, 실패하면 원인을 짧게 담은 문자열을 반환한다(예전엔 Boolean만 돌려줘서 "왜" 실패했는지
- *  알 방법이 없었다 — 다운로드가 "다운로드 중"에서 멈춘 채 아무 반응이 없다는 제보를 받고 진단용으로 보강). */
+/**
+ * 성공하면 null, 실패하면 원인을 짧게 담은 문자열을 반환한다(예전엔 Boolean만 돌려줘서 "왜" 실패했는지
+ * 알 방법이 없었다 — 다운로드가 "다운로드 중"에서 멈춘 채 아무 반응이 없다는 제보를 받고 진단용으로 보강).
+ *
+ * **95차**: 시스템 `DownloadManager`에 맡기던 걸(81차에 PAUSED 처리/메터드 네트워크 허용 등을 계속
+ * 보강했지만 "여전히 다운로드가 멈춘다"는 제보가 반복돼) 앱 자기 프로세스 안에서 직접 HTTP로 내려받는
+ * 방식으로 교체했다 — DownloadManager는 별도 시스템 서비스라 일부 OEM(제조사) ROM의 배터리 최적화/
+ * 백그라운드 서비스 제한에 걸리면 이 앱이 전혀 손댈 수 없는 지점에서 조용히 멈출 수 있는데, 직접 다운로드는
+ * 이미 포그라운드에서 실행 중인 이 코루틴 안에서 끝나므로 그런 외부 제약을 받지 않는다. 저장 위치가
+ * DownloadManager의 공개 다운로드 폴더에서 앱 전용 폴더로 바뀌어 다른 앱(설치 화면)에 파일을 보여주려면
+ * `FileProvider`(매니페스트에 신규 등록, `update_file_paths.xml`)를 거쳐야 한다.
+ */
 private suspend fun downloadAndInstallApk(
     context: Context,
     apkUrl: String,
     onProgress: (Int) -> Unit
 ): String? = withContext(Dispatchers.IO) {
     runCatching {
-        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        val request = DownloadManager.Request(Uri.parse(apkUrl))
-            .setTitle("갓생살기종합세트 업데이트")
-            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "update.apk")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            // 데이터 절약 모드/모바일 데이터 제한 때문에 다운로드가 PAUSED 상태로 무기한 멈춰있던 게
-            // "다운로드 중"만 뜨고 아무 일도 안 일어나는 것처럼 보인 원인 중 하나로 의심돼(2026-09-01
-            // 사용자 제보) 명시적으로 허용한다.
-            .setAllowedOverMetered(true)
-            .setAllowedOverRoaming(true)
-        val id = dm.enqueue(request)
+        val destDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: return@runCatching "저장 폴더를 찾을 수 없음"
+        val destFile = java.io.File(destDir, "update.apk")
 
-        var status = DownloadManager.STATUS_PENDING
-        var attempts = 0
-        while (status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PENDING || status == DownloadManager.STATUS_PAUSED) {
-            if (attempts++ > 300) return@runCatching "5분 초과" // 최대 5분(1초 간격) 대기 후 포기
-            delay(1000)
-            dm.query(DownloadManager.Query().setFilterById(id)).use { cursor ->
-                if (cursor.moveToFirst()) {
-                    status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-                    val total = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-                    val done = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-                    if (total > 0) onProgress((done * 100 / total).toInt())
+        val connection = (java.net.URL(apkUrl).openConnection() as java.net.HttpURLConnection).apply {
+            connectTimeout = 15_000
+            readTimeout = 60_000
+            instanceFollowRedirects = true
+        }
+        connection.connect()
+        if (connection.responseCode !in 200..299) {
+            val code = connection.responseCode
+            connection.disconnect()
+            return@runCatching "HTTP $code"
+        }
+        val totalBytes = connection.contentLengthLong
+        var downloadedBytes = 0L
+        connection.inputStream.use { input ->
+            java.io.FileOutputStream(destFile).use { output ->
+                val buffer = ByteArray(16 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read == -1) break
+                    output.write(buffer, 0, read)
+                    downloadedBytes += read
+                    if (totalBytes > 0) onProgress((downloadedBytes * 100 / totalBytes).toInt())
                 }
             }
         }
-        if (status != DownloadManager.STATUS_SUCCESSFUL) {
-            val reason = dm.query(DownloadManager.Query().setFilterById(id)).use { cursor ->
-                if (cursor.moveToFirst()) cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)) else -1
-            }
-            return@runCatching "상태 $status, 사유 $reason"
+        connection.disconnect()
+        if (totalBytes > 0 && downloadedBytes < totalBytes) {
+            return@runCatching "다운로드 중단됨(${downloadedBytes}/${totalBytes} 바이트)"
         }
 
-        val uri = dm.getUriForDownloadedFile(id)
-            ?: return@runCatching "다운로드된 파일을 찾을 수 없음"
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destFile)
         val installIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         // 85차 발견: 이 인텐트를 처리할 앱이 없으면(일부 커스텀 롬/관리형 기기) startActivity가 예외 없이
         // 그냥 아무 일도 안 일어난 것처럼 보인다("설치 창이 안 뜬다"는 제보) — resolveActivity로 미리
-        // 확인해 실패를 명시적인 오류로 보고한다.
+        // 확인해 실패를 명시적인 오류로 보고한다. **95차**: 매니페스트 <queries>에 이 VIEW+APK mimeType
+        // 조합을 명시적으로 추가하지 않으면 API 30+ 패키지 가시성 제한 때문에 설치 프로그램이 실제로
+        // 있어도 resolveActivity가 null을 돌려줄 수 있었다 — AndroidManifest.xml도 함께 수정.
         if (installIntent.resolveActivity(context.packageManager) == null) {
             return@runCatching "설치 프로그램을 열 수 없음"
         }

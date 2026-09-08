@@ -6,13 +6,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.phonelock.desktop.ui.theme.Spacing
 
-/** 시/분/초 3칸으로 나눠서 입력받는 시간 길이 입력 행. 각 칸은 빈 문자열이면 0으로 취급된다. */
+/** 시/분/초 3칸으로 나눠서 입력받는 시간 길이 입력 행. 각 칸은 빈 문자열이면 0으로 취급된다.
+ *  96차(안드로이드판과 대칭): 사용자가 그려준 시안(둥근 테두리 박스 + "− 값 +")을 쓰도록
+ *  [CompactNumberField]로 교체 — 화살표로도, 키보드로 숫자를 직접 타이핑해도 값을 바꿀 수 있다. */
 @Composable
 fun DurationFieldsRow(
     label: String,
@@ -28,22 +29,24 @@ fun DurationFieldsRow(
         Text(label, style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(Spacing.xs))
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            OutlinedTextField(
+            CompactNumberField(
                 value = hoursText,
                 onValueChange = onHoursChange,
-                label = { Text("시") },
+                label = "시",
                 modifier = Modifier.weight(1f)
             )
-            OutlinedTextField(
+            CompactNumberField(
                 value = minutesText,
                 onValueChange = onMinutesChange,
-                label = { Text("분") },
+                label = "분",
+                max = 59,
                 modifier = Modifier.weight(1f)
             )
-            OutlinedTextField(
+            CompactNumberField(
                 value = secondsText,
                 onValueChange = onSecondsChange,
-                label = { Text("초") },
+                label = "초",
+                max = 59,
                 modifier = Modifier.weight(1f)
             )
         }

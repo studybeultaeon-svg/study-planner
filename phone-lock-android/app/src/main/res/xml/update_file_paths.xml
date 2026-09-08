@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)에 저장하는 update.apk를
+         패키지 설치 화면(다른 앱)에 content:// URI로 공개하기 위한 경로 선언 (UpdateBanner.kt 참고). -->
+    <external-files-path name="update_downloads" path="Download/" />
+</paths>

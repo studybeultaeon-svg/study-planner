@@ -1,6 +1,8 @@
 package com.phonelock.desktop.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,36 +11,58 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Box
 import com.phonelock.shared.PERSUASION_MESSAGES
 import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.desktop.data.Group
+import com.phonelock.desktop.data.ImportableGroupSetting
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.applyGroupSettingsJson
+import com.phonelock.desktop.data.fetchImportableGroupSettings
+import com.phonelock.desktop.data.findRemoteGroupSettingByName
+import com.phonelock.desktop.data.importGroupSetting
 import com.phonelock.desktop.monitor.LockEvaluator
-import com.phonelock.desktop.ui.components.formatHms
 import com.phonelock.desktop.ui.theme.Spacing
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 @Composable
 fun GroupListScreen(
@@ -49,10 +73,28 @@ fun GroupListScreen(
     onEditClick: (Long) -> Unit
 ) {
     val evaluator = remember { LockEvaluator(repository) }
+    val scope = rememberCoroutineScope()
     var penaltyMessage by remember { mutableStateOf<String?>(null) }
+    var showImportDialog by remember { mutableStateOf(false) }
+    // 동기화 on/off 켜기 시 이름 충돌 확인(94차 신규, 95차에 편집 화면에서 목록 화면으로 이동) — 안드로이드판과 대칭.
+    var pendingSyncToggleGroup by remember { mutableStateOf<Group?>(null) }
+    var pendingSyncToggleEntry by remember { mutableStateOf<JSONObject?>(null) }
 
     Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Text("🗂️ 차단 규칙", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "🗂️ 차단 규칙",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedButton(onClick = { showImportDialog = true }) {
+                Text("⬇ 불러오기")
+            }
+        }
+        if (showImportDialog) {
+            GroupImportDialog(repository = repository, onDismiss = { showImportDialog = false })
+        }
         Spacer(Modifier.height(Spacing.sm))
         Button(onClick = onAddClick, modifier = Modifier.fillMaxWidth()) {
             Text("차단 규칙 추가")
@@ -126,33 +168,122 @@ fun GroupListScreen(
                             repository.updateGroup(
                                 group.copy(groupEnabled = true, groupOffPending = false, groupOffMessageIndex = 0)
                             )
+                        },
+                        onSyncToggle = { newValue ->
+                            if (newValue) {
+                                scope.launch {
+                                    val remoteMatch = withContext(Dispatchers.IO) {
+                                        repository.findRemoteGroupSettingByName(group.name)
+                                    }
+                                    if (remoteMatch != null) {
+                                        pendingSyncToggleGroup = group
+                                        pendingSyncToggleEntry = remoteMatch
+                                    } else {
+                                        repository.updateGroup(group.copy(syncEnabled = true))
+                                    }
+                                }
+                            } else {
+                                repository.updateGroup(group.copy(syncEnabled = false))
+                            }
                         }
                     )
                 }
             }
         }
     }
-}
 
-// 상태 배지 색 — DECISIONS.md 85차의 상태 3색(성공/경고/실패)을 그대로 재사용한다.
-private val STATUS_OK = Color(0xFF34D399)
-private val STATUS_WARNING = Color(0xFFFBBF24)
-private val STATUS_DANGER = Color(0xFFF87171)
-
-/** 그룹의 현재 상태를 한눈에 알리는 작은 알약 배지(DECISIONS.md 85차 "섹션 헤더 알약" 패턴 재사용). */
-@Composable
-private fun GroupStatusBadge(text: String, color: Color) {
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = color.copy(alpha = 0.14f)
-    ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.labelMedium,
-            color = color,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
+    // 로컬 전용 규칙의 동기화를 켜려는데 같은 이름이 이미 불러오기 목록에 있을 때(94차, 95차에 이 화면
+    // 으로 이동) — "예"면 이 규칙의 설정을 그 원격 내용으로 바로 덮어쓰고 동기화를 켠다, "아니오"면 취소.
+    val collisionGroup = pendingSyncToggleGroup
+    val collisionEntry = pendingSyncToggleEntry
+    if (collisionGroup != null && collisionEntry != null) {
+        AlertDialog(
+            onDismissRequest = { pendingSyncToggleGroup = null; pendingSyncToggleEntry = null },
+            title = { Text("동기화") },
+            text = {
+                Text("이미 같은 이름의 차단 규칙이 불러오기 목록에 있습니다. 이 규칙과 동기화하시겠습니까? " +
+                    "\"예\"를 선택하면 이 차단 규칙의 설정이 불러온 내용으로 바뀝니다.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val updated = collisionGroup.applyGroupSettingsJson(collisionEntry).copy(syncEnabled = true)
+                    repository.updateGroup(updated)
+                    pendingSyncToggleGroup = null
+                    pendingSyncToggleEntry = null
+                }) { Text("예") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSyncToggleGroup = null; pendingSyncToggleEntry = null }) { Text("아니오") }
+            }
         )
     }
+}
+
+// 상태 색 — 자물쇠 아이콘(잠김)과 잠깐 풀기 칩에 쓰인다. DECISIONS.md 85차의 상태 3색(성공/경고/실패) 재사용.
+private val STATUS_OK = Color(0xFF34D399)
+private val STATUS_WARNING = Color(0xFFFBBF24)
+
+/**
+ * "불러오기" 화면(94차 신규, 안드로이드판과 대칭) — 원격에 있고 이 기기엔 아직 동기화로 연결 안 된
+ * 차단 규칙 이름들을 보여주고, 고른 것만 로컬로 불러온다(같은 이름의 로컬 규칙이 있으면 설정만
+ * 덮어쓰고 동기화를 켠다). 자동으로 전부 병합하던 기존 방식(88차)을 opt-in 방식으로 바꾼 핵심 화면.
+ */
+@Composable
+private fun GroupImportDialog(repository: Repository, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var loading by remember { mutableStateOf(true) }
+    var items by remember { mutableStateOf(listOf<ImportableGroupSetting>()) }
+    var importedNames by remember { mutableStateOf(setOf<String>()) }
+
+    LaunchedEffect(Unit) {
+        items = withContext(Dispatchers.IO) { repository.fetchImportableGroupSettings() }
+        loading = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("불러오기") },
+        text = {
+            Column {
+                Text(
+                    "다른 기기에서 동기화를 켠 차단 규칙 중, 이 기기엔 아직 없는 것들입니다. 원하는 것만 골라 불러오세요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                when {
+                    loading -> Box(Modifier.fillMaxWidth().padding(Spacing.md), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                    items.isEmpty() -> Text("불러올 수 있는 차단 규칙이 없습니다.", style = MaterialTheme.typography.bodyMedium)
+                    else -> {
+                        items.forEach { item ->
+                            val imported = item.name in importedNames
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = Spacing.xs),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(item.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                if (imported) {
+                                    Text("불러옴", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                } else {
+                                    OutlinedButton(onClick = {
+                                        scope.launch {
+                                            withContext(Dispatchers.IO) { repository.importGroupSetting(item.json) }
+                                            importedNames = importedNames + item.name
+                                        }
+                                    }) {
+                                        Text("불러오기")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } }
+    )
 }
 
 @Composable
@@ -166,7 +297,8 @@ private fun GroupRow(
     onSnooze: () -> Unit,
     onGroupToggle: (Boolean) -> Unit,
     onConfirmMessage: () -> Unit,
-    onCancelPending: () -> Unit
+    onCancelPending: () -> Unit,
+    onSyncToggle: (Boolean) -> Unit
 ) {
     val pending = group.groupEnabled && group.groupOffPending
 
@@ -180,57 +312,78 @@ private fun GroupRow(
 
     // 선택한 그룹은 오른쪽에서 편집 중임을 알 수 있도록 accent 테두리로 강조(마스터-디테일 레이아웃).
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs),
+        // 꺼진 차단 규칙은 줄 전체를 흐리게 해서 한눈에 "꺼져 있다"가 보이게 한다(95차, 사용자 요청).
+        // 고정 회색을 새로 칠하는 대신 Modifier.alpha로 카드 전체(배경+글자+아이콘)를 낮은 불투명도로
+        // 내려서 지금 테마(라이트/다크/커스텀 무엇이든) 배경이 그대로 비쳐 보이게 한다.
+        modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)
+            .alpha(if (group.groupEnabled) 1f else 0.55f),
         shape = MaterialTheme.shapes.medium,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceVariant,
         border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
         onClick = onClick
     ) {
         Column(Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
+            // 96차 재작업(사용자 확정 시안, 안드로이드판과 대칭): 상태를 알리던 텍스트 배지와, 일일
+            // 한도/시간대/실행 전 대기를 나열하던 설명 줄을 통째로 없애고 "지금 차단 중인가"만 이름 옆
+            // 자물쇠 아이콘 색으로 표시한다(잠김=초록, 열림=회색). 잠깐 풀기 칩은 이름 아래에 왼쪽
+            // 정렬로 붙이고, 동기화 칩+스위치는 그 왼쪽 블록(이름+잠깐 풀기) 전체 높이 기준으로
+            // 수직 중앙 정렬한다.
+            val locked = restrictingNow
+            val showSnoozeChip = !pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)
+            val snoozeClickable = !snoozeActive && snoozeRemainingToday > 0
+            val snoozeText = if (snoozeActive) "😴 잠깐 풀기 중" else "😴 잠깐 풀기 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})"
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                        Text(group.name, style = MaterialTheme.typography.titleMedium)
-                        // 이 화면에서 사용자가 가장 먼저 알고 싶은 건 "지금 이 그룹이 실제로 걸려 있는가"인데,
-                        // 예전엔 그 상태가 가장 작고(labelSmall) 가장 흐린(onSurfaceVariant) 텍스트라 그룹
-                        // 이름에 완전히 묻혔다 — 상태별 색 배지로 올려 시각적 우선순위를 바로잡는다.
-                        GroupStatusBadge(
-                            text = when {
-                                pending -> "(%d/%d) 확인 필요".format(group.groupOffMessageIndex + 1, PERSUASION_MESSAGES.size)
-                                snoozeActive -> "😴 잠깐 풀기 중"
-                                !group.groupEnabled -> "차단 규칙 꺼짐 · 아무 차단도 적용 안 됨"
-                                restrictingNow -> "🔒 오늘 차단 중"
-                                else -> "오늘은 해당 없음"
-                            },
-                            color = when {
-                                pending -> STATUS_WARNING
-                                snoozeActive -> STATUS_WARNING
-                                !group.groupEnabled -> STATUS_DANGER
-                                restrictingNow -> STATUS_OK
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (locked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                            contentDescription = if (locked) "오늘 차단 중" else "차단 안 함",
+                            tint = if (locked) STATUS_OK else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            group.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                        group.dailyLimitSeconds?.let { Text("일일 한도 ${formatHms(it)}", style = MaterialTheme.typography.bodySmall) }
-                        if (group.scheduleStartMinute != null && group.scheduleEndMinute != null) {
-                            val sh = group.scheduleStartMinute / 60
-                            val sm = group.scheduleStartMinute % 60
-                            val eh = group.scheduleEndMinute / 60
-                            val em = group.scheduleEndMinute % 60
-                            Text("%02d:%02d~%02d:%02d 차단".format(sh, sm, eh, em), style = MaterialTheme.typography.bodySmall)
-                        }
-                        if (group.confirmEnabled) {
-                            Text("실행 전 대기", style = MaterialTheme.typography.bodySmall)
-                        }
+                    if (showSnoozeChip) {
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text(
+                            snoozeText,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            color = STATUS_WARNING,
+                            modifier = Modifier
+                                .background(STATUS_WARNING.copy(alpha = 0.15f), RoundedCornerShape(50))
+                                .let { if (snoozeClickable) it.clickable(onClick = onSnooze) else it }
+                                .alpha(if (snoozeClickable) 1f else 0.6f)
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
                     }
                 }
-                if (!pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)) {
-                    OutlinedButton(onClick = onSnooze, enabled = !snoozeActive && snoozeRemainingToday > 0) {
-                        Text(if (snoozeActive) "😴 잠깐 풀기 중" else "😴 잠깐 풀기 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})")
-                    }
-                    Spacer(Modifier.width(Spacing.sm))
-                }
+                Spacer(Modifier.width(Spacing.sm))
+                Text(
+                    if (group.syncEnabled) "☁️동기화 ON" else "☁️동기화 OFF",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    color = if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .background(
+                            (if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.15f),
+                            RoundedCornerShape(50)
+                        )
+                        .clickable { onSyncToggle(!group.syncEnabled) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+                Spacer(Modifier.width(Spacing.sm))
                 Switch(checked = group.groupEnabled, onCheckedChange = onGroupToggle)
             }
             if (pending) {

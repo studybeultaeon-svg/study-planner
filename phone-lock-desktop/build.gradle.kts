@@ -14,6 +14,8 @@ dependencies {
     implementation("com.phonelock:shared")
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
+    // 96차: 그룹 카드의 자물쇠 잠금/해제 아이콘(Lock/LockOpen)이 기본 material-icons-core엔 없어 추가.
+    implementation(compose.materialIconsExtended)
     implementation("net.java.dev.jna:jna-platform:5.14.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")
     implementation("org.json:json:20240303")

@@ -1,7 +1,10 @@
 package com.phonelock.desktop.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,16 +12,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
@@ -29,23 +33,34 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import com.phonelock.shared.PERSUASION_MESSAGES
 import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.desktop.data.Group
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.applyGroupSettingsJson
+import com.phonelock.desktop.data.findRemoteGroupSettingByName
 import com.phonelock.desktop.monitor.LockEvaluator
+import com.phonelock.desktop.ui.components.CompactDateField
+import com.phonelock.desktop.ui.components.CompactField
+import com.phonelock.desktop.ui.components.CompactNumberField
 import com.phonelock.desktop.ui.components.DurationFieldsRow
 import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.components.ToggleRow
 import com.phonelock.desktop.ui.components.hmsTextToSeconds
 import com.phonelock.desktop.ui.components.secondsToHmsText
 import com.phonelock.desktop.ui.theme.Spacing
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 private val DAY_LABELS = listOf("월", "화", "수", "목", "금", "토", "일")
 
@@ -61,19 +76,28 @@ private fun textToMinutes(text: String): Int? {
     return h * 60 + m
 }
 
+// 96차(안드로이드판과 대칭): 사용자가 그려준 시안대로 사각 FilterChip 대신 동그란 요일 칩으로 교체.
 @Composable
 private fun DayMaskRow(mask: Int, onMaskChange: (Int) -> Unit) {
-    Row {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         DAY_LABELS.forEachIndexed { index, label ->
             val checked = (mask shr index) and 1 == 1
-            FilterChip(
-                selected = checked,
-                onClick = {
-                    onMaskChange(if (checked) mask and (1 shl index).inv() else mask or (1 shl index))
-                },
-                label = { Text(label) },
-                modifier = Modifier.padding(2.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable {
+                        onMaskChange(if (checked) mask and (1 shl index).inv() else mask or (1 shl index))
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
     Text(
@@ -86,6 +110,7 @@ private fun DayMaskRow(mask: Int, onMaskChange: (Int) -> Unit) {
 @Composable
 fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) {
     val evaluator = remember { LockEvaluator(repository) }
+    val scope = rememberCoroutineScope()
 
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -140,6 +165,56 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
     var pendingMessage by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf(false) }
     var pendingDeleteMessageIndex by remember { mutableIntStateOf(0) }
+    // 동기화(94차 신규, 안드로이드판과 대칭) — on/off 스위치 자체는 95차부터 이 편집 화면이 아니라
+    // GroupListScreen(잠깐 풀기 버튼 옆)에 있다 — 여기서는 저장 시 기존 값을 그대로 유지해 전달하는
+    // 용도로만 상태를 들고 있는다. 새 규칙 생성 시 이름 충돌 확인은 pendingCreateCollisionEntry가 담당.
+    var syncEnabled by remember { mutableStateOf(false) }
+    var pendingCreateCollisionEntry by remember { mutableStateOf<JSONObject?>(null) }
+
+    fun applyGroupToForm(group: Group) {
+        description = group.description
+        scheduleEnabled = group.scheduleEnabled
+        dailyLimitEnabled = group.dailyLimitSeconds != null
+        val (dlh, dlm, dls) = secondsToHmsText(group.dailyLimitSeconds ?: 0)
+        dailyLimitHoursText = dlh
+        dailyLimitMinutesText = dlm
+        dailyLimitSecondsText = dls
+        dailyLimitApplyStartText = minutesToText(group.dailyLimitApplyStartMinute)
+        dailyLimitApplyEndText = minutesToText(group.dailyLimitApplyEndMinute)
+        dailyLimitDaysMask = group.dailyLimitDaysMask
+        scheduleStartText = minutesToText(group.scheduleStartMinute)
+        scheduleEndText = minutesToText(group.scheduleEndMinute)
+        daysMask = group.scheduleDaysMask
+        confirmEnabled = group.confirmEnabled
+        confirmApplyStartText = minutesToText(group.confirmApplyStartMinute)
+        confirmApplyEndText = minutesToText(group.confirmApplyEndMinute)
+        confirmDaysMask = group.confirmDaysMask
+        usageOverlayEnabled = group.usageOverlayEnabled
+        overlayLevelStepsToMaxText = group.overlayLevelStepsToMax.toString()
+        snoozeEnabled = group.snoozeEnabled
+        snoozeMinutesText = group.snoozeMinutes.toString()
+        snoozeDailyLimitText = group.snoozeDailyLimit.toString()
+        forceEnabledFromText = group.forceEnabledFrom ?: ""
+        forceEnabledUntilText = group.forceEnabledUntil ?: ""
+        pomodoroUnlockEnabled = group.pomodoroUnlockEnabled
+        val (iwh, iwm, iws) = secondsToHmsText(group.initialWaitSeconds)
+        initialWaitHoursText = iwh
+        initialWaitMinutesText = iwm
+        initialWaitSecondsText = iws
+        val (wih, wim, wis) = secondsToHmsText(group.waitIncrementSeconds)
+        waitIncrementHoursText = wih
+        waitIncrementMinutesText = wim
+        waitIncrementSecondsText = wis
+        val (cch, ccm, ccs) = secondsToHmsText(group.confirmCooldownSeconds)
+        confirmCooldownHoursText = cch
+        confirmCooldownMinutesText = ccm
+        confirmCooldownSecondsText = ccs
+        levelDecayEnabled = group.levelDecayEnabled
+        val (ldh, ldm, lds) = secondsToHmsText(group.levelDecayIntervalSeconds)
+        levelDecayHoursText = ldh
+        levelDecayMinutesText = ldm
+        levelDecaySecondsText = lds
+    }
 
     val windowInfo = LocalWindowInfo.current
     LaunchedEffect(windowInfo.isWindowFocused) {
@@ -160,49 +235,9 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         if (groupId != null) {
             repository.getGroup(groupId)?.let { group ->
                 name = group.name
-                description = group.description
                 selfMessageText = group.selfMessageText
-                scheduleEnabled = group.scheduleEnabled
-                dailyLimitEnabled = group.dailyLimitSeconds != null
-                val (dlh, dlm, dls) = secondsToHmsText(group.dailyLimitSeconds ?: 0)
-                dailyLimitHoursText = dlh
-                dailyLimitMinutesText = dlm
-                dailyLimitSecondsText = dls
-                dailyLimitApplyStartText = minutesToText(group.dailyLimitApplyStartMinute)
-                dailyLimitApplyEndText = minutesToText(group.dailyLimitApplyEndMinute)
-                dailyLimitDaysMask = group.dailyLimitDaysMask
-                scheduleStartText = minutesToText(group.scheduleStartMinute)
-                scheduleEndText = minutesToText(group.scheduleEndMinute)
-                daysMask = group.scheduleDaysMask
-                confirmEnabled = group.confirmEnabled
-                confirmApplyStartText = minutesToText(group.confirmApplyStartMinute)
-                confirmApplyEndText = minutesToText(group.confirmApplyEndMinute)
-                confirmDaysMask = group.confirmDaysMask
-                usageOverlayEnabled = group.usageOverlayEnabled
-                overlayLevelStepsToMaxText = group.overlayLevelStepsToMax.toString()
-                snoozeEnabled = group.snoozeEnabled
-                snoozeMinutesText = group.snoozeMinutes.toString()
-                snoozeDailyLimitText = group.snoozeDailyLimit.toString()
-                forceEnabledFromText = group.forceEnabledFrom ?: ""
-                forceEnabledUntilText = group.forceEnabledUntil ?: ""
-                pomodoroUnlockEnabled = group.pomodoroUnlockEnabled
-                val (iwh, iwm, iws) = secondsToHmsText(group.initialWaitSeconds)
-                initialWaitHoursText = iwh
-                initialWaitMinutesText = iwm
-                initialWaitSecondsText = iws
-                val (wih, wim, wis) = secondsToHmsText(group.waitIncrementSeconds)
-                waitIncrementHoursText = wih
-                waitIncrementMinutesText = wim
-                waitIncrementSecondsText = wis
-                val (cch, ccm, ccs) = secondsToHmsText(group.confirmCooldownSeconds)
-                confirmCooldownHoursText = cch
-                confirmCooldownMinutesText = ccm
-                confirmCooldownSecondsText = ccs
-                levelDecayEnabled = group.levelDecayEnabled
-                val (ldh, ldm, lds) = secondsToHmsText(group.levelDecayIntervalSeconds)
-                levelDecayHoursText = ldh
-                levelDecayMinutesText = ldm
-                levelDecaySecondsText = lds
+                syncEnabled = group.syncEnabled
+                applyGroupToForm(group)
                 processNames = group.processNames.toSet()
                 domains = group.domains.toSet()
                 originalProcessNames = group.processNames.toSet()
@@ -221,27 +256,25 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         )
         Spacer(Modifier.height(Spacing.md))
 
-        SectionCard("기본 정보") {
-            OutlinedTextField(
+        SectionCard("기본 정보", emoji = "📝") {
+            CompactField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("차단 규칙 이름") },
-                modifier = Modifier.fillMaxWidth()
+                label = "이름"
             )
             Spacer(Modifier.height(Spacing.sm))
-            OutlinedTextField(
+            CompactField(
                 value = description,
                 onValueChange = { description = it },
-                label = { Text("설명 (선택, \"모임\"에 이 차단 규칙 이름과 함께 표시됩니다)") },
-                modifier = Modifier.fillMaxWidth()
+                label = "설명 (선택, \"모임\"에 이 차단 규칙 이름과 함께 표시됩니다)",
+                placeholder = "선택 입력"
             )
             Spacer(Modifier.height(Spacing.sm))
-            OutlinedTextField(
+            CompactField(
                 value = selfMessageText,
                 onValueChange = { selfMessageText = it },
-                label = { Text("미래의 나에게") },
-                placeholder = { Text("예: 오늘 밤 11시 이후엔 진짜 그만 봐. 내일 시험이야.") },
-                modifier = Modifier.fillMaxWidth()
+                label = "미래의 나에게",
+                placeholder = "예: 오늘 밤 11시 이후엔 진짜 그만 봐. 내일 시험이야."
             )
             Text(
                 "선택 사항입니다. 이 차단 규칙이 잠길 때 문구와 함께 보여줍니다.",
@@ -251,7 +284,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
         Spacer(Modifier.height(Spacing.md))
 
-        SectionCard("관리 종류") {
+        SectionCard("관리 종류", emoji = "🗂️") {
             Text(
                 "이 차단 규칙에 적용할 관리 종류를 선택하세요.",
                 style = MaterialTheme.typography.bodySmall,
@@ -277,17 +310,10 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 checked = confirmEnabled,
                 onCheckedChange = { confirmEnabled = it }
             )
-            Spacer(Modifier.height(Spacing.sm))
-            ToggleRow(
-                title = "잠깐 풀기",
-                description = "차단 규칙 목록 화면에서 확인 질문 절차 없이 즉시 임시 해제할 수 있는 버튼을 켭니다.",
-                checked = snoozeEnabled,
-                onCheckedChange = { snoozeEnabled = it }
-            )
         }
         Spacer(Modifier.height(Spacing.md))
 
-        SectionCard("뽀모도로 연동") {
+        SectionCard("뽀모도로 연동", emoji = "🍅") {
             ToggleRow(
                 title = "뽀모도로 휴식 시 자동 해제",
                 description = "공부앱(설정 메뉴에서 로그인 필요)의 뽀모도로 휴식 시간 동안 이 차단 규칙의 잠금을 임시로 해제합니다. 실행 전 대기 on/off와 무관하게 작동합니다.",
@@ -297,23 +323,61 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
         Spacer(Modifier.height(Spacing.md))
 
-        if (scheduleEnabled) {
-            SectionCard("스케줄") {
-                Text("적용 시간대 (비워두면 미적용)", style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(Spacing.xs))
-                OutlinedTextField(
-                    value = scheduleStartText,
-                    onValueChange = { scheduleStartText = it },
-                    label = { Text("시작 HH:mm") },
-                    modifier = Modifier.fillMaxWidth()
+        // "관리 종류"(스케줄/일일한도/실행 전 대기)와 성격이 달라 별도 섹션으로 분리(95차, 사용자
+        // 지적) — 켜고 끄는 스위치와 세부 설정(시간/횟수)을 한 카드에 같이 둔다. 동기화 on/off 스위치는
+        // 편집 화면이 아니라 목록 화면(잠깐 풀기 버튼 옆)으로 이동했다.
+        SectionCard("잠깐 풀기", emoji = "😴") {
+            ToggleRow(
+                title = "잠깐 풀기 사용",
+                description = "차단 규칙 목록 화면에서 확인 질문 절차 없이 즉시 임시 해제할 수 있는 버튼을 켭니다.",
+                checked = snoozeEnabled,
+                onCheckedChange = { snoozeEnabled = it }
+            )
+            if (snoozeEnabled) {
+                Spacer(Modifier.height(Spacing.sm))
+                Text(
+                    "차단 규칙 목록 화면의 \"😴 잠깐 풀기\" 버튼으로 확인 질문 절차 없이 즉시 임시 해제할 수 있습니다. " +
+                        "남용을 막기 위해 아래 설정한 횟수까지만 쓸 수 있습니다(자정이 아니라 위 일일 한도 초기화 시각 기준).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(Spacing.sm))
-                OutlinedTextField(
-                    value = scheduleEndText,
-                    onValueChange = { scheduleEndText = it },
-                    label = { Text("종료 HH:mm") },
-                    modifier = Modifier.fillMaxWidth()
+                CompactNumberField(
+                    value = snoozeMinutesText,
+                    onValueChange = { snoozeMinutesText = it },
+                    label = "잠깐 풀기 시간(분)"
                 )
+                Spacer(Modifier.height(Spacing.sm))
+                CompactNumberField(
+                    value = snoozeDailyLimitText,
+                    onValueChange = { snoozeDailyLimitText = it },
+                    label = "하루 잠깐 풀기 횟수"
+                )
+            }
+        }
+        Spacer(Modifier.height(Spacing.md))
+
+        if (scheduleEnabled) {
+            SectionCard("스케줄", emoji = "🗓️") {
+                Text("적용 시간대 (비워두면 미적용, HH:mm)", style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(Spacing.xs))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CompactField(
+                        value = scheduleStartText,
+                        onValueChange = { scheduleStartText = it },
+                        leadingEmoji = "🕐",
+                        centerValue = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
+                    CompactField(
+                        value = scheduleEndText,
+                        onValueChange = { scheduleEndText = it },
+                        leadingEmoji = "🕐",
+                        centerValue = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
                 Spacer(Modifier.height(Spacing.sm))
                 DayMaskRow(mask = daysMask, onMaskChange = { daysMask = it })
             }
@@ -321,7 +385,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
 
         if (dailyLimitEnabled) {
-            SectionCard("일일 사용 한도") {
+            SectionCard("일일 사용 한도", emoji = "⏱️") {
                 DurationFieldsRow(
                     label = "일일 사용 한도",
                     hoursText = dailyLimitHoursText,
@@ -332,21 +396,25 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                     onSecondsChange = { dailyLimitSecondsText = it }
                 )
                 Spacer(Modifier.height(Spacing.sm))
-                Text("적용 시간대 (비워두면 하루 종일 적용)", style = MaterialTheme.typography.bodySmall)
+                Text("적용 시간대 (비워두면 하루 종일 적용, HH:mm)", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(Spacing.xs))
-                OutlinedTextField(
-                    value = dailyLimitApplyStartText,
-                    onValueChange = { dailyLimitApplyStartText = it },
-                    label = { Text("적용 시작 HH:mm") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                OutlinedTextField(
-                    value = dailyLimitApplyEndText,
-                    onValueChange = { dailyLimitApplyEndText = it },
-                    label = { Text("적용 종료 HH:mm") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CompactField(
+                        value = dailyLimitApplyStartText,
+                        onValueChange = { dailyLimitApplyStartText = it },
+                        leadingEmoji = "🕐",
+                        centerValue = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
+                    CompactField(
+                        value = dailyLimitApplyEndText,
+                        onValueChange = { dailyLimitApplyEndText = it },
+                        leadingEmoji = "🕐",
+                        centerValue = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
                 Text(
                     "이 시간대 안에 있을 때만 한도 초과로 잠깁니다. 사용 시간 누적 자체는 시간대와 무관하게 항상 기록됩니다.",
                     style = MaterialTheme.typography.bodySmall,
@@ -359,22 +427,26 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
 
         if (confirmEnabled) {
-            SectionCard("실행 전 대기") {
-                Text("적용 시간대 (비워두면 하루 종일 적용)", style = MaterialTheme.typography.bodySmall)
+            SectionCard("실행 전 대기", emoji = "🛑") {
+                Text("적용 시간대 (비워두면 하루 종일 적용, HH:mm)", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(Spacing.xs))
-                OutlinedTextField(
-                    value = confirmApplyStartText,
-                    onValueChange = { confirmApplyStartText = it },
-                    label = { Text("적용 시작 HH:mm") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                OutlinedTextField(
-                    value = confirmApplyEndText,
-                    onValueChange = { confirmApplyEndText = it },
-                    label = { Text("적용 종료 HH:mm") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CompactField(
+                        value = confirmApplyStartText,
+                        onValueChange = { confirmApplyStartText = it },
+                        leadingEmoji = "🕐",
+                        centerValue = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
+                    CompactField(
+                        value = confirmApplyEndText,
+                        onValueChange = { confirmApplyEndText = it },
+                        leadingEmoji = "🕐",
+                        centerValue = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
                 Text(
                     "이 시간대 밖에서는 실행해도 확인창 없이 그냥 허용됩니다.",
                     style = MaterialTheme.typography.bodySmall,
@@ -450,11 +522,10 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 )
                 if (usageOverlayEnabled) {
                     Spacer(Modifier.height(Spacing.sm))
-                    OutlinedTextField(
+                    CompactNumberField(
                         value = overlayLevelStepsToMaxText,
                         onValueChange = { overlayLevelStepsToMaxText = it },
-                        label = { Text("몇 번 재확인하면 화면이 가장 진해질지") },
-                        modifier = Modifier.fillMaxWidth()
+                        label = "몇 번 재확인하면 화면이 가장 진해질지"
                     )
                     Text(
                         "재확인을 이 횟수만큼 반복하면 화면 덮개가 가장 진해집니다. 한 번 재확인할 때마다 진해지는 폭은 이 값에 맞춰 자동으로 계산됩니다.",
@@ -481,33 +552,8 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
         Spacer(Modifier.height(Spacing.md))
 
-        if (snoozeEnabled) {
-            SectionCard("일시정지(잠깐 풀기) 설정") {
-                Text(
-                    "차단 규칙 목록 화면의 \"😴 잠깐 풀기\" 버튼으로 확인 질문 절차 없이 즉시 임시 해제할 수 있습니다. " +
-                        "남용을 막기 위해 아래 설정한 횟수까지만 쓸 수 있습니다(자정이 아니라 위 일일 한도 초기화 시각 기준).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                OutlinedTextField(
-                    value = snoozeMinutesText,
-                    onValueChange = { snoozeMinutesText = it },
-                    label = { Text("잠깐 풀기 시간(분)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                OutlinedTextField(
-                    value = snoozeDailyLimitText,
-                    onValueChange = { snoozeDailyLimitText = it },
-                    label = { Text("하루 잠깐 풀기 횟수") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            Spacer(Modifier.height(Spacing.md))
-        }
 
-        SectionCard("이 기간엔 끄기 금지 (시험기간 등)") {
+        SectionCard("이 기간엔 끄기 금지 (시험기간 등)", emoji = "🚫") {
             Text(
                 "이 날짜 범위 안에서는 위 \"차단 규칙 전체 사용\" 스위치를 꺼도 실제로는 계속 켜진 것으로 취급됩니다" +
                     "(시간대/한도/실행 전 대기 설정 자체는 그대로 따릅니다). 비워두면 평소처럼 스위치를 그대로 따릅니다.",
@@ -515,31 +561,32 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(Spacing.sm))
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                OutlinedTextField(
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CompactDateField(
                     value = forceEnabledFromText,
                     onValueChange = { forceEnabledFromText = it },
-                    label = { Text("시작일 (yyyy-MM-dd)") },
+                    placeholder = "시작일",
                     modifier = Modifier.weight(1f)
                 )
-                OutlinedTextField(
+                Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
+                CompactDateField(
                     value = forceEnabledUntilText,
                     onValueChange = { forceEnabledUntilText = it },
-                    label = { Text("종료일 (yyyy-MM-dd, 포함)") },
+                    placeholder = "종료일(포함)",
                     modifier = Modifier.weight(1f)
                 )
             }
         }
         Spacer(Modifier.height(Spacing.md))
 
-        SectionCard("차단 대상") {
+        SectionCard("차단 대상", emoji = "🎯") {
             Text("포함할 프로그램 (실행파일 이름, 예: chrome.exe)", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(Spacing.xs))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
+                CompactField(
                     value = newProcessName,
                     onValueChange = { newProcessName = it },
-                    label = { Text("실행파일 이름") },
+                    placeholder = "실행파일 이름",
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(Spacing.sm))
@@ -566,10 +613,10 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
             Text("포함할 사이트 (도메인, 예: youtube.com)", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(Spacing.xs))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
+                CompactField(
                     value = newDomain,
                     onValueChange = { newDomain = it },
-                    label = { Text("도메인") },
+                    placeholder = "도메인 (예: youtube.com)",
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(Spacing.sm))
@@ -705,9 +752,10 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
             }
             Button(
                 onClick = {
-                    val group = Group(
+                    val finalName = name.ifBlank { "이름 없는 그룹" }
+                    fun buildGroup() = Group(
                         id = groupId ?: 0,
-                        name = name.ifBlank { "이름 없는 그룹" },
+                        name = finalName,
                         description = description,
                         selfMessageText = selfMessageText,
                         dailyLimitSeconds = if (dailyLimitEnabled) {
@@ -747,23 +795,42 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                         groupOffPending = originalGroup?.groupOffPending ?: false,
                         groupOffMessageIndex = originalGroup?.groupOffMessageIndex ?: 0,
                         processNames = processNames.toList(),
-                        domains = domains.toList()
+                        domains = domains.toList(),
+                        syncEnabled = syncEnabled
                     )
-                    val original = originalGroup
-                    val weakening = original != null && evaluator.detectWeakeningEdit(
-                        original = original,
-                        updated = group,
-                        originalProcessNames = originalProcessNames,
-                        updatedProcessNames = processNames,
-                        originalDomains = originalDomains,
-                        updatedDomains = domains
-                    )
-                    if (weakening) {
-                        pendingGroup = group
-                        pendingMessage = null
+                    if (groupId == null) {
+                        // 새 규칙을 만드는데 그 이름이 불러오기 목록(원격)에 이미 있으면, 저장하기 전에
+                        // 먼저 물어본다(94차). 새 그룹은 originalGroup이 없어 약화 감지 대상이 아니므로
+                        // 곧바로 만든다.
+                        scope.launch {
+                            val remoteMatch = withContext(Dispatchers.IO) {
+                                repository.findRemoteGroupSettingByName(finalName)
+                            }
+                            if (remoteMatch != null) {
+                                pendingCreateCollisionEntry = remoteMatch
+                            } else {
+                                repository.createGroup(buildGroup())
+                                onDone()
+                            }
+                        }
                     } else {
-                        if (groupId == null) repository.createGroup(group) else repository.updateGroup(group)
-                        onDone()
+                        val group = buildGroup()
+                        val original = originalGroup
+                        val weakening = original != null && evaluator.detectWeakeningEdit(
+                            original = original,
+                            updated = group,
+                            originalProcessNames = originalProcessNames,
+                            updatedProcessNames = processNames,
+                            originalDomains = originalDomains,
+                            updatedDomains = domains
+                        )
+                        if (weakening) {
+                            pendingGroup = group
+                            pendingMessage = null
+                        } else {
+                            repository.updateGroup(group)
+                            onDone()
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -802,4 +869,71 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
             }
         }
     }
+
+    // 새 규칙 이름이 불러오기 목록(원격)과 겹칠 때(94차) — "예"면 불러온 설정으로 만들고 동기화를 켜고,
+    // "아니오"면 지금 입력한 내용 그대로 동기화 꺼짐으로 만든다.
+    pendingCreateCollisionEntry?.let { remoteEntry ->
+        AlertDialog(
+            onDismissRequest = { pendingCreateCollisionEntry = null },
+            title = { Text("동기화") },
+            text = {
+                Text("이미 같은 이름의 차단 규칙이 불러오기 목록에 있습니다. 동기화하시겠습니까? " +
+                    "\"예\"를 선택하면 지금 입력한 내용 대신 불러온 설정으로 만들어집니다.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val finalName = name.ifBlank { "이름 없는 그룹" }
+                    val importedGroup = Group(id = 0, name = finalName, syncEnabled = true).applyGroupSettingsJson(remoteEntry)
+                    repository.createGroup(importedGroup)
+                    pendingCreateCollisionEntry = null
+                    onDone()
+                }) { Text("예") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    val finalName = name.ifBlank { "이름 없는 그룹" }
+                    val group = Group(
+                        id = 0,
+                        name = finalName,
+                        description = description,
+                        selfMessageText = selfMessageText,
+                        dailyLimitSeconds = if (dailyLimitEnabled) {
+                            hmsTextToSeconds(dailyLimitHoursText, dailyLimitMinutesText, dailyLimitSecondsText)
+                        } else null,
+                        dailyLimitApplyStartMinute = textToMinutes(dailyLimitApplyStartText),
+                        dailyLimitApplyEndMinute = textToMinutes(dailyLimitApplyEndText),
+                        dailyLimitDaysMask = dailyLimitDaysMask,
+                        scheduleStartMinute = textToMinutes(scheduleStartText),
+                        scheduleEndMinute = textToMinutes(scheduleEndText),
+                        scheduleDaysMask = daysMask,
+                        confirmEnabled = confirmEnabled,
+                        confirmApplyStartMinute = textToMinutes(confirmApplyStartText),
+                        confirmApplyEndMinute = textToMinutes(confirmApplyEndText),
+                        confirmDaysMask = confirmDaysMask,
+                        usageOverlayEnabled = usageOverlayEnabled,
+                        overlayLevelStepsToMax = overlayLevelStepsToMaxText.trim().toIntOrNull()?.coerceAtLeast(1) ?: 5,
+                        snoozeEnabled = snoozeEnabled,
+                        snoozeMinutes = snoozeMinutesText.trim().toIntOrNull()?.coerceAtLeast(1) ?: 30,
+                        snoozeDailyLimit = snoozeDailyLimitText.trim().toIntOrNull()?.coerceAtLeast(1) ?: 3,
+                        forceEnabledFrom = forceEnabledFromText.trim().ifBlank { null },
+                        forceEnabledUntil = forceEnabledUntilText.trim().ifBlank { null },
+                        pomodoroUnlockEnabled = pomodoroUnlockEnabled,
+                        initialWaitSeconds = hmsTextToSeconds(initialWaitHoursText, initialWaitMinutesText, initialWaitSecondsText),
+                        waitIncrementSeconds = hmsTextToSeconds(waitIncrementHoursText, waitIncrementMinutesText, waitIncrementSecondsText),
+                        confirmCooldownSeconds = hmsTextToSeconds(confirmCooldownHoursText, confirmCooldownMinutesText, confirmCooldownSecondsText),
+                        levelDecayEnabled = levelDecayEnabled,
+                        levelDecayIntervalSeconds = hmsTextToSeconds(levelDecayHoursText, levelDecayMinutesText, levelDecaySecondsText),
+                        scheduleEnabled = scheduleEnabled,
+                        processNames = processNames.toList(),
+                        domains = domains.toList(),
+                        syncEnabled = false
+                    )
+                    repository.createGroup(group)
+                    pendingCreateCollisionEntry = null
+                    onDone()
+                }) { Text("아니오") }
+            }
+        )
+    }
+
 }
