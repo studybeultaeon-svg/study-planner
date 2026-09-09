@@ -13,6 +13,11 @@ package com.phonelock.shared
  * - [TabGuideContent] (탭별 상세 도움말): 관리/공부/루틴/모임/설정 5개 탭 화면에 각각 ❓ 버튼으로
  *   달려있고, 그 탭에서 지금 볼 수 있는 기능을 작은 것까지 섹션별로 자세히 설명한다. 설정 탭에서도
  *   같은 내용을 탭별로 "다시 보기" 할 수 있다.
+ *
+ * 97차 2차 개편(사용자 피드백 "정보는 많은데 글만 있다"): 탭별 도움말을 한 화면에 다 몰아넣고 스크롤
+ * 하는 방식에서, 워크스루처럼 섹션 하나당 페이지 하나로 나눠 넘기는 방식으로 바꾼다. 섹션마다 큰
+ * 아이콘(원형 배지)을 붙여 글로만 채워지지 않게 한다 — 실제 스크린샷 파이프라인 없이 유지보수하기
+ * 위해 여전히 이모지를 "이미지"로 쓰지만, 페이지를 쪼개고 아이콘을 키워 한 번에 읽을 정보량을 줄였다.
  */
 data class GuidePage(
     val id: String,
@@ -40,7 +45,7 @@ object GuideContent {
             title = "도움말은 탭마다 있어요",
             bullets = listOf(
                 "관리·공부·루틴·소셜·설정 각 탭 화면 상단에 ❓ 버튼이 있어요.",
-                "눌러보면 그 탭에서 쓸 수 있는 기능을 작은 것까지 자세히 설명해줘요.",
+                "눌러보면 그 탭에서 쓸 수 있는 기능을 페이지를 넘기면서 자세히 설명해줘요.",
                 "설정 탭에서도 각 탭의 도움말을 서브탭별로 언제든 다시 볼 수 있어요.",
                 "이제 시작해볼까요? 먼저 둘러보고, 막히면 그때그때 ❓을 눌러보세요.",
             ),
@@ -48,13 +53,15 @@ object GuideContent {
     )
 }
 
-/** 탭별 상세 도움말 한 섹션(소제목 + 세부 항목들). */
+/** 탭별 상세 도움말 한 섹션 = 페이지 하나. [icon]은 페이지 상단 원형 배지에 크게 표시된다. */
 data class GuideSection(
+    val icon: String,
     val heading: String,
     val bullets: List<String>,
 )
 
-/** 탭 하나에 대한 전체 도움말. [id]는 모크업 선택에 쓰는 키(GuideScreen의 GuideMockup과 동일 값). */
+/** 탭 하나에 대한 전체 도움말. [id]는 모크업 선택에 쓰는 키(GuideScreen의 GuideMockup과 동일 값). 첫
+ *  페이지는 [intro]+탭 전체 모크업, 이후 페이지는 [sections]가 하나씩 순서대로 나온다. */
 data class TabGuide(
     val id: String,
     val emoji: String,
@@ -72,6 +79,7 @@ object TabGuideContent {
         intro = "앱·프로그램·사이트 사용을 규칙(차단 규칙)으로 제한하는 탭이에요. 규칙마다 대상·제한 방식·해제 절차를 따로 정할 수 있어요.",
         sections = listOf(
             GuideSection(
+                "🗂️",
                 "차단 규칙 만들기",
                 listOf(
                     "규칙 하나에 여러 앱·프로그램·사이트를 함께 담을 수 있어요(예: \"SNS\" 규칙에 인스타·유튜브 쇼츠).",
@@ -80,6 +88,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "⏳",
                 "제한 방식 — 시간대 · 일일 한도",
                 listOf(
                     "시간대 제한: 예) 밤 10시~12시엔 무조건 잠김.",
@@ -89,6 +98,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "🔐",
                 "잠금 해제 절차 (꼼수 방지)",
                 listOf(
                     "그냥 못 풀어요 — 타이머를 기다리고, 화면에 무작위로 나타나는 체크포인트를 눌러야 해요.",
@@ -99,6 +109,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "🖥️",
                 "사용 중 화면 표시(오버레이)",
                 listOf(
                     "규칙을 쓰는 동안 화면에 남은 시간이 작게 표시돼요.",
@@ -106,6 +117,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "⏸️",
                 "일시정지(잠깐 풀기)",
                 listOf(
                     "급한 일이 있을 때 규칙별로 잠깐 풀어둘 수 있어요 — 하루 허용 횟수가 정해져 있어요(규칙 편집에서 횟수/끄기 설정 가능).",
@@ -113,6 +125,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "📅",
                 "기간 지정(강제 켜짐)",
                 listOf(
                     "시험 기간처럼 오히려 더 강하게 막고 싶을 땐 \"이 기간엔 끄기 금지\" 날짜 범위를 지정할 수 있어요(미니 캘린더로 선택).",
@@ -120,6 +133,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "🔄",
                 "여러 기기와 동기화",
                 listOf(
                     "규칙마다 \"동기화\" 스위치를 켜야 다른 기기와 공유돼요(기본은 각자 로컬) — 규칙 목록의 동기화 칩으로 켜져 있는지 확인할 수 있어요.",
@@ -128,6 +142,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "🌙",
                 "밤엔 자유롭게 편집",
                 listOf(
                     "23:00~11:00 시간대엔 재확인 절차 없이 규칙을 자유롭게 수정할 수 있어요.",
@@ -143,6 +158,7 @@ object TabGuideContent {
         intro = "타이머·캘린더·계산기·일정표·통계 5개 서브탭으로 이루어진 학습 관리 기능이에요.",
         sections = listOf(
             GuideSection(
+                "⏱️",
                 "타이머(뽀모도로)",
                 listOf(
                     "\"공부\"↔\"휴식\"을 반복하는 뽀모도로 방식으로 시간을 재요.",
@@ -154,6 +170,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "📅",
                 "캘린더",
                 listOf(
                     "문제집처럼 여러 번 풀 자료의 진행 상황을 날짜별 색(회독 8단계, 하양~보라 무지개)으로 표시해요.",
@@ -163,6 +180,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "🧮",
                 "계산기",
                 listOf(
                     "업무마다 요일별 목표량을 넣으면(휴일 제외 가능) 지금 페이스로 언제 끝나는지, 오늘 얼마나 해야 하는지 계산해줘요.",
@@ -171,6 +189,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "🗓️",
                 "일정표",
                 listOf(
                     "계산기 업무를 요일별 목표량 표로 보여주는 읽기 전용 화면이에요.",
@@ -178,6 +197,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "📈",
                 "통계",
                 listOf(
                     "전체 일정 수/완료 수/완료율/연속 완료일(스트릭)을 보여줘요.",
@@ -194,6 +214,7 @@ object TabGuideContent {
         intro = "반복할 일(습관·일과표)을 등록하고 매일 체크하는 탭이에요. \"오늘\"과 \"연속 기록\" 2개 서브탭이 있어요.",
         sections = listOf(
             GuideSection(
+                "✅",
                 "오늘 탭",
                 listOf(
                     "루틴을 등록하면 매일 체크리스트로 보여요 — 시간대를 정해두면 시간순으로 정렬돼서 일과표처럼도 쓸 수 있어요.",
@@ -203,6 +224,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "🔥",
                 "연속 기록(통계) 탭",
                 listOf(
                     "현재 스트릭·오늘 완료 개수·오늘 완료율·최고 스트릭을 카드로 보여줘요.",
@@ -211,6 +233,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "🔔",
                 "알림",
                 listOf(
                     "루틴 리마인더와 스트릭 알림을 설정에서 켜고 끌 수 있어요.",
@@ -218,6 +241,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "📱",
                 "홈스크린 위젯 (안드로이드)",
                 listOf(
                     "안드로이드 홈 화면에 위젯을 추가하면 앱을 열지 않고도 루틴을 바로 체크할 수 있어요.",
@@ -233,12 +257,14 @@ object TabGuideContent {
         intro = "초대코드로 만든 \"모임\" 안에서 다른 사람과 서로의 진행 상황을 보고 대화하는 탭이에요.",
         sections = listOf(
             GuideSection(
+                "🤝",
                 "모임 만들기 · 참여",
                 listOf(
                     "새 모임을 만들면 초대코드가 생기고, 다른 사람은 그 코드로 참여할 수 있어요.",
                 ),
             ),
             GuideSection(
+                "📋",
                 "멤버 목록",
                 listOf(
                     "오늘 완료율이 낮은 순으로 정렬돼서 누가 뒤처지고 있는지 바로 보여요.",
@@ -247,19 +273,22 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
-                "💬 대화 채널",
+                "💬",
+                "대화 채널",
                 listOf(
                     "모임마다 전용 대화 채널이 있어요 — 텍스트 메시지와 이모지 리액션을 주고받을 수 있어요.",
                     "화면이 켜져 있는 동안 4초마다 새 메시지를 확인해요(실시간 푸시는 아니에요).",
                 ),
             ),
             GuideSection(
+                "✉️",
                 "1:1 DM",
                 listOf(
                     "소셜 탭 진입 화면에서 사용자를 검색해 1:1로 대화를 시작할 수 있어요.",
                 ),
             ),
             GuideSection(
+                "📢",
                 "😴 깨우기 · 무전기",
                 listOf(
                     "멤버 상세에서 깨우기를 누르면 \"알림만 보내기 / 음성 메시지(최대 10초 녹음) / 텍스트 메시지(상대 기기에서 TTS로 읽어줌)\" 중 골라 보낼 수 있어요.",
@@ -269,12 +298,14 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "👑",
                 "멤버 관리 · 소유권 승계",
                 listOf(
                     "\"👥 멤버 관리\"에서 모임장 자리를 다른 멤버에게 넘길 수 있어요(👑 승계).",
                 ),
             ),
             GuideSection(
+                "🔒",
                 "공유 설정",
                 listOf(
                     "설정 탭 \"소셜\" 서브탭에서 루틴/공부/스트릭 공유 여부를 각각 켜고 끌 수 있어요(기본은 켜짐).",
@@ -291,6 +322,7 @@ object TabGuideContent {
         intro = "로그인·동기화·테마·알림·권한·업데이트·백업처럼 앱 전체에 걸친 항목과, 각 탭 도움말 다시 보기를 모아둔 탭이에요.",
         sections = listOf(
             GuideSection(
+                "🔑",
                 "로그인 & 동기화",
                 listOf(
                     "Google 로그인을 하면 안드로이드·데스크탑 여러 기기의 설정과 기록이 자동으로 맞춰져요.",
@@ -299,18 +331,21 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "🎨",
                 "테마",
                 listOf(
                     "라이트+그린 / 다크+파랑 / 화이트+오렌지 3종 중 고를 수 있고, 커스텀 색상(배경/강조색)도 직접 지정할 수 있어요.",
                 ),
             ),
             GuideSection(
+                "🔤",
                 "글자 크기",
                 listOf(
                     "화면 전체 글자 크기를 조절할 수 있어요 — 눈이 편한 크기로 맞춰보세요.",
                 ),
             ),
             GuideSection(
+                "🔔",
                 "알림",
                 listOf(
                     "루틴 리마인더/스트릭 알림 등을 켜고 끌 수 있어요.",
@@ -318,6 +353,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "🛡️",
                 "권한 (안드로이드)",
                 listOf(
                     "접근성 서비스 — 차단 대상 앱이 켜졌는지 감지하는 데 필요해요.",
@@ -327,6 +363,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "⬆️",
                 "업데이트",
                 listOf(
                     "새 버전이 나오면 자동으로 확인해 배너로 알려주고, 버튼 한 번으로 다운로드·설치까지 진행돼요.",
@@ -334,6 +371,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "💾",
                 "백업 · 내보내기 · 데이터 정리",
                 listOf(
                     "차단 규칙과 루틴을 각각 파일로 내보내고 다시 불러올(복원) 수 있어요.",
@@ -341,6 +379,7 @@ object TabGuideContent {
                 ),
             ),
             GuideSection(
+                "❓",
                 "탭별 도움말 다시 보기",
                 listOf(
                     "관리/공부/루틴/소셜 각 서브탭에서 그 탭의 도움말을 다시 열어볼 수 있어요.",

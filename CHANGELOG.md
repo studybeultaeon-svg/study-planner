@@ -26,10 +26,26 @@
 - `MainScreen.kt`: `showGuide`/`openTabGuide` 상태 신규 보유. MANAGE/STUDY 섹션의 `TabRow` 옆에 ❓ `IconButton`, `RoutineScreen`/`SocialGroupScreen`/`SettingsScreen` 호출에 각각 `onOpenGuide`/`onOpenTabGuide` 콜백 전달.
 - `RoutineScreen.kt`/`SocialGroupScreen.kt`/`SettingsScreen.kt`: 안드로이드판과 대칭되는 위치에 ❓/도움말 카드 추가, `SettingsScreen`도 `onShowGuide` → `onOpenTabGuide`로 교체.
 
-### 빌드/배포
+### 빌드/배포 (1차, 페이징 개편 전)
 - 안드로이드: `C:\Users\sunae\AndroidBuilds\phone-lock-android`에서 `compileDebugKotlin` 확인 후 `assembleRelease` 빌드(versionCode `1788941101`), 호스트 3곳(`AndroidBuilds\phone-lock-app-release.apk`/OneDrive 원본/`vm-build-output\android`) 해시 일치 배포.
 - 데스크탑: `C:\build\phone-lock-desktop`에서 `compileKotlin` 확인 후 `packageMsi createDistributable` 빌드(BuildInfo `1788940862`), 호스트 2곳(`PhoneLockDesktopApp`/`vm-build-output\PhoneLockDesktop`) 배포 후 실행 확인.
-- GitHub 릴리스는 미게시(요청 없었음). **실사용 검증 아직 안 됨** — ❓ 버튼 각 위치 동작, 태블릿에서 다이얼로그 크기, 로그인 전 워크스루 미표시, 업데이트 후 재표시.
+
+## 2026-09-09 (97차 세션 2차 개편) — 탭별 도움말을 "한 화면 스크롤"에서 "섹션당 한 페이지"로 재작업
+
+1차 개편 직후 사용자가 실제로 도움말을 확인해보고 "정보는 많아서 좋은데 글만 있다 — 파트를 나눠서 이미지를 활용해 페이지를 여러 개 쓰면 더 쉽게 설명할 수 있을 것"이라고 피드백. `TabGuideDialog`를 한 화면에 섹션을 전부 세로로 나열하던 방식에서, 최초 실행 워크스루와 같은 페이징 방식(섹션 하나 = 페이지 하나)으로 재작업.
+
+### shared — GuideContent.kt
+- `GuideSection`에 `icon: String` 필드 신규 추가(위치 인자 순서: `icon, heading, bullets`) — 관리 8개/공부 5개/루틴 4개/소셜 7개/설정 8개, 총 32개 섹션 전부에 그 섹션을 대표하는 이모지 아이콘 지정(예: 관리 "잠금 해제 절차"→🔐, 공부 "타이머"→⏱️, 소셜 "대화 채널"→💬).
+
+### 안드로이드/데스크탑 — GuideScreen.kt (TabGuideDialog 재작업)
+- 페이지 0 = 탭 소개(기존 `intro` 텍스트+탭 전체 모크업)+"다음 페이지부터 기능을 하나씩 자세히 설명해요" 안내, 페이지 1~N = `sections`를 하나씩(`TabGuideSectionPage`) — 상단에 `SectionIconBadge`(72dp 원형 배지, 섹션 `icon`을 크게 표시)로 실제 스크린샷 없이도 페이지마다 시각적 구심점을 준다.
+- 안드로이드: `HorizontalPager`(워크스루와 동일 패턴)로 전환, 페이지 인디케이터 점+"이전"(1페이지가 아닐 때만)/"다음"·"확인" 버튼 신규.
+- 데스크탑: 워크스루와 동일한 `pageIndex`+"이전"/"다음" 버튼 패턴 재사용, `key(pageIndex)`로 페이지 전환 시 스크롤 위치 초기화.
+
+### 빌드/배포 (2차, 최종)
+- 안드로이드: `assembleRelease` 재빌드(versionCode `1788941936`), 호스트 3곳 해시 일치 배포.
+- 데스크탑: `packageMsi createDistributable` 재빌드(BuildInfo `1788941683`), 호스트 2곳 배포 후 앱 재실행 확인.
+- GitHub 릴리스는 미게시(요청 없었음). **실사용 검증 아직 안 됨** — 페이지 넘김(스와이프/버튼), 인디케이터, ❓ 버튼 각 위치 동작, 태블릿에서 다이얼로그 크기, 로그인 전 워크스루 미표시, 업데이트 후 재표시.
 
 ---
 
