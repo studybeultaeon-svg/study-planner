@@ -50,7 +50,6 @@ import com.phonelock.desktop.ui.AccountGate
 import com.phonelock.desktop.ui.BlockScreen
 import com.phonelock.desktop.ui.ConfirmScreen
 import com.phonelock.desktop.ui.ExitConfirmScreen
-import com.phonelock.desktop.ui.GuideScreen
 import com.phonelock.desktop.ui.MainScreen
 import com.phonelock.desktop.ui.SunriseIcon
 import com.phonelock.desktop.ui.StudyLockScreen
@@ -157,10 +156,6 @@ private fun startApp() = application {
     // 반드시 재계산되도록 별도 카운터를 함께 key로 쓴다(SettingsScreen이 색을 바꿀 때마다 증가).
     var themeRefreshTick by remember { mutableStateOf(0) }
     val palette = remember(themeMode, themeRefreshTick) { repository.currentPalette() }
-    // 그림으로 보는 기능 안내(신규) — 데스크탑엔 최초 실행 온보딩이 아예 없었으므로 최초 실행 시 자동 표시,
-    // 이후 설정 탭 "도움말"에서 다시 열 수 있다(안드로이드 MainActivity.kt의 showGuide와 동일 패턴).
-    // 91차: 마지막으로 본 빌드와 현재 빌드가 다르면(최초 실행 포함) 업데이트 직후에도 다시 뜨도록 확장.
-    var showGuide by remember { mutableStateOf(repository.lastSeenGuideVersion != repository.currentBuildTimestamp()) }
     var mainWindowVisible by remember { mutableStateOf(true) }
     var blockRequest by remember { mutableStateOf<BlockRequest?>(null) }
     var confirmRequest by remember { mutableStateOf<ConfirmRequest?>(null) }
@@ -244,21 +239,13 @@ private fun startApp() = application {
                 // MaterialTheme은 색상 팔레트만 정의할 뿐 실제로 캔버스를 칠하진 않는다 — 이 Surface가
                 // 없으면 MainScreen이 덮지 않는 여백(패딩 등)이 Window 기본 배경(흰색)으로 비쳐 보인다.
                 Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-                    if (showGuide) {
-                        GuideScreen(
-                            onDismiss = {
-                                repository.lastSeenGuideVersion = repository.currentBuildTimestamp()
-                                showGuide = false
-                            }
+                    // 97차: 도움말 워크스루는 로그인이 끝난 사용자에게만 뜨도록 AccountGate content
+                    // 안(MainScreen)으로 옮겼다 — 이전엔 로그인 화면 위에도 겹쳐 떴었음.
+                    AccountGate(repository) {
+                        MainScreen(
+                            repository,
+                            onThemeChange = { themeMode = it; themeRefreshTick++ }
                         )
-                    } else {
-                        AccountGate(repository) {
-                            MainScreen(
-                                repository,
-                                onThemeChange = { themeMode = it; themeRefreshTick++ },
-                                onShowGuide = { showGuide = true }
-                            )
-                        }
                     }
                 }
             }

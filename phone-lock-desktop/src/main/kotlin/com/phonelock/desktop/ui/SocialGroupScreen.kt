@@ -106,7 +106,12 @@ private fun averageTodayPercent(stats: List<SocialGroupSyncClient.MemberStats>):
  * 모임/멤버/통계는 로컬에 캐싱하지 않고 화면 진입 시마다 Firebase에서 직접 읽는다(DECISIONS.md 참고).
  */
 @Composable
-fun SocialGroupScreen(repository: Repository, onSelectGroup: (String) -> Unit, onOpenDm: (String, String, String) -> Unit) {
+fun SocialGroupScreen(
+    repository: Repository,
+    onSelectGroup: (String) -> Unit,
+    onOpenDm: (String, String, String) -> Unit,
+    onOpenGuide: () -> Unit = {}
+) {
     var loading by remember { mutableStateOf(true) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var summaries by remember { mutableStateOf<List<GroupSummary>>(emptyList()) }
@@ -330,7 +335,8 @@ fun SocialGroupScreen(repository: Repository, onSelectGroup: (String) -> Unit, o
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.IconButton(onClick = onOpenGuide) { Text("❓") }
                 OutlinedButton(onClick = { showJoinDialog = true }) { Text("참여하기") }
                 Button(onClick = { showCreateDialog = true }) { Text("+ 모임 만들기") }
             }

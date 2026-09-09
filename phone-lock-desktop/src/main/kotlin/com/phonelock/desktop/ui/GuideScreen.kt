@@ -38,12 +38,12 @@ import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.ui.theme.Spacing
 import com.phonelock.shared.GuideContent
 import com.phonelock.shared.GuidePage
+import com.phonelock.shared.TabGuide
 
 /**
- * 그림으로 보는 사용법 안내(최초 실행 시 자동 표시 + 설정 화면 "도움말"에서 다시 열기).
- * 안드로이드판(HorizontalPager 스와이프)과 달리 데스크탑은 마우스 조작이 기본이라
- * 이전/다음 버튼으로 직접 페이지를 넘긴다. 화면 이미지는 실제 스크린샷이 아니라 팔레트
- * 색만 실제 테마에서 가져온 단순화된 모크업(설계는 DECISIONS.md 참고).
+ * 최초 실행 시 자동 표시되는 짧은 워크스루(2페이지). 개별 기능 상세는 더 이상 여기서 다루지 않고
+ * [TabGuideDialog]로 옮겼다(97차, 배경은 GuideContent.kt 참고). 안드로이드판(스와이프)과 달리
+ * 데스크탑은 마우스 조작이 기본이라 이전/다음 버튼으로 페이지를 넘긴다.
  */
 @Composable
 fun GuideScreen(onDismiss: () -> Unit) {
@@ -53,16 +53,13 @@ fun GuideScreen(onDismiss: () -> Unit) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(
-                Modifier.width(560.dp).fillMaxSize().padding(Spacing.lg),
+                Modifier.width(480.dp).fillMaxSize().padding(Spacing.lg),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismiss) { Text("건너뛰기") }
                 }
 
-                // 창을 작게 줄이면 이모지+제목+모크업+설명이 세로로 다 안 들어가 마지막 설명 줄이
-                // 잘려서 아예 읽을 수 없었다 — 페이지 안쪽을 세로 스크롤 가능하게 한다(안드로이드판과 동일).
-                // key(pageIndex)로 감싸 페이지를 넘길 때마다 스크롤 위치가 맨 위에서 다시 시작된다.
                 Column(
                     Modifier.weight(1f).verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -116,9 +113,6 @@ private fun GuidePageContent(page: GuidePage) {
         Text(page.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Spacer(Modifier.height(Spacing.lg))
 
-        GuideMockup(page.id, modifier = Modifier.fillMaxWidth().aspectRatio(1.6f))
-
-        Spacer(Modifier.height(Spacing.lg))
         Column(
             Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm)
@@ -127,6 +121,70 @@ private fun GuidePageContent(page: GuidePage) {
                 Row {
                     Text("•  ", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     Text(line, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 탭별 상세 도움말(97차 신규) — 각 탭 화면의 ❓ 버튼과 설정 탭 "다시 보기"가 공용으로 쓴다. 안드로이드판
+ * TabGuideDialog와 대칭이며, 페이지 넘김 없이 한 화면에 섹션별로 쭉 나열한다.
+ */
+@Composable
+fun TabGuideDialog(guide: TabGuide, onDismiss: () -> Unit) {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(Modifier.width(560.dp).fillMaxSize().padding(Spacing.lg)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("닫기") }
+                }
+
+                Column(
+                    Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(guide.emoji, style = MaterialTheme.typography.displayMedium)
+                    Spacer(Modifier.height(Spacing.sm))
+                    Text(guide.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(Spacing.sm))
+                    Text(
+                        guide.intro,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(Spacing.md))
+
+                    GuideMockup(guide.id, modifier = Modifier.fillMaxWidth().aspectRatio(2.2f))
+                    Spacer(Modifier.height(Spacing.lg))
+
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.lg)) {
+                        guide.sections.forEach { section ->
+                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+                                Text(
+                                    section.heading,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    section.bullets.forEach { line ->
+                                        Row {
+                                            Text("•  ", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                            Text(line, style = MaterialTheme.typography.bodyMedium)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(Spacing.lg))
+                }
+
+                Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm)) {
+                    Text("확인")
                 }
             }
         }
@@ -144,39 +202,12 @@ private fun GuideMockup(pageId: String, modifier: Modifier = Modifier) {
     ) {
         Box(Modifier.fillMaxSize().padding(Spacing.md)) {
             when (pageId) {
-                "intro" -> MockupIntro()
                 "manage" -> MockupManage()
-                "snooze" -> MockupSnooze()
                 "study" -> MockupStudy()
                 "routine" -> MockupRoutine()
                 "social" -> MockupSocial()
                 "settings" -> MockupSettings()
                 else -> {}
-            }
-        }
-    }
-}
-
-@Composable
-private fun MockupIntro() {
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        listOf("🗂️" to "관리", "📘" to "공부", "🌱" to "루틴", "👥" to "모임").forEach { (emoji, label) ->
-            Column(
-                Modifier.weight(1f).fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.fillMaxWidth().weight(1f)
-                ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(emoji, style = MaterialTheme.typography.headlineMedium)
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(label, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -211,19 +242,6 @@ private fun MockupManage() {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun MockupSnooze() {
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-            Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-                Text("⏸️", style = MaterialTheme.typography.headlineMedium)
-            }
-        }
-        Spacer(Modifier.height(Spacing.sm))
-        Text("오늘 1/3회 사용", style = MaterialTheme.typography.labelMedium)
     }
 }
 

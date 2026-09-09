@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.pager.HorizontalPager
@@ -37,61 +38,67 @@ import androidx.compose.ui.window.DialogProperties
 import com.phonelock.app.ui.theme.Spacing
 import com.phonelock.shared.GuideContent
 import com.phonelock.shared.GuidePage
+import com.phonelock.shared.TabGuide
 import kotlinx.coroutines.launch
 
 /**
- * 그림으로 보는 사용법 안내(최초 실행 시 자동 표시 + 설정 화면 "도움말"에서 다시 열기).
- * 화면 이미지는 실제 스크린샷이 아니라 팔레트 색만 실제 테마에서 가져온 단순화된 모크업 —
- * 자산 파이프라인 없이 유지보수하기 위한 선택(설계는 DECISIONS.md 참고).
+ * 최초 실행(+로그인 완료) 시 자동으로 뜨는 짧은 워크스루(2페이지) — 개별 기능 상세는 더 이상 여기서
+ * 다루지 않고 [TabGuideDialog]로 옮겼다(97차, 자세한 배경은 GuideContent.kt 참고). 태블릿에서 내용이
+ * 화면보다 커서 매번 스크롤해야 보이던 문제를 해결하려 페이지 수를 줄이고, 폭을 [maxDialogWidth]로
+ * 제한해 넓은 화면에서도 카드처럼 가운데 정렬되게 한다(데스크탑판과 같은 방식).
  */
+private val maxDialogWidth = 480.dp
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun GuideScreen(onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            val pages = GuideContent.pages
-            val pagerState = rememberPagerState(pageCount = { pages.size })
-            val scope = rememberCoroutineScope()
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                val pages = GuideContent.pages
+                val pagerState = rememberPagerState(pageCount = { pages.size })
+                val scope = rememberCoroutineScope()
 
-            Column(Modifier.fillMaxSize().padding(Spacing.lg)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss) { Text("건너뛰기") }
-                }
-
-                HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { index ->
-                    GuidePageContent(pages[index])
-                }
-
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = Spacing.md),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    pages.indices.forEach { i ->
-                        Box(
-                            Modifier
-                                .padding(horizontal = 4.dp)
-                                .size(8.dp)
-                                .background(
-                                    if (i == pagerState.currentPage) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.outline,
-                                    CircleShape
-                                )
-                        )
+                Column(Modifier.widthIn(max = maxDialogWidth).fillMaxSize().padding(Spacing.lg)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = onDismiss) { Text("건너뛰기") }
                     }
-                }
 
-                val isLast = pagerState.currentPage == pages.lastIndex
-                Button(
-                    onClick = {
-                        if (isLast) {
-                            onDismiss()
-                        } else {
-                            scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                    HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { index ->
+                        GuidePageContent(pages[index])
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = Spacing.md),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        pages.indices.forEach { i ->
+                            Box(
+                                Modifier
+                                    .padding(horizontal = 4.dp)
+                                    .size(8.dp)
+                                    .background(
+                                        if (i == pagerState.currentPage) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.outline,
+                                        CircleShape
+                                    )
+                            )
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (isLast) "시작하기" else "다음")
+                    }
+
+                    val isLast = pagerState.currentPage == pages.lastIndex
+                    Button(
+                        onClick = {
+                            if (isLast) {
+                                onDismiss()
+                            } else {
+                                scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isLast) "시작하기" else "다음")
+                    }
                 }
             }
         }
@@ -100,9 +107,6 @@ fun GuideScreen(onDismiss: () -> Unit) {
 
 @Composable
 private fun GuidePageContent(page: GuidePage) {
-    // 이모지+제목+모크업(가로폭의 1/1.4 높이)+설명 여러 줄이 세로로 쌓여서, 화면이 작은 폰이나
-    // 글자 크기를 키운 설정에서는 마지막 설명 줄이 화면 밖으로 잘려 아예 읽을 수 없었다 —
-    // 페이지 안쪽을 세로 스크롤 가능하게 해서 어떤 크기에서도 전부 읽히게 한다.
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Spacing.md),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -112,9 +116,7 @@ private fun GuidePageContent(page: GuidePage) {
         Text(page.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Spacer(Modifier.height(Spacing.lg))
 
-        GuideMockup(page.id, modifier = Modifier.fillMaxWidth().aspectRatio(1.4f))
-
-        Spacer(Modifier.height(Spacing.lg))
+        Spacer(Modifier.height(Spacing.md))
         Column(
             Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm)
@@ -123,6 +125,73 @@ private fun GuidePageContent(page: GuidePage) {
                 Row {
                     Text("•  ", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                     Text(line, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 탭별 상세 도움말(97차 신규) — 각 탭 화면의 ❓ 버튼과 설정 탭의 "다시 보기"에서 공용으로 쓴다.
+ * 워크스루와 달리 페이지 넘김 없이 한 화면에 섹션별로 쭉 나열하고, 폭을 제한해 태블릿/큰 화면에서도
+ * 텍스트 줄이 과하게 길어지거나 요소가 커 보이지 않게 한다.
+ */
+@Composable
+fun TabGuideDialog(guide: TabGuide, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.widthIn(max = maxDialogWidth).fillMaxSize().padding(Spacing.lg)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = onDismiss) { Text("닫기") }
+                    }
+
+                    Column(
+                        Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(guide.emoji, style = MaterialTheme.typography.displayMedium)
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(guide.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(
+                            guide.intro,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(Spacing.md))
+
+                        GuideMockup(guide.id, modifier = Modifier.fillMaxWidth().aspectRatio(1.8f))
+                        Spacer(Modifier.height(Spacing.lg))
+
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.lg)) {
+                            guide.sections.forEach { section ->
+                                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+                                    Text(
+                                        section.heading,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        section.bullets.forEach { line ->
+                                            Row {
+                                                Text("•  ", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                                Text(line, style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(Spacing.lg))
+                    }
+
+                    Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm)) {
+                        Text("확인")
+                    }
                 }
             }
         }
@@ -140,39 +209,12 @@ private fun GuideMockup(pageId: String, modifier: Modifier = Modifier) {
     ) {
         Box(Modifier.fillMaxSize().padding(Spacing.md)) {
             when (pageId) {
-                "intro" -> MockupIntro()
                 "manage" -> MockupManage()
-                "snooze" -> MockupSnooze()
                 "study" -> MockupStudy()
                 "routine" -> MockupRoutine()
                 "social" -> MockupSocial()
                 "settings" -> MockupSettings()
                 else -> {}
-            }
-        }
-    }
-}
-
-@Composable
-private fun MockupIntro() {
-    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-        listOf("🗂️" to "관리", "📘" to "공부", "🌱" to "루틴", "👥" to "모임").forEach { (emoji, label) ->
-            Column(
-                Modifier.weight(1f).fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.fillMaxWidth().weight(1f)
-                ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(emoji, style = MaterialTheme.typography.headlineMedium)
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(label, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -207,19 +249,6 @@ private fun MockupManage() {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun MockupSnooze() {
-    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-            Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-                Text("⏸️", style = MaterialTheme.typography.headlineMedium)
-            }
-        }
-        Spacer(Modifier.height(Spacing.sm))
-        Text("오늘 1/3회 사용", style = MaterialTheme.typography.labelMedium)
     }
 }
 

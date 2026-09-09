@@ -115,7 +115,11 @@ private fun SettingsColumns(
  */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onShowGuide: () -> Unit = {}) {
+fun SettingsScreen(
+    repository: Repository,
+    onThemeChange: (String) -> Unit = {},
+    onOpenTabGuide: (com.phonelock.shared.TabGuide) -> Unit = {}
+) {
     var settingsSubTab by remember { mutableIntStateOf(0) }
     var themeMode by remember { mutableStateOf(repository.themeMode) }
     var customBgText by remember { mutableStateOf(repository.customThemeBackground) }
@@ -306,14 +310,14 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                     // 왼쪽: 앱 외형·계정 관련 카드
                     // "도움말"은 원래 공통 탭 스크롤 한참 아래에 있어서, 정작 사용법을 모를 때
                     // 찾기가 가장 어려운 자리였다 — 탭을 열면 바로 보이도록 맨 위로 올린다.
-                    SectionCard("도움말") {
+                    SectionCard("설정 탭이란") {
                         Text(
-                            "그림으로 보는 사용법 안내를 다시 볼 수 있습니다.",
+                            "로그인·동기화·테마·알림·업데이트·백업처럼 앱 전체에 걸친 항목을 모아둔 곳입니다. 위 서브탭(루틴/공부/관리/모임)에선 그 탭만의 세부 설정과 도움말을 볼 수 있습니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(Spacing.sm))
-                        Button(onClick = onShowGuide) { Text("앱 사용법 다시 보기") }
+                        Button(onClick = { onOpenTabGuide(com.phonelock.shared.TabGuideContent.settings) }) { Text("❓ 설정 도움말 보기") }
                     }
                     Spacer(Modifier.height(Spacing.md))
 
@@ -859,6 +863,11 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                 })
 
                 SettingsSubTab.SOCIAL -> {
+                    SectionCard("도움말") {
+                        Button(onClick = { onOpenTabGuide(com.phonelock.shared.TabGuideContent.social) }) { Text("❓ 소셜 도움말 다시 보기") }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
                     SectionCard("모임 공유 설정") {
                         Text(
                             "모임마다 공개할 내 정보(루틴/공부/연속 기록/오늘 일정/공부중 여부/작동 중인 차단 규칙)를 " +
@@ -878,6 +887,11 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                 }
 
                 SettingsSubTab.ROUTINE -> SettingsColumns(left = {
+                    SectionCard("도움말") {
+                        Button(onClick = { onOpenTabGuide(com.phonelock.shared.TabGuideContent.routine) }) { Text("❓ 루틴 도움말 다시 보기") }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
                     SectionCard("루틴 연속 기록 알림") {
                         ToggleRow(
                             title = "연속 기록 알림 받기",
@@ -916,6 +930,11 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                 })
 
                 SettingsSubTab.STUDY -> SettingsColumns(left = {
+                    SectionCard("도움말") {
+                        Button(onClick = { onOpenTabGuide(com.phonelock.shared.TabGuideContent.study) }) { Text("❓ 공부 도움말 다시 보기") }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
                     SectionCard("캘린더 N회독 기본값") {
                         ToggleRow(
                             title = "새 일정을 N회독으로 시작",
@@ -1013,6 +1032,11 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                 })
 
                 SettingsSubTab.MANAGE -> SettingsColumns(left = {
+                    SectionCard("도움말") {
+                        Button(onClick = { onOpenTabGuide(com.phonelock.shared.TabGuideContent.manage) }) { Text("❓ 관리 도움말 다시 보기") }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
                     SectionCard("일일 사용 한도 초기화 시각") {
                         OutlinedTextField(
                             value = dailyResetHourText,

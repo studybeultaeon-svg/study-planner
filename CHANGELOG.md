@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-09-09 (97차 세션) — 도움말(GuideScreen) 시스템 전면 개편
+
+89차에 만든 도움말이 93~96차 디자인/기능 변경(관리 탭 자물쇠 개편, 소셜 메신저 확장 등)을 계속 따라가지 못해 실제 화면과 어긋나던 문제와, 태블릿에서 워크스루 페이지 하나하나가 화면보다 커서 매번 스크롤해야 보이던 문제를 해결하기 위해 전면 개편. 사용자가 세션 중 "업데이트한 사람한텐 도움말 띄우지 말라"는 요청을 취소해, 91차의 버전 비교 기반 재표시 조건은 그대로 유지.
+
+### shared — GuideContent.kt 구조 개편
+- 기존 `GuidePage`/`pages`(관리/일시정지/공부/루틴/모임/설정 7페이지)를 "intro"+"guide_hint" 2페이지로 축소 — 최초 실행 워크스루는 이제 "이 앱이 뭐고 도움말은 어디서 다시 찾는지"만 짧게 안내.
+- 신규 `GuideSection`(소제목+bullets)/`TabGuide`(id/emoji/title/intro/sections)/`TabGuideContent`(manage/study/routine/social/settings) 추가 — 탭 5개 각각 여러 섹션으로 나눠 작은 기능까지 상세히 설명(예: 관리 탭은 "차단 규칙 만들기/제한 방식/해제 절차/오버레이/일시정지/기간 지정/동기화/편집 면제 시간대" 8개 섹션).
+
+### 안드로이드 — GuideScreen.kt/MainActivity.kt/RoutineScreen.kt/SocialGroupScreen.kt/SettingsScreen.kt
+- `GuideScreen`(워크스루)은 `widthIn(max = 480.dp)`로 폭 제한 + 페이지 수 축소로 태블릿 오버플로우 해결. 신규 `TabGuideDialog(guide, onDismiss)` — 탭별 상세 도움말을 섹션별로 스크롤 나열, 기존 모크업 함수(`MockupManage` 등)는 그대로 재사용.
+- `MainActivity.kt`: `showGuide` 상태를 `setContent` 최상위(로그인 화면 위에도 겹쳐 뜨던 지점)에서 `PhoneLockApp`(= `AccountGate` content 안)으로 이동 — 로그인 완료 후에만 뜨도록 수정. `openTabGuide` 상태 신규, `ManageSection`/`StudySection`/`RoutineScreen`/`SocialGroupScreen`/`SettingsScreen`에 `onOpenGuide`/`onOpenTabGuide` 콜백 스레딩.
+- `ManageSection`/`StudySection`: 기존 서브탭 `TabRow` 옆에 `GuideHelpButton`(❓) 신규 추가(Row로 감싸 weight 분배).
+- `RoutineScreen.kt`: 헤더의 "+ 추가" 버튼 옆에 ❓ `IconButton` 신규.
+- `SocialGroupScreen.kt`: `Scaffold` `TopAppBar`의 `actions` 슬롯에 ❓ 버튼 신규.
+- `SettingsScreen.kt`: "앱 전체" 서브탭의 "도움말" 카드를 "설정 탭이란"(설명+전용 도움말 버튼)으로 교체, 루틴/공부/관리/모임 4개 서브탭 각각 첫 카드로 "도움말"(그 탭 다시 보기 버튼) 신규 추가. `onShowGuide: () -> Unit` 파라미터를 `onOpenTabGuide: (TabGuide) -> Unit`으로 교체.
+
+### 데스크탑 — GuideScreen.kt/Main.kt/MainScreen.kt/RoutineScreen.kt/SocialGroupScreen.kt/SettingsScreen.kt
+- 안드로이드와 동일한 구조 변경(워크스루 축소+`TabGuideDialog` 신규, 폭 480~560dp 고정).
+- `Main.kt`: `showGuide` 상태와 `GuideScreen` 렌더링을 `AccountGate` 호출 **이전**(로그인 화면보다도 먼저 뜨던 버그)에서 제거하고 `MainScreen.kt`(= `AccountGate` content 안)으로 이동.
+- `MainScreen.kt`: `showGuide`/`openTabGuide` 상태 신규 보유. MANAGE/STUDY 섹션의 `TabRow` 옆에 ❓ `IconButton`, `RoutineScreen`/`SocialGroupScreen`/`SettingsScreen` 호출에 각각 `onOpenGuide`/`onOpenTabGuide` 콜백 전달.
+- `RoutineScreen.kt`/`SocialGroupScreen.kt`/`SettingsScreen.kt`: 안드로이드판과 대칭되는 위치에 ❓/도움말 카드 추가, `SettingsScreen`도 `onShowGuide` → `onOpenTabGuide`로 교체.
+
+### 빌드/배포
+- 안드로이드: `C:\Users\sunae\AndroidBuilds\phone-lock-android`에서 `compileDebugKotlin` 확인 후 `assembleRelease` 빌드(versionCode `1788941101`), 호스트 3곳(`AndroidBuilds\phone-lock-app-release.apk`/OneDrive 원본/`vm-build-output\android`) 해시 일치 배포.
+- 데스크탑: `C:\build\phone-lock-desktop`에서 `compileKotlin` 확인 후 `packageMsi createDistributable` 빌드(BuildInfo `1788940862`), 호스트 2곳(`PhoneLockDesktopApp`/`vm-build-output\PhoneLockDesktop`) 배포 후 실행 확인.
+- GitHub 릴리스는 미게시(요청 없었음). **실사용 검증 아직 안 됨** — ❓ 버튼 각 위치 동작, 태블릿에서 다이얼로그 크기, 로그인 전 워크스루 미표시, 업데이트 후 재표시.
+
+---
+
 ## 2026-09-09 (96차 세션) — 관리 탭 모바일 UI 전면 개편(자물쇠 아이콘) + 차단 규칙 상세 화면 계산기 스타일 재설계(미니 캘린더 포함) + 버그 3건 수정
 
 95차에 롤백됐던 "관리 탭 메인 화면 UI 개편"을 이번엔 시안(HTML 목업)으로 먼저 확인받으며 여러 차례 반복 조정한 끝에 확정 → 이어서 사용자가 "이왕 시작한 김에" 차단 규칙 상세 페이지(GroupEditScreen)도 계산기 업무 카드 스타일로 개편해달라고 요청해 함께 진행. 마지막으로 4가지 추가 개선 요청 중 캘린더 교체+버그 3건을 처리했고, 새 기능 요청("루틴 모드")은 설계만 확정하고 구현은 다음 세션으로 이월.

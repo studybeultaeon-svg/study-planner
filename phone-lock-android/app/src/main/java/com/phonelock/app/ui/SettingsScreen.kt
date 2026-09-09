@@ -110,7 +110,7 @@ fun SettingsScreen(
     repository: PhoneLockRepository,
     onNavigateToStudyLockApps: () -> Unit = {},
     onThemeChange: (String) -> Unit = {},
-    onShowGuide: () -> Unit = {}
+    onOpenTabGuide: (com.phonelock.shared.TabGuide) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -302,15 +302,17 @@ fun SettingsScreen(
           if (settingsSubTab == 0) {
             // "도움말"은 원래 공통 탭 스크롤 맨 아래(업데이트 카드 다음)에 있어서, 정작 사용법을
             // 모를 때 찾기가 가장 어려운 자리였다 — 탭을 열면 바로 보이도록 맨 위로 올린다.
-            SectionCard("도움말") {
+            // 97차: 이 "앱 전체" 서브탭은 설정 탭 자체의 랜딩 자리이기도 해서, 다른 3개 서브탭과
+            // 마찬가지로 먼저 이 탭이 뭘 하는 곳인지 설명하고, 설정 탭 전용 도움말도 따로 연다.
+            SectionCard("설정 탭이란") {
                 Text(
-                    "그림으로 보는 사용법 안내를 다시 볼 수 있습니다.",
+                    "로그인·동기화·테마·알림·권한·업데이트·백업처럼 앱 전체에 걸친 항목을 모아둔 곳이에요. 아래 서브탭(루틴/공부/관리/모임)에선 그 탭만의 세부 설정과 도움말을 볼 수 있어요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(Spacing.sm))
-                Button(onClick = onShowGuide, modifier = Modifier.fillMaxWidth()) {
-                    Text("앱 사용법 다시 보기")
+                Button(onClick = { onOpenTabGuide(com.phonelock.shared.TabGuideContent.settings) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("❓ 설정 도움말 보기")
                 }
             }
             Spacer(Modifier.height(Spacing.md))
@@ -606,6 +608,13 @@ fun SettingsScreen(
           }
 
           if (settingsSubTab == 4) {
+            SectionCard("도움말") {
+                Button(onClick = { onOpenTabGuide(com.phonelock.shared.TabGuideContent.social) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("❓ 소셜 도움말 다시 보기")
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+
             SectionCard("모임 공유 설정") {
                 Text(
                     "모임마다 공개할 내 정보(루틴/공부/연속 기록/오늘 일정/공부중 여부/작동 중인 차단 규칙)를 " +
@@ -625,6 +634,13 @@ fun SettingsScreen(
           }
 
           if (settingsSubTab == 3) {
+            SectionCard("도움말") {
+                Button(onClick = { onOpenTabGuide(com.phonelock.shared.TabGuideContent.manage) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("❓ 관리 도움말 다시 보기")
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+
             SectionCard("일일 사용 한도 초기화 시각") {
                 OutlinedTextField(
                     value = dailyResetHourText,
@@ -759,6 +775,13 @@ fun SettingsScreen(
           }
 
           if (settingsSubTab == 1) {
+            SectionCard("도움말") {
+                Button(onClick = { onOpenTabGuide(com.phonelock.shared.TabGuideContent.routine) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("❓ 루틴 도움말 다시 보기")
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+
             SectionCard("루틴 연속 기록 알림") {
                 ToggleRow(
                     title = "연속 기록 알림 받기",
@@ -1145,6 +1168,13 @@ fun SettingsScreen(
           }
 
           if (settingsSubTab == 2) {
+            SectionCard("도움말") {
+                Button(onClick = { onOpenTabGuide(com.phonelock.shared.TabGuideContent.study) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("❓ 공부 도움말 다시 보기")
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+
             SectionCard("캘린더 N회독 기본값") {
                 ToggleRow(
                     title = "새 일정을 N회독으로 시작",

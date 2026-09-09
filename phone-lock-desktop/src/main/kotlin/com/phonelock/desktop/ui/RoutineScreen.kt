@@ -71,7 +71,7 @@ private fun isScheduledOn(routine: Routine, date: LocalDate): Boolean {
  * 화면 대신 다이얼로그)로 처리.
  */
 @Composable
-fun RoutineScreen(repository: Repository) {
+fun RoutineScreen(repository: Repository, onOpenGuide: () -> Unit = {}) {
     var subTab by remember { mutableIntStateOf(0) }
     var routines by remember { mutableStateOf(repository.getRoutines()) }
     var editing by remember { mutableStateOf<Routine?>(null) }
@@ -102,7 +102,10 @@ fun RoutineScreen(repository: Repository) {
                 Text("🌱 루틴", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
                 Text("반복 할 일 · 통계", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            OutlinedButton(onClick = { showAddDialog = true }) { Text("+ 루틴 추가") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.IconButton(onClick = onOpenGuide) { Text("❓") }
+                OutlinedButton(onClick = { showAddDialog = true }) { Text("+ 루틴 추가") }
+            }
         }
         Spacer(Modifier.height(Spacing.sm))
 

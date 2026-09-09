@@ -74,7 +74,7 @@ private fun isScheduledOn(routine: Routine, date: LocalDate): Boolean {
  * 함수가 전부 suspend라 완료 날짜 집합을 미리 한 번에 불러와 캐싱한다(StudyStatsScreen과 같은 패턴).
  */
 @Composable
-fun RoutineScreen(repository: PhoneLockRepository) {
+fun RoutineScreen(repository: PhoneLockRepository, onOpenGuide: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var subTab by remember { mutableIntStateOf(0) }
     var routines by remember { mutableStateOf<List<Routine>>(emptyList()) }
@@ -110,7 +110,10 @@ fun RoutineScreen(repository: PhoneLockRepository) {
                 Text("🌱 루틴", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
                 Text("반복 할 일 · 통계", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            OutlinedButton(onClick = { showAddDialog = true }) { Text("+ 추가") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onOpenGuide) { Text("❓") }
+                OutlinedButton(onClick = { showAddDialog = true }) { Text("+ 추가") }
+            }
         }
         Spacer(Modifier.height(Spacing.sm))
 
