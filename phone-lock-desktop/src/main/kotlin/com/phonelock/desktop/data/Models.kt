@@ -269,10 +269,6 @@ data class AppData(
     var nextGroupId: Long = 1,
     /** 일일 사용 한도(dailyLimitMinutes)의 "하루" 기준이 되는 시각 (0~23시, 기본값 0 = 자정). */
     var dailyResetHour: Int = 0,
-    /** 그림으로 보는 기능 사용법 안내(GuideScreen)를 마지막으로 본 시점의 빌드 타임스탬프 — 안드로이드
-     *  AppPreferences.lastSeenGuideVersion과 같은 목적. 이 값이 현재 BuildInfo.BUILD_TIMESTAMP와 다르면
-     *  (최초 실행 포함, 기본값 0은 절대 일치 안 함) 최초 실행/업데이트 직후 모두 자동으로 다시 표시된다. */
-    var lastSeenGuideVersion: Long = 0L,
     /** 브라우저 확장프로그램이 URL 패턴(youtube.com/shorts, instagram.com/reels)으로 감지해서 차단할지 여부. */
     var blockReels: Boolean = false,
     var blockShorts: Boolean = false,

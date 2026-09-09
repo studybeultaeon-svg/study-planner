@@ -109,8 +109,7 @@ private fun averageTodayPercent(stats: List<SocialGroupSyncClient.MemberStats>):
 fun SocialGroupScreen(
     repository: Repository,
     onSelectGroup: (String) -> Unit,
-    onOpenDm: (String, String, String) -> Unit,
-    onOpenGuide: () -> Unit = {}
+    onOpenDm: (String, String, String) -> Unit
 ) {
     var loading by remember { mutableStateOf(true) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
@@ -335,8 +334,7 @@ fun SocialGroupScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.IconButton(onClick = onOpenGuide) { Text("❓") }
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 OutlinedButton(onClick = { showJoinDialog = true }) { Text("참여하기") }
                 Button(onClick = { showCreateDialog = true }) { Text("+ 모임 만들기") }
             }

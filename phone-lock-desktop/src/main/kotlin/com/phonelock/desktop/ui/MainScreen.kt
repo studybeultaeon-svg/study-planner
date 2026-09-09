@@ -42,12 +42,6 @@ private enum class TopSection { MANAGE, STUDY, ROUTINE, SOCIAL_GROUP, SETTINGS }
  */
 @Composable
 fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
-    // 그림으로 보는 기능 안내(워크스루) — 97차부터 로그인이 끝난 사용자에게만(AccountGate content
-    // 안이라 이미 보장됨) 최초 실행 시 자동 표시. 91차: 마지막으로 본 빌드와 현재 빌드가 다르면(최초
-    // 실행 포함) 업데이트 직후에도 다시 뜨도록 확장.
-    var showGuide by remember { mutableStateOf(repository.lastSeenGuideVersion != repository.currentBuildTimestamp()) }
-    // 탭별 상세 도움말(97차 신규) — 각 섹션 ❓ 버튼과 설정 탭 "다시 보기"가 공유하는 오버레이 상태.
-    var openTabGuide by remember { mutableStateOf<com.phonelock.shared.TabGuide?>(null) }
     // 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임)에 맞춰 보이는 섹션만 남긴다 — 설정은 항상
     // 보임(로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 Repository가 전부 true를
     // 기본값으로 주므로 이 필터링으로 인한 회귀는 없다.
@@ -195,23 +189,19 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
 
                 when (section) {
                     TopSection.MANAGE -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TabRow(
-                                selectedTabIndex = manageSubTab,
-                                containerColor = MaterialTheme.colorScheme.background,
-                                contentColor = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Tab(
-                                    selected = manageSubTab == 0,
-                                    onClick = { manageSubTab = 0; editingGroupId = null; isCreatingNew = false; refresh() },
-                                    // 공부 섹션 서브탭만 이모지가 있고 관리 섹션엔 없어서 같은 자리의 탭 줄인데도
-                                    // 서로 다르게 보였다 — 두 섹션의 서브탭 표기를 통일한다.
-                                    text = { Text("🗂️ 차단 규칙") }
-                                )
-                                Tab(selected = manageSubTab == 1, onClick = { manageSubTab = 1; refresh() }, text = { Text("📊 사용 기록") })
-                            }
-                            androidx.compose.material3.IconButton(onClick = { openTabGuide = com.phonelock.shared.TabGuideContent.manage }) { Text("❓") }
+                        TabRow(
+                            selectedTabIndex = manageSubTab,
+                            containerColor = MaterialTheme.colorScheme.background,
+                            contentColor = MaterialTheme.colorScheme.onBackground
+                        ) {
+                            Tab(
+                                selected = manageSubTab == 0,
+                                onClick = { manageSubTab = 0; editingGroupId = null; isCreatingNew = false; refresh() },
+                                // 공부 섹션 서브탭만 이모지가 있고 관리 섹션엔 없어서 같은 자리의 탭 줄인데도
+                                // 서로 다르게 보였다 — 두 섹션의 서브탭 표기를 통일한다.
+                                text = { Text("🗂️ 차단 규칙") }
+                            )
+                            Tab(selected = manageSubTab == 1, onClick = { manageSubTab = 1; refresh() }, text = { Text("📊 사용 기록") })
                         }
                         Box(Modifier.weight(1f)) {
                             when (manageSubTab) {
@@ -256,20 +246,16 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                         }
                     }
                     TopSection.STUDY -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TabRow(
-                                selectedTabIndex = studySubTab,
-                                containerColor = MaterialTheme.colorScheme.background,
-                                contentColor = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Tab(selected = studySubTab == 0, onClick = { studySubTab = 0 }, text = { Text("⏱️ 타이머") })
-                                Tab(selected = studySubTab == 1, onClick = { studySubTab = 1 }, text = { Text("📅 캘린더") })
-                                Tab(selected = studySubTab == 2, onClick = { studySubTab = 2 }, text = { Text("🧮 계산기") })
-                                Tab(selected = studySubTab == 3, onClick = { studySubTab = 3 }, text = { Text("🗓️ 일정표") })
-                                Tab(selected = studySubTab == 4, onClick = { studySubTab = 4 }, text = { Text("📈 통계") })
-                            }
-                            androidx.compose.material3.IconButton(onClick = { openTabGuide = com.phonelock.shared.TabGuideContent.study }) { Text("❓") }
+                        TabRow(
+                            selectedTabIndex = studySubTab,
+                            containerColor = MaterialTheme.colorScheme.background,
+                            contentColor = MaterialTheme.colorScheme.onBackground
+                        ) {
+                            Tab(selected = studySubTab == 0, onClick = { studySubTab = 0 }, text = { Text("⏱️ 타이머") })
+                            Tab(selected = studySubTab == 1, onClick = { studySubTab = 1 }, text = { Text("📅 캘린더") })
+                            Tab(selected = studySubTab == 2, onClick = { studySubTab = 2 }, text = { Text("🧮 계산기") })
+                            Tab(selected = studySubTab == 3, onClick = { studySubTab = 3 }, text = { Text("🗓️ 일정표") })
+                            Tab(selected = studySubTab == 4, onClick = { studySubTab = 4 }, text = { Text("📈 통계") })
                         }
                         Box(Modifier.weight(1f)) {
                             when (studySubTab) {
@@ -283,7 +269,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                     }
                     TopSection.ROUTINE -> {
                         Box(Modifier.weight(1f)) {
-                            RoutineScreen(repository, onOpenGuide = { openTabGuide = com.phonelock.shared.TabGuideContent.routine })
+                            RoutineScreen(repository)
                         }
                     }
                     TopSection.SOCIAL_GROUP -> {
@@ -299,8 +285,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                                 SocialGroupScreen(
                                     repository,
                                     onSelectGroup = { selectedSocialGroupId = it },
-                                    onOpenDm = { chatId, peerUid, peerLabel -> selectedDmChat = Triple(chatId, peerUid, peerLabel) },
-                                    onOpenGuide = { openTabGuide = com.phonelock.shared.TabGuideContent.social }
+                                    onOpenDm = { chatId, peerUid, peerLabel -> selectedDmChat = Triple(chatId, peerUid, peerLabel) }
                                 )
                             }
                         }
@@ -309,25 +294,12 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                         Box(Modifier.weight(1f)) {
                             SettingsScreen(
                                 repository,
-                                onThemeChange = onThemeChange,
-                                onOpenTabGuide = { guide -> openTabGuide = guide }
+                                onThemeChange = onThemeChange
                             )
                         }
                     }
                 }
             }
         }
-    }
-
-    if (showGuide) {
-        GuideScreen(
-            onDismiss = {
-                repository.lastSeenGuideVersion = repository.currentBuildTimestamp()
-                showGuide = false
-            }
-        )
-    }
-    openTabGuide?.let { guide ->
-        TabGuideDialog(guide, onDismiss = { openTabGuide = null })
     }
 }

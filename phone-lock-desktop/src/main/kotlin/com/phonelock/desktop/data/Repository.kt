@@ -504,13 +504,6 @@ class Repository {
             persist()
         }
 
-    var lastSeenGuideVersion: Long
-        get() = synchronized(lock) { data.lastSeenGuideVersion }
-        set(value) = synchronized(lock) {
-            data.lastSeenGuideVersion = value
-            persist()
-        }
-
     var themeMode: String
         get() = synchronized(lock) { data.themeMode }
         set(value) = synchronized(lock) {

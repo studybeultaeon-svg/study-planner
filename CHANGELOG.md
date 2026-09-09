@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-09-09 (97차 세션 마지막) — 도움말 기능 전체 삭제
+
+세션 내내(워크스루→페이징→실제 화면 재현 이미지+번호 배지, 아래 항목들 참고) 여러 차례 개편했던 도움말(GuideScreen) 기능을 사용자 요청("그냥 가이드 싹다 지워")으로 전부 삭제.
+
+- 삭제: `shared/src/main/kotlin/com/phonelock/shared/GuideContent.kt`, `phone-lock-android/.../ui/GuideScreen.kt`, `phone-lock-desktop/.../ui/GuideScreen.kt`, 안드로이드 `res/drawable/guide_*.png`(27개), 데스크탑 `src/main/resources/guide/`(27개).
+- 원복: `MainActivity.kt`/`Main.kt`/`MainScreen.kt`의 워크스루 자동 표시 상태·탭별 도움말 오버레이 상태, `ManageSection`/`StudySection`/`RoutineScreen`/`SocialGroupScreen`(양 플랫폼)의 ❓ 버튼과 관련 파라미터, `SettingsScreen`(양 플랫폼)의 "도움말"/"설정 탭이란" 카드 4~5곳, `AppPreferences.lastSeenGuideVersion`(안드로이드)·`AppData.lastSeenGuideVersion`/`Repository.lastSeenGuideVersion`(데스크탑) 저장 필드.
+- 유지: 최초 실행 시 권한 설명 다이얼로그(`OnboardingDialog`)는 도움말과 별개 기능이라 그대로 둠.
+- 빌드/배포: 안드로이드(`compileDebugKotlin`+`assembleRelease`, versionCode `1788946190`)·데스크탑(`compileKotlin`+`packageMsi`+`createDistributable`, BuildInfo `1788946046`) 둘 다 컴파일 확인 후 릴리스 빌드, 호스트 3곳/2곳 해시 일치 배포 완료. 데스크탑 앱 실행 확인.
+
+---
+
 ## 2026-09-09 (97차 세션) — 도움말(GuideScreen) 시스템 전면 개편
 
 89차에 만든 도움말이 93~96차 디자인/기능 변경(관리 탭 자물쇠 개편, 소셜 메신저 확장 등)을 계속 따라가지 못해 실제 화면과 어긋나던 문제와, 태블릿에서 워크스루 페이지 하나하나가 화면보다 커서 매번 스크롤해야 보이던 문제를 해결하기 위해 전면 개편. 사용자가 세션 중 "업데이트한 사람한텐 도움말 띄우지 말라"는 요청을 취소해, 91차의 버전 비교 기반 재표시 조건은 그대로 유지.

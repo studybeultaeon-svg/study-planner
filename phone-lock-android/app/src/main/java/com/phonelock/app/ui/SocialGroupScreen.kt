@@ -108,8 +108,7 @@ private fun GroupAvatar(name: String) {
 fun SocialGroupScreen(
     repository: PhoneLockRepository,
     onOpenGroup: (String) -> Unit,
-    onOpenDm: (String, String, String) -> Unit,
-    onOpenGuide: () -> Unit = {}
+    onOpenDm: (String, String, String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var summaries by remember { mutableStateOf<List<GroupSummary>>(emptyList()) }
@@ -260,14 +259,7 @@ fun SocialGroupScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("👥 소셜") },
-                actions = { androidx.compose.material3.IconButton(onClick = onOpenGuide) { Text("❓") } }
-            )
-        }
-    ) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("👥 소셜") }) }) { padding ->
         Column(Modifier.fillMaxSize().background(socialGradientBackground()).padding(padding).padding(Spacing.md)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 SectionPill("💬 1:1 대화")

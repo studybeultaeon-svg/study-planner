@@ -162,9 +162,6 @@ class MainActivity : ComponentActivity() {
             PhoneLockTheme(themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
                 Surface(modifier = Modifier) {
                     AccountGate(repository) {
-                        // 그림으로 보는 기능 안내(워크스루)는 97차부터 로그인이 끝난 사용자에게만 뜨도록
-                        // PhoneLockApp 내부(AccountGate content)로 옮겼다 — 이전엔 로그인 화면 위에도
-                        // 겹쳐 떴었음. 재표시 조건(버전 비교)은 91차 그대로 유지.
                         PhoneLockApp(
                             repository,
                             onThemeChange = { themeMode = it; themeRefreshTick++ }
@@ -221,14 +218,6 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
         repository.runDailyMaintenanceIfNeeded()
     }
 
-    // 그림으로 보는 기능 안내(워크스루) — 로그인이 끝난 사용자에게만(AccountGate content 안이라
-    // 이미 보장됨) 최초 실행 시 자동 표시. 91차: 마지막으로 본 버전과 현재 버전이 다르면(최초 설치
-    // 포함) 업데이트 직후에도 다시 뜨도록 확장 — repository.currentVersionCode()는 자체 업데이트
-    // 체크에도 쓰이는 값.
-    var showGuide by remember { mutableStateOf(AppPreferences(context).lastSeenGuideVersion != repository.currentVersionCode()) }
-    // 탭별 상세 도움말(97차 신규) — 각 탭 화면 ❓ 버튼과 설정 탭 "다시 보기"가 공유하는 오버레이 상태.
-    var openTabGuide by remember { mutableStateOf<com.phonelock.shared.TabGuide?>(null) }
-
     // 83차: 태블릿(sw600dp 이상)은 하단 NavigationBar 대신 데스크탑 MainScreen.kt와 같은 좌측
     // NavigationRail로 — 탭 구성/동작은 동일하고 배치만 옆으로 옮긴다. 폰은 기존 Scaffold 그대로 유지.
     val isTablet = com.phonelock.app.ui.components.isTabletWidth()
@@ -240,7 +229,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             modifier = navModifier
         ) {
             composable(Tab.Manage.route) {
-                ManageSection(repository, navController, onOpenGuide = { openTabGuide = com.phonelock.shared.TabGuideContent.manage })
+                ManageSection(repository, navController)
             }
             composable(
                 "group_edit/{groupId}",
@@ -251,10 +240,10 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                 GroupEditScreen(repository, groupId) { navController.popBackStack() }
             }
             composable(Tab.Study.route) {
-                StudySection(repository, onOpenGuide = { openTabGuide = com.phonelock.shared.TabGuideContent.study })
+                StudySection(repository)
             }
             composable(Tab.Routine.route) {
-                RoutineScreen(repository, onOpenGuide = { openTabGuide = com.phonelock.shared.TabGuideContent.routine })
+                RoutineScreen(repository)
             }
             composable(Tab.Group.route) {
                 SocialGroupScreen(
@@ -263,8 +252,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                     onOpenDm = { chatId, peerUid, peerLabel ->
                         val encodedLabel = java.net.URLEncoder.encode(peerLabel, "UTF-8")
                         navController.navigate("dm_chat/$chatId/$peerUid/$encodedLabel")
-                    },
-                    onOpenGuide = { openTabGuide = com.phonelock.shared.TabGuideContent.social }
+                    }
                 )
             }
             composable(
@@ -307,8 +295,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                 SettingsScreen(
                     repository,
                     onNavigateToStudyLockApps = { navController.navigate("study_lock_apps") },
-                    onThemeChange = onThemeChange,
-                    onOpenTabGuide = { guide -> openTabGuide = guide }
+                    onThemeChange = onThemeChange
                 )
             }
             composable("study_lock_apps") {
@@ -372,41 +359,18 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             }
         }
     }
-
-    if (showGuide) {
-        GuideScreen(
-            onDismiss = {
-                AppPreferences(context).lastSeenGuideVersion = repository.currentVersionCode()
-                showGuide = false
-            }
-        )
-    }
-    openTabGuide?.let { guide ->
-        TabGuideDialog(guide, onDismiss = { openTabGuide = null })
-    }
-}
-
-/** 탭 화면 상단에 붙는 ❓ 도움말 버튼 — 관리/공부/루틴/소셜 4개 섹션이 공용으로 쓴다. */
-@Composable
-private fun GuideHelpButton(onClick: () -> Unit) {
-    androidx.compose.material3.IconButton(onClick = onClick) {
-        Text("❓")
-    }
 }
 
 /** "관리앱" 탭 내부의 그룹/통계 서브탭. */
 @Composable
-private fun ManageSection(repository: PhoneLockRepository, navController: NavController, onOpenGuide: () -> Unit = {}) {
+private fun ManageSection(repository: PhoneLockRepository, navController: NavController) {
     var subTab by remember { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
         // 공부 섹션 서브탭(아래 StudySection)만 이모지 아이콘이 있고 관리 섹션엔 없어서 같은 자리의
         // 탭 줄인데도 높이/생김새가 서로 달라 보였다 — 두 섹션의 서브탭 표기를 통일한다.
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            TabRow(selectedTabIndex = subTab, modifier = Modifier.weight(1f)) {
-                MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("🗂️") }, text = { Text("차단 규칙") })
-                MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, icon = { Text("📊") }, text = { Text("사용 기록") })
-            }
-            GuideHelpButton(onOpenGuide)
+        TabRow(selectedTabIndex = subTab) {
+            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("🗂️") }, text = { Text("차단 규칙") })
+            MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, icon = { Text("📊") }, text = { Text("사용 기록") })
         }
         Box(Modifier.weight(1f)) {
             when (subTab) {
@@ -422,21 +386,18 @@ private fun ManageSection(repository: PhoneLockRepository, navController: NavCon
 
 /** "공부앱" 탭 내부의 타이머/캘린더/계산기 서브탭. */
 @Composable
-private fun StudySection(repository: PhoneLockRepository, onOpenGuide: () -> Unit = {}) {
+private fun StudySection(repository: PhoneLockRepository) {
     var subTab by remember { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
         // 85차: 이모지+텍스트를 하나의 text 슬롯에 나란히 넣으면 좁은 폰 화면에서 5칸이 우겨넣어져
         // 글자가 잘리거나 두 줄로 밀린다(사용자 지적) — Tab의 icon/text 슬롯을 분리하면 Material3가
         // 이모지를 위, 라벨을 아래로 항상 세로로 쌓아준다.
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            TabRow(selectedTabIndex = subTab, modifier = Modifier.weight(1f)) {
-                MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("⏱️") }, text = { Text("타이머") })
-                MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, icon = { Text("📅") }, text = { Text("캘린더") })
-                MaterialTab(selected = subTab == 2, onClick = { subTab = 2 }, icon = { Text("🧮") }, text = { Text("계산기") })
-                MaterialTab(selected = subTab == 3, onClick = { subTab = 3 }, icon = { Text("🗓️") }, text = { Text("일정표") })
-                MaterialTab(selected = subTab == 4, onClick = { subTab = 4 }, icon = { Text("📈") }, text = { Text("통계") })
-            }
-            GuideHelpButton(onOpenGuide)
+        TabRow(selectedTabIndex = subTab) {
+            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("⏱️") }, text = { Text("타이머") })
+            MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, icon = { Text("📅") }, text = { Text("캘린더") })
+            MaterialTab(selected = subTab == 2, onClick = { subTab = 2 }, icon = { Text("🧮") }, text = { Text("계산기") })
+            MaterialTab(selected = subTab == 3, onClick = { subTab = 3 }, icon = { Text("🗓️") }, text = { Text("일정표") })
+            MaterialTab(selected = subTab == 4, onClick = { subTab = 4 }, icon = { Text("📈") }, text = { Text("통계") })
         }
         Box(Modifier.weight(1f)) {
             when (subTab) {
