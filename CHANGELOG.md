@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-09-10 (103차 세션) — 캐릭터/식물 키우기(게이미피케이션 2차) 신규
+
+### 누적 획득 포인트 기준 8단계 식물 성장 신규
+- [[IDEAS.md]] "최우선 후보"(게이미피케이션/보상) 백로그의 2번째 항목. 착수 전 사용자에게 성장 기준(누적 획득 포인트/현재 잔액/누적 공부시간 중)과 단계 수(3/5/8)를 확인받아 "누적 획득 포인트·8단계"로 확정.
+- `:shared`에 순수 로직 신규(`CharacterGrowth.kt`) — 8단계(🌰씨앗→🌱새싹→🌿떡잎→🪴어린화분→🌳자라는나무→🌷봉오리→🌺개화→🌻만개) 임계값(0/30/100/250/500/1000/2000/4000P), `stageFor`/`progressToNext`/`pointsToNextStage` 순수 함수. 안드로이드/데스크탑이 이 한 곳만 참조해 항상 같은 판정을 쓴다.
+- 성장 기준값은 "포인트 잔액"이 아니라 "누적 획득 포인트"(ledger 양수 delta만 합산, 보상 교환으로 줄지 않음) — 보상을 써도 캐릭터는 퇴화하지 않는다. 안드로이드 `PointsLedgerDao.observeEarnedTotal()`(`WHERE delta > 0` 쿼리 신규 추가, Room 마이그레이션 불필요) / 데스크탑 `Repository.getEarnedPointsTotal()`(ledger 필터링).
+- UI: "🎁 포인트" 탭 맨 위에 `CharacterGrowthCard` 신규(이모지 64sp+단계명+`LinearProgressIndicator`+다음 단계까지 남은 포인트) — 새 탭 대신 기존 포인트 탭에 얹음(102차와 같은 패턴). 이모지 텍스트로 구현(92차 `TimerIllustration`의 Canvas 드로잉 대신 — 8단계를 손으로 그리기엔 코드량이 상당한 반면 이 프로젝트는 이미 이모지를 UI 요소로 적극 사용 중이라 더 적합하다고 판단).
+- 양 플랫폼 컴파일 확인(`compileKotlin`/`compileDebugKotlin`) 후 릴리스 빌드(`assembleRelease`/`packageMsi createDistributable`) 완료, 안드로이드 APK 3위치+데스크탑 호스트/`vm-build-output` 양쪽 배포, GitHub 릴리스 게시(안드로이드 `android-1789032989`, 데스크탑 `desktop-1789032819`), `sync-public-repo.ps1`로 공개 저장소 push까지 완료. 실사용 검증은 안 됨.
+
+---
+
 ## 2026-09-10 (102차 세션) — 포인트/보상(게이미피케이션) 시스템 1차 구현
 
 ### 포인트 적립 + "오늘의 보상" 언락 신규

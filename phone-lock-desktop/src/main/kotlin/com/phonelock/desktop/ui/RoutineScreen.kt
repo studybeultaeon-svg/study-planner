@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
@@ -26,6 +27,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -45,6 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +59,7 @@ import com.phonelock.desktop.data.Routine
 import com.phonelock.desktop.routine.RoutineEngine
 import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.theme.Spacing
+import com.phonelock.shared.CharacterGrowth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -677,12 +681,15 @@ private fun RoutineStatsTab(repository: Repository, routines: List<Routine>) {
 private fun RoutinePointsTab(repository: Repository) {
     var refreshTick by remember { mutableIntStateOf(0) }
     val balance = remember(refreshTick) { repository.getPointsBalance() }
+    val earnedTotal = remember(refreshTick) { repository.getEarnedPointsTotal() }
     val rewards = remember(refreshTick) { repository.getRewards() }
     var showAddDialog by remember { mutableStateOf(false) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
     fun refresh() { refreshTick++ }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        CharacterGrowthCard(earnedTotal)
+        Spacer(Modifier.height(Spacing.sm))
         Surface(
             Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.medium,
@@ -779,6 +786,40 @@ private fun RoutinePointsTab(repository: Repository) {
             },
             dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("취소") } }
         )
+    }
+}
+
+/**
+ * 캐릭터/식물 키우기(102차+, IDEAS.md "최우선 후보" 게이미피케이션 2번째 항목) — 누적 획득 포인트(보상
+ * 교환으로 줄지 않는 값)에 따라 [CharacterGrowth]의 8단계 식물이 자라는 걸 보여준다. 안드로이드판과 대칭.
+ */
+@Composable
+private fun CharacterGrowthCard(earnedTotal: Int) {
+    val stage = CharacterGrowth.stageFor(earnedTotal)
+    val progress = CharacterGrowth.progressToNext(earnedTotal)
+    val toNext = CharacterGrowth.pointsToNextStage(earnedTotal)
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(stage.emoji, fontSize = 64.sp)
+            Spacer(Modifier.height(Spacing.xs))
+            Text("${stage.label} (${stage.index + 1}/${CharacterGrowth.STAGES.size}단계)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(Spacing.sm))
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+            )
+            Spacer(Modifier.height(Spacing.xs))
+            Text(
+                if (toNext != null) "다음 단계까지 ${toNext}P 남음" else "최종 단계 도달!",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
