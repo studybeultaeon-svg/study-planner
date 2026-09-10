@@ -34,7 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-private enum class TopSection { MANAGE, STUDY, ROUTINE, SOCIAL_GROUP, SETTINGS }
+private enum class TopSection { MANAGE, STUDY, ROUTINE, PLANT, SOCIAL_GROUP, SETTINGS }
 
 /**
  * 데스크탑 전용 레이아웃: 왼쪽 사이드바(NavigationRail)로 관리앱/공부앱/설정을 고르고, 관리앱·공부앱은
@@ -51,6 +51,8 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
             TopSection.ROUTINE.takeIf { repository.permRoutine },
             TopSection.STUDY.takeIf { repository.permStudy },
             TopSection.MANAGE.takeIf { repository.permManage },
+            // 104차 후속: "식물"은 레벨/경험치 확인용이라 별도 권한 없이 항상 보임(설정과 동일).
+            TopSection.PLANT,
             // 98차(사용자 요청, 안드로이드판과 대칭): 게스트(익명 계정)는 소셜 탭을 아예 못 쓰게 한다.
             TopSection.SOCIAL_GROUP.takeIf { repository.permSocial && !com.phonelock.desktop.monitor.AuthManager.isAnonymous },
             TopSection.SETTINGS
@@ -131,7 +133,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                     NavigationRailItem(
                         selected = section == TopSection.ROUTINE,
                         onClick = { section = TopSection.ROUTINE },
-                        icon = { Text("🌱") },
+                        icon = { Text("🔁") },
                         label = { Text("루틴") },
                         colors = railColors
                     )
@@ -151,6 +153,15 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                         onClick = { section = TopSection.MANAGE; refresh() },
                         icon = { Text("🗂️") },
                         label = { Text("관리") },
+                        colors = railColors
+                    )
+                }
+                if (TopSection.PLANT in visibleSections) {
+                    NavigationRailItem(
+                        selected = section == TopSection.PLANT,
+                        onClick = { section = TopSection.PLANT },
+                        icon = { Text("🌱") },
+                        label = { Text("식물") },
                         colors = railColors
                     )
                 }
@@ -272,6 +283,11 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                     TopSection.ROUTINE -> {
                         Box(Modifier.weight(1f)) {
                             RoutineScreen(repository)
+                        }
+                    }
+                    TopSection.PLANT -> {
+                        Box(Modifier.weight(1f)) {
+                            PlantScreen(repository)
                         }
                     }
                     TopSection.SOCIAL_GROUP -> {

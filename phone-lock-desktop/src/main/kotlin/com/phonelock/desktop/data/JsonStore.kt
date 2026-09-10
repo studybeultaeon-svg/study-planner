@@ -67,7 +67,7 @@ object JsonStore {
             dailyResetHour = json.optInt("dailyResetHour", 0),
             routinesTs = json.optLong("routinesTs", 0L),
             pointsTs = json.optLong("pointsTs", 0L),
-            themeMode = json.optString("themeMode", "LIGHT_GREEN"),
+            themeMode = json.optString("themeMode", "LIGHT_ORANGE"),
             customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
             exitConfirmEnabled = json.optBoolean("exitConfirmEnabled", false),

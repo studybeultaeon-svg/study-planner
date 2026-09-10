@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-09-10 (105차 세션) — "식물" 탭 신설(소셜에서 분리) + 식물 Canvas 드로잉 개편 + 기본 테마 변경
+
+### 소셜 탭 게임 요소를 별도 "식물" 탭으로 분리
+- 사용자 요청: "소셜"에 있던 레벨업/식물 키우기(102~104차)를 소셜의 메인으로 키우는 대신, 별도 "식물" 탭으로 독립시키고 소셜은 다시 SNS(모임/대화/DM) 중심으로 되돌림.
+- 양 플랫폼에 새 `ui/PlantScreen.kt` 작성 — 기존 `SocialGroupScreen.kt`의 `SocialPointsSection`(레벨 카드+캐릭터 카드+보상 등록/교환, 102~104차) 전체를 그대로 옮겨옴. `SocialGroupScreen.kt`에서는 호출부+함수 정의를 제거.
+- 상단 탭 구조에 새 섹션 추가: 데스크탑 `MainScreen.kt`의 `TopSection` enum에 `PLANT` 추가(권한 제약 없이 항상 보임, "설정"과 동일 취급), 안드로이드 `MainActivity.kt`의 `Tab` sealed class에 `Tab.Plant("plant", "식물", "🌱")` 추가 + `visibleTabs()`/`NavHost` 라우트 연결.
+- 🌱 이모지를 식물 탭이 가져가면서 루틴 탭 아이콘을 🔁(반복)로 교체(데스크탑 `NavigationRailItem`, 안드로이드 `Tab.Routine`).
+
+### 식물 성장 표시를 이모지 1글자 → Canvas 드로잉으로 교체
+- 새 비공개 Composable `PlantScene`(양 플랫폼 `PlantScreen.kt` 안에 중복 작성, `StudyTimerScreen`의 `TimerIllustration`과 동일 패턴 — 플랫폼별 UI라 `:shared`에는 안 넣음)을 `Canvas`로 직접 그림: 하늘 버티컬 그라디언트+태양+구름 2개, 땅(반투명 그린 띠), 화분(사다리꼴 Path), 줄기(`drawLine`, 높이는 `(stage.index + progress) / 전체단계수`를 `animateFloatAsState`로 트윈), 줄기를 따라 잎 쌍(개수는 `stage.index`에 비례), 5단계(봉오리)엔 작은 원, 6~7단계(개화/만개)엔 6개 꽃잎+중심 원. `rememberInfiniteTransition`으로 좌우로 미세하게 흔들리는 idle sway 애니메이션.
+- `:shared`의 성장 판정 로직(`CharacterGrowth.stageFor`/`progressToNext`/`pointsToNextStage`, `StudyLevel.levelFor` 등)은 일절 수정하지 않음 — 순수 표시만 교체.
+
+### 용어를 "포인트" → "경험치(EXP)"로 재정리(화면 표기만, 데이터는 동일)
+- "누적 획득 포인트"(`earnedTotal`, 보상 교환으로 안 줄어드는 값)를 화면상 "경험치"로 재명명 — "다음 단계까지 경험치 N 남음", "누적 경험치 N EXP", 적립 규칙 안내 문구도 "공부 10분당 1EXP · 루틴 완료 5EXP · ..."로 변경.
+- "보유 포인트"(`balance`, 보상 교환에 쓰는 감소 가능한 잔액)는 그대로 "P"/"포인트" 표기 유지 — 두 값은 같은 적립 이벤트(`pointsLedger`)에서 나오지만 의미가 다른 별개의 숫자라는 걸 화면에서도 구분.
+
+### 앱 기본 테마를 라이트+그린 → 화이트+오렌지로 변경
+- 데스크탑: `data/Models.kt`의 `AppData.themeMode` 기본값, `data/JsonStore.kt`의 `optString` 폴백값, `ui/theme/Theme.kt`의 `PhoneLockTheme()` 기본 파라미터 3곳 모두 `"LIGHT_GREEN"` → `"LIGHT_ORANGE"`.
+- 안드로이드: `data/AppPreferences.kt`의 `themeMode` getter 기본값, `ui/theme/Theme.kt`의 기본 파라미터 2곳 동일하게 변경.
+- 기존 사용자의 저장된 설정값(데스크탑 `data.json`/안드로이드 SharedPreferences)은 그대로 유지되므로, 이미 앱을 쓰던 사용자는 테마가 자동으로 바뀌지 않는다 — 이 기본값 변경은 신규 설치(또는 한 번도 테마를 저장한 적 없는 상태)에만 적용됨.
+
+### 빌드/배포
+- 양 플랫폼 컴파일 확인(`compileKotlin`/`compileDebugKotlin`, 확장 함수 import 누락·`InfiniteTransition.animateFloat` import 누락 2건 수정 후 통과) → 릴리스 빌드(`assembleRelease`/`packageMsi createDistributable`) → 데스크탑 호스트(`PhoneLockDesktopApp`)+`vm-build-output` 양쪽 배포, 안드로이드 APK 3위치 배포 → GitHub 릴리스 게시(안드로이드 `android-1789045423`, 데스크탑 `desktop-1789045322`) → `sync-public-repo.ps1`로 공개 저장소 push까지 완료. 실사용 검증은 안 됨.
+
+---
+
 ## 2026-09-10 (104차 세션) — 레벨업 시스템(누적 공부시간 기준) 신규
 
 ### 게이미피케이션 3번째 항목

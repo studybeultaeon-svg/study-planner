@@ -197,7 +197,7 @@ class AppPreferences(context: Context) {
     /** 앱 전체 테마 선택(설정 화면) — ThemeMode.LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE. 데스크탑판과 달리
      *  Room이 아니라 다른 설정들처럼 SharedPreferences에 둔다. */
     var themeMode: String
-        get() = prefs.getString("theme_mode", "LIGHT_GREEN") ?: "LIGHT_GREEN"
+        get() = prefs.getString("theme_mode", "LIGHT_ORANGE") ?: "LIGHT_ORANGE"
         set(value) = prefs.edit().putString("theme_mode", value).apply()
 
     /** 커스텀 테마(79차, 사용자 요청)용 배경/포인트 색 — "#RRGGBB" 문자열, 데스크탑판과 동일 구조. */

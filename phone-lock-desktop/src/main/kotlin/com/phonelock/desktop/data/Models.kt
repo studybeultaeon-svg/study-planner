@@ -365,7 +365,7 @@ data class AppData(
      *  (87차+, 안드로이드판과 대칭) — users/{user}/groupSettings. */
     var groupSettingsTs: Long = 0L,
     /** 앱 전체 테마 선택(설정 화면) — ThemeMode.LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE 등, CUSTOM이면 아래 두 값을 씀. */
-    var themeMode: String = "LIGHT_GREEN",
+    var themeMode: String = "LIGHT_ORANGE",
     /** 커스텀 테마(79차)의 배경/포인트 색 — "#RRGGBB". */
     var customThemeBackground: String = "#FAFBF6",
     var customThemeAccent: String = "#8BC34A",
