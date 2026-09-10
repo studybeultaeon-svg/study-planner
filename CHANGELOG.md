@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-09-10 (103차 세션, 후속) — 포인트/보상+캐릭터 성장을 "루틴"에서 "소셜"로 이동
+
+### 배치 위치 정정
+- 사용자가 "전 세션에 소셜에 넣으라고 분명히 말했었다"고 지적 — 문서(CHANGELOG/DECISIONS/IDEAS) 전체를 검색해도 기록이 없었으나(102차 DECISIONS 항목에도 소셜 배치 검토 자체가 없음), 진위를 다투지 않고 즉시 요청대로 이동. 자세한 경위는 [[DECISIONS.md]] 참고.
+- "루틴" 섹션 3번째 서브탭("🎁 포인트", `RoutinePointsTab`+`CharacterGrowthCard`)을 완전히 제거 — 루틴은 다시 오늘/연속기록 2탭 구조로. TabRow/`when(subTab)` 분기에 인덱스 충돌 없음(애초에 `2 ->` 케이스가 없었음).
+- "소셜" 섹션(`SocialGroupScreen.kt`, 양 플랫폼)의 "💬 1:1 대화"와 "👥 모임" 사이에 `SocialPointsSection` 신규 — 같은 기능(포인트 잔액/적립기준/보상 목록+추가/캐릭터 성장 카드)을 소셜 화면 자체 카드 스타일(`RoundedCornerShape(16.dp)`, `SectionPill`)로 재작성해서 이식. 로직(적립 기준/원장 합산/8단계 판정, `:shared`의 `CharacterGrowth.kt`와 `*Repository.Points.kt`)은 전혀 안 건드림.
+- 양 플랫폼 컴파일 확인 후 릴리스 빌드(`assembleRelease`/`packageMsi createDistributable`) 완료, 안드로이드 APK 3위치+데스크탑 호스트/`vm-build-output` 양쪽 배포, GitHub 릴리스 게시(안드로이드 `android-1789035845`, 데스크탑 `desktop-1789035796`), `sync-public-repo.ps1`로 공개 저장소 push까지 완료.
+
+---
+
 ## 2026-09-10 (103차 세션) — 캐릭터/식물 키우기(게이미피케이션 2차) 신규
 
 ### 누적 획득 포인트 기준 8단계 식물 성장 신규

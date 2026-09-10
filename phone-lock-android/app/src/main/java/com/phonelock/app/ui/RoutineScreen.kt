@@ -3,7 +3,6 @@ package com.phonelock.app.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
@@ -27,7 +26,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -47,7 +45,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
@@ -55,13 +52,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.*
 import com.phonelock.app.data.Routine
 import com.phonelock.app.routine.RoutineEngine
 import com.phonelock.app.ui.theme.Spacing
-import com.phonelock.shared.CharacterGrowth
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -196,7 +191,6 @@ fun RoutineScreen(repository: PhoneLockRepository) {
         TabRow(selectedTabIndex = subTab) {
             Tab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("오늘") })
             Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("🔥 연속 기록") })
-            Tab(selected = subTab == 2, onClick = { subTab = 2 }, text = { Text("🎁 포인트") })
         }
         Spacer(Modifier.height(Spacing.sm))
 
@@ -257,9 +251,7 @@ fun RoutineScreen(repository: PhoneLockRepository) {
             Spacer(Modifier.height(Spacing.sm))
         }
 
-        if (subTab == 2) {
-            RoutinePointsTab(repository)
-        } else if (routines.isEmpty()) {
+        if (routines.isEmpty()) {
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Text(
                     "아직 등록된 루틴이 없습니다\n오른쪽 위 \"+ 추가\"로 시작해보세요",
@@ -616,157 +608,6 @@ private fun RoutineStatsTab(
                     )
                 }
             }
-        }
-    }
-}
-
-/**
- * 포인트/보상(101차+, IDEAS.md "최우선 후보" 1차 구현) — 공부시간·루틴완료·캘린더완료·스트릭 보너스로
- * 적립한 포인트 잔액을 보여주고, 사용자가 직접 등록한 보상 목록을 포인트로 교환(언락)한다.
- * RoutineStatsTab과 같은 카드형 레이아웃(가장 위에 잔액을 크게, 아래에 목록).
- */
-@Composable
-private fun RoutinePointsTab(repository: PhoneLockRepository) {
-    val scope = rememberCoroutineScope()
-    val balance by repository.observePointsBalance().collectAsState(initial = 0)
-    val earnedTotal by repository.observeEarnedPointsTotal().collectAsState(initial = 0)
-    val rewards by repository.observeRewards().collectAsState(initial = emptyList())
-    var showAddDialog by remember { mutableStateOf(false) }
-    var toastMessage by remember { mutableStateOf<String?>(null) }
-
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        CharacterGrowthCard(earnedTotal)
-        Spacer(Modifier.height(Spacing.sm))
-        Surface(
-            Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-        ) {
-            Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("보유 포인트", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("${balance}P", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            }
-        }
-        Spacer(Modifier.height(Spacing.sm))
-        Text(
-            "공부 10분당 1P · 루틴 완료 5P · 일정 완료 5P · 오늘 루틴 전부 완료 시 +10P",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(Spacing.md))
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("오늘의 보상", style = MaterialTheme.typography.titleMedium)
-            OutlinedButton(onClick = { showAddDialog = true }) { Text("+ 보상 추가") }
-        }
-        Spacer(Modifier.height(Spacing.sm))
-
-        toastMessage?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(Spacing.xs))
-        }
-
-        if (rewards.isEmpty()) {
-            Text(
-                "등록된 보상이 없습니다\n\"+ 보상 추가\"로 원하는 보상을 만들어보세요",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            rewards.forEach { reward ->
-                Surface(
-                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(reward.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                            Text("${reward.cost}P", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Button(
-                            enabled = balance >= reward.cost,
-                            onClick = {
-                                scope.launch {
-                                    val ok = repository.redeemReward(reward)
-                                    toastMessage = if (ok) "\"${reward.name}\" 언락했습니다! 🎉" else "포인트가 부족합니다"
-                                }
-                            }
-                        ) { Text("언락") }
-                        Spacer(Modifier.width(Spacing.xs))
-                        TextButton(onClick = { scope.launch { repository.deleteReward(reward) } }) { Text("삭제") }
-                    }
-                }
-            }
-        }
-    }
-
-    if (showAddDialog) {
-        var name by remember { mutableStateOf("") }
-        var costText by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showAddDialog = false },
-            title = { Text("보상 추가") },
-            text = {
-                Column {
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("보상 이름") }, modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(Spacing.sm))
-                    OutlinedTextField(
-                        value = costText,
-                        onValueChange = { costText = it.filter { c -> c.isDigit() } },
-                        label = { Text("필요 포인트") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = name.isNotBlank() && (costText.toIntOrNull() ?: 0) > 0,
-                    onClick = {
-                        val cost = costText.toIntOrNull() ?: 0
-                        scope.launch { repository.addReward(name.trim(), cost) }
-                        showAddDialog = false
-                    }
-                ) { Text("추가") }
-            },
-            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("취소") } }
-        )
-    }
-}
-
-/**
- * 캐릭터/식물 키우기(102차+, IDEAS.md "최우선 후보" 게이미피케이션 2번째 항목) — 누적 획득 포인트(보상
- * 교환으로 줄지 않는 값)에 따라 [CharacterGrowth]의 8단계 식물이 자라는 걸 보여준다. 새 화면/탭 대신
- * "🎁 포인트" 탭 맨 위에 얹는다(102차 포인트 화면과 같은 전개 패턴).
- */
-@Composable
-private fun CharacterGrowthCard(earnedTotal: Int) {
-    val stage = CharacterGrowth.stageFor(earnedTotal)
-    val progress = CharacterGrowth.progressToNext(earnedTotal)
-    val toNext = CharacterGrowth.pointsToNextStage(earnedTotal)
-    Surface(
-        Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(stage.emoji, fontSize = 64.sp)
-            Spacer(Modifier.height(Spacing.xs))
-            Text("${stage.label} (${stage.index + 1}/${CharacterGrowth.STAGES.size}단계)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(Spacing.sm))
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
-            )
-            Spacer(Modifier.height(Spacing.xs))
-            Text(
-                if (toNext != null) "다음 단계까지 ${toNext}P 남음" else "최종 단계 도달!",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
