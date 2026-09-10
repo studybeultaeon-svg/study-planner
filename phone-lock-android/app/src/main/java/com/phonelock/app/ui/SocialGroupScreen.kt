@@ -49,6 +49,7 @@ import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.*
 import com.phonelock.app.ui.theme.Spacing
 import com.phonelock.shared.CharacterGrowth
+import com.phonelock.shared.StudyLevel
 import kotlinx.coroutines.launch
 
 private data class GroupSummary(val id: String, val name: String, val memberCount: Int, val avgTodayRate: Int)
@@ -412,11 +413,38 @@ private fun SocialPointsSection(repository: PhoneLockRepository) {
     val scope = rememberCoroutineScope()
     val balance by repository.observePointsBalance().collectAsState(initial = 0)
     val earnedTotal by repository.observeEarnedPointsTotal().collectAsState(initial = 0)
+    val totalStudyMinutes by repository.observeTotalStudyMinutes().collectAsState(initial = 0)
     val rewards by repository.observeRewards().collectAsState(initial = emptyList())
     var showAddDialog by remember { mutableStateOf(false) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
 
     SectionPill("🎁 포인트")
+    Spacer(Modifier.height(Spacing.sm))
+
+    val studyLevel = StudyLevel.levelFor(totalStudyMinutes)
+    val studyLevelProgress = StudyLevel.progressToNext(totalStudyMinutes)
+    val studyLevelMinutesLeft = StudyLevel.minutesToNextLevel(totalStudyMinutes)
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
+    ) {
+        Column(Modifier.fillMaxWidth().padding(Spacing.sm)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Lv.$studyLevel ${StudyLevel.tierLabel(studyLevel)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("누적 공부 ${totalStudyMinutes / 60}시간 ${totalStudyMinutes % 60}분", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.height(Spacing.xs))
+            LinearProgressIndicator(
+                progress = { studyLevelProgress },
+                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(Modifier.height(Spacing.xs))
+            Text("다음 레벨까지 공부 ${studyLevelMinutesLeft}분 남음", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
     Spacer(Modifier.height(Spacing.sm))
 
     val stage = CharacterGrowth.stageFor(earnedTotal)

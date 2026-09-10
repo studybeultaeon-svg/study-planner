@@ -24,6 +24,9 @@ fun Repository.getPointsLedger(): List<PointsLedgerEntry> = synchronized(lock) {
 /** 캐릭터/식물 성장 기준값 — 보상 교환으로 줄어드는 잔액과 달리 양수 delta만 누적 합산(줄어들지 않음). */
 fun Repository.getEarnedPointsTotal(): Int = synchronized(lock) { data.pointsLedger.filter { it.delta > 0 }.sumOf { it.delta } }
 
+/** 레벨업 시스템(104차) 기준값 — STUDY 원장 항목만 합산해 분으로 환산(포인트 1개 = 10분). */
+fun Repository.getTotalStudyMinutes(): Int = synchronized(lock) { data.pointsLedger.filter { it.reason == "STUDY" }.sumOf { it.delta } * 10 }
+
 /** reason+refId+dateKey 조합이 이미 있으면 아무 일도 안 한다(중복 적립 방지). 호출부가 이미 lock을 쥐고 있어야 한다. */
 private fun Repository.awardPointsOnce(delta: Int, reason: String, refId: String, dateKey: String) {
     if (data.pointsLedger.any { it.reason == reason && it.refId == refId && it.dateKey == dateKey }) return
