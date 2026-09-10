@@ -265,6 +265,16 @@ data class RoutineLog(val routineId: Long, val dateKey: String)
 data class RoutineMode(val id: Long, val name: String = "", val sortOrder: Int = 0)
 
 /**
+ * 포인트/보상 시스템(101차+, IDEAS.md "최우선 후보") — 잔액은 저장하지 않고 이 원장(ledger) 전체를
+ * 합산해서 매번 계산한다(안드로이드 PointsLedgerEntry와 대칭). reason: "STUDY"(공부시간 비례)/
+ * "ROUTINE"(루틴 완료)/"CALENDAR"(캘린더 일정 완료)/"STREAK"(그날 전역 스트릭 유지)/"REDEEM"(보상 교환).
+ */
+data class PointsLedgerEntry(val delta: Int, val reason: String, val refId: String = "", val dateKey: String, val timestampMillis: Long)
+
+/** 사용자가 직접 등록하는 "오늘의 보상" 언락 항목 — 이름+필요 포인트만 가진다. */
+data class Reward(val id: Long, val name: String = "", val cost: Int = 0, val sortOrder: Int = 0)
+
+/**
  * 앱이 접속할 Firebase 프로젝트(study-fc3bf) 고정값 — 62차까지는 설정 화면에서 사용자가 직접 입력했지만,
  * 이제 로그인만으로 동기화되도록 하드코딩(안드로이드 google-services.json과 같은 프로젝트).
  */
@@ -403,5 +413,12 @@ data class AppData(
     /** GitHub Releases에서 발견한 최신 데스크탑 릴리스의 빌드 타임스탬프(BuildInfo.BUILD_TIMESTAMP와 비교). 0이면 "새 버전 없음". */
     var updateAvailableBuildTimestamp: Long = 0L,
     /** 위 빌드 타임스탬프에 대응하는 설치파일(exe/msi) 다운로드 URL. */
-    var updateAvailableInstallerUrl: String? = null
+    var updateAvailableInstallerUrl: String? = null,
+    /** 포인트/보상 시스템(101차+) — 적립/차감 원장. */
+    val pointsLedger: MutableList<PointsLedgerEntry> = mutableListOf(),
+    /** 사용자가 등록한 보상 목록과 다음 id 발급용 카운터(routines와 동일 패턴). */
+    val rewards: MutableList<Reward> = mutableListOf(),
+    var nextRewardId: Long = 1,
+    /** 포인트 전체 문서 단위 LWW 타임스탬프(routinesTs와 동일 패턴) — users/{user}/points. */
+    var pointsTs: Long = 0L
 )

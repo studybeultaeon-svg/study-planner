@@ -923,6 +923,7 @@ class Repository {
         data.studyLog.add(StudyLogEntry(today, taskName.ifBlank { "이름 없는 공부" }, seconds, startedAt, note, tag))
         persist()
         pushStudyLogToFirebase(today)
+        awardStudyPoints(seconds, today)
     }
 
     /** 통계 탭 태그별 집계용(82차, §9). */

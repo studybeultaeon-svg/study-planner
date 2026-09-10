@@ -214,6 +214,7 @@ fun Repository.setCalendarTaskStatus(dateKey: String, ordinal: Int, targetStatus
         if (current.linkedCalc != null && current.color == "red") {
             adjustLinkedCalcProgress(current.linkedCalc, -linkedProgressAmount(current))
         }
+        onCalendarTaskCompletionChanged("calendar:$dateKey:$ordinal", dateKey, completed = false)
     }
     if (current.status == "X") revertIncompleteCarryOver(dateKey, current)
     if (current.status == targetStatus) {
@@ -226,6 +227,7 @@ fun Repository.setCalendarTaskStatus(dateKey: String, ordinal: Int, targetStatus
             if (updated.linkedCalc != null && updated.color == "red") {
                 adjustLinkedCalcProgress(updated.linkedCalc, linkedProgressAmount(updated))
             }
+            onCalendarTaskCompletionChanged("calendar:$dateKey:$ordinal", dateKey, completed = true)
         }
         if (targetStatus == "X") applyIncompleteCarryOver(dateKey, updated)
     }

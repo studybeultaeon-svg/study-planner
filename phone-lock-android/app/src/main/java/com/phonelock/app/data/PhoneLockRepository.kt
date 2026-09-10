@@ -66,6 +66,8 @@ class PhoneLockRepository(context: Context) {
     internal val routineLogDao = db.routineLogDao()
     internal val routineModeDao = db.routineModeDao()
     private val quoteOutcomeDao = db.quoteOutcomeDao()
+    internal val pointsLedgerDao = db.pointsLedgerDao()
+    internal val rewardDao = db.rewardDao()
     internal val preferences = AppPreferences(context)
 
     // 겹치는 그룹 중 "지금 실제로 제한 중인" 그룹을 우선하는 데 쓴다. LockEvaluator는 이 repository의
@@ -790,6 +792,7 @@ class PhoneLockRepository(context: Context) {
         ioScope.launch {
             studyLogEntryDao.insert(StudyLogEntry(dateKey = today, taskName = taskName.ifBlank { "이름 없는 공부" }, seconds = seconds, startedAt = startedAt, note = note, tag = tag))
             pushStudyLogToFirebase(today)
+            awardStudyPoints(seconds, today)
         }
     }
 

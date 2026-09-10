@@ -297,3 +297,51 @@ interface QuoteOutcomeDao {
     @Query("DELETE FROM quote_outcome WHERE timestampMillis < :cutoffMillis")
     suspend fun deleteBefore(cutoffMillis: Long): Int
 }
+
+@Dao
+interface PointsLedgerDao {
+    @Query("SELECT * FROM points_ledger ORDER BY id")
+    suspend fun getAllOnce(): List<PointsLedgerEntry>
+
+    @Query("SELECT * FROM points_ledger ORDER BY timestampMillis DESC")
+    fun observeAll(): Flow<List<PointsLedgerEntry>>
+
+    @Query("SELECT COALESCE(SUM(delta), 0) FROM points_ledger")
+    fun observeBalance(): Flow<Int>
+
+    @Query("SELECT COALESCE(SUM(delta), 0) FROM points_ledger")
+    suspend fun getBalance(): Int
+
+    @Query("SELECT * FROM points_ledger WHERE reason = :reason AND refId = :refId AND dateKey = :dateKey LIMIT 1")
+    suspend fun find(reason: String, refId: String, dateKey: String): PointsLedgerEntry?
+
+    @Insert
+    suspend fun insert(entry: PointsLedgerEntry): Long
+
+    @Query("DELETE FROM points_ledger WHERE reason = :reason AND refId = :refId AND dateKey = :dateKey")
+    suspend fun deleteBy(reason: String, refId: String, dateKey: String)
+
+    @Query("DELETE FROM points_ledger")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface RewardDao {
+    @Query("SELECT * FROM reward ORDER BY sortOrder")
+    fun observeAll(): Flow<List<Reward>>
+
+    @Query("SELECT * FROM reward ORDER BY sortOrder")
+    suspend fun getAll(): List<Reward>
+
+    @Insert
+    suspend fun insert(reward: Reward): Long
+
+    @Update
+    suspend fun update(reward: Reward)
+
+    @Delete
+    suspend fun delete(reward: Reward)
+
+    @Query("DELETE FROM reward")
+    suspend fun deleteAll()
+}

@@ -12,7 +12,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AppGroup::class, GroupMember::class, UsageRecord::class,
         GroupSite::class, ConfirmEscalation::class, StudyLogEntry::class, CalendarTask::class,
         CalcTask::class, CalcSavedItem::class, ConfirmCounter::class,
-        Routine::class, RoutineLog::class, QuoteOutcome::class, RoutineMode::class
+        Routine::class, RoutineLog::class, QuoteOutcome::class, RoutineMode::class,
+        PointsLedgerEntry::class, Reward::class
     ],
     // 82차: v30(calc_task autoGenEnabled/autoGenBatchSize) / v31(study_log_entry tag) / v32(quote_outcome
     // 신규 테이블) / v33(app_group selfMessageText) — 전부 아래 MIGRATION_29_33에서 명시적 ALTER/CREATE로
@@ -30,7 +31,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // opt-in"으로 전환(자세한 배경은 DECISIONS.md 94차) — 기존 그룹은 전부 기본값(꺼짐)으로 시작한다.
     // 98차: v38 — 루틴 모드(96차 설계, 97차 이월) 신규 routine_mode 테이블 + routine.modeId 추가. 기존
     // 루틴은 전부 기본 모드(id=1)로 편입(MIGRATION_37_38 참고).
-    version = 38,
+    // 101차: v39 — 포인트/보상 시스템(IDEAS.md 최우선 후보) 신규 points_ledger/reward 테이블(MIGRATION_38_39 참고).
+    version = 39,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -48,6 +50,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun routineLogDao(): RoutineLogDao
     abstract fun routineModeDao(): RoutineModeDao
     abstract fun quoteOutcomeDao(): QuoteOutcomeDao
+    abstract fun pointsLedgerDao(): PointsLedgerDao
+    abstract fun rewardDao(): RewardDao
 
     companion object {
         @Volatile
@@ -130,6 +134,22 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("UPDATE routine SET modeId = 1")
             }
         }
+        /** 101차: 포인트/보상 시스템 신규 — points_ledger(적립/차감 원장)/reward(사용자 등록 보상) 테이블 생성. */
+        private val MIGRATION_38_39 = object : Migration(38, 39) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS points_ledger (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "delta INTEGER NOT NULL, reason TEXT NOT NULL, refId TEXT NOT NULL DEFAULT '', " +
+                        "dateKey TEXT NOT NULL, timestampMillis INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS reward (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "name TEXT NOT NULL, cost INTEGER NOT NULL, sortOrder INTEGER NOT NULL DEFAULT 0)"
+                )
+            }
+        }
 
         fun getInstance(context: Context): AppDatabase =
             instance ?: synchronized(this) {
@@ -139,7 +159,8 @@ abstract class AppDatabase : RoomDatabase() {
                     "phone_lock.db"
                 ).addMigrations(
                     MIGRATION_27_28, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
-                    MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38
+                    MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38,
+                    MIGRATION_38_39
                 )
                     .fallbackToDestructiveMigration().build().also { instance = it }
             }

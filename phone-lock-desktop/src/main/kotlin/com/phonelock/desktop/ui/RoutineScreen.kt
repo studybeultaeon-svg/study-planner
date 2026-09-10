@@ -18,17 +18,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -114,7 +119,12 @@ fun RoutineScreen(repository: Repository) {
 
     LaunchedEffect(Unit) {
         // 98차(온라인/오프라인 모드): 오프라인이면 네트워크 타임아웃만 기다리게 되므로 아예 건너뛴다.
-        withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncRoutinesFromFirebase() }
+        withContext(Dispatchers.IO) {
+            if (!repository.isEffectivelyOffline()) {
+                repository.syncRoutinesFromFirebase()
+                repository.syncPointsFromFirebase()
+            }
+        }
         refreshModes()
     }
 
@@ -128,7 +138,12 @@ fun RoutineScreen(repository: Repository) {
                 // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
                 androidx.compose.material3.IconButton(onClick = {
                     scope.launch {
-                        withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncRoutinesFromFirebase() }
+                        withContext(Dispatchers.IO) {
+                            if (!repository.isEffectivelyOffline()) {
+                                repository.syncRoutinesFromFirebase()
+                                repository.syncPointsFromFirebase()
+                            }
+                        }
                         refreshModes()
                     }
                 }) { Text("🔄") }
@@ -182,6 +197,7 @@ fun RoutineScreen(repository: Repository) {
         ) {
             Tab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("오늘") })
             Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("🔥 연속 기록") })
+            Tab(selected = subTab == 2, onClick = { subTab = 2 }, text = { Text("🎁 포인트") })
         }
         Spacer(Modifier.height(Spacing.sm))
 
@@ -219,7 +235,9 @@ fun RoutineScreen(repository: Repository) {
             Spacer(Modifier.height(Spacing.sm))
         }
 
-        if (routines.isEmpty()) {
+        if (subTab == 2) {
+            Box(Modifier.weight(1f)) { RoutinePointsTab(repository) }
+        } else if (routines.isEmpty()) {
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Text(
                     "아직 등록된 루틴이 없습니다\n오른쪽 위 \"루틴 추가\"로 시작해보세요",
@@ -648,6 +666,120 @@ private fun RoutineStatsTab(repository: Repository, routines: List<Routine>) {
         }
     }
     })
+}
+
+/**
+ * 포인트/보상(101차+, IDEAS.md "최우선 후보" 1차 구현) — 공부시간·루틴완료·캘린더완료·스트릭 보너스로
+ * 적립한 포인트 잔액을 보여주고, 사용자가 직접 등록한 보상 목록을 포인트로 교환(언락)한다.
+ * 데스크탑 Repository는 동기 호출이라 RoutineStatsTab처럼 remember/refreshTick으로 재조회한다.
+ */
+@Composable
+private fun RoutinePointsTab(repository: Repository) {
+    var refreshTick by remember { mutableIntStateOf(0) }
+    val balance = remember(refreshTick) { repository.getPointsBalance() }
+    val rewards = remember(refreshTick) { repository.getRewards() }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var toastMessage by remember { mutableStateOf<String?>(null) }
+    fun refresh() { refreshTick++ }
+
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Surface(
+            Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("보유 포인트", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${balance}P", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Spacer(Modifier.height(Spacing.sm))
+        Text(
+            "공부 10분당 1P · 루틴 완료 5P · 일정 완료 5P · 오늘 루틴 전부 완료 시 +10P",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(Spacing.md))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("오늘의 보상", style = MaterialTheme.typography.titleMedium)
+            OutlinedButton(onClick = { showAddDialog = true }) { Text("+ 보상 추가") }
+        }
+        Spacer(Modifier.height(Spacing.sm))
+
+        toastMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(Spacing.xs))
+        }
+
+        if (rewards.isEmpty()) {
+            Text(
+                "등록된 보상이 없습니다\n\"+ 보상 추가\"로 원하는 보상을 만들어보세요",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            rewards.forEach { reward ->
+                Surface(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(reward.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                            Text("${reward.cost}P", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Button(
+                            enabled = balance >= reward.cost,
+                            onClick = {
+                                val ok = repository.redeemReward(reward.id)
+                                toastMessage = if (ok) "\"${reward.name}\" 언락했습니다! 🎉" else "포인트가 부족합니다"
+                                refresh()
+                            }
+                        ) { Text("언락") }
+                        Spacer(Modifier.width(Spacing.xs))
+                        TextButton(onClick = { repository.deleteReward(reward.id); refresh() }) { Text("삭제") }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        var name by remember { mutableStateOf("") }
+        var costText by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = { Text("보상 추가") },
+            text = {
+                Column {
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("보상 이름") }, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(Spacing.sm))
+                    OutlinedTextField(
+                        value = costText,
+                        onValueChange = { costText = it.filter { c -> c.isDigit() } },
+                        label = { Text("필요 포인트") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = name.isNotBlank() && (costText.toIntOrNull() ?: 0) > 0,
+                    onClick = {
+                        val cost = costText.toIntOrNull() ?: 0
+                        repository.addReward(name.trim(), cost)
+                        showAddDialog = false
+                        refresh()
+                    }
+                ) { Text("추가") }
+            },
+            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("취소") } }
+        )
+    }
 }
 
 @Composable

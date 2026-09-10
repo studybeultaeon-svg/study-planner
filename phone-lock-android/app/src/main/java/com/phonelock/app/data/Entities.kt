@@ -306,3 +306,29 @@ data class QuoteOutcome(
     val choice: String,
     val timestampMillis: Long
 )
+
+/**
+ * 포인트/보상 시스템(101차+ 세션, IDEAS.md "최우선 후보") — 잔액은 별도로 저장하지 않고 이 원장(ledger)을
+ * 합산해서 매번 계산한다(RoutineEngine.currentStreak처럼 매번 다시 훑는 순수 파생값 패턴). 적립/차감 원인
+ * (reason)마다 refId로 대상을 식별해 중복 적립/롤백을 판정한다 — "STUDY"(공부시간 비례, refId 없음),
+ * "ROUTINE"(루틴 완료, refId="routine:{routineId}"), "CALENDAR"(캘린더 일정 완료, refId="calendar:{taskId}"),
+ * "STREAK"(그날 전역 스트릭 유지, refId="streak", 날짜당 1회), "REDEEM"(보상 교환, refId="reward:{rewardId}").
+ */
+@Entity(tableName = "points_ledger")
+data class PointsLedgerEntry(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val delta: Int,
+    val reason: String,
+    val refId: String = "",
+    val dateKey: String,
+    val timestampMillis: Long
+)
+
+/** 사용자가 직접 등록하는 "오늘의 보상" 언락 항목 — 이름+필요 포인트만 가진다. */
+@Entity(tableName = "reward")
+data class Reward(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String = "",
+    val cost: Int = 0,
+    val sortOrder: Int = 0
+)
