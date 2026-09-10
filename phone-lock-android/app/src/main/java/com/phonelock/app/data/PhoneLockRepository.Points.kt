@@ -35,6 +35,9 @@ suspend fun PhoneLockRepository.getPointsBalance(): Int = pointsLedgerDao.getBal
 
 fun PhoneLockRepository.observePointsLedger(): Flow<List<PointsLedgerEntry>> = pointsLedgerDao.observeAll()
 
+/** 캐릭터/식물 성장 기준값 — 보상 교환으로 줄어드는 잔액과 달리 양수 delta만 누적 합산(줄어들지 않음). */
+fun PhoneLockRepository.observeEarnedPointsTotal(): Flow<Int> = pointsLedgerDao.observeEarnedTotal()
+
 /** reason+refId+dateKey 조합이 이미 있으면 아무 일도 안 한다(중복 적립 방지) — ROUTINE/CALENDAR/STREAK처럼
  *  "완료 상태"에 매달린 적립에 쓴다. */
 private suspend fun PhoneLockRepository.awardPointsOnce(delta: Int, reason: String, refId: String, dateKey: String) {

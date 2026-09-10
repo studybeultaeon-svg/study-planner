@@ -312,6 +312,9 @@ interface PointsLedgerDao {
     @Query("SELECT COALESCE(SUM(delta), 0) FROM points_ledger")
     suspend fun getBalance(): Int
 
+    @Query("SELECT COALESCE(SUM(delta), 0) FROM points_ledger WHERE delta > 0")
+    fun observeEarnedTotal(): Flow<Int>
+
     @Query("SELECT * FROM points_ledger WHERE reason = :reason AND refId = :refId AND dateKey = :dateKey LIMIT 1")
     suspend fun find(reason: String, refId: String, dateKey: String): PointsLedgerEntry?
 
