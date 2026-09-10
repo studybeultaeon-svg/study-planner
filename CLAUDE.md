@@ -40,6 +40,10 @@
 
 항상 다음 세션에서 2~3분 안에 프로젝트를 이해할 수 있는 수준으로 유지한다. 내용이 오래되거나 현재와 관련 없는 정보는 제거하거나 다른 문서로 이동한다.
 
+**강제 규칙(2026-09-10, HANDOFF.md가 453줄까지 불어났던 것을 계기로 추가)**: 세션 종료 시 HANDOFF.md를 갱신할 땐 "추가"만 하지 말고 그 자리에서 반드시 "가지치기"도 같이 한다.
+- "현재 진행 중인 작업" 섹션엔 **가장 최근 세션 1개의 상세 내용만** 남긴다. 그보다 오래된 세션의 요약(예: "OO차 세션 요약: ...")은 이미 CHANGELOG.md에 상세 기록이 있으므로 그 자리에서 즉시 삭제한다 — "나중에 정리"로 미루지 않는다.
+- "현재 구현된 주요 기능"과 "현재 중요한 파일" 같은 목록/표에 새 항목을 적을 땐 **"지금 무엇인지"만 한 줄로 쓴다.** "OO차에 이렇게 바뀌었다가 XX차에 다시 이렇게 바뀌었다" 같은 세션별 변천사 서술은 넣지 않는다 — 그런 이력은 CHANGELOG.md/DECISIONS.md의 역할이며, HANDOFF.md는 항상 "현재 상태"의 스냅샷이어야 한다.
+
 ## 2. CHANGELOG.md
 
 변경 이력을 기록하는 문서이다. 다음 내용을 누적 기록한다.
@@ -98,29 +102,68 @@
 4. 버그가 발견되거나 해결되면 `BUGS.md`를 갱신한다.
 5. 새로운 아이디어가 생기면 `IDEAS.md`에 추가한다.
 
-# 자동 정리 규칙
+# 행동 지침 (LLM 코딩 실수 방지)
 
-- `HANDOFF.md`는 항상 현재 상태만 유지한다.
-- 오래된 정보는 제거하거나 적절한 문서로 이동한다.
-- `CHANGELOG.md`만 변경 이력을 계속 누적한다.
-- 중복된 내용은 하나의 문서에만 기록한다.
-- 각 문서는 자신의 목적에 맞는 내용만 포함한다.
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
-# 답변 방식
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
-- 작업 시작 전 현재 프로젝트 상태를 간단히 요약한다.
-- 작업 전에 수행 계획을 제시한다.
-- 코드 수정 시 수정 이유를 함께 설명한다.
-- 작업 완료 후 변경 사항을 요약한다.
-- 마지막에는 다음에 진행할 작업을 제안한다.
+## 1. Think Before Coding
 
-# 기본 명령 해석
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
 
-앞으로 아래 명령은 다음 의미로 이해한다.
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
 
-- "이어서 작업해" → `HANDOFF.md`를 읽고 프로젝트 상태를 확인한 뒤 가장 우선순위가 높은 작업부터 이어서 진행한다.
-- "세션 마무리해" → 모든 작업을 저장하고 위 5개 문서를 각자의 역할에 맞게 최신 상태로 갱신한다.
-- "프로젝트 점검해" → 코드, 문서, 버그, 기술 부채, 개선 사항을 종합적으로 검토한다.
-- "리팩터링해" → 기존 동작을 유지하면서 코드 품질과 가독성을 개선하고 변경 내용을 설명한다.
+## 2. Simplicity First
 
-이 프로젝트에서는 위 규칙을 항상 기본 작업 방식으로 사용하며, 별도의 지시가 없는 한 모든 작업에 자동으로 적용한다.
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
+
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
