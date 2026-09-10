@@ -2,6 +2,7 @@ package com.phonelock.app.data
 
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -37,6 +38,9 @@ fun PhoneLockRepository.observePointsLedger(): Flow<List<PointsLedgerEntry>> = p
 
 /** 캐릭터/식물 성장 기준값 — 보상 교환으로 줄어드는 잔액과 달리 양수 delta만 누적 합산(줄어들지 않음). */
 fun PhoneLockRepository.observeEarnedPointsTotal(): Flow<Int> = pointsLedgerDao.observeEarnedTotal()
+
+/** 레벨업 시스템(104차) 기준값 — STUDY 원장 항목만 합산해 분으로 환산(포인트 1개 = 10분). */
+fun PhoneLockRepository.observeTotalStudyMinutes(): Flow<Int> = pointsLedgerDao.observeStudyPointsTotal().map { it * 10 }
 
 /** reason+refId+dateKey 조합이 이미 있으면 아무 일도 안 한다(중복 적립 방지) — ROUTINE/CALENDAR/STREAK처럼
  *  "완료 상태"에 매달린 적립에 쓴다. */

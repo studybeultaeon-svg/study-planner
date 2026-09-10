@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-09-10 (104차 세션) — 레벨업 시스템(누적 공부시간 기준) 신규
+
+### 게이미피케이션 3번째 항목
+- IDEAS.md "신규 기능 브레인스토밍 백로그" 최우선 후보 중 배지/레벨업/친구초대 3개 중 사용자가 "레벨업 시스템"을 선택.
+- `shared/StudyLevel.kt` 신설 — `CharacterGrowth.kt`(전체 적립 포인트 기준 8단계 유한 식물 성장)와 별개 축: 레벨은 STUDY 원장 항목만 합산(포인트 1개=10분)한 "순수 공부량" 기준, 유한 단계가 아니라 레벨마다 요구 공부량이 늘어나는 수식 기반(레벨 L→L+1 요구량 = 30×L분, 끝없이 증가). 6단계 칭호(공부 새내기→집중력 UP→성실한 학습자→몰입 마스터→공부의 신→전설의 갓생러) 부여.
+- 데스크탑: `Repository.getTotalStudyMinutes()`(`data.pointsLedger`에서 `reason == "STUDY"`만 합산×10) 신설.
+- 안드로이드: `PointsLedgerDao.observeStudyPointsTotal()` 쿼리 신설(단순 SUM 쿼리, 기존 테이블 그대로라 Room 마이그레이션 불필요) + `PhoneLockRepository.observeTotalStudyMinutes()`.
+- UI: 양 플랫폼 `SocialGroupScreen.kt`의 `SocialPointsSection`에서 기존 캐릭터 카드 바로 위에 "Lv.N 칭호" 카드 신설 — 진행률 바 + "누적 공부 X시간 Y분" + "다음 레벨까지 N분 남음".
+- 양 플랫폼 컴파일 확인 후 릴리스 빌드(`assembleRelease`/`packageMsi createDistributable`) 완료, 안드로이드 APK 3위치+데스크탑 호스트/`vm-build-output` 양쪽 배포(배포 중 데스크탑 인메모리 워치독이 1초 내 재기동해 robocopy가 `ERROR 32`로 재시도에 빠진 걸 `Stop-Process` 재실행으로 해소 — [[HANDOFF.md]] "현재 주의사항" 78차 항목과 동일 패턴), GitHub 릴리스 게시(안드로이드 `android-1789038132`, 데스크탑 `desktop-1789038267`), `sync-public-repo.ps1`로 공개 저장소 push까지 완료.
+
+---
+
 ## 2026-09-10 (103차 세션, 후속) — 포인트/보상+캐릭터 성장을 "루틴"에서 "소셜"로 이동
 
 ### 배치 위치 정정

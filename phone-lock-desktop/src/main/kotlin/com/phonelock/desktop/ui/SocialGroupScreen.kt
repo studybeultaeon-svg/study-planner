@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.data.getEarnedPointsTotal
+import com.phonelock.desktop.data.getTotalStudyMinutes
 import com.phonelock.desktop.data.getPointsBalance
 import com.phonelock.desktop.data.getRewards
 import com.phonelock.desktop.data.addReward
@@ -51,6 +52,7 @@ import com.phonelock.desktop.monitor.AuthManager
 import com.phonelock.desktop.monitor.SocialGroupSyncClient
 import com.phonelock.desktop.ui.theme.Spacing
 import com.phonelock.shared.CharacterGrowth
+import com.phonelock.shared.StudyLevel
 
 /** 소셜 화면 배경(사용자 지적으로 재디자인, 안드로이드판과 대칭) — 공부 잠금 화면과 같은 중앙 원형
  *  `radialGradient`를 그대로 썼더니, 그 "빛나는 원"은 잠금 화면의 원형 진행률 링과 짝을 이루는
@@ -440,12 +442,39 @@ private fun SocialPointsSection(repository: Repository) {
     var refreshTick by remember { mutableIntStateOf(0) }
     val balance = remember(refreshTick) { repository.getPointsBalance() }
     val earnedTotal = remember(refreshTick) { repository.getEarnedPointsTotal() }
+    val totalStudyMinutes = remember(refreshTick) { repository.getTotalStudyMinutes() }
     val rewards = remember(refreshTick) { repository.getRewards() }
     var showAddDialog by remember { mutableStateOf(false) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
     fun refresh() { refreshTick++ }
 
     SectionPill("🎁 포인트")
+    Spacer(Modifier.height(Spacing.sm))
+
+    val studyLevel = StudyLevel.levelFor(totalStudyMinutes)
+    val studyLevelProgress = StudyLevel.progressToNext(totalStudyMinutes)
+    val studyLevelMinutesLeft = StudyLevel.minutesToNextLevel(totalStudyMinutes)
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
+    ) {
+        Column(Modifier.fillMaxWidth().padding(Spacing.sm)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Lv.$studyLevel ${StudyLevel.tierLabel(studyLevel)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("누적 공부 ${totalStudyMinutes / 60}시간 ${totalStudyMinutes % 60}분", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.height(Spacing.xs))
+            LinearProgressIndicator(
+                progress = { studyLevelProgress },
+                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(Modifier.height(Spacing.xs))
+            Text("다음 레벨까지 공부 ${studyLevelMinutesLeft}분 남음", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
     Spacer(Modifier.height(Spacing.sm))
 
     val stage = CharacterGrowth.stageFor(earnedTotal)
