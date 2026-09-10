@@ -21,7 +21,8 @@ object SocialGroupSyncClient {
     private const val TIMEOUT_MS = 5_000
 
     data class GroupInfo(
-        val id: String, val name: String, val ownerUid: String, val inviteCode: String, val createdAt: Long
+        val id: String, val name: String, val ownerUid: String, val inviteCode: String, val createdAt: Long,
+        val description: String = ""
     )
 
     data class GroupMemberInfo(val uid: String, val displayName: String, val joinedAt: Long)
@@ -283,8 +284,10 @@ object SocialGroupSyncClient {
         }
     }
 
-    /** 모임 이름 수정(모임장/관리자만). */
-    suspend fun updateGroupName(databaseUrl: String?, apiKey: String?, groupId: String, newName: String): Result<Unit> {
+    /** 모임 이름/설명 수정(모임장/관리자만, UI에서 gate) — 101차에 설명(description) 필드 추가. name/description
+     *  하위 경로만 각각 PUT한다(info 전체를 덮어쓰면 그 사이 다른 클라이언트가 고친 inviteCode/createdAt 등이
+     *  날아간다 — `transferOwnership`과 같은 이유). */
+    suspend fun updateGroupName(databaseUrl: String?, apiKey: String?, groupId: String, newName: String, description: String): Result<Unit> {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
             return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
         }
@@ -294,6 +297,7 @@ object SocialGroupSyncClient {
                 val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
                 val base = databaseUrl.trimEnd('/')
                 putJson(URL("$base/groups/$groupId/info/name.json?auth=$token"), JSONObject.quote(newName.trim()), raw = true)
+                putJson(URL("$base/groups/$groupId/info/description.json?auth=$token"), JSONObject.quote(description.trim()), raw = true)
             }
         }
     }
@@ -455,7 +459,8 @@ object SocialGroupSyncClient {
                     name = json.optString("name", ""),
                     ownerUid = json.optString("ownerUid", ""),
                     inviteCode = json.optString("inviteCode", ""),
-                    createdAt = json.optLong("createdAt", 0L)
+                    createdAt = json.optLong("createdAt", 0L),
+                    description = json.optString("description", "")
                 )
             }.getOrNull()
         }

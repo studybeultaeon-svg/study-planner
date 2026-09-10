@@ -127,6 +127,7 @@ fun SocialGroupMembersScreen(
     val myUid = AuthManager.currentUser?.uid
 
     var groupName by remember { mutableStateOf("") }
+    var groupDescription by remember { mutableStateOf("") }
     var inviteCode by remember { mutableStateOf("") }
     var ownerUid by remember { mutableStateOf("") }
     var rows by remember { mutableStateOf<List<MemberRow>>(emptyList()) }
@@ -193,6 +194,7 @@ fun SocialGroupMembersScreen(
             val stats = repository.readSocialGroupStats(groupId).associateBy { it.uid }
             admins = repository.readSocialGroupAdmins(groupId)
             groupName = info?.name ?: ""
+            groupDescription = info?.description ?: ""
             inviteCode = info?.inviteCode ?: ""
             ownerUid = info?.ownerUid ?: ""
             // 82차(§9 "모임 주간 리더보드"): schedule에 이미 담겨오는 ±7일 버퍼 캘린더 데이터로
@@ -377,6 +379,14 @@ fun SocialGroupMembersScreen(
             // 98차(사용자 요청): 당겨서 새로고침 — 서버 최신 상태를 다시 받아온다.
             com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = { reload() }) {
             Column(Modifier.fillMaxSize().background(socialGradientBackground()).padding(padding)) {
+            if (groupDescription.isNotBlank()) {
+                Text(
+                    groupDescription,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.xs)
+                )
+            }
             TabRow(selectedTabIndex = channelTab) {
                 MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
                 MaterialTab(selected = channelTab == 1, onClick = { channelTab = 1 }, text = { Text("💬 대화") })
@@ -696,6 +706,7 @@ fun SocialGroupMembersScreen(
 
     if (showEditInfoDialog) {
         var nameText by remember { mutableStateOf(groupName) }
+        var descriptionText by remember { mutableStateOf(groupDescription) }
         var regenMessage by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { showEditInfoDialog = false },
@@ -706,6 +717,15 @@ fun SocialGroupMembersScreen(
                         value = nameText,
                         onValueChange = { nameText = it },
                         label = { Text("모임 이름") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                    OutlinedTextField(
+                        value = descriptionText,
+                        onValueChange = { descriptionText = it },
+                        label = { Text("설명(선택)") },
+                        minLines = 2,
+                        maxLines = 4,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(Spacing.md))
@@ -728,7 +748,7 @@ fun SocialGroupMembersScreen(
             confirmButton = {
                 Button(onClick = {
                     showEditInfoDialog = false
-                    scope.launch { repository.updateSocialGroupName(groupId, nameText); reload() }
+                    scope.launch { repository.updateSocialGroupName(groupId, nameText, descriptionText); reload() }
                 }) { Text("저장") }
             },
             dismissButton = { TextButton(onClick = { showEditInfoDialog = false }) { Text("취소") } }

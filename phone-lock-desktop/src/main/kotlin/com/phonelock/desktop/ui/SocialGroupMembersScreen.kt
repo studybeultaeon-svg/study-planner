@@ -331,6 +331,13 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                 }
             }
             Text(info?.name ?: "", style = MaterialTheme.typography.headlineSmall)
+            if (!info?.description.isNullOrBlank()) {
+                Text(
+                    info?.description ?: "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Spacer(Modifier.height(Spacing.sm))
 
             TabRow(selectedTabIndex = channelTab) {
@@ -611,6 +618,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
 
     if (showEditInfoDialog) {
         var nameText by remember { mutableStateOf(info?.name ?: "") }
+        var descriptionText by remember { mutableStateOf(info?.description ?: "") }
         var regenMessage by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { showEditInfoDialog = false },
@@ -621,6 +629,15 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                         value = nameText,
                         onValueChange = { nameText = it },
                         label = { Text("모임 이름") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = descriptionText,
+                        onValueChange = { descriptionText = it },
+                        label = { Text("설명(선택)") },
+                        minLines = 2,
+                        maxLines = 4,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(Spacing.md))
@@ -643,7 +660,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
             confirmButton = {
                 Button(onClick = {
                     showEditInfoDialog = false
-                    Thread { SocialGroupSyncClient.updateGroupName(url, key, groupId, nameText); refresh() }.start()
+                    Thread { SocialGroupSyncClient.updateGroupName(url, key, groupId, nameText, descriptionText); refresh() }.start()
                 }) { Text("저장") }
             },
             dismissButton = { TextButton(onClick = { showEditInfoDialog = false }) { Text("취소") } }
