@@ -36,7 +36,9 @@ class RoutineWidgetFactory(private val context: Context) : RemoteViewsService.Re
         val today = LocalDate.now()
         val dateKey = today.toString()
         items = runBlocking {
-            repository.getRoutines()
+            val modeId = AppPreferences(context).activeRoutineModeId.takeIf { it > 0 }
+                ?: repository.ensureDefaultRoutineMode()
+            repository.getRoutines(modeId)
                 .filter { isScheduledOn(it, today) }
                 .sortedWith(compareBy(nullsLast()) { it.timeSlot })
                 .map { it to repository.isRoutineCompleted(it.id, dateKey) }

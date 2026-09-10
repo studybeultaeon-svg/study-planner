@@ -19,6 +19,17 @@ import org.json.JSONObject
 internal fun effectiveDate(resetHour: Int, now: LocalDateTime = LocalDateTime.now()): LocalDate =
     if (now.hour < resetHour) now.toLocalDate().minusDays(1) else now.toLocalDate()
 
+/**
+ * 온라인/오프라인 모드(98차, 사용자 요청) — 이 셋 중 하나라도 해당하면 네트워크(Firebase) 관련 기능을
+ * 건너뛴다: ① 설정에서 수동으로 켠 "오프라인 모드", ② 실제 인터넷 연결 끊김([NetworkMonitor]),
+ * ③ 게스트(익명) 계정 — 게스트는 온/오프라인과 무관하게 소셜 탭 제외 전부 로컬 전용으로 취급한다.
+ * 각 화면의 진입 시 동기화 호출(`sync*FromFirebase`) 앞에서 이 값을 확인해 건너뛴다.
+ */
+fun PhoneLockRepository.isEffectivelyOffline(): Boolean =
+    preferences.offlineModeOverride ||
+        !com.phonelock.app.service.NetworkMonitor.isOnline ||
+        com.phonelock.app.service.AuthManager.currentUser?.isAnonymous == true
+
 /** Firebase 일일 사용시간 동기화(`dailyUsage/{date}/{그룹}/{device}`)에서 이 기기를 가리키는 키. */
 private const val DAILY_USAGE_DEVICE = "android"
 
@@ -53,6 +64,7 @@ class PhoneLockRepository(context: Context) {
     internal val calcSavedItemDao = db.calcSavedItemDao()
     internal val routineDao = db.routineDao()
     internal val routineLogDao = db.routineLogDao()
+    internal val routineModeDao = db.routineModeDao()
     private val quoteOutcomeDao = db.quoteOutcomeDao()
     internal val preferences = AppPreferences(context)
 
@@ -901,9 +913,10 @@ class PhoneLockRepository(context: Context) {
         root.put("calendar", calendarTasksToJson(calendarTaskDao.getAllOnce()))
         root.put("calcTasks", JSONArray().also { arr -> calcTaskDao.getAll().forEach { arr.put(calcTaskToJson(it)) } })
         root.put("calcSaved", JSONArray().also { arr -> calcSavedItemDao.getAll().forEach { arr.put(calcSavedToJson(it)) } })
-        val (routinesJson, routineLogsJson) = routinesToJson(routineDao.getAll(), routineLogDao.getAllOnce())
-        root.put("routines", routinesJson)
-        root.put("routineLogs", routineLogsJson)
+        val routineExport = routinesToJson(routineModeDao.getAll(), routineDao.getAll(), routineLogDao.getAllOnce())
+        root.put("routineModes", routineExport.modesArr)
+        root.put("routines", routineExport.routinesArr)
+        root.put("routineLogs", routineExport.logsArr)
         root.put("studyLog", JSONArray().also { arr ->
             studyLogEntryDao.getAllOnce().forEach { e ->
                 arr.put(JSONObject().apply {
@@ -939,9 +952,13 @@ class PhoneLockRepository(context: Context) {
             val arr = root.getJSONArray("calcSaved")
             (0 until arr.length()).map { i -> calcSavedFromJson(arr.getJSONObject(i), i) }
         } else emptyList()
-        val (newRoutines, logRefs) = if (hasRoutines) {
-            routinesFromJson(root.getJSONArray("routines"), root.optJSONArray("routineLogs") ?: JSONArray())
-        } else emptyList<Routine>() to emptyList()
+        val routineImport = if (hasRoutines) {
+            routinesFromJson(
+                root.optJSONArray("routineModes") ?: JSONArray(),
+                root.getJSONArray("routines"),
+                root.optJSONArray("routineLogs") ?: JSONArray()
+            )
+        } else null
         val studyLogEntries = if (hasStudyLog) {
             val arr = root.getJSONArray("studyLog")
             (0 until arr.length()).map { i ->
@@ -1010,11 +1027,17 @@ class PhoneLockRepository(context: Context) {
                 calcSavedItemDao.deleteAll()
                 calcSavedList.forEach { calcSavedItemDao.insert(it) }
             }
-            if (hasRoutines) {
+            if (hasRoutines && routineImport != null) {
                 routineLogDao.deleteAll()
                 routineDao.deleteAll()
-                val newIds = newRoutines.map { routineDao.insert(it) }
-                logRefs.forEach { (idx, dateKey) -> routineLogDao.insert(RoutineLog(newIds[idx], dateKey)) }
+                routineModeDao.deleteAll()
+                val newModeIds = routineImport.modes.map { routineModeDao.insert(it) }
+                val defaultModeId = if (newModeIds.isNotEmpty()) newModeIds.first() else routineModeDao.insert(RoutineMode(name = "기본", sortOrder = 0))
+                val newIds = routineImport.routines.mapIndexed { i, r ->
+                    val modeId = routineImport.routineModeIndexes[i]?.let { idx -> newModeIds.getOrNull(idx) } ?: defaultModeId
+                    routineDao.insert(r.copy(modeId = modeId))
+                }
+                routineImport.logRefs.forEach { (idx, dateKey) -> routineLogDao.insert(RoutineLog(newIds[idx], dateKey)) }
             }
             if (hasStudyLog) {
                 studyLogEntryDao.deleteAll()

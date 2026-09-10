@@ -69,6 +69,7 @@ import com.phonelock.app.data.applyGroupSettingsJson
 import com.phonelock.app.data.fetchImportableGroupSettings
 import com.phonelock.app.data.findRemoteGroupSettingByName
 import com.phonelock.app.data.importGroupSetting
+import com.phonelock.app.data.isEffectivelyOffline
 import com.phonelock.app.data.syncGroupSettingsFromFirebase
 import org.json.JSONObject
 import com.phonelock.app.service.AccessibilityServiceChecker
@@ -96,7 +97,8 @@ fun GroupListScreen(
     // syncRoutinesFromFirebase() 진입 시 호출과 동일 패턴(87차+). observeGroups()가 Flow라 동기화로
     // Room이 갱신되면 화면도 자동으로 다시 그려진다.
     LaunchedEffect(Unit) {
-        repository.syncGroupSettingsFromFirebase()
+        // 98차(온라인/오프라인 모드): 오프라인이면 네트워크 타임아웃만 기다리게 되므로 아예 건너뛴다.
+        if (!repository.isEffectivelyOffline()) repository.syncGroupSettingsFromFirebase()
     }
 
     var showImportDialog by remember { mutableStateOf(false) }
@@ -124,6 +126,10 @@ fun GroupListScreen(
             }
         }
     ) { padding ->
+        // 98차(사용자 요청): 당겨서 새로고침 — 서버 최신 상태를 다시 받아온다(groups 자체는 Flow라 자동 갱신).
+        com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = {
+            if (!repository.isEffectivelyOffline()) repository.syncGroupSettingsFromFirebase()
+        }) {
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm),
@@ -251,6 +257,7 @@ fun GroupListScreen(
                 }
                 }
             }
+        }
         }
     }
 

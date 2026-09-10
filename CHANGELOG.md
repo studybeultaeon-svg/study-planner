@@ -4,6 +4,45 @@
 
 ---
 
+## 2026-09-10 (98차 세션) — 루틴 모드 신규 + 온라인/오프라인 모드 신규 + 당겨서 새로고침 신규 + 버그 5건
+
+### 루틴 모드(96차 설계 확정, 이번에 구현) — Room DB v37→v38
+- `Entities.kt`(안드로이드)/`Models.kt`(데스크탑)에 `RoutineMode(id, name, sortOrder)` 신규, `Routine.modeId: Long?` 추가.
+- `AppDatabase.kt`: `version = 38`, `MIGRATION_37_38`(`CREATE TABLE routine_mode`+기본 모드 삽입+`ALTER TABLE routine ADD COLUMN modeId`+기존 루틴 전부 기본 모드로 UPDATE) 추가. 명시적 마이그레이션이라 기존 데이터 보존, destructive fallback 안 탐.
+- `Daos.kt`: `RoutineModeDao` 신규, `RoutineDao`에 `observeByMode`/`getByMode`/`reassignMode` 추가.
+- `PhoneLockRepository.Routine.kt`/`Repository.Routine.kt`: `ensureDefaultRoutineMode()`(신규 설치 안전장치), 모드 CRUD(`addRoutineMode`/`renameRoutineMode`/`deleteRoutineMode`(마지막 모드 삭제 방지+루틴 자동 재배정)/`swapRoutineModeOrder`), `getRoutines(modeId)`(모드 필터), `getAllRoutines()`(모드 무관 전체 — 알림/리마인더용).
+- Firebase 동기화 스키마 확장: `routinesToJson`/`routinesFromJson`에 `modes` 배열+각 루틴의 `modeIndex`(기존 로그의 `routineIndex`와 동일한 "배열 인덱스로 참조" 패턴) 추가. `PomodoroSyncClient.readRoutines`/`writeRoutines` 시그니처에 `modesJson` 추가.
+- 백업 내보내기/가져오기(`exportRoutinesBackupJson`/`importRoutinesBackupJson`)에 모드 포함.
+- `RoutineScreen.kt`(양 플랫폼): 기존 "오늘"/"연속 기록" 서브탭 위에 모드 칩 Row 신규(선택 표시+"+"+"⚙"), 모드 추가/관리(이름변경/삭제/▲▼순서) 다이얼로그 신규. `RoutineEditScreen.kt`: 모드가 2개 이상이면 편집 다이얼로그에 모드 드롭다운 추가.
+- 안드로이드 위젯(`RoutineWidgetFactory.kt`): `AppPreferences.activeRoutineModeId`(신규)로 마지막 본 모드를 기억해 위젯도 그 모드의 루틴만 표시.
+- 안드로이드 `RoutineReminderReceiver.kt`/`RoutineAlarmScheduler.kt`, 데스크탑 `RoutineNotifier.kt`/`WeeklySummaryNotifier.kt`/`SocialGroupSyncClient.kt`: 모드 무관 `getAllRoutines()`로 전환(알림/요약은 숨겨진 모드의 루틴도 대상).
+
+### 온라인/오프라인 모드(사용자 요청, 신규)
+- 안드로이드 `NetworkMonitor.kt`(신규, `ConnectivityManager.NetworkCallback` 실시간 감시) — `PhoneLockApplication.onCreate()`에서 등록, `AndroidManifest.xml`에 `ACCESS_NETWORK_STATE` 권한 추가.
+- 데스크탑 `NetworkMonitor.kt`(신규) — 호출 시점에 8.8.8.8:53 TCP 연결을 짧은 타임아웃(1초)으로 시도해 판정.
+- `AppPreferences.offlineModeOverride`(안드로이드 SharedPreferences)/`AppData.offlineModeOverride`(데스크탑, JsonStore 영속)로 수동 강제 오프라인 토글 신규 — 설정 화면에 "온라인 / 오프라인 모드" 섹션 신규.
+- `PhoneLockRepository.isEffectivelyOffline()`/`Repository.isEffectivelyOffline()`(신규) — 수동 토글 OR 실제 연결 끊김 OR 게스트(익명) 계정 중 하나라도 해당하면 true. 루틴/캘린더/계산기/그룹설정 4개 화면의 진입 시 동기화 호출(`sync*FromFirebase`)을 이 값으로 게이트.
+- 게스트(익명) 계정은 온/오프라인 무관하게 소셜 탭을 완전히 숨김(`MainActivity.kt`/`MainScreen.kt`의 탭 가시성 조건에 `!isAnonymous` 추가) — 기존엔 서버 프로필에 `permissions.social` 필드가 없으면(하위호환 기본값) 게스트도 소셜 탭이 보이던 문제.
+
+### 당겨서 새로고침(사용자 요청, 신규)
+- 안드로이드 `ui/components/PullToRefreshBox.kt`(신규, Material3 1.2.1 `rememberPullToRefreshState`/`PullToRefreshContainer` 기반 공용 래퍼) — 루틴/캘린더/계산기/차단규칙목록/소셜모임/모임멤버 6개 화면에 적용(스와이프 제스처).
+- 데스크탑: 위 6개 화면 각각의 헤더에 "🔄" `IconButton` 추가(제스처 대신 버튼).
+
+### 버그 수정
+- **다회독 계산기 연동 끊김**: `PhoneLockRepository.Calendar.kt`/`Repository.Calendar.kt`의 `applyCalendarAutoSchedule()`이 다음 회독 `CalendarTask`를 만들 때 `linkedCalc`/`progressStep`을 안 이어받아서, 완료할 때마다 계산기 연동이 끊기던 버그(양 플랫폼).
+- **계산기 "저장됨"→"입력" 탭 미반영**: `CalculatorScreen.kt`(양 플랫폼) "저장됨" 탭의 불러오기가 자기 탭 목록만 새로고침하고 "입력" 탭의 draft 목록(`tasks`)은 안 갱신 — 다른 탭 갔다 오거나 앱을 재시작해야 반영되던 버그. 사용자 제보로 발견 후 전체 화면 감사 진행, 아래 2건 추가 발견.
+- **소셜 공유 설정 미반영**: `SocialGroupMembersScreen.kt`(양 플랫폼) 공유 설정 다이얼로그가 통계만 다시 올리고 멤버 목록(`rows`/`stats`)은 안 새로고침하던 버그.
+- **차단 규칙 편집이 목록 변경사항을 덮어씀**: `GroupEditScreen.kt`(양 플랫폼)가 화면 진입 시점 스냅샷(`originalGroup`)을 저장 시 그대로 써서, 편집하는 동안 목록에서 켜짐/스누즈/차단시도 등이 바뀌어도 저장하면 그 변경이 통째로 되돌아가던 버그 — 저장 직전 `repository.getGroup(id)`로 최신 상태를 다시 읽어 그 값을 쓰도록 수정. 조사 중 `blockAttemptDate`/`blockAttemptCount`(조롱 문구 강도)가 이 폼에 필드 자체가 없어 저장할 때마다 0으로 리셋되던 별개 버그도 발견해 함께 수정.
+- **데스크탑 `generateBuildInfo` 캐싱**: `build.gradle.kts`의 이 태스크가 `inputs` 선언 없이 `outputs.dir(...)`만 있어서, 같은 `build/` 디렉터리에서 재빌드해도 Gradle이 UP-TO-DATE로 캐싱 — 며칠 전(97차) 타임스탬프가 그대로 남아있던 걸 이번에 발견. `outputs.upToDateWhen { false }` 추가로 항상 재실행하도록 수정.
+- 소셜 채팅 전송 안 되는 버그(96차 이월)는 **원인 미확정** — `ChatThreadScreen.kt`(양 플랫폼)이 `sendMessage`의 `Result<Unit>` 실패를 그동안 버리고 있던 걸 발견해 화면에 실패 사유를 표시하도록 계측만 추가(`sendGroupChatMessage`/`sendDmChatMessage` 시그니처는 이미 `Result<Unit>`였음).
+
+### 빌드/배포
+- 양 플랫폼 컴파일 확인(여러 차례) 후 릴리스 빌드(`assembleRelease`/`createDistributable`+`packageReleaseMsi`) — 안드로이드 versionCode `1789000237`, 데스크탑 BuildInfo `1789000490`(캐싱 버그 수정 후 재빌드로 갱신).
+- 호스트 3곳 APK 해시 일치 배포 + 데스크탑 프로세스 교체·재실행 완료.
+- `sync-public-repo.ps1`로 공개 저장소(`study-planner`) 소스 동기화 + `gh release create`로 `android-1789000237`/`desktop-1789000490` 태그 게시 완료.
+
+---
+
 ## 2026-09-09 (97차 세션 마지막) — 도움말 기능 전체 삭제
 
 세션 내내(워크스루→페이징→실제 화면 재현 이미지+번호 배지, 아래 항목들 참고) 여러 차례 개편했던 도움말(GuideScreen) 기능을 사용자 요청("그냥 가이드 싹다 지워")으로 전부 삭제.

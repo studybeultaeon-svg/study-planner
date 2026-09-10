@@ -289,6 +289,8 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onBack) { Text("< 목록") }
                 Row {
+                    // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
+                    androidx.compose.material3.IconButton(onClick = { refresh() }) { Text("🔄") }
                     Box {
                         TextButton(onClick = { showSettingsMenu = true }) { Text("⚙ 설정") }
                         // 82차(§6 UX 폴리싱, 안드로이드판과 대칭): 밋밋한 AlertDialog 버튼 목록 대신
@@ -718,8 +720,9 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                 showShareSettingsDialog = false
                 shareSettings = settings
                 repository.setGroupShareSettings(groupId, settings)
-                // 설정을 바꾼 즉시 반영되도록 통계를 다시 올린다.
-                Thread { SocialGroupSyncClient.pushMyStats(url, key, groupId, repository) }.start()
+                // 98차 버그 수정(안드로이드판과 대칭): 통계만 다시 올리고 화면의 멤버별 공유 통계는 안
+                // 새로고침돼서, 공유 설정을 꺼도 화면 나갔다 와야 반영되던 버그 — push가 끝난 뒤 refresh().
+                Thread { SocialGroupSyncClient.pushMyStats(url, key, groupId, repository); refresh() }.start()
             }
         )
     }

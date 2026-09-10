@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.isEffectivelyOffline
 import com.phonelock.desktop.data.syncGroupSettingsFromFirebase
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +51,8 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
             TopSection.ROUTINE.takeIf { repository.permRoutine },
             TopSection.STUDY.takeIf { repository.permStudy },
             TopSection.MANAGE.takeIf { repository.permManage },
-            TopSection.SOCIAL_GROUP.takeIf { repository.permSocial },
+            // 98차(사용자 요청, 안드로이드판과 대칭): 게스트(익명 계정)는 소셜 탭을 아예 못 쓰게 한다.
+            TopSection.SOCIAL_GROUP.takeIf { repository.permSocial && !com.phonelock.desktop.monitor.AuthManager.isAnonymous },
             TopSection.SETTINGS
         )
     }
@@ -76,7 +78,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
         if (section == TopSection.MANAGE && manageSubTab == 0) {
             // 그룹 탭 진입 시 1회 그룹 설정(제어할 앱/사이트·groupEnabled 등 제외) 동기화 — RoutineScreen의
             // syncRoutinesFromFirebase() 진입 시 호출과 동일 패턴(87차+).
-            withContext(Dispatchers.IO) { repository.syncGroupSettingsFromFirebase() }
+            withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncGroupSettingsFromFirebase() }
             refresh()
             while (true) {
                 delay(1000)

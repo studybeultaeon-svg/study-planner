@@ -56,6 +56,8 @@ import com.phonelock.desktop.data.applyGroupSettingsJson
 import com.phonelock.desktop.data.fetchImportableGroupSettings
 import com.phonelock.desktop.data.findRemoteGroupSettingByName
 import com.phonelock.desktop.data.importGroupSetting
+import com.phonelock.desktop.data.isEffectivelyOffline
+import com.phonelock.desktop.data.syncGroupSettingsFromFirebase
 import com.phonelock.desktop.monitor.LockEvaluator
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
@@ -88,6 +90,12 @@ fun GroupListScreen(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f)
             )
+            // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
+            androidx.compose.material3.IconButton(onClick = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncGroupSettingsFromFirebase() }
+                }
+            }) { Text("🔄") }
             OutlinedButton(onClick = { showImportDialog = true }) {
                 Text("⬇ 불러오기")
             }

@@ -258,6 +258,18 @@ class AppPreferences(context: Context) {
         get() = prefs.getLong("routines_ts", 0L)
         set(value) = prefs.edit().putLong("routines_ts", value).apply()
 
+    /** 온라인/오프라인 모드(98차, 사용자 요청) — 사용자가 수동으로 강제 오프라인 전환. 기본 꺼짐(자동
+     *  감지 우선) — 켜면 실제 네트워크 연결 여부와 무관하게 항상 오프라인으로 취급한다. */
+    var offlineModeOverride: Boolean
+        get() = prefs.getBoolean("offline_mode_override", false)
+        set(value) = prefs.edit().putBoolean("offline_mode_override", value).apply()
+
+    /** 마지막으로 보고 있던 루틴 모드(98차) — 홈 화면 위젯이 앱이 안 켜져 있어도 어떤 모드의 루틴을
+     *  보여줄지 알아야 해서 SharedPreferences에 둔다(-1L = 미설정, 첫 모드로 폴백). */
+    var activeRoutineModeId: Long
+        get() = prefs.getLong("active_routine_mode_id", -1L)
+        set(value) = prefs.edit().putLong("active_routine_mode_id", value).apply()
+
     /** 그룹 설정(제어할 앱/사이트·groupEnabled·스누즈 진행상태 등 제외) 전체 문서 단위 Firebase LWW
      *  타임스탬프(87차+, 데스크탑판 groupSettingsTs와 동일 패턴) — users/{user}/groupSettings. */
     var groupSettingsTs: Long

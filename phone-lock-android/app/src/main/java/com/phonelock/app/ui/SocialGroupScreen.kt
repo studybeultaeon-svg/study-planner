@@ -260,6 +260,11 @@ fun SocialGroupScreen(
     }
 
     Scaffold(topBar = { TopAppBar(title = { Text("👥 소셜") }) }) { padding ->
+        // 98차(사용자 요청): 당겨서 새로고침 — 서버 최신 상태를 다시 받아온다.
+        com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = {
+            reload()
+            reloadDmChats()
+        }) {
         Column(Modifier.fillMaxSize().background(socialGradientBackground()).padding(padding).padding(Spacing.md)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 SectionPill("💬 1:1 대화")
@@ -386,6 +391,7 @@ fun SocialGroupScreen(
                     }
                 }
             }
+        }
         }
     }
 }

@@ -37,6 +37,11 @@ val generatedBuildInfoDir = layout.buildDirectory.dir("generated/buildinfo/kotli
 val generateBuildInfo by tasks.registering {
     val outputDir = generatedBuildInfoDir
     outputs.dir(outputDir)
+    // 98차 발견: outputs만 선언되고 inputs가 없어서, 같은 build/ 디렉터리에서 여러 번 빌드하면 Gradle이
+    // 이 태스크를 "이미 실행한 적 있음"으로 보고 UP-TO-DATE로 건너뛰어 몇 세션 전 타임스탬프가 그대로
+    // 남는 버그가 있었다(자체 업데이트 태그/버전 비교가 이 값에 의존하므로 실제로 새 빌드인데 옛 버전으로
+    // 보고될 위험) — 항상 다시 실행해서 매 빌드마다 새 타임스탬프를 굽도록 강제한다.
+    outputs.upToDateWhen { false }
     doLast {
         val pkgDir = outputDir.get().asFile.resolve("com/phonelock/desktop")
         pkgDir.mkdirs()

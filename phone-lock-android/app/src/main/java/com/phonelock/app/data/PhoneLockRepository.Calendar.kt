@@ -150,6 +150,9 @@ suspend fun PhoneLockRepository.applyCalendarAutoSchedule(dateKey: String, task:
             CalendarTask(
                 dateKey = nKey, name = task.name, color = legacyColorLabel(nextIndex, task.passTotal), status = null,
                 nextDays = task.nextDays, sortOrder = nextOrder,
+                // 98차 버그 수정: 계산기 연동(linkedCalc/progressStep)을 안 이어받아서 다음 회독부터
+                // 연동이 끊기던 버그 — 원본 task에서 그대로 이어받는다.
+                linkedCalc = task.linkedCalc, progressStep = task.progressStep,
                 passIndex = nextIndex, passTotal = task.passTotal, passIntervalsCsv = task.passIntervalsCsv
             )
         )

@@ -53,7 +53,7 @@ private const val POLL_INTERVAL_MS = 4_000L
 fun ChatThreadScreen(
     myUid: String?,
     loadMessages: suspend () -> List<ChatSyncClient.ChatMessage>,
-    sendMessage: suspend (String) -> Unit,
+    sendMessage: suspend (String) -> Result<Unit>,
     toggleReaction: suspend (msgId: String, emoji: String, alreadySet: Boolean) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -61,6 +61,9 @@ fun ChatThreadScreen(
     var input by remember { mutableStateOf("") }
     var openReactionsFor by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
+    // 98차: sendMessage 실패(Result.failure)를 그동안 아무도 확인하지 않고 버려서 "쳐서 올려도
+    // 안 올라간다"는 제보가 원인 불명으로 남아있었다 — 실패 사유를 화면에 그대로 보여준다.
+    var sendError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(Unit) {
@@ -82,8 +85,13 @@ fun ChatThreadScreen(
         if (text.isBlank() || sending) return
         input = ""
         sending = true
+        sendError = null
         scope.launch {
-            sendMessage(text)
+            val result = sendMessage(text)
+            result.onFailure {
+                sendError = it.message ?: "메시지 전송에 실패했습니다."
+                input = text
+            }
             messages = loadMessages()
             if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
             sending = false
@@ -174,6 +182,14 @@ fun ChatThreadScreen(
             }
         }
 
+        sendError?.let {
+            Text(
+                "전송 실패: $it",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = Spacing.sm)
+            )
+        }
         Row(
             Modifier.fillMaxWidth().padding(Spacing.sm),
             verticalAlignment = Alignment.CenterVertically

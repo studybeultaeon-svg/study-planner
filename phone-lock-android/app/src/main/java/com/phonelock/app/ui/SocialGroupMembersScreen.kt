@@ -374,6 +374,8 @@ fun SocialGroupMembersScreen(
             // weight(1f) LazyColumn으로 따로 스크롤되던 구조라, 화면이 작으면 카드들이 공간을 다 차지해
             // 멤버 목록이 거의 안 보이는 문제가 있었다 — 위쪽 카드들도 전부 item으로 넣어 하나의
             // LazyColumn으로 통합, 전체가 한 스크롤로 이어지게 함.
+            // 98차(사용자 요청): 당겨서 새로고침 — 서버 최신 상태를 다시 받아온다.
+            com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = { reload() }) {
             Column(Modifier.fillMaxSize().background(socialGradientBackground()).padding(padding)) {
             TabRow(selectedTabIndex = channelTab) {
                 MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
@@ -688,6 +690,7 @@ fun SocialGroupMembersScreen(
             }
             }
             }
+            }
         }
     }
 
@@ -794,8 +797,10 @@ fun SocialGroupMembersScreen(
                 showShareSettingsDialog = false
                 shareSettings = settings
                 repository.setGroupShareSettings(groupId, settings)
-                // 설정을 바꾼 즉시 반영되도록 통계를 다시 올린다.
-                scope.launch { repository.pushMySocialStats(groupId) }
+                // 98차 버그 수정: 통계만 다시 올리고 화면의 rows(멤버별 공유 통계)는 안 새로고침해서,
+                // 공유 설정을 꺼도 화면 나갔다 와야 반영되던 버그 — push가 끝난 뒤 reload()로 다시 읽는다
+                // (순서가 바뀌면 reload가 아직 반영 안 된 옛 통계를 읽어올 수 있음).
+                scope.launch { repository.pushMySocialStats(groupId); reload() }
             }
         )
     }

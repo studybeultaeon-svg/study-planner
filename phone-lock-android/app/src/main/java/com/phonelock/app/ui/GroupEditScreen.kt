@@ -385,6 +385,12 @@ fun GroupEditScreen(
                                             return@launch
                                         }
                                     }
+                                    // 98차 버그 수정(데스크탑판과 대칭): originalGroup은 이 화면 진입
+                                    // 시점의 스냅샷이라, 편집 중에 그룹 목록에서 켜짐/스누즈/차단 시도
+                                    // 등이 바뀌어도 반영이 안 돼 저장 시 그 변경을 그대로 덮어써버리는
+                                    // 버그가 있었다 — 저장 직전에 최신 상태를 다시 읽어와 이 화면에서
+                                    // 편집하지 않는 필드는 항상 최신값을 쓴다.
+                                    val currentGroup = groupId?.let { repository.getGroup(it) } ?: originalGroup
                                     val group = AppGroup(
                                         id = groupId ?: 0,
                                         name = finalName,
@@ -416,16 +422,20 @@ fun GroupEditScreen(
                                         snoozeEnabled = snoozeEnabled,
                                         snoozeMinutes = snoozeMinutesText.trim().toIntOrNull()?.coerceAtLeast(1) ?: 30,
                                         snoozeDailyLimit = snoozeDailyLimitText.trim().toIntOrNull()?.coerceAtLeast(1) ?: 3,
-                                        snoozedUntilEpochMillis = originalGroup?.snoozedUntilEpochMillis,
-                                        snoozeUsedDate = originalGroup?.snoozeUsedDate ?: "",
-                                        snoozeUsedCount = originalGroup?.snoozeUsedCount ?: 0,
+                                        snoozedUntilEpochMillis = currentGroup?.snoozedUntilEpochMillis,
+                                        snoozeUsedDate = currentGroup?.snoozeUsedDate ?: "",
+                                        snoozeUsedCount = currentGroup?.snoozeUsedCount ?: 0,
                                         forceEnabledFrom = forceEnabledFromText.trim().ifBlank { null },
                                         forceEnabledUntil = forceEnabledUntilText.trim().ifBlank { null },
                                         pomodoroUnlockEnabled = pomodoroUnlockEnabled,
                                         scheduleEnabled = scheduleEnabled,
-                                        groupEnabled = originalGroup?.groupEnabled ?: true,
-                                        groupOffPending = originalGroup?.groupOffPending ?: false,
-                                        groupOffMessageIndex = originalGroup?.groupOffMessageIndex ?: 0,
+                                        groupEnabled = currentGroup?.groupEnabled ?: true,
+                                        groupOffPending = currentGroup?.groupOffPending ?: false,
+                                        groupOffMessageIndex = currentGroup?.groupOffMessageIndex ?: 0,
+                                        // 98차 발견: 이 두 필드도 이 폼에 없어서 저장할 때마다 조롱 문구
+                                        // 강도(오늘 시도 횟수)가 매번 0으로 리셋되고 있었다.
+                                        blockAttemptDate = currentGroup?.blockAttemptDate ?: "",
+                                        blockAttemptCount = currentGroup?.blockAttemptCount ?: 0,
                                         syncEnabled = syncEnabled
                                     )
                                     val original = originalGroup

@@ -767,6 +767,35 @@ fun SettingsScreen(
           }
 
           if (settingsSubTab == 0) {
+            // 98차(사용자 요청): 온라인/오프라인 모드 — 네트워크가 실제로 끊기면 자동으로 오프라인
+            // 전환되지만(NetworkMonitor), 필요하면 연결돼 있어도 수동으로 강제 오프라인 가능.
+            SectionCard("온라인 / 오프라인 모드") {
+                var offlineOverride by remember { mutableStateOf(prefs.offlineModeOverride) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("오프라인 모드로 강제 전환", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "켜면 인터넷이 연결돼 있어도 동기화/로그인/소셜 등 네트워크 기능을 쓰지 않고 이 " +
+                                "기기에서만 로컬로 사용합니다. 꺼둬도 실제로 인터넷이 끊기면 자동으로 오프라인 " +
+                                "처리됩니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = offlineOverride,
+                        onCheckedChange = { offlineOverride = it; prefs.offlineModeOverride = it }
+                    )
+                }
+                Spacer(Modifier.height(Spacing.xs))
+                Text(
+                    if (com.phonelock.app.service.NetworkMonitor.isOnline) "현재 인터넷 연결됨" else "현재 인터넷 연결 안 됨",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (com.phonelock.app.service.NetworkMonitor.isOnline) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+                )
+            }
+            Spacer(Modifier.height(Spacing.md))
+
             SectionCard("계정 동기화 (로그인 필수)") {
                 Text(
                     "동기화(실행 전 대기 단계/잠깐 풀기/일일사용량/캘린더/계산기/루틴)는 이제 로그인이 있어야만 " +

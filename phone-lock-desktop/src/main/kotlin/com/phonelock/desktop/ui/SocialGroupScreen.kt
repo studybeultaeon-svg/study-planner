@@ -335,6 +335,8 @@ fun SocialGroupScreen(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
+                androidx.compose.material3.IconButton(onClick = { refresh(); reloadDmChats() }) { Text("🔄") }
                 OutlinedButton(onClick = { showJoinDialog = true }) { Text("참여하기") }
                 Button(onClick = { showCreateDialog = true }) { Text("+ 모임 만들기") }
             }

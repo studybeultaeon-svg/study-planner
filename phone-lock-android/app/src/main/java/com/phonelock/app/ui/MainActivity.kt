@@ -70,7 +70,10 @@ private fun visibleTabs(prefs: AppPreferences): List<Tab> = listOfNotNull(
     Tab.Routine.takeIf { prefs.permRoutine },
     Tab.Study.takeIf { prefs.permStudy },
     Tab.Manage.takeIf { prefs.permManage },
-    Tab.Group.takeIf { prefs.permSocial },
+    // 98차(사용자 요청): 게스트(익명 계정)는 소셜 탭을 아예 못 쓰게 한다 — 서버 profile.permissions가
+    // 아직 없으면(하위호환) 전부 true로 취급하는 fromProfile() 기본값 때문에 이 조건 없이는 게스트도
+    // 그냥 소셜 탭이 보였다.
+    Tab.Group.takeIf { prefs.permSocial && com.phonelock.app.service.AuthManager.currentUser?.isAnonymous != true },
     Tab.Settings
 )
 
@@ -97,6 +100,9 @@ class MainActivity : ComponentActivity() {
             AppPreferences(applicationContext).resetSyncTimestamps()
         }
         val repository = PhoneLockRepository(applicationContext)
+        // 신규 설치 등으로 마이그레이션 없이 v38 스키마가 바로 생성된 경우를 위한 안전장치(98차,
+        // 루틴 모드) — 모드가 하나도 없으면 기본 모드를 만든다.
+        lifecycleScope.launch { repository.ensureDefaultRoutineMode() }
 
         val watchdogRequest = PeriodicWorkRequestBuilder<AccessibilityWatchdogWorker>(15, TimeUnit.MINUTES).build()
         WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(

@@ -106,7 +106,8 @@ fun CalendarScreen(repository: PhoneLockRepository) {
     }
 
     LaunchedEffect(Unit) {
-        repository.syncCalendarFromFirebase()
+        // 98차(온라인/오프라인 모드): 오프라인이면 네트워크 타임아웃만 기다리게 되므로 아예 건너뛴다.
+        if (!repository.isEffectivelyOffline()) repository.syncCalendarFromFirebase()
         dayRefreshTick++
     }
 
@@ -119,6 +120,11 @@ fun CalendarScreen(repository: PhoneLockRepository) {
         }
     }
 
+    // 98차(사용자 요청): 당겨서 새로고침 — 서버 최신 상태를 다시 받아온다.
+    com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = {
+        if (!repository.isEffectivelyOffline()) repository.syncCalendarFromFirebase()
+        dayRefreshTick++
+    }) {
     if (com.phonelock.app.ui.components.isTabletWidth()) {
         // 83차: 태블릿은 데스크탑 CalendarScreen.kt와 같은 좌(월 그리드)/우(날짜 상세) 분할.
         Column(Modifier.fillMaxSize().padding(Spacing.md)) {
@@ -142,9 +148,7 @@ fun CalendarScreen(repository: PhoneLockRepository) {
                 }
             )
         }
-        return
-    }
-
+    } else {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.md)) {
         Text("📅 캘린더", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(Spacing.md))
@@ -159,6 +163,8 @@ fun CalendarScreen(repository: PhoneLockRepository) {
 
         Spacer(Modifier.height(Spacing.md))
         dayDetail()
+    }
+    }
     }
 }
 
