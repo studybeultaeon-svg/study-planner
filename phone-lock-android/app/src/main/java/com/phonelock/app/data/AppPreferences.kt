@@ -273,6 +273,17 @@ class AppPreferences(context: Context) {
         get() = prefs.getLong("points_ts", 0L)
         set(value) = prefs.edit().putLong("points_ts", value).apply()
 
+    /** "식물 성장" 시스템(105차 후속) — 현재 환생 사이클의 누적 EXP. Float 대신 문자열로 저장해 Double
+     *  정밀도를 그대로 보존(SharedPreferences에 Double 전용 메서드가 없음). */
+    var growthExpTotal: Double
+        get() = prefs.getString("growth_exp_total", null)?.toDoubleOrNull() ?: 0.0
+        set(value) = prefs.edit().putString("growth_exp_total", value.toString()).apply()
+
+    /** 완료한 환생 횟수(영구 유지) — EXP 배율의 기준. */
+    var rebirthCount: Int
+        get() = prefs.getInt("rebirth_count", 0)
+        set(value) = prefs.edit().putInt("rebirth_count", value).apply()
+
     /** 온라인/오프라인 모드(98차, 사용자 요청) — 사용자가 수동으로 강제 오프라인 전환. 기본 꺼짐(자동
      *  감지 우선) — 켜면 실제 네트워크 연결 여부와 무관하게 항상 오프라인으로 취급한다. */
     var offlineModeOverride: Boolean

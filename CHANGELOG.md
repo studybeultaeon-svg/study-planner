@@ -48,6 +48,30 @@
 - 레벨/경험치 카드와 보상 카드는 `MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)`로 살짝 반투명하게 해서 배경 땅의 존재감을 살리고, 두 카드 사이에 280dp 빈 공간을 둬서 배경의 식물이 가려지지 않고 보이게 함(가운데 캐릭터+위/아래 패널이라는 버츄얼펫 게임 구도 참고).
 - 양 플랫폼 재컴파일+재빌드(`assembleRelease`/`packageMsi createDistributable`)+재배포(호스트+3위치 APK)+GitHub 재릴리스(안드로이드 `android-1789046547`, 데스크탑 `desktop-1789046483`)+공개 저장소 push까지 완료. 실사용 검증은 안 됨.
 
+### 같은 세션 3차 개편 — "레벨업"과 "식물 성장"을 하나의 시스템으로 통합, 환생 신설, 밈 칭호 고정 테이블화
+
+사용자와 긴 설계 논의(Roblox 타이쿤형 성장 루프, 환생 밸런스 시뮬레이션, 밈 칭호 문법 연구) 끝에 확정된 최종 아키텍처 — 1~2차에서 쓰던 `CharacterGrowth`/`StudyLevel` 2개 축을 완전히 폐기하고 `shared/GrowthSystem.kt` 하나로 교체.
+
+**`shared/GrowthSystem.kt` 신설(`StudyLevel.kt`/`CharacterGrowth.kt` 삭제)**
+- `expRequiredForLevel(level)`: `2.0 + 0.3 × level^1.1` — 완만한 다항식(지수 없음), 초반은 거의 선형으로 빠르게, 후반은 서서히 요구량 증가. 레벨이 수만에 달해도 오버플로/성능 문제 없음(지수 기반 공식의 위험을 피함).
+- `cumulativeExpForLevel(level)`/`levelForExp(totalExp)`: 각각 단순 루프 합산/이분 탐색 — 레벨이 커져도 빠르게 계산.
+- `rebirthRequiredLevel(n) = 40 + 5×n`, `expMultiplier(rebirthCount) = 1.0 + 1.5×rebirthCount` — 둘 다 선형. 처음엔 요구 증가폭 +15/배율 증가폭 +0.8로 설계했다가, 실제 시뮬레이션을 돌려보니 요구치가 레벨^2.1 꼴로 커지는데 배율은 선형이라 "환생할수록 사이클이 오히려 느려지는" 역설을 발견해 +5/+1.5로 재조정(처음 9~10회 환생까지 사이클이 확실히 짧아짐을 확인, [[DECISIONS.md]] 105차 참고).
+- `STAGES: List<Stage>` — 레벨 구간(levelThreshold)·칭호(title)·전용 일러스트 id(illustrationId) 19개를 **런타임 랜덤 생성 없이 전부 미리 고정**: 정상 성장 9단계(Lv.1~95, 씨앗~든든한 나무) + 병맛 성장 10단계(Lv.130~1150, 냐냐냥콩→트랄랄레로 트랄랄라새싹→존 포크나무→봄바르디노 크로코딜로나무→카푸치노 아사시노열매→침팬지니 바나니니+종건급→내친구 진석급 트랄랄레로나무→울트라 봄바르디노→신조차 두려워하는 잡초→세계관 최강자급 FINAL). 칭호는 namu.wiki Brainrot 문서 조사로 확인한 실제 캐릭터(John Pork, 트랄랄레로 트랄랄라, 봄바르디노 크로코딜로 등)와 한국 밈(냐냐냥, 종건급, 내친구 진석)을 혼합.
+
+**EXP 적립을 기존 포인트 적립에 편승(신규 `Repository.Growth.kt`/`PhoneLockRepository.Growth.kt`)**
+- `awardGrowthExp(rawAmount)`가 `awardStudyPoints`(1분=1EXP, 기존 10분=1P 포인트와 단위가 다름)와 `awardPointsOnce`(루틴/캘린더/스트릭, 기존 포인트 delta를 그대로 raw EXP로 사용)에서 호출됨 — 환생 배율을 곱해서 데스크탑 `AppData.growthExpTotal`/안드로이드 `AppPreferences.growthExpTotal`(Double, SharedPreferences엔 Double 전용 메서드가 없어 문자열로 저장)에 누적. 포인트(보상샵 화폐)는 이 과정에서 전혀 안 건드림.
+- `rebirth()`: 현재 레벨이 요구 레벨 이상이면 `growthExpTotal`을 0으로, `rebirthCount`를 +1 — 조건 미달이면 false.
+
+**칭호=일러스트 1:1 연결(`PlantScreen.kt`의 `GroundScene`, 양 플랫폼 동일 코드)**
+- `GroundScene`이 `stage.illustrationId`로 `when` 분기해 전용 장식을 그림 — `drawAuraRings`/`drawLightningBolts`/`drawShockwaveRing`/`drawCrackedGround`/`drawFloatingDebris`/`drawGodRays`/`drawSpeedLines`/`drawCrown`/`drawCatEars`/`drawExclamationMarks`/`drawSharkFinAndSneakers`/`drawPigFace`/`drawCrocJawAndWings`/`drawHoodAndCup`/`drawMonkeyAndBanana`/`drawJinseokCameo`/`drawGiantShadowAndSkyCrack` 등 재사용 가능한 드로잉 프리미티브를 조합. 뇌절 강도가 높을수록(병맛 구간 후반) 조합하는 장식 개수가 많아짐 — "칭호의 뇌절 강도 = 일러스트의 뇌절 강도" 원칙을 데이터(같은 `stage` 객체)로 강제.
+- "신조차 두려워하는 잡초" 단계는 반대로 식물 자체를 `effectiveGrowth = 0.12f`로 강제 고정(씨앗 수준 작게)하고 배경에만 거대한 그림자+하늘 균열(`drawGiantShadowAndSkyCrack`)을 깔아 "평범함과 과장된 설정의 괴리"를 표현.
+
+**레이아웃 버그 수정**
+- 1~2차 버전은 `Column`에 고정 `280.dp` 스페이서로 레벨 카드와 보상 카드 사이를 벌렸는데, 데스크탑 기본 창(800×600 추정)에서는 그 공간만으로 이미 화면을 거의 다 채워서 보상 카드가 식물(화분이 `h*0.62` 지점에 있음)을 그대로 덮는 버그가 있었다(사용자 제보로 발견).
+- `Box` + `Modifier.align(Alignment.TopCenter)`/`Alignment.BottomCenter)`로 HUD와 보상 패널을 각각 화면 위/아래 끝에 독립적으로 도킹하는 구조로 교체 — 가운데는 항상 비어서 창 크기와 무관하게 식물이 가려지지 않음. 보상 패널은 기본 접힌 헤더만 보이게(`rewardsExpanded` 토글) 해서 차지하는 면적을 더 줄임.
+
+**빌드/배포**: 양 플랫폼 컴파일 확인(`CharacterGrowth`/`StudyLevel` 삭제로 남은 참조 2건 발견해 제거) → 릴리스 빌드 → 호스트/APK 재배포 → GitHub 릴리스(안드로이드 `android-1789051210`, 데스크탑 `desktop-1789051152`) → 공개 저장소 push까지 완료. 실사용 검증은 안 됨.
+
 ---
 
 ## 2026-09-10 (104차 세션) — 레벨업 시스템(누적 공부시간 기준) 신규

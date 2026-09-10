@@ -67,6 +67,8 @@ object JsonStore {
             dailyResetHour = json.optInt("dailyResetHour", 0),
             routinesTs = json.optLong("routinesTs", 0L),
             pointsTs = json.optLong("pointsTs", 0L),
+            growthExpTotal = json.optDouble("growthExpTotal", 0.0),
+            rebirthCount = json.optInt("rebirthCount", 0),
             themeMode = json.optString("themeMode", "LIGHT_ORANGE"),
             customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
@@ -728,6 +730,8 @@ object JsonStore {
         json.put("rewards", rewardsJson)
         json.put("nextRewardId", data.nextRewardId)
         json.put("pointsTs", data.pointsTs)
+        json.put("growthExpTotal", data.growthExpTotal)
+        json.put("rebirthCount", data.rebirthCount)
 
         val escalationsJson = JSONArray()
         data.confirmEscalations.forEach { e ->

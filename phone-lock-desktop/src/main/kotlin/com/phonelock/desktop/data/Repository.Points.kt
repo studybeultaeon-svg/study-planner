@@ -33,6 +33,7 @@ private fun Repository.awardPointsOnce(delta: Int, reason: String, refId: String
     data.pointsLedger.add(PointsLedgerEntry(delta = delta, reason = reason, refId = refId, dateKey = dateKey, timestampMillis = System.currentTimeMillis()))
     persist()
     pushPointsToFirebase()
+    awardGrowthExp(delta.toDouble())
 }
 
 /** awardPointsOnce의 반대 — 완료가 취소되면 그때 적립됐던 원장 항목을 그대로 지운다. 호출부가 이미 lock을 쥐고 있어야 한다. */
@@ -50,6 +51,8 @@ fun Repository.awardStudyPoints(seconds: Int, dateKey: String) {
     data.pointsLedger.add(PointsLedgerEntry(delta = points, reason = "STUDY", refId = "", dateKey = dateKey, timestampMillis = System.currentTimeMillis()))
     persist()
     pushPointsToFirebase()
+    // "식물 성장" EXP는 1분=1EXP로 더 촘촘하게 — 포인트(10분=1P)와 단위가 달라 seconds에서 직접 계산.
+    awardGrowthExp(seconds / 60.0)
 }
 
 /** 루틴 완료 토글 직후 호출 — 완료 포인트 적립/회수 + 그날 스트릭 보너스 재판정. 호출부가 이미 lock을 쥐고 있어야 한다. */
