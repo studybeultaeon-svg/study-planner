@@ -157,15 +157,22 @@ object ChatSyncClient {
         }
     }
 
-    /** 최근 DM 메시지 최대 200개(시각순). */
-    suspend fun readDmMessages(databaseUrl: String?, apiKey: String?, chatId: String): List<ChatMessage> {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return emptyList()
+    /** 최근 DM 메시지 최대 200개(시각순). 98차엔 실패를 전부 삼켜 빈 목록으로 돌려주던 걸,
+     *  전송은 되는데 목록엔 안 뜨는 제보의 진짜 원인(쓰기 vs 읽기 중 어느 쪽인지)을 구분하려고
+     *  [Result]로 바꿔 실패 사유를 그대로 드러낸다(sendMessage와 동일 패턴, 데스크탑판과 대칭). */
+    suspend fun readDmMessages(databaseUrl: String?, apiKey: String?, chatId: String): Result<List<ChatMessage>> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        }
         return withContext(Dispatchers.IO) {
             runCatching {
-                val (token, _) = resolveIdentity(apiKey) ?: return@runCatching emptyList()
+                val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
                 val base = databaseUrl.trimEnd('/')
                 val query = "orderBy=%22sentAtMillis%22&limitToLast=200"
-                val text = getRaw(URL("$base/dmChats/$chatId/messages.json?auth=$token&$query"))
+                val (code, text, errorBody) = getRawWithStatus(URL("$base/dmChats/$chatId/messages.json?auth=$token&$query"))
+                if (code !in 200..299) {
+                    error("메시지 목록을 불러오지 못했습니다. ($code: ${errorBody ?: "응답 없음"})")
+                }
                 if (text.isNullOrBlank() || text == "null") return@runCatching emptyList()
                 val json = JSONObject(text)
                 json.keys().asSequence().map { msgId ->
@@ -183,7 +190,7 @@ object ChatSyncClient {
                         reactions = reactions
                     )
                 }.sortedBy { it.sentAtMillis }.toList()
-            }.getOrDefault(emptyList())
+            }
         }
     }
 
@@ -242,15 +249,21 @@ object ChatSyncClient {
         }
     }
 
-    /** 최근 메시지 최대 200개(시각순) — 화면이 열려있는 동안 짧은 주기로 다시 호출해 폴링한다. */
-    suspend fun readGroupMessages(databaseUrl: String?, apiKey: String?, groupId: String): List<ChatMessage> {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return emptyList()
+    /** 최근 메시지 최대 200개(시각순) — 화면이 열려있는 동안 짧은 주기로 다시 호출해 폴링한다.
+     *  98차: 실패를 삼켜 빈 목록으로 돌려주던 걸 [Result]로 바꿔 실패 사유를 드러낸다(위 참고). */
+    suspend fun readGroupMessages(databaseUrl: String?, apiKey: String?, groupId: String): Result<List<ChatMessage>> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        }
         return withContext(Dispatchers.IO) {
             runCatching {
-                val (token, _) = resolveIdentity(apiKey) ?: return@runCatching emptyList()
+                val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
                 val base = databaseUrl.trimEnd('/')
                 val query = "orderBy=%22sentAtMillis%22&limitToLast=200"
-                val text = getRaw(URL("$base/groupChats/$groupId/messages.json?auth=$token&$query"))
+                val (code, text, errorBody) = getRawWithStatus(URL("$base/groupChats/$groupId/messages.json?auth=$token&$query"))
+                if (code !in 200..299) {
+                    error("메시지 목록을 불러오지 못했습니다. ($code: ${errorBody ?: "응답 없음"})")
+                }
                 if (text.isNullOrBlank() || text == "null") return@runCatching emptyList()
                 val json = JSONObject(text)
                 json.keys().asSequence().map { msgId ->
@@ -268,7 +281,7 @@ object ChatSyncClient {
                         reactions = reactions
                     )
                 }.sortedBy { it.sentAtMillis }.toList()
-            }.getOrDefault(emptyList())
+            }
         }
     }
 
@@ -291,6 +304,47 @@ object ChatSyncClient {
         }
     }
 
+    /** 최신 메시지 1개만 가볍게 조회 — [WalkieTalkieService]의 새 메시지 알림 폴링 전용(전체 200개를
+     *  매번 받아오면 낭비라 별도로 둠). */
+    suspend fun peekLatestGroupMessage(databaseUrl: String?, apiKey: String?, groupId: String): ChatMessage? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, _) = resolveIdentity(apiKey) ?: return@runCatching null
+                val base = databaseUrl.trimEnd('/')
+                val text = getRaw(URL("$base/groupChats/$groupId/messages.json?auth=$token&orderBy=%22sentAtMillis%22&limitToLast=1"))
+                parseLatestMessage(text)
+            }.getOrNull()
+        }
+    }
+
+    /** [peekLatestGroupMessage]의 DM판. */
+    suspend fun peekLatestDmMessage(databaseUrl: String?, apiKey: String?, chatId: String): ChatMessage? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, _) = resolveIdentity(apiKey) ?: return@runCatching null
+                val base = databaseUrl.trimEnd('/')
+                val text = getRaw(URL("$base/dmChats/$chatId/messages.json?auth=$token&orderBy=%22sentAtMillis%22&limitToLast=1"))
+                parseLatestMessage(text)
+            }.getOrNull()
+        }
+    }
+
+    private fun parseLatestMessage(text: String?): ChatMessage? {
+        if (text.isNullOrBlank() || text == "null") return null
+        val json = JSONObject(text)
+        val msgId = json.keys().asSequence().firstOrNull() ?: return null
+        val m = json.getJSONObject(msgId)
+        return ChatMessage(
+            msgId = msgId,
+            senderUid = m.optString("senderUid", ""),
+            senderName = m.optString("senderName", "사용자"),
+            text = m.optString("text", ""),
+            sentAtMillis = m.optLong("sentAtMillis", 0L)
+        )
+    }
+
     private fun getRaw(url: URL): String? = runCatching {
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -302,6 +356,26 @@ object ChatSyncClient {
         conn.disconnect()
         body
     }.getOrNull()
+
+    /** [getRaw]와 달리 실패해도 상태코드/에러 본문을 그대로 반환 — 메시지 읽기 실패 사유를
+     *  화면에 보여줘야 하는 채팅 목록 조회 전용(98차). */
+    private data class RawResponse(val code: Int, val body: String?, val errorBody: String?)
+    private fun getRawWithStatus(url: URL): RawResponse {
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = TIMEOUT_MS
+            readTimeout = TIMEOUT_MS
+        }
+        val code = conn.responseCode
+        if (code !in 200..299) {
+            val errorBody = runCatching { conn.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull()
+            conn.disconnect()
+            return RawResponse(code, null, errorBody)
+        }
+        val body = conn.inputStream.bufferedReader().use { it.readText() }
+        conn.disconnect()
+        return RawResponse(code, body, null)
+    }
 
     private fun putJson(url: URL, body: JSONObject) {
         val conn = (url.openConnection() as HttpURLConnection).apply {

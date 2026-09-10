@@ -718,6 +718,14 @@ class PhoneLockRepository(context: Context) {
         get() = preferences.pomodoroModeEnabled
         set(value) { preferences.pomodoroModeEnabled = value }
 
+    var studyGoalMinutes: Int
+        get() = preferences.studyGoalMinutes
+        set(value) { preferences.studyGoalMinutes = value }
+
+    var pomodoroTargetCycles: Int
+        get() = preferences.pomodoroTargetCycles
+        set(value) { preferences.pomodoroTargetCycles = value }
+
     fun getTimerRun(): TimerRunState? {
         val startedAt = preferences.timerPhaseStartedAt
         if (startedAt <= 0L) return null

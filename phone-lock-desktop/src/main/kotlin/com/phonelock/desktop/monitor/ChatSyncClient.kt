@@ -48,9 +48,10 @@ object ChatSyncClient {
         httpClient.send(request, HttpResponse.BodyHandlers.ofString())
     }
 
-    private fun get(base: String, path: String, token: String): String? = runCatching {
+    private fun get(base: String, path: String, token: String, extraQuery: String? = null): String? = runCatching {
+        val query = if (extraQuery.isNullOrBlank()) "" else "&$extraQuery"
         val request = HttpRequest.newBuilder()
-            .uri(URI.create("$base/$path.json?auth=$token"))
+            .uri(URI.create("$base/$path.json?auth=$token$query"))
             .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
             .GET()
             .build()
@@ -157,11 +158,13 @@ object ChatSyncClient {
         }
     }
 
-    /** 최근 DM 메시지 최대 200개(시각순). */
-    fun readDmMessages(databaseUrl: String?, apiKey: String?, chatId: String): List<ChatMessage> {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return emptyList()
+    /** 최근 DM 메시지 최대 200개(시각순). 98차엔 실패를 전부 삼켜 빈 목록으로 돌려주던 걸,
+     *  전송은 되는데 목록엔 안 뜨는 제보의 진짜 원인(쓰기 vs 읽기 중 어느 쪽인지)을 구분하려고
+     *  [Result]로 바꿔 실패 사유를 그대로 드러낸다(sendMessage와 동일 패턴). */
+    fun readDmMessages(databaseUrl: String?, apiKey: String?, chatId: String): Result<List<ChatMessage>> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
         return runCatching {
-            val (token, _) = resolveIdentity(apiKey) ?: return emptyList()
+            val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
             val base = databaseUrl.trimEnd('/')
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$base/dmChats/$chatId/messages.json?auth=$token&orderBy=%22sentAtMillis%22&limitToLast=200"))
@@ -169,9 +172,11 @@ object ChatSyncClient {
                 .GET()
                 .build()
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-            if (response.statusCode() !in 200..299) return emptyList()
+            if (response.statusCode() !in 200..299) {
+                error("메시지 목록을 불러오지 못했습니다. (${response.statusCode()}: ${response.body()})")
+            }
             val text = response.body()
-            if (text.isNullOrBlank() || text == "null") return emptyList()
+            if (text.isNullOrBlank() || text == "null") return@runCatching emptyList()
             val json = JSONObject(text)
             json.keys().asSequence().map { msgId ->
                 val m = json.getJSONObject(msgId)
@@ -188,7 +193,7 @@ object ChatSyncClient {
                     reactions = reactions
                 )
             }.sortedBy { it.sentAtMillis }.toList()
-        }.getOrDefault(emptyList())
+        }
     }
 
     /** DM 메시지 이모지 리액션 토글. */
@@ -255,11 +260,12 @@ object ChatSyncClient {
         }
     }
 
-    /** 최근 메시지 최대 200개(시각순) — 화면이 열려있는 동안 짧은 주기로 다시 호출해 폴링한다. */
-    fun readGroupMessages(databaseUrl: String?, apiKey: String?, groupId: String): List<ChatMessage> {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return emptyList()
+    /** 최근 메시지 최대 200개(시각순) — 화면이 열려있는 동안 짧은 주기로 다시 호출해 폴링한다.
+     *  98차: 실패를 삼켜 빈 목록으로 돌려주던 걸 [Result]로 바꿔 실패 사유를 드러낸다(위 참고). */
+    fun readGroupMessages(databaseUrl: String?, apiKey: String?, groupId: String): Result<List<ChatMessage>> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
         return runCatching {
-            val (token, _) = resolveIdentity(apiKey) ?: return emptyList()
+            val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
             val base = databaseUrl.trimEnd('/')
             val query = "orderBy=%22sentAtMillis%22&limitToLast=200"
             val request = HttpRequest.newBuilder()
@@ -268,9 +274,11 @@ object ChatSyncClient {
                 .GET()
                 .build()
             val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-            if (response.statusCode() !in 200..299) return emptyList()
+            if (response.statusCode() !in 200..299) {
+                error("메시지 목록을 불러오지 못했습니다. (${response.statusCode()}: ${response.body()})")
+            }
             val text = response.body()
-            if (text.isNullOrBlank() || text == "null") return emptyList()
+            if (text.isNullOrBlank() || text == "null") return@runCatching emptyList()
             val json = JSONObject(text)
             json.keys().asSequence().map { msgId ->
                 val m = json.getJSONObject(msgId)
@@ -287,7 +295,7 @@ object ChatSyncClient {
                     reactions = reactions
                 )
             }.sortedBy { it.sentAtMillis }.toList()
-        }.getOrDefault(emptyList())
+        }
     }
 
     /** 이모지 리액션 토글 — 이미 같은 이모지를 남겼으면 지우고, 아니면 덮어쓴다(사람당 메시지 하나에 한 개만). */
@@ -314,5 +322,42 @@ object ChatSyncClient {
                 httpClient.send(request, HttpResponse.BodyHandlers.ofString())
             }
         }
+    }
+
+    /** 최신 메시지 1개만 가볍게 조회 — [com.phonelock.desktop.routine.ChatNotifier]의 새 메시지 알림
+     *  폴링 전용(안드로이드판과 대칭). */
+    fun peekLatestGroupMessage(databaseUrl: String?, apiKey: String?, groupId: String): ChatMessage? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: return null
+            val base = databaseUrl.trimEnd('/')
+            val text = get(base, "groupChats/$groupId/messages", token, extraQuery = "orderBy=%22sentAtMillis%22&limitToLast=1")
+            parseLatestMessage(text)
+        }.getOrNull()
+    }
+
+    /** [peekLatestGroupMessage]의 DM판. */
+    fun peekLatestDmMessage(databaseUrl: String?, apiKey: String?, chatId: String): ChatMessage? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: return null
+            val base = databaseUrl.trimEnd('/')
+            val text = get(base, "dmChats/$chatId/messages", token, extraQuery = "orderBy=%22sentAtMillis%22&limitToLast=1")
+            parseLatestMessage(text)
+        }.getOrNull()
+    }
+
+    private fun parseLatestMessage(text: String?): ChatMessage? {
+        if (text.isNullOrBlank() || text == "null") return null
+        val json = JSONObject(text)
+        val msgId = json.keys().asSequence().firstOrNull() ?: return null
+        val m = json.getJSONObject(msgId)
+        return ChatMessage(
+            msgId = msgId,
+            senderUid = m.optString("senderUid", ""),
+            senderName = m.optString("senderName", "사용자"),
+            text = m.optString("text", ""),
+            sentAtMillis = m.optLong("sentAtMillis", 0L)
+        )
     }
 }

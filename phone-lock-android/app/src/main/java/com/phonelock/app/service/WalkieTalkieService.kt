@@ -15,6 +15,7 @@ import com.phonelock.app.R
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.*
+import com.phonelock.app.ui.ActiveChatTracker
 import com.phonelock.app.ui.MainActivity
 import java.time.LocalDateTime
 import kotlinx.coroutines.CoroutineScope
@@ -31,6 +32,9 @@ private const val SERVICE_NOTIFICATION_ID = 40000
 // 반영이 안 됨(안드로이드 정책 — 채널은 한 번 만들어지면 앱이 재정의 못 함) — 새 채널 ID로 우회(2026-08-30).
 private const val MESSAGE_CHANNEL_ID = "walkie_message_v2"
 private const val MESSAGE_NOTIFICATION_ID_BASE = 41000
+// 채팅 알림 신규(2026-09-10, 사용자 요청 — "진동 없이") — 무전기 채널과 달리 처음부터 진동을 켜지 않는다.
+private const val CHAT_CHANNEL_ID = "chat_message"
+private const val CHAT_NOTIFICATION_ID_BASE = 42000
 private const val POLL_INTERVAL_MS = 7_000L
 private val MESSAGE_VIBRATE_PATTERN = longArrayOf(0, 300, 200, 300)
 
@@ -81,7 +85,42 @@ class WalkieTalkieService : Service() {
         while (true) {
             runCatching { pollOnce(repository) }
             runCatching { pollNudges(repository, prefs) }
+            runCatching { pollChatMessages(repository, prefs) }
             delay(POLL_INTERVAL_MS)
+        }
+    }
+
+    /** 채팅 알림(2026-09-10, 사용자 요청) — 내가 속한 모임 대화방 + 1:1 DM 전부를 돌면서 마지막으로
+     *  확인한 시각 이후 온 메시지가 있으면 알린다. [ActiveChatTracker]에 지금 보고 있는 방이면 건너뛴다
+     *  (화면이 이미 폴링 중이라 중복 알림이 된다). 대화방 개수만큼 요청이 늘어나는 구조라 무전기처럼
+     *  가벼운 "최신 메시지 1개만" 조회([ChatSyncClient.peekLatestGroupMessage]류)로 비용을 줄였다. */
+    private suspend fun pollChatMessages(repository: PhoneLockRepository, prefs: AppPreferences) {
+        if (StudyNotificationGate.isStudying(repository)) return
+        val myUid = com.phonelock.app.service.AuthManager.currentUser?.uid ?: return
+        val lastSeenByChat = prefs.chatLastSeenByChat()
+
+        val groupIds = runCatching { repository.readMySocialGroupIds() }.getOrDefault(emptyList())
+        groupIds.forEach { groupId ->
+            if (groupId == ActiveChatTracker.openChatId) return@forEach
+            val latest = repository.peekLatestGroupChatMessage(groupId) ?: return@forEach
+            if (latest.senderUid == myUid) return@forEach
+            val lastSeen = lastSeenByChat[groupId] ?: 0L
+            if (latest.sentAtMillis > lastSeen) {
+                notifyChatBanner("${latest.senderName}님 (모임)", latest.text)
+                prefs.setChatLastSeen(groupId, latest.sentAtMillis)
+            }
+        }
+
+        val dmChats = runCatching { repository.readMyDmChats() }.getOrDefault(emptyList())
+        dmChats.forEach { dm ->
+            if (dm.chatId == ActiveChatTracker.openChatId) return@forEach
+            val latest = repository.peekLatestDmChatMessage(dm.chatId) ?: return@forEach
+            if (latest.senderUid == myUid) return@forEach
+            val lastSeen = lastSeenByChat[dm.chatId] ?: 0L
+            if (latest.sentAtMillis > lastSeen) {
+                notifyChatBanner(latest.senderName, latest.text)
+                prefs.setChatLastSeen(dm.chatId, latest.sentAtMillis)
+            }
         }
     }
 
@@ -176,6 +215,14 @@ class WalkieTalkieService : Service() {
                 }
                 manager.createNotificationChannel(channel)
             }
+            if (manager.getNotificationChannel(CHAT_CHANNEL_ID) == null) {
+                // 사용자 요청(2026-09-10): 소셜 채팅 알림은 진동 없이 — enableVibration 기본값이 이미
+                // false라 별도 호출 없이 그대로 둔다(이 프로젝트의 다른 채널들과 달리 명시적으로 끔).
+                val channel = NotificationChannel(CHAT_CHANNEL_ID, "채팅 메시지", NotificationManager.IMPORTANCE_HIGH).apply {
+                    enableVibration(false)
+                }
+                manager.createNotificationChannel(channel)
+            }
         }
     }
 
@@ -212,6 +259,25 @@ class WalkieTalkieService : Service() {
             .setVibrate(MESSAGE_VIBRATE_PATTERN)
             .build()
         manager.notify(MESSAGE_NOTIFICATION_ID_BASE + (requestCode % 1000).let { if (it < 0) it + 1000 else it }, notification)
+    }
+
+    private fun notifyChatBanner(title: String, text: String) {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val openIntent = Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+        val requestCode = (title + text).hashCode()
+        val pendingIntent = PendingIntent.getActivity(
+            this, requestCode, openIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notification = NotificationCompat.Builder(this, CHAT_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            // Android 8 미만은 채널이 아니라 이 값을 직접 본다 — vibrate 배열 자체를 생략해 진동 없음.
+            .build()
+        manager.notify(CHAT_NOTIFICATION_ID_BASE + (requestCode % 1000).let { if (it < 0) it + 1000 else it }, notification)
     }
 
     companion object {

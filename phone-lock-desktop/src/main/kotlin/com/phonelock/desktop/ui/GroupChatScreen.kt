@@ -12,6 +12,7 @@ fun GroupChatScreen(repository: Repository, groupId: String) {
     val url = repository.fbDatabaseUrl
     val key = repository.fbApiKey
     ChatThreadScreen(
+        chatId = groupId,
         myUid = AuthManager.currentUid,
         loadMessages = { ChatSyncClient.readGroupMessages(url, key, groupId) },
         sendMessage = { text -> ChatSyncClient.sendGroupMessage(url, key, groupId, text) },

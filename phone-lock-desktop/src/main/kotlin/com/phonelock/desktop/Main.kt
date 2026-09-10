@@ -30,6 +30,7 @@ import androidx.compose.ui.window.rememberWindowState
 import com.phonelock.desktop.data.DebugLog
 import com.phonelock.desktop.data.*
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.routine.ChatNotifier
 import com.phonelock.desktop.routine.DesktopNotifier
 import com.phonelock.desktop.routine.RoutineNotifier
 import com.phonelock.desktop.routine.SocialGroupNotifier
@@ -198,6 +199,7 @@ private fun startApp() = application {
         var msSinceSlowTick = 0L
         while (true) {
             VoiceMessageNotifier.tick(repository)
+            ChatNotifier.tick(repository) // 채팅 알림 신규(2026-09-10) — 무전기와 같은 7초 주기.
             msSinceSlowTick += 7_000L
             // 안드로이드는 AlarmManager로 정확히 예약하지만 데스크탑엔 그런 API가 없어 직접 경과시간을 비교한다(52차).
             if (msSinceSlowTick >= 30_000L) {

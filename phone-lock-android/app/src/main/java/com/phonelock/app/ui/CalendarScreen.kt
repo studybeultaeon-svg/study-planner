@@ -81,7 +81,7 @@ private fun stageTextColor(stage: String): Color = when (stage) {
 }
 
 private fun passColor(task: CalendarTask): Color = Color(com.phonelock.shared.calc.PassSchedule.passColor(task.passIndex, task.passTotal))
-private fun passLabel(task: CalendarTask): String = "${task.passIndex + 1}회독"
+private fun passLabel(task: CalendarTask): String = "${task.passIndex + 1}회 복습"
 
 private fun dowLabel(date: LocalDate): String = WEEKDAYS_KO[date.dayOfWeek.value % 7]
 
@@ -569,7 +569,7 @@ private fun CalendarTaskRow(
             // 79차: 완료(O) 시 다음 회독을 자동 생성할지 업무마다 켜고 끌 수 있는 토글(기본 off, 사용자 요청).
             // 꺼져 있으면 아래 ⏱(nextDays) 입력은 의미가 없으므로 숨긴다.
             Text(
-                if (task.multiPassEnabled) "🔁N회독" else "🔁off",
+                if (task.multiPassEnabled) "🔁복습" else "🔁off",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -619,7 +619,7 @@ private fun CalendarTaskRow(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = stageColor),
                         border = BorderStroke(1.dp, stageColor.copy(alpha = 0.5f))
-                    ) { Text("${idx + 1}회독", style = MaterialTheme.typography.labelSmall) }
+                    ) { Text("${idx + 1}회 복습", style = MaterialTheme.typography.labelSmall) }
                 }
             }
         }

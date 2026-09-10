@@ -68,7 +68,7 @@ private val WEEKDAYS_KO = arrayOf("일", "월", "화", "수", "목", "금", "토
 // 77차: 8단계(51차)에서 3단계(빨/노/초)로 축소(사용자 요청). 예전 색(white/orange/blue/indigo/purple)의
 // 라벨은 지웠지만 stageTextColor의 색상값 자체는 남겨둬서, 과거에 그 색으로 저장된 일정은 여전히
 // 고유한 색으로 표시된다(51차와 같은 "라벨만 바뀌는" 전례, HANDOFF.md 참고).
-private val COLOR_LABEL = mapOf("red" to "1회독", "yellow" to "2회독", "green" to "3회독")
+private val COLOR_LABEL = mapOf("red" to "1회 복습", "yellow" to "2회 복습", "green" to "3회 복습")
 
 /**
  * 51차: 4단계(빨주노초)→7단계 무지개(빨주노초파남보)→8단계(사용자 요청) — 1회독을 "하얀색"으로 새로
@@ -98,7 +98,7 @@ internal fun stageChipColors(stage: String): ChipColors {
 
 /** 83차(다회독 상세화) — passIndex/passTotal 기반 빨강→초록 그라데이션 accent. */
 internal fun passAccentColor(task: CalendarTask): Color = Color(com.phonelock.shared.calc.PassSchedule.passColor(task.passIndex, task.passTotal))
-internal fun passLabel(task: CalendarTask): String = "${task.passIndex + 1}회독"
+internal fun passLabel(task: CalendarTask): String = "${task.passIndex + 1}회 복습"
 
 private fun dowLabel(date: LocalDate): String = WEEKDAYS_KO[date.dayOfWeek.value % 7]
 
@@ -614,7 +614,7 @@ private fun CalendarTaskRow(
             // 79차: 완료(O) 시 다음 회독을 자동 생성할지 업무마다 켜고 끌 수 있는 토글(기본 off, 사용자 요청).
             // 꺼져 있으면 아래 ⏱(nextDays) 입력은 의미가 없으므로 숨긴다.
             Text(
-                if (task.multiPassEnabled) "🔁N회독" else "🔁off",
+                if (task.multiPassEnabled) "🔁복습" else "🔁off",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -662,7 +662,7 @@ private fun CalendarTaskRow(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = stageColor),
                         border = BorderStroke(1.dp, stageColor.copy(alpha = 0.5f))
-                    ) { Text("${idx + 1}회독", style = MaterialTheme.typography.labelSmall) }
+                    ) { Text("${idx + 1}회 복습", style = MaterialTheme.typography.labelSmall) }
                 }
             }
         }

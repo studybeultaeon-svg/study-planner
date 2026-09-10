@@ -920,10 +920,10 @@ fun SettingsScreen(
                 })
 
                 SettingsSubTab.STUDY -> SettingsColumns(left = {
-                    SectionCard("캘린더 N회독 기본값") {
+                    SectionCard("캘린더 복습 기본값") {
                         ToggleRow(
-                            title = "새 일정을 N회독으로 시작",
-                            description = "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 회독을 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
+                            title = "새 일정을 복습으로 시작",
+                            description = "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 복습을 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
                             checked = defaultMultiPassEnabled,
                             onCheckedChange = { checked ->
                                 defaultMultiPassEnabled = checked
@@ -933,14 +933,14 @@ fun SettingsScreen(
                         )
                         Spacer(Modifier.height(Spacing.sm))
                         Text(
-                            "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 회독 수/간격입니다 " +
+                            "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 복습 횟수/간격입니다 " +
                                 "(계산기 업무는 업무별로 각 업무 입력 카드에서 따로 설정).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(Spacing.xs))
                         com.phonelock.desktop.ui.components.NumberStepperField(
-                            label = "기본 회독 수",
+                            label = "기본 복습 횟수",
                             value = defaultPassCount.toString(),
                             onValueChange = { text ->
                                 val newCount = (text.toIntOrNull() ?: defaultPassCount)
@@ -956,7 +956,7 @@ fun SettingsScreen(
                             modifier = Modifier.width(160.dp)
                         )
                         Spacer(Modifier.height(Spacing.xs))
-                        Text("회독별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("복습별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         // 2열 배치(90차)로 카드 폭이 절반이 되면 입력칸 7개가 한 줄에 안 들어가므로
                         // 넘치면 다음 줄로 접히도록 FlowRow로 바꾼다(테마 칩과 같은 패턴).
                         androidx.compose.foundation.layout.FlowRow(
@@ -965,7 +965,7 @@ fun SettingsScreen(
                         ) {
                             defaultPassIntervals.forEachIndexed { i, days ->
                                 com.phonelock.desktop.ui.components.NumberStepperField(
-                                    label = "${i + 1}→${i + 2}회독",
+                                    label = "${i + 1}→${i + 2}회 복습",
                                     value = days.toString(),
                                     onValueChange = { text ->
                                         val newDays = (text.toIntOrNull() ?: days).coerceIn(1, 90)

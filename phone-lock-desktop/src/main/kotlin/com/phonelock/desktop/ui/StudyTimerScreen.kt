@@ -35,6 +35,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -46,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,9 +64,11 @@ import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.data.TimerRunState
 import com.phonelock.desktop.monitor.PomodoroSyncClient
 import com.phonelock.desktop.ui.components.SectionCard
+import com.phonelock.shared.StudyProgressQuotes
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
@@ -111,6 +115,10 @@ fun StudyTimerScreen(repository: Repository) {
     var pomodoroEnabled by remember { mutableStateOf(repository.pomodoroModeEnabled) }
     var studyMinText by remember { mutableStateOf(repository.pomodoroStudyMinutes.toString()) }
     var breakMinText by remember { mutableStateOf(repository.pomodoroBreakMinutes.toString()) }
+    // 99차+(사용자 요청): 목표 시간/사이클 대비 진행률에 따라 응원 문구를 보여주기 위한 선택 입력값 —
+    // 0/빈 칸이면 목표 미설정으로 취급해 문구를 아예 안 띄운다(기존 동작 보존).
+    var studyGoalText by remember { mutableStateOf(repository.studyGoalMinutes.let { if (it > 0) it.toString() else "" }) }
+    var pomodoroTargetCyclesText by remember { mutableStateOf(repository.pomodoroTargetCycles.let { if (it > 0) it.toString() else "" }) }
     var todayLog by remember { mutableStateOf(repository.getTodayStudyLog()) }
     // 92차(사용자 요청, "타이머 화면이 여전히 비어보인다"): 스트릭/주간 그래프 2개를 채우려고 추가.
     // `getAllStudyLogOnce()`는 이 기기 로컬 기록만 반환해서(다른 기기가 그날 올린 기록은
@@ -214,6 +222,20 @@ fun StudyTimerScreen(repository: Repository) {
         todayLog = repository.getTodayStudyLog()
     }
 
+    // 당겨서 새로고침(사용자 요청, 안드로이드판은 스와이프) — 이 탭은 이미 5초/30초 주기로 자동
+    // 동기화되지만, 계산기 동기화는 자동 루프에 없어서 수동으로 즉시 최신화하고 싶을 때를 위해 추가한다.
+    val scope = rememberCoroutineScope()
+    suspend fun refreshNow() {
+        withContext(Dispatchers.IO) {
+            repository.syncCalendarFromFirebase()
+            repository.syncCalculatorFromFirebase()
+        }
+        todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
+        calcTasksForSummary = repository.getCalcTasks()
+        todayLog = repository.getTodayStudyLog()
+        refreshStreakAndWeek()
+    }
+
     if (showStopNoteDialog) {
         AlertDialog(
             onDismissRequest = { showStopNoteDialog = false },
@@ -259,7 +281,10 @@ fun StudyTimerScreen(repository: Repository) {
     }
 
     Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            IconButton(onClick = { scope.launch { refreshNow() } }) { Text("🔄") }
+        }
         Spacer(Modifier.height(Spacing.md))
 
         TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
@@ -390,6 +415,32 @@ fun StudyTimerScreen(repository: Repository) {
                             }
                             Spacer(Modifier.height(Spacing.sm))
                         }
+                        // 99차+(사용자 요청): 목표(뽀모도로=사이클 수, 일반=시간) 설정, 선택 입력 —
+                        // 비워두면 진행률 문구를 안 띄우던 기존 동작 그대로 유지.
+                        if (pomodoroEnabled) {
+                            OutlinedTextField(
+                                value = pomodoroTargetCyclesText,
+                                onValueChange = { text ->
+                                    pomodoroTargetCyclesText = text
+                                    val n = text.toIntOrNull()
+                                    repository.pomodoroTargetCycles = if (n != null && n > 0) n else 0
+                                },
+                                label = { Text("목표 사이클 수(선택)") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            OutlinedTextField(
+                                value = studyGoalText,
+                                onValueChange = { text ->
+                                    studyGoalText = text
+                                    val n = text.toIntOrNull()
+                                    repository.studyGoalMinutes = if (n != null && n > 0) n else 0
+                                },
+                                label = { Text("목표 시간(분, 선택)") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Spacer(Modifier.height(Spacing.sm))
                         Button(
                             onClick = {
                                 repository.timerStart(taskName, pomodoroEnabled)
@@ -457,6 +508,41 @@ fun StudyTimerScreen(repository: Repository) {
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(Modifier.height(Spacing.md))
+
+                        // 99차+(사용자 요청): 목표(뽀모도로=사이클 수, 일반=시간) 대비 진행률에 따른 응원
+                        // 문구 — 목표 미설정(0)이면 아예 표시 안 함(기존 동작 보존).
+                        val progress: Double? = if (current.mode == "pomodoro") {
+                            val targetCycles = repository.pomodoroTargetCycles
+                            if (targetCycles > 0) {
+                                val phaseFraction = if (current.phase == "study" && current.phaseEndAt > current.phaseStartedAt) {
+                                    ((nowMillis - current.phaseStartedAt).toDouble() / (current.phaseEndAt - current.phaseStartedAt)).coerceIn(0.0, 1.0)
+                                } else 0.0
+                                (current.cycleCount + phaseFraction) / targetCycles
+                            } else null
+                        } else {
+                            val goalMinutes = repository.studyGoalMinutes
+                            if (goalMinutes > 0) (nowMillis - current.phaseStartedAt).toDouble() / (goalMinutes * 60_000.0) else null
+                        }
+                        if (progress != null) {
+                            val tier = StudyProgressQuotes.tierFor(progress)
+                            val quote = remember(tier) { StudyProgressQuotes.forProgress(progress) }
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                color = GREEN.copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, GREEN.copy(alpha = 0.35f))
+                            ) {
+                                Text(
+                                    quote,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GREEN,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp)
+                                )
+                            }
+                            Spacer(Modifier.height(Spacing.sm))
+                        }
                         if (isMirror) {
                             // 다른 기기가 시작한 세션을 미러링하는 중 — 이 기기에서 시작하지 않았으므로
                             // 정지/전환은 그 기기에서만 가능하다(19차 세션에서 겪은 remoteCommand 왕복 문제를
@@ -938,7 +1024,7 @@ internal fun LockListEditor(items: List<String>, placeholder: String, onAdd: (St
 
 private fun taskDropdownLabel(task: CalendarTask): String {
     val done = if (task.status == "O") " ✅" else ""
-    return "${task.name}$done · ${task.passIndex + 1}회독"
+    return "${task.name}$done · ${task.passIndex + 1}회 복습"
 }
 
 internal fun formatHmsLog(totalSeconds: Long): String {

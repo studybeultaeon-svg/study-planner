@@ -104,6 +104,7 @@
         ".read": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && root.child('groups').child($groupId).child('members').child(auth.uid).exists()",
 
         "messages": {
+          ".indexOn": ["sentAtMillis"],
           "$msgId": {
             ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && root.child('groups').child($groupId).child('members').child(auth.uid).exists() && (data.exists() ? data.child('senderUid').val() === auth.uid : newData.child('senderUid').val() === auth.uid)",
 
@@ -126,6 +127,7 @@
         },
 
         "messages": {
+          ".indexOn": ["sentAtMillis"],
           "$msgId": {
             ".write": "auth != null && root.child('allowedUsers').child(auth.uid).exists() && root.child('dmChats').child($chatId).child('info').child('participants').child(auth.uid).exists() && (data.exists() ? data.child('senderUid').val() === auth.uid : newData.child('senderUid').val() === auth.uid)",
 

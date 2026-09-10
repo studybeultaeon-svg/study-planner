@@ -27,8 +27,15 @@ fun PullToRefreshBox(
     val state = rememberPullToRefreshState()
     if (state.isRefreshing) {
         LaunchedEffect(Unit) {
-            onRefresh()
-            state.endRefresh()
+            // 버그 수정(사용자 제보 — 캘린더에서 새로고침 아이콘이 사라지지 않고 그대로 머무름):
+            // onRefresh()가 예외를 던지면(예: Firebase 동기화 중 JSON 파싱/DB 트랜잭션 실패) endRefresh()
+            // 호출이 스킵돼 isRefreshing이 영원히 true로 남아 스피너가 멈추지 않았다 — try/finally로 감싸서
+            // 실패해도 항상 인디케이터가 닫히도록 한다.
+            try {
+                onRefresh()
+            } finally {
+                state.endRefresh()
+            }
         }
     }
     Box(modifier.fillMaxSize().nestedScroll(state.nestedScrollConnection)) {

@@ -375,10 +375,10 @@ private fun CalcTaskCard(
             androidx.compose.material3.HorizontalDivider()
             Spacer(Modifier.height(Spacing.sm))
 
-            CalcFieldGroupHeader("🔁", "N회독 설정")
+            CalcFieldGroupHeader("🔁", "복습 설정")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "N회독 사용",
+                    "복습 사용",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 androidx.compose.material3.Switch(
@@ -389,7 +389,7 @@ private fun CalcTaskCard(
             if (multiPassUsageEnabled) {
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    "이 업무를 캘린더에 연동할 때 몇 회독으로 만들지",
+                    "이 업무를 캘린더에 연동할 때 몇 번 복습할지",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -403,13 +403,13 @@ private fun CalcTaskCard(
                         passIntervals = com.phonelock.shared.calc.PassSchedule.parsePassIntervals(passIntervals.joinToString(","), newCount)
                         persist()
                     },
-                    label = "회독 수",
+                    label = "복습 횟수",
                     min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
                     max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
                     modifier = Modifier.width(160.dp)
                 )
                 Spacer(Modifier.height(Spacing.xs))
-                Text("회독별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("복습별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(2.dp))
                 // 회독 수가 늘어나면(최대 8이면 간격칸 7개) 고정 Row는 카드 폭을 넘어가 찌부러진다(83차 발견) —
                 // FlowRow로 넘치면 자동 줄바꿈, 칸 자체 폭도 줄여서 한 줄에 더 많이 들어가게 함.
@@ -425,7 +425,7 @@ private fun CalcTaskCard(
                                 passIntervals = passIntervals.toMutableList().also { it[i] = newDays }
                                 persist()
                             },
-                            label = "${i + 1}→${i + 2}회독",
+                            label = "${i + 1}→${i + 2}회 복습",
                             min = 1, max = 90,
                             centerValue = true,
                             modifier = Modifier.width(100.dp)
@@ -435,7 +435,7 @@ private fun CalcTaskCard(
             } else {
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    "캘린더에 연동하면 1회독(단회독)만 생성됩니다",
+                    "캘린더에 연동하면 1회 복습(단일 복습)만 생성됩니다",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

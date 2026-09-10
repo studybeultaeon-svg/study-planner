@@ -66,11 +66,26 @@ fun TimetableScreen(repository: PhoneLockRepository) {
     var tasks by remember { mutableStateOf<List<CalcTask>>(emptyList()) }
     var cursor by remember { mutableStateOf(LocalDate.now()) }
 
-    LaunchedEffect(Unit) {
+    suspend fun load() {
         repository.syncCalculatorFromFirebase()
         tasks = repository.getCalcTasks()
     }
 
+    LaunchedEffect(Unit) { load() }
+
+    // 당겨서 새로고침 추가(사용자 요청, 98차 6개 화면과 같은 패턴).
+    com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = { load() }) {
+        TimetableContent(repository, tasks, cursor) { cursor = it }
+    }
+}
+
+@Composable
+private fun TimetableContent(
+    repository: PhoneLockRepository,
+    tasks: List<CalcTask>,
+    cursor: LocalDate,
+    onCursorChange: (LocalDate) -> Unit
+) {
     val today = LocalDate.now()
     val isToday = cursor == today
     val jsDow = cursor.dayOfWeek.value % 7
@@ -222,11 +237,11 @@ fun TimetableScreen(repository: PhoneLockRepository) {
             else -> MaterialTheme.colorScheme.onSurface
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = { cursor = cursor.minusDays(1) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전") }
+            OutlinedButton(onClick = { onCursorChange(cursor.minusDays(1)) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전") }
             Spacer(Modifier.width(Spacing.sm))
             Text(dateLabel, style = MaterialTheme.typography.titleMedium, color = weekdayColor)
             Spacer(Modifier.width(Spacing.sm))
-            OutlinedButton(onClick = { cursor = cursor.plusDays(1) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음") }
+            OutlinedButton(onClick = { onCursorChange(cursor.plusDays(1)) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음") }
         }
         Spacer(Modifier.height(Spacing.md))
 

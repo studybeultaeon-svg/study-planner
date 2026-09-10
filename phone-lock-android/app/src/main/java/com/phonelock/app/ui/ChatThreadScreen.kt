@@ -23,6 +23,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,17 +43,27 @@ import kotlinx.coroutines.launch
 private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "🔥")
 private const val POLL_INTERVAL_MS = 4_000L
 
+/** [WalkieTalkieService]의 새 메시지 알림 폴링이, 지금 사용자가 보고 있는 대화방과 같은 대화방이면
+ *  중복 알림을 건너뛰기 위해 참조하는 전역 상태(2026-09-10, 채팅 알림 신규) — [ChatThreadScreen]이
+ *  화면에 떠 있는 동안만 자신의 chatId를 채워두고, 사라지면 비운다. */
+object ActiveChatTracker {
+    @Volatile
+    var openChatId: String? = null
+}
+
 /**
  * "💬 대화" 채널의 공용 메시지 스레드 UI(92차 소셜 개편 Phase 1=모임 대화, Phase 2=1:1 DM이 함께 씀) —
  * 텍스트 + 이모지 리액션만(사용자 확정 범위). 실시간성은 "이 화면이 켜져있는 동안만"으로 확정돼 화면이
  * 보이는 동안 [POLL_INTERVAL_MS] 주기로 폴링한다(무전기 7초 폴링과 같은 스타일, 새 SDK/FCM 없음).
  * 그룹 대화/DM은 저장 경로(`groupChats` vs `dmChats`)만 다르고 UI는 완전히 같아 [loadMessages]/
- * [sendMessage]/[toggleReaction] 콜백으로 차이를 흡수한다.
+ * [sendMessage]/[toggleReaction] 콜백으로 차이를 흡수한다. [chatId]는 [ActiveChatTracker] 갱신용
+ * (새 메시지 알림이 지금 보고 있는 방이면 중복 알림을 건너뛰기 위함).
  */
 @Composable
 fun ChatThreadScreen(
+    chatId: String,
     myUid: String?,
-    loadMessages: suspend () -> List<ChatSyncClient.ChatMessage>,
+    loadMessages: suspend () -> Result<List<ChatSyncClient.ChatMessage>>,
     sendMessage: suspend (String) -> Result<Unit>,
     toggleReaction: suspend (msgId: String, emoji: String, alreadySet: Boolean) -> Unit
 ) {
@@ -64,11 +75,19 @@ fun ChatThreadScreen(
     // 98차: sendMessage 실패(Result.failure)를 그동안 아무도 확인하지 않고 버려서 "쳐서 올려도
     // 안 올라간다"는 제보가 원인 불명으로 남아있었다 — 실패 사유를 화면에 그대로 보여준다.
     var sendError by remember { mutableStateOf<String?>(null) }
+    // 98차 후속: sendMessage는 항상 성공(Result.success)하는데도 목록엔 안 뜬다는 재현이 나와서,
+    // loadMessages 쪽 실패도 똑같이 드러낸다 — 이전엔 실패해도 빈 목록으로 조용히 덮어썼다.
+    var loadError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            val latest = loadMessages()
+    DisposableEffect(chatId) {
+        ActiveChatTracker.openChatId = chatId
+        onDispose { if (ActiveChatTracker.openChatId == chatId) ActiveChatTracker.openChatId = null }
+    }
+
+    fun applyLoadResult(result: Result<List<ChatSyncClient.ChatMessage>>) {
+        result.onSuccess { latest ->
+            loadError = null
             if (latest != messages) {
                 val wasAtBottom = listState.firstVisibleItemIndex >= (messages.size - 2).coerceAtLeast(0)
                 messages = latest
@@ -76,6 +95,14 @@ fun ChatThreadScreen(
                     scope.launch { listState.scrollToItem(messages.size - 1) }
                 }
             }
+        }.onFailure {
+            loadError = it.message ?: "메시지 목록을 불러오지 못했습니다."
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            applyLoadResult(loadMessages())
             delay(POLL_INTERVAL_MS)
         }
     }
@@ -92,7 +119,7 @@ fun ChatThreadScreen(
                 sendError = it.message ?: "메시지 전송에 실패했습니다."
                 input = text
             }
-            messages = loadMessages()
+            applyLoadResult(loadMessages())
             if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
             sending = false
         }
@@ -169,7 +196,7 @@ fun ChatThreadScreen(
                                                 openReactionsFor = null
                                                 scope.launch {
                                                     toggleReaction(msg.msgId, emoji, alreadySet)
-                                                    messages = loadMessages()
+                                                    applyLoadResult(loadMessages())
                                                 }
                                             }
                                             .padding(4.dp)
@@ -182,6 +209,14 @@ fun ChatThreadScreen(
             }
         }
 
+        loadError?.let {
+            Text(
+                "목록 불러오기 실패: $it",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = Spacing.sm)
+            )
+        }
         sendError?.let {
             Text(
                 "전송 실패: $it",

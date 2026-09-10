@@ -28,6 +28,7 @@ fun DmChatScreen(repository: Repository, chatId: String, peerUid: String, peerLa
             Text(peerLabel, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = Spacing.sm))
         }
         ChatThreadScreen(
+            chatId = chatId,
             myUid = AuthManager.currentUid,
             loadMessages = { ChatSyncClient.readDmMessages(url, key, chatId) },
             sendMessage = { text -> ChatSyncClient.sendDmMessage(url, key, chatId, peerUid, text) },
