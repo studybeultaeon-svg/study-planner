@@ -463,6 +463,53 @@ object PomodoroSyncClient {
         }
     }
 
+    data class PointsSyncResult(val ledgerJson: org.json.JSONArray, val rewardsJson: org.json.JSONArray, val ts: Long)
+
+    /** 포인트/보상 시스템(101차+) 전체 문서를 읽는다. `users/{user}/points`에
+     *  `{ledger:[...], rewards:[...], _ts}` — 루틴/캘린더와 같은 문서 단위 LWW. */
+    fun readPoints(databaseUrl: String?, apiKey: String?): PointsSyncResult? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return runCatching {
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
+            val base = databaseUrl.trimEnd('/')
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("$base/users/$user/points.json?auth=$token"))
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .GET()
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            if (response.statusCode() !in 200..299) return@runCatching null
+            val body = response.body()
+            if (body.isNullOrBlank() || body == "null") return@runCatching PointsSyncResult(org.json.JSONArray(), org.json.JSONArray(), 0L)
+            val json = JSONObject(body)
+            PointsSyncResult(
+                json.optJSONArray("ledger") ?: org.json.JSONArray(),
+                json.optJSONArray("rewards") ?: org.json.JSONArray(),
+                json.optLong("_ts", 0L)
+            )
+        }.getOrNull()
+    }
+
+    /** 포인트 전체 문서를 덮어쓴다(문서 단위 LWW — 호출부가 이미 로컬이 더 최신임을 확인한 뒤 호출). */
+    fun writePoints(databaseUrl: String?, apiKey: String?, ledgerJson: org.json.JSONArray, rewardsJson: org.json.JSONArray, ts: Long) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
+        runCatching {
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
+            val base = databaseUrl.trimEnd('/')
+            val body = JSONObject().apply {
+                put("ledger", ledgerJson)
+                put("rewards", rewardsJson)
+                put("_ts", ts)
+            }
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("$base/users/$user/points.json?auth=$token"))
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .PUT(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .build()
+            httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        }
+    }
+
     data class GroupSettingsSyncResult(val groupsJson: JSONObject, val ts: Long)
 
     /**

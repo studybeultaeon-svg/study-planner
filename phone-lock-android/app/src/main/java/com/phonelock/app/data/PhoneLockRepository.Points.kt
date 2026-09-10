@@ -1,0 +1,214 @@
+package com.phonelock.app.data
+
+import androidx.room.withTransaction
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+import java.time.LocalDate
+
+/**
+ * 포인트/보상 시스템(101차+ 세션, IDEAS.md "최우선 후보" — 1차 구현 범위는 포인트 적립+보상 언락만).
+ * 잔액은 별도 저장 없이 [PointsLedgerEntry] 전체를 합산해 매번 계산한다(RoutineEngine.currentStreak과
+ * 같은 "매번 다시 훑는 순수 파생값" 패턴). 캘린더/루틴과 동일한 "전체 문서 단위 LWW"로 Firebase 동기화
+ * (users/{user}/points, 데스크탑판과 대칭).
+ *
+ * 적립 기준(사용자 확정):
+ * - 공부 시간 비례: 10분당 1포인트([awardStudyPoints], addStudyLogEntry에서 호출)
+ * - 루틴 완료 시 고정 포인트([onRoutineToggled], toggleRoutineLog에서 호출)
+ * - 캘린더 일정 완료 시 고정 포인트(setCalendarTaskStatus에서 호출)
+ * - 스트릭(그날 예정된 루틴 전부 완료) 유지 보너스, 날짜당 1회([refreshStreakBonusForDate])
+ */
+
+private const val STUDY_SECONDS_PER_POINT = 600 // 10분당 1포인트
+private const val ROUTINE_COMPLETE_POINTS = 5
+private const val CALENDAR_COMPLETE_POINTS = 5
+private const val STREAK_BONUS_POINTS = 10
+
+private var PhoneLockRepository.pointsTs: Long
+    get() = preferences.pointsTs
+    set(value) { preferences.pointsTs = value }
+
+fun PhoneLockRepository.observePointsBalance(): Flow<Int> = pointsLedgerDao.observeBalance()
+
+suspend fun PhoneLockRepository.getPointsBalance(): Int = pointsLedgerDao.getBalance()
+
+fun PhoneLockRepository.observePointsLedger(): Flow<List<PointsLedgerEntry>> = pointsLedgerDao.observeAll()
+
+/** reason+refId+dateKey 조합이 이미 있으면 아무 일도 안 한다(중복 적립 방지) — ROUTINE/CALENDAR/STREAK처럼
+ *  "완료 상태"에 매달린 적립에 쓴다. */
+private suspend fun PhoneLockRepository.awardPointsOnce(delta: Int, reason: String, refId: String, dateKey: String) {
+    if (pointsLedgerDao.find(reason, refId, dateKey) != null) return
+    pointsLedgerDao.insert(PointsLedgerEntry(delta = delta, reason = reason, refId = refId, dateKey = dateKey, timestampMillis = System.currentTimeMillis()))
+    pushPointsToFirebase()
+}
+
+/** awardPointsOnce의 반대 — 완료가 취소되면 그때 적립됐던 원장 항목을 그대로 지운다. */
+private suspend fun PhoneLockRepository.revokePointsOnce(reason: String, refId: String, dateKey: String) {
+    if (pointsLedgerDao.find(reason, refId, dateKey) == null) return
+    pointsLedgerDao.deleteBy(reason, refId, dateKey)
+    pushPointsToFirebase()
+}
+
+/** 공부 시간 비례 적립(10분당 1포인트) — 세션마다 별개 기록이라 중복 판정 없이 매번 insert. */
+suspend fun PhoneLockRepository.awardStudyPoints(seconds: Int, dateKey: String) {
+    val points = seconds / STUDY_SECONDS_PER_POINT
+    if (points <= 0) return
+    pointsLedgerDao.insert(PointsLedgerEntry(delta = points, reason = "STUDY", refId = "", dateKey = dateKey, timestampMillis = System.currentTimeMillis()))
+    pushPointsToFirebase()
+}
+
+/** 루틴 완료 토글 직후 호출 — 완료 포인트 적립/회수 + 그날 스트릭 보너스 재판정. */
+suspend fun PhoneLockRepository.onRoutineToggled(routineId: Long, dateKey: String, completed: Boolean) {
+    if (completed) {
+        awardPointsOnce(ROUTINE_COMPLETE_POINTS, "ROUTINE", "routine:$routineId", dateKey)
+    } else {
+        revokePointsOnce("ROUTINE", "routine:$routineId", dateKey)
+    }
+    refreshStreakBonusForDate(dateKey)
+}
+
+/** RoutineEngine.dayResult와 동일한 "그날 예정된 루틴을 전부 완료했는가" 판정 — 전부 완료면 날짜당 1회
+ *  보너스를 적립하고, 이미 적립된 상태에서 하나라도 미완료가 되면 되돌린다. */
+suspend fun PhoneLockRepository.refreshStreakBonusForDate(dateKey: String) {
+    val date = runCatching { LocalDate.parse(dateKey) }.getOrNull() ?: return
+    val routines = routineDao.getAll()
+    val scheduled = routines.filter { com.phonelock.app.routine.RoutineEngine.isScheduledOn(it, date) }
+    if (scheduled.isEmpty()) {
+        revokePointsOnce("STREAK", "streak", dateKey)
+        return
+    }
+    val doneIds = routineLogDao.getByDate(dateKey).map { it.routineId }.toSet()
+    val allDone = scheduled.all { it.id in doneIds }
+    if (allDone) awardPointsOnce(STREAK_BONUS_POINTS, "STREAK", "streak", dateKey)
+    else revokePointsOnce("STREAK", "streak", dateKey)
+}
+
+/** 캘린더 일정 완료 전환 직후 호출(setCalendarTaskStatus) — completed=true면 적립, false면 회수. */
+suspend fun PhoneLockRepository.onCalendarTaskCompletionChanged(taskId: Long, dateKey: String, completed: Boolean) {
+    if (completed) {
+        awardPointsOnce(CALENDAR_COMPLETE_POINTS, "CALENDAR", "calendar:$taskId", dateKey)
+    } else {
+        revokePointsOnce("CALENDAR", "calendar:$taskId", dateKey)
+    }
+}
+
+// ══════════════════════════════════════════════════════
+// 보상("오늘의 보상") — 사용자가 직접 등록/삭제하는 이름+필요 포인트 목록.
+// ══════════════════════════════════════════════════════
+
+fun PhoneLockRepository.observeRewards(): Flow<List<Reward>> = rewardDao.observeAll()
+
+suspend fun PhoneLockRepository.getRewards(): List<Reward> = rewardDao.getAll()
+
+suspend fun PhoneLockRepository.addReward(name: String, cost: Int) {
+    val nextOrder = (rewardDao.getAll().maxOfOrNull { it.sortOrder } ?: -1) + 1
+    rewardDao.insert(Reward(name = name, cost = cost, sortOrder = nextOrder))
+    pushPointsToFirebase()
+}
+
+suspend fun PhoneLockRepository.updateReward(reward: Reward) {
+    rewardDao.update(reward)
+    pushPointsToFirebase()
+}
+
+suspend fun PhoneLockRepository.deleteReward(reward: Reward) {
+    rewardDao.delete(reward)
+    pushPointsToFirebase()
+}
+
+/** 보상 교환 — 잔액이 모자라면 아무 일도 안 하고 false. */
+suspend fun PhoneLockRepository.redeemReward(reward: Reward): Boolean {
+    if (pointsLedgerDao.getBalance() < reward.cost) return false
+    val dateKey = effectiveDate(preferences.dailyResetHour).toString()
+    pointsLedgerDao.insert(
+        PointsLedgerEntry(delta = -reward.cost, reason = "REDEEM", refId = "reward:${reward.id}", dateKey = dateKey, timestampMillis = System.currentTimeMillis())
+    )
+    pushPointsToFirebase()
+    return true
+}
+
+// ══════════════════════════════════════════════════════
+// Firebase 동기화 — 캘린더/루틴과 동일한 "전체 문서 단위 LWW"(users/{user}/points).
+// ══════════════════════════════════════════════════════
+
+fun PhoneLockRepository.pointsLedgerToJson(ledger: List<PointsLedgerEntry>): JSONArray {
+    val arr = JSONArray()
+    ledger.forEach { e ->
+        arr.put(JSONObject().apply {
+            put("delta", e.delta)
+            put("reason", e.reason)
+            put("refId", e.refId)
+            put("dateKey", e.dateKey)
+            put("timestampMillis", e.timestampMillis)
+        })
+    }
+    return arr
+}
+
+fun PhoneLockRepository.rewardsToJson(rewards: List<Reward>): JSONArray {
+    val arr = JSONArray()
+    rewards.sortedBy { it.sortOrder }.forEach { r ->
+        arr.put(JSONObject().apply {
+            put("name", r.name)
+            put("cost", r.cost)
+            put("sortOrder", r.sortOrder)
+        })
+    }
+    return arr
+}
+
+private fun pointsLedgerFromJson(json: JSONArray): List<PointsLedgerEntry> {
+    val out = mutableListOf<PointsLedgerEntry>()
+    for (i in 0 until json.length()) {
+        val e = json.getJSONObject(i)
+        out.add(
+            PointsLedgerEntry(
+                delta = e.optInt("delta", 0),
+                reason = e.optString("reason", ""),
+                refId = e.optString("refId", ""),
+                dateKey = e.optString("dateKey", ""),
+                timestampMillis = e.optLong("timestampMillis", 0L)
+            )
+        )
+    }
+    return out
+}
+
+private fun rewardsFromJson(json: JSONArray): List<Reward> {
+    val out = mutableListOf<Reward>()
+    for (i in 0 until json.length()) {
+        val r = json.getJSONObject(i)
+        out.add(Reward(name = r.optString("name", ""), cost = r.optInt("cost", 0), sortOrder = r.optInt("sortOrder", i)))
+    }
+    return out
+}
+
+/** 변경 직후 fire-and-forget으로 Firebase에 전체 포인트 문서(원장+보상)를 올린다. */
+fun PhoneLockRepository.pushPointsToFirebase() {
+    val ts = System.currentTimeMillis()
+    pointsTs = ts
+    ioScope.launch {
+        val ledgerJson = pointsLedgerToJson(pointsLedgerDao.getAllOnce())
+        val rewardsJson = rewardsToJson(rewardDao.getAll())
+        com.phonelock.app.service.PomodoroSyncClient.writePoints(fbDatabaseUrl, fbApiKey, ledgerJson, rewardsJson, ts)
+    }
+}
+
+/** 포인트 화면 진입 시 호출 — 원격이 로컬보다 최신이면 로컬을 덮어쓰고, 로컬이 더 최신이면 원격에 푸시. */
+suspend fun PhoneLockRepository.syncPointsFromFirebase() {
+    val result = com.phonelock.app.service.PomodoroSyncClient.readPoints(fbDatabaseUrl, fbApiKey) ?: return
+    if (result.ts > pointsTs) {
+        val ledger = pointsLedgerFromJson(result.ledgerJson)
+        val rewards = rewardsFromJson(result.rewardsJson)
+        db.withTransaction {
+            pointsLedgerDao.deleteAll()
+            ledger.forEach { pointsLedgerDao.insert(it) }
+            rewardDao.deleteAll()
+            rewards.forEach { rewardDao.insert(it) }
+        }
+        pointsTs = result.ts
+    } else if (pointsTs > result.ts) {
+        pushPointsToFirebase()
+    }
+}

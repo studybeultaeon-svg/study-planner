@@ -141,13 +141,17 @@ fun Repository.isRoutineCompleted(routineId: Long, dateKey: String): Boolean = s
 
 /** 날짜 하나에 대한 완료 체크를 토글한다(존재하면 삭제=미완료, 없으면 추가=완료). */
 fun Repository.toggleRoutineLog(routineId: Long, dateKey: String) = synchronized(lock) {
+    val completed: Boolean
     if (data.routineLogs.any { it.routineId == routineId && it.dateKey == dateKey }) {
         data.routineLogs.removeAll { it.routineId == routineId && it.dateKey == dateKey }
+        completed = false
     } else {
         data.routineLogs.add(RoutineLog(routineId, dateKey))
+        completed = true
     }
     persist()
     pushRoutinesToFirebase()
+    onRoutineToggled(routineId, dateKey, completed)
 }
 
 /** RoutineEngine.currentStreak에 넘길 완료 날짜 집합. */

@@ -545,6 +545,63 @@ object PomodoroSyncClient {
         }
     }
 
+    data class PointsSyncResult(val ledgerJson: JSONArray, val rewardsJson: JSONArray, val ts: Long)
+
+    /** 포인트/보상 시스템(101차+) 전체 문서를 읽는다. `users/{user}/points`에
+     *  `{ledger:[...], rewards:[...], _ts}` — 루틴/캘린더와 같은 문서 단위 LWW. */
+    suspend fun readPoints(databaseUrl: String?, apiKey: String?): PointsSyncResult? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
+                val base = databaseUrl.trimEnd('/')
+                val url = URL("$base/users/$user/points.json?auth=$token")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = TIMEOUT_MS
+                    readTimeout = TIMEOUT_MS
+                }
+                if (conn.responseCode !in 200..299) { conn.disconnect(); return@runCatching null }
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                if (body.isBlank() || body == "null") return@runCatching PointsSyncResult(JSONArray(), JSONArray(), 0L)
+                val json = JSONObject(body)
+                PointsSyncResult(
+                    json.optJSONArray("ledger") ?: JSONArray(),
+                    json.optJSONArray("rewards") ?: JSONArray(),
+                    json.optLong("_ts", 0L)
+                )
+            }.getOrNull()
+        }
+    }
+
+    /** 포인트 전체 문서를 덮어쓴다(문서 단위 LWW — 호출부가 이미 로컬이 더 최신임을 확인한 뒤 호출). */
+    suspend fun writePoints(databaseUrl: String?, apiKey: String?, ledgerJson: JSONArray, rewardsJson: JSONArray, ts: Long) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
+                val base = databaseUrl.trimEnd('/')
+                val url = URL("$base/users/$user/points.json?auth=$token")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"
+                    connectTimeout = TIMEOUT_MS
+                    readTimeout = TIMEOUT_MS
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                }
+                val body = JSONObject().apply {
+                    put("ledger", ledgerJson)
+                    put("rewards", rewardsJson)
+                    put("_ts", ts)
+                }
+                conn.outputStream.use { it.write(body.toString().toByteArray()) }
+                conn.responseCode
+                conn.disconnect()
+            }
+        }
+    }
+
     data class GroupSettingsSyncResult(val groupsJson: JSONObject, val ts: Long)
 
     /**

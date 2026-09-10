@@ -210,6 +210,7 @@ suspend fun PhoneLockRepository.setCalendarTaskStatus(task: CalendarTask, target
         if (task.linkedCalc != null && task.color == "red") {
             adjustLinkedCalcProgress(task.linkedCalc, -linkedProgressAmount(task))
         }
+        onCalendarTaskCompletionChanged(task.id, task.dateKey, completed = false)
     }
     if (task.status == "X") revertIncompleteCarryOver(task.dateKey, task)
     if (task.status == targetStatus) {
@@ -222,6 +223,7 @@ suspend fun PhoneLockRepository.setCalendarTaskStatus(task: CalendarTask, target
             if (updated.linkedCalc != null && updated.color == "red") {
                 adjustLinkedCalcProgress(updated.linkedCalc, linkedProgressAmount(updated))
             }
+            onCalendarTaskCompletionChanged(task.id, task.dateKey, completed = true)
         }
         if (targetStatus == "X") applyIncompleteCarryOver(task.dateKey, updated)
     }

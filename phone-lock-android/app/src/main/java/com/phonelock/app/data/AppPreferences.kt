@@ -268,6 +268,11 @@ class AppPreferences(context: Context) {
         get() = prefs.getLong("routines_ts", 0L)
         set(value) = prefs.edit().putLong("routines_ts", value).apply()
 
+    /** 포인트/보상 시스템(101차+) 전체 문서 단위 Firebase LWW 타임스탬프 — routinesTs와 동일 패턴. */
+    var pointsTs: Long
+        get() = prefs.getLong("points_ts", 0L)
+        set(value) = prefs.edit().putLong("points_ts", value).apply()
+
     /** 온라인/오프라인 모드(98차, 사용자 요청) — 사용자가 수동으로 강제 오프라인 전환. 기본 꺼짐(자동
      *  감지 우선) — 켜면 실제 네트워크 연결 여부와 무관하게 항상 오프라인으로 취급한다. */
     var offlineModeOverride: Boolean
@@ -329,6 +334,7 @@ class AppPreferences(context: Context) {
         calcFolderTs = 0L
         calcFolderOrderTs = 0L
         groupSettingsTs = 0L
+        pointsTs = 0L
     }
 
     /** 접힌 폴더 경로 집합(calcPathToOrderKey로 인코딩) — 기기별 UI 상태라 Firebase엔 올리지 않는다. */

@@ -66,6 +66,7 @@ object JsonStore {
             nextGroupId = json.optLong("nextGroupId", 1),
             dailyResetHour = json.optInt("dailyResetHour", 0),
             routinesTs = json.optLong("routinesTs", 0L),
+            pointsTs = json.optLong("pointsTs", 0L),
             themeMode = json.optString("themeMode", "LIGHT_GREEN"),
             customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
@@ -399,6 +400,27 @@ object JsonStore {
             data.routineLogs.add(RoutineLog(l.getLong("routineId"), l.getString("dateKey")))
         }
 
+        // 포인트/보상 시스템(101차+).
+        val pointsLedgerJson = json.optJSONArray("pointsLedger") ?: JSONArray()
+        for (i in 0 until pointsLedgerJson.length()) {
+            val e = pointsLedgerJson.getJSONObject(i)
+            data.pointsLedger.add(
+                PointsLedgerEntry(
+                    delta = e.optInt("delta", 0),
+                    reason = e.optString("reason", ""),
+                    refId = e.optString("refId", ""),
+                    dateKey = e.optString("dateKey", ""),
+                    timestampMillis = e.optLong("timestampMillis", 0L)
+                )
+            )
+        }
+        val rewardsJson = json.optJSONArray("rewards") ?: JSONArray()
+        for (i in 0 until rewardsJson.length()) {
+            val r = rewardsJson.getJSONObject(i)
+            data.rewards.add(Reward(id = r.getLong("id"), name = r.optString("name", ""), cost = r.optInt("cost", 0), sortOrder = r.optInt("sortOrder", i)))
+        }
+        data.nextRewardId = json.optLong("nextRewardId", (data.rewards.maxOfOrNull { it.id } ?: 0L) + 1)
+
         return data
     }
 
@@ -688,6 +710,22 @@ object JsonStore {
             })
         }
         json.put("routineLogs", routineLogsJson)
+
+        val pointsLedgerJson = JSONArray()
+        data.pointsLedger.forEach { e ->
+            pointsLedgerJson.put(JSONObject().apply {
+                put("delta", e.delta); put("reason", e.reason); put("refId", e.refId)
+                put("dateKey", e.dateKey); put("timestampMillis", e.timestampMillis)
+            })
+        }
+        json.put("pointsLedger", pointsLedgerJson)
+        val rewardsJson = JSONArray()
+        data.rewards.forEach { r ->
+            rewardsJson.put(JSONObject().apply { put("id", r.id); put("name", r.name); put("cost", r.cost); put("sortOrder", r.sortOrder) })
+        }
+        json.put("rewards", rewardsJson)
+        json.put("nextRewardId", data.nextRewardId)
+        json.put("pointsTs", data.pointsTs)
 
         val escalationsJson = JSONArray()
         data.confirmEscalations.forEach { e ->

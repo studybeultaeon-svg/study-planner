@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-09-10 (102차 세션) — 포인트/보상(게이미피케이션) 시스템 1차 구현
+
+### 포인트 적립 + "오늘의 보상" 언락 신규
+- [[IDEAS.md]] "최우선 후보"(게이미피케이션/보상) 백로그 중 사용자가 확정한 1차 범위만 구현 — 포인트/코인 적립 + 보상 언락. 배지/레벨업/캐릭터 키우기/친구 초대 보상은 이번 범위 밖(IDEAS.md에 남겨둠).
+- 적립 기준(사용자 확정): 공부 시간 10분당 1포인트, 루틴 완료 시 5포인트(고정), 캘린더 일정 완료 시 5포인트(고정), 그날 예정된 루틴을 전부 완료하면 스트릭 보너스 10포인트(날짜당 1회) — 하나라도 미완료로 되돌리면 그 보너스도 회수.
+- 잔액은 별도 저장 없이 `PointsLedgerEntry` 원장 전체를 매번 합산해서 계산(`RoutineEngine.currentStreak`과 같은 "매번 다시 훑는 순수 파생값" 패턴). reason("STUDY"/"ROUTINE"/"CALENDAR"/"STREAK"/"REDEEM")+refId+dateKey 조합으로 중복 적립/롤백을 판정 — 루틴 체크 해제·캘린더 완료 취소 시 그때 적립됐던 항목을 그대로 지운다.
+- 신규 Room 엔티티 `PointsLedgerEntry`/`Reward`(안드로이드), 대칭 데이터클래스(데스크탑). Room v38→v39(`MIGRATION_38_39`, `points_ledger`/`reward` 테이블 신규 생성만 — 기존 테이블 스키마 변경 없음).
+- 훅 지점: `addStudyLogEntry`(공부 세션 종료 시), `toggleRoutineLog`(루틴 체크 토글 시), `setCalendarTaskStatus`(캘린더 완료 전환 시) — 3곳 모두 기존 함수 끝에 호출 한 줄만 추가하는 방식으로 삽입, 기존 로직은 안 건드림. 데스크탑 `CalendarTask`는 안드로이드와 달리 안정적인 id가 없어(dateKey+배열 순서로만 식별) refId를 `calendar:{dateKey}:{ordinal}`로 근사(기존 미완료 이월/자동생성 로직도 같은 ordinal 주소 방식을 쓰고 있어 위험 수준이 기존 코드와 동일).
+- 신규 보상: 사용자가 이름+필요 포인트만 직접 등록/삭제(고정 프리셋 없음). 교환(언락) 시 잔액이 모자라면 아무 일도 안 하고 실패만 알림.
+- UI: "루틴" 섹션에 3번째 서브탭 "🎁 포인트" 신규 추가(양 플랫폼, 기존 오늘/연속기록 옆) — 최상위 탭을 새로 만들지 않고 기존 3-top-tab(관리/공부/설정 + 루틴/소셜) 구조에 얹음. 잔액 카드(RoutineStatsTab과 같은 강조 카드 스타일)+보상 목록(언락/삭제 버튼)+보상 추가 다이얼로그.
+- Firebase `users/{user}/points`에 캘린더/루틴과 동일한 "전체 문서 단위 LWW" 동기화(`PomodoroSyncClient.writePoints`/`readPoints`, 데스크탑 대칭) — 루틴 문서와 별개 노드로 분리(합쳐서 재사용하면 루틴 동기화의 delete+insert 트랜잭션에 포인트 원장까지 얽혀 들어가는 걸 피하기 위함).
+- 양 플랫폼 컴파일 확인 후 릴리스 빌드(`assembleRelease`/`packageMsi createDistributable`) 완료, 안드로이드 APK 3위치+데스크탑 호스트/`vm-build-output` 양쪽 배포, GitHub 릴리스 게시(안드로이드 `android-1789030574`, 데스크탑 `desktop-1789030702`), `sync-public-repo.ps1`로 공개 저장소 push까지 완료. 실사용 검증은 안 됨.
+
+---
+
 ## 2026-09-10 (101차 세션) — 모임(소셜 그룹) 이름/설명 수정 기능
 
 ### 모임 설명(description) 필드 신규 + 기존 이름 수정 기능에 통합

@@ -137,13 +137,17 @@ suspend fun PhoneLockRepository.isRoutineCompleted(routineId: Long, dateKey: Str
 
 /** 날짜 하나에 대한 완료 체크를 토글한다(존재하면 삭제=미완료, 없으면 추가=완료). */
 suspend fun PhoneLockRepository.toggleRoutineLog(routineId: Long, dateKey: String) {
+    val completed: Boolean
     if (routineLogDao.getByDate(dateKey).any { it.routineId == routineId }) {
         routineLogDao.delete(routineId, dateKey)
+        completed = false
     } else {
         routineLogDao.insert(RoutineLog(routineId, dateKey))
+        completed = true
     }
     pushRoutinesToFirebase()
     refreshRoutineWidget()
+    onRoutineToggled(routineId, dateKey, completed)
 }
 
 /** RoutineEngine.currentStreak에 넘길 완료 날짜 집합. */
