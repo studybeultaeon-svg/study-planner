@@ -511,6 +511,9 @@ class AppPreferences(context: Context) {
     var permSocial: Boolean
         get() = prefs.getBoolean("perm_social", true)
         set(value) = prefs.edit().putBoolean("perm_social", value).apply()
+    var permPlant: Boolean
+        get() = prefs.getBoolean("perm_plant", true)
+        set(value) = prefs.edit().putBoolean("perm_plant", value).apply()
 
     // ---- 자체 업데이트 확인(GitHub Releases, 2026-08-30) ----
     /** 마지막으로 GitHub Releases를 확인한 시각(epoch millis) — 하루 1회(날짜 기준) 가드였던 것을

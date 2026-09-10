@@ -124,6 +124,7 @@ object JsonStore {
             permRoutine = json.optBoolean("permRoutine", true),
             permStudy = json.optBoolean("permStudy", true),
             permManage = json.optBoolean("permManage", true),
+            permPlant = json.optBoolean("permPlant", true),
             permSocial = json.optBoolean("permSocial", true),
             lastUpdateCheckDate = if (json.isNull("lastUpdateCheckDate")) null else json.optString("lastUpdateCheckDate", null),
             updateAvailableBuildTimestamp = json.optLong("updateAvailableBuildTimestamp", 0L),
@@ -482,6 +483,7 @@ object JsonStore {
         json.put("permRoutine", data.permRoutine)
         json.put("permStudy", data.permStudy)
         json.put("permManage", data.permManage)
+        json.put("permPlant", data.permPlant)
         json.put("permSocial", data.permSocial)
         json.put("lastUpdateCheckDate", data.lastUpdateCheckDate ?: JSONObject.NULL)
         json.put("updateAvailableBuildTimestamp", data.updateAvailableBuildTimestamp)

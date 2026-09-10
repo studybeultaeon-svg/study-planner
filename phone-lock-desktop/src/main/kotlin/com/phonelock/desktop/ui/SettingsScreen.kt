@@ -1065,7 +1065,7 @@ fun SettingsScreen(
     }
 }
 
-/** 관리자 패널에서 사용자별 기능 범위(루틴/공부/관리/모임)를 고르는 칩 4개 — 눌린 것만 허용(안드로이드판과 대칭). */
+/** 관리자 패널에서 사용자별 기능 범위(루틴/공부/관리/모임/식물)를 고르는 칩 5개 — 눌린 것만 허용(안드로이드판과 대칭). */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun PermissionChipsRow(
@@ -1094,6 +1094,11 @@ private fun PermissionChipsRow(
             selected = permissions.social,
             onClick = { onChange(permissions.copy(social = !permissions.social)) },
             label = { Text("모임") }
+        )
+        FilterChip(
+            selected = permissions.plant,
+            onClick = { onChange(permissions.copy(plant = !permissions.plant)) },
+            label = { Text("식물") }
         )
     }
 }

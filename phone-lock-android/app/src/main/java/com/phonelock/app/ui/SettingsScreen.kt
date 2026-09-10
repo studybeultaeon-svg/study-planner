@@ -1362,5 +1362,10 @@ private fun PermissionChipsRow(
             onClick = { onChange(permissions.copy(social = !permissions.social)) },
             label = { Text("모임") }
         )
+        FilterChip(
+            selected = permissions.plant,
+            onClick = { onChange(permissions.copy(plant = !permissions.plant)) },
+            label = { Text("식물") }
+        )
     }
 }

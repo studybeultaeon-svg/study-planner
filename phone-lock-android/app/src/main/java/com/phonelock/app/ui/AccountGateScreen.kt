@@ -66,6 +66,7 @@ fun AccountGate(repository: PhoneLockRepository, content: @Composable () -> Unit
         prefs.permStudy = p.study
         prefs.permManage = p.manage
         prefs.permSocial = p.social
+        prefs.permPlant = p.plant
     }
 
     suspend fun refreshFromServer() {

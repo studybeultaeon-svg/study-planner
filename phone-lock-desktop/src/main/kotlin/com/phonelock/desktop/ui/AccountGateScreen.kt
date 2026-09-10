@@ -74,6 +74,7 @@ fun AccountGate(repository: Repository, content: @Composable () -> Unit) {
                     repository.permStudy = p.study
                     repository.permManage = p.manage
                     repository.permSocial = p.social
+                    repository.permPlant = p.plant
                 }
                 onDone(JSONObjectStatus(profile, status))
             }.onFailure { e ->
