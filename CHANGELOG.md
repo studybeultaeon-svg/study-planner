@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-09-10 (101차 세션) — 모임(소셜 그룹) 이름/설명 수정 기능
+
+### 모임 설명(description) 필드 신규 + 기존 이름 수정 기능에 통합
+- [[IDEAS.md]] "괜찮음 티어" 백로그 항목을 사용자 승인 하에 구현. 착수 전 기존 코드를 검색해보니 "모임 이름 수정" 자체는 77차에 이미 구현돼 있었다(`updateGroupName`, `SocialGroupMembersScreen.kt`의 "✏️ 모임 이름/코드 수정" 다이얼로그, 모임장/관리자 권한 게이트) — 처음에 별도 함수(`updateGroupInfo`, 모임장 전용)로 새로 만들었다가, 이 기존 기능을 발견하고 되돌린 뒤 기존 `updateGroupName`을 확장하는 쪽으로 재작업했다(CLAUDE.md "동일 기능이 이미 있는지 먼저 검색" 원칙).
+- `GroupInfo` 데이터클래스(양 플랫폼 `SocialGroupSyncClient.kt`)에 `description: String = ""` 추가, `readGroupInfo`가 `groups/{id}/info/description` 파싱.
+- `updateGroupName(databaseUrl, apiKey, groupId, newName, description)` — name/description 하위 경로를 각각 개별 PUT(REST). info 문서 전체를 덮어쓰지 않아 그 사이 다른 클라이언트가 바꾼 `inviteCode`/`createdAt` 등을 보존한다 — 기존 `transferOwnership`(ownerUid만 PUT)과 동일한 패턴.
+- 기존 "✏️ 모임 이름/코드 수정" `AlertDialog`(양 플랫폼 `SocialGroupMembersScreen.kt`)에 이름 입력 필드 아래 설명(선택, 2~4줄 `OutlinedTextField`) 필드 추가.
+- 설명이 있으면 모임 상세 화면 이름 아래에 작은 회색 텍스트로 표시(안드로이드는 탭바 위, 데스크탑은 헤드라인 바로 아래) — 빈 설명이면 아무것도 안 그림.
+- `PhoneLockRepository.Social.kt`의 `updateSocialGroupName`도 `description` 파라미터 추가.
+- 권한은 기존 UI 게이트(모임장 또는 관리자, `isAdmin`)를 그대로 유지 — 최초 계획은 "모임장 전용"이었지만, 이미 배포돼 있던 이름 수정 기능이 관리자까지 허용하고 있어 그 기존 관례를 따랐다(새 기능이 기존 기능을 확장하면서 권한 모델만 더 엄격하게 좁히면 사용자가 "왜 이름은 관리자가 되는데 설명은 안 되지" 하는 혼란을 만들 수 있다고 판단).
+- 양 플랫폼 컴파일(`compileDebugKotlin`/`compileKotlin`) 확인 후 릴리스 빌드(`assembleRelease`/`packageMsi createDistributable`)까지 완료, 안드로이드 APK 3위치(AndroidBuilds/OneDrive 원본/vm-build-output) + 데스크탑 호스트(`PhoneLockDesktopApp`)/`vm-build-output` 양쪽 배포, GitHub 릴리스 게시(안드로이드 `android-1789028782`, 데스크탑 `desktop-1789028710`), `sync-public-repo.ps1`로 공개 저장소 push까지 완료. 실사용 검증은 안 됨.
+
+---
+
 ## 2026-09-10 (100차 세션) — 캘린더 기본 정렬 버그 수정 + 공부 타이머 진행률 응원 문구 신규 + 신규 기능 브레인스토밍 백로그 정리 + 세션 마무리 정책 변경
 
 ### 캘린더 기본 정렬 버그 수정

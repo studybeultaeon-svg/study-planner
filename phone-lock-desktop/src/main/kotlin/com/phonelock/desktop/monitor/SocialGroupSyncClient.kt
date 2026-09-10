@@ -27,7 +27,10 @@ object SocialGroupSyncClient {
 
     private val INVITE_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // 0/O, 1/I처럼 헷갈리는 문자 제외
 
-    data class GroupInfo(val name: String, val ownerUid: String, val inviteCode: String, val createdAt: Long)
+    data class GroupInfo(
+        val name: String, val ownerUid: String, val inviteCode: String, val createdAt: Long,
+        val description: String = ""
+    )
     data class MemberInfo(val uid: String, val displayName: String, val joinedAt: Long)
     data class RoutineStat(val title: String, val doneToday: Boolean, val icon: String = "", val timeSlot: String? = null)
     /** [dateKey]/[color]가 있어야 모임 멤버 상세에서 실제 캘린더 미니 그리드로 그릴 수 있다(76차 확장 —
@@ -323,14 +326,16 @@ object SocialGroupSyncClient {
         }
     }
 
-    /** 모임 이름 수정(모임장/관리자만). */
-    fun updateGroupName(databaseUrl: String?, apiKey: String?, groupId: String, newName: String): Result<Unit> {
+    /** 모임 이름/설명 수정(모임장/관리자만, UI에서 gate) — 101차에 설명(description) 필드 추가. name/description
+     *  하위 경로만 각각 PUT한다(안드로이드판과 대칭). */
+    fun updateGroupName(databaseUrl: String?, apiKey: String?, groupId: String, newName: String, description: String): Result<Unit> {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
         if (newName.isBlank()) return Result.failure(IllegalStateException("모임 이름을 입력하세요."))
         return runCatching {
             val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
             val base = databaseUrl.trimEnd('/')
             put(base, "groups/$groupId/info/name", token, JSONObject.quote(newName.trim()))
+            put(base, "groups/$groupId/info/description", token, JSONObject.quote(description.trim()))
         }
     }
 
@@ -465,7 +470,8 @@ object SocialGroupSyncClient {
                 name = json.optString("name", ""),
                 ownerUid = json.optString("ownerUid", ""),
                 inviteCode = json.optString("inviteCode", ""),
-                createdAt = json.optLong("createdAt", 0L)
+                createdAt = json.optLong("createdAt", 0L),
+                description = json.optString("description", "")
             )
         }.getOrNull()
     }
