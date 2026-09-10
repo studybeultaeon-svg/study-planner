@@ -91,7 +91,8 @@ fun CalculatorScreen(repository: PhoneLockRepository) {
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        repository.syncCalculatorFromFirebase()
+        // 98차(온라인/오프라인 모드): 오프라인이면 네트워크 타임아웃만 기다리게 되므로 아예 건너뛴다.
+        if (!repository.isEffectivelyOffline()) repository.syncCalculatorFromFirebase()
         var t = repository.getCalcTasks()
         if (t.isEmpty()) { repository.addCalcTask(); t = repository.getCalcTasks() }
         tasks = t
@@ -105,6 +106,12 @@ fun CalculatorScreen(repository: PhoneLockRepository) {
     }
     val onSaved: () -> Unit = { scope.launch { savedCount = repository.getCalcSaved().size } }
 
+    // 98차(사용자 요청): 당겨서 새로고침 — 서버 최신 상태를 다시 받아온다.
+    com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = {
+        if (!repository.isEffectivelyOffline()) repository.syncCalculatorFromFirebase()
+        tasks = repository.getCalcTasks()
+        savedCount = repository.getCalcSaved().size
+    }) {
     Column(Modifier.fillMaxSize()) {
         Text("🧮 계산기", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(Spacing.md))
         if (com.phonelock.app.ui.components.isTabletWidth()) {
@@ -116,7 +123,7 @@ fun CalculatorScreen(repository: PhoneLockRepository) {
             }
             Spacer(Modifier.height(Spacing.sm))
             if (subTab == 2) {
-                CalcSavedTab(repository = repository, refreshTick = savedRefreshTick, onChanged = { savedRefreshTick++; onSaved() })
+                CalcSavedTab(repository = repository, refreshTick = savedRefreshTick, onChanged = { savedRefreshTick++; onSaved(); onChanged() })
             } else {
                 com.phonelock.app.ui.components.ResponsiveSplit(
                     modifier = Modifier.weight(1f),
@@ -139,9 +146,13 @@ fun CalculatorScreen(repository: PhoneLockRepository) {
             when (subTab) {
                 0 -> CalcInputTab(repository = repository, tasks = tasks, onChanged = onChanged, onCalculate = onCalculate)
                 1 -> CalcResultTab(repository = repository, results = results, onSaved = onSaved)
-                2 -> CalcSavedTab(repository = repository, refreshTick = savedRefreshTick, onChanged = { savedRefreshTick++; onSaved() })
+                // 98차 버그 수정: "저장됨" 탭에서 불러오기(loadCalcSavedItemAsDraft)해도 저장됨 목록만
+                // 새로고침되고 "입력" 탭의 draft 목록(tasks)은 안 갱신돼서, 다른 탭 갔다 오거나 앱을
+                // 재시작해야 보이던 버그 — onChanged()도 함께 호출해 draft 목록을 즉시 갱신한다.
+                2 -> CalcSavedTab(repository = repository, refreshTick = savedRefreshTick, onChanged = { savedRefreshTick++; onSaved(); onChanged() })
             }
         }
+    }
     }
 }
 

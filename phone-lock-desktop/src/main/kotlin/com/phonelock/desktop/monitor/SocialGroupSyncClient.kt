@@ -512,7 +512,7 @@ object SocialGroupSyncClient {
             }
 
             if (share.shareRoutines) {
-                val routines = repository.getRoutines().filter { RoutineEngine.isScheduledOn(it, today) }
+                val routines = repository.getAllRoutines().filter { RoutineEngine.isScheduledOn(it, today) }
                 val completed = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
                 val routinesArr = org.json.JSONArray()
                 routines.forEach { r ->
@@ -548,7 +548,7 @@ object SocialGroupSyncClient {
                 })
             }
             if (share.shareStreak) {
-                val routines = repository.getRoutines()
+                val routines = repository.getAllRoutines()
                 val completed = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
                 stats.put("streak", RoutineEngine.currentStreak(routines, completed, today))
                 stats.put("routineBestStreak", RoutineEngine.bestStreak(routines, completed, today))

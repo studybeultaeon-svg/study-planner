@@ -32,7 +32,7 @@ object RoutineNotifier {
         val today = now.toLocalDate()
         val todayKey = today.toString()
 
-        repository.getRoutines().forEach { routine ->
+        repository.getAllRoutines().forEach { routine ->
             if (!routine.notifyEnabled || routine.timeSlot != nowHm) return@forEach
             if (!RoutineEngine.isScheduledOn(routine, today)) return@forEach
             val key = routine.id to todayKey
@@ -53,7 +53,7 @@ object RoutineNotifier {
         if (!now.isBefore(target) && lastStreakNotifyDate != todayKey) {
             lastStreakNotifyDate = todayKey
             nextStreakCheckAt = randomTimeAfter(now)
-            val routines = repository.getRoutines()
+            val routines = repository.getAllRoutines()
             val completed = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
             val streak = RoutineEngine.currentStreak(routines, completed, today.minusDays(1))
             val message: String

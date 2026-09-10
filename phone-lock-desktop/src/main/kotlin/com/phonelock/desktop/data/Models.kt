@@ -229,6 +229,9 @@ data class CalcSavedItem(
  */
 data class Routine(
     val id: Long,
+    /** 이 루틴이 속한 모드(RoutineMode.id, 98차 루틴 모드). 레거시 데이터는 JsonStore 파싱 시 기본
+     *  모드(1L)로 자동 편입된다. */
+    val modeId: Long? = null,
     val title: String = "",
     /** 목록에서 표시할 이모지 1개(선택). 빈 문자열이면 아이콘 없이 제목만 표시. */
     val icon: String = "",
@@ -255,6 +258,13 @@ data class Routine(
 data class RoutineLog(val routineId: Long, val dateKey: String)
 
 /**
+ * 루틴 모드(98차 설계) — 상황별(평일/주말/시험기간 등)로 별개 루틴 묶음을 만들어 전환하는 기능의 단위.
+ * 안드로이드 RoutineMode(Room 엔티티)와 대칭. 항상 최소 1개 이상 존재해야 한다(마지막 모드 삭제 불가,
+ * Repository.Routine.kt의 ensureDefaultRoutineMode() 참고).
+ */
+data class RoutineMode(val id: Long, val name: String = "", val sortOrder: Int = 0)
+
+/**
  * 앱이 접속할 Firebase 프로젝트(study-fc3bf) 고정값 — 62차까지는 설정 화면에서 사용자가 직접 입력했지만,
  * 이제 로그인만으로 동기화되도록 하드코딩(안드로이드 google-services.json과 같은 프로젝트).
  */
@@ -269,10 +279,6 @@ data class AppData(
     var nextGroupId: Long = 1,
     /** 일일 사용 한도(dailyLimitMinutes)의 "하루" 기준이 되는 시각 (0~23시, 기본값 0 = 자정). */
     var dailyResetHour: Int = 0,
-    /** 그림으로 보는 기능 사용법 안내(GuideScreen)를 마지막으로 본 시점의 빌드 타임스탬프 — 안드로이드
-     *  AppPreferences.lastSeenGuideVersion과 같은 목적. 이 값이 현재 BuildInfo.BUILD_TIMESTAMP와 다르면
-     *  (최초 실행 포함, 기본값 0은 절대 일치 안 함) 최초 실행/업데이트 직후 모두 자동으로 다시 표시된다. */
-    var lastSeenGuideVersion: Long = 0L,
     /** 브라우저 확장프로그램이 URL 패턴(youtube.com/shorts, instagram.com/reels)으로 감지해서 차단할지 여부. */
     var blockReels: Boolean = false,
     var blockShorts: Boolean = false,
@@ -328,9 +334,15 @@ data class AppData(
     /** 그룹 자동 재활성화(초기화 시간마다 꺼진 그룹을 다시 켬)를 마지막으로 적용한 날짜(effectiveDate 기준).
      *  이 값과 오늘 날짜가 다르면 다음 tick에서 한 번만 재적용한다. */
     var lastGroupAutoResetDate: String? = null,
+    /** 온라인/오프라인 모드(98차, 사용자 요청) — 사용자가 수동으로 강제 오프라인 전환. 안드로이드판
+     *  AppPreferences.offlineModeOverride와 동일 개념(데스크탑은 SharedPreferences가 없어 AppData에 둠). */
+    var offlineModeOverride: Boolean = false,
     /** 루틴앱 v1(47차) — Routine 목록과 다음 id 발급용 카운터. */
     val routines: MutableList<Routine> = mutableListOf(),
     var nextRoutineId: Long = 1,
+    /** 루틴 모드(98차) — RoutineMode 목록과 다음 id 발급용 카운터(routines와 동일 패턴). */
+    val routineModes: MutableList<RoutineMode> = mutableListOf(),
+    var nextRoutineModeId: Long = 1,
     /** 루틴 날짜별 완료 기록. */
     val routineLogs: MutableList<RoutineLog> = mutableListOf(),
     /** 루틴 전체 문서 단위 LWW 타임스탬프(51차, 캘린더의 calendarTs와 동일 패턴) — users/{user}/routines. */

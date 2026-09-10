@@ -106,7 +106,7 @@ object RoutineAlarmScheduler {
 
     /** 부팅 직후/앱 시작 시 알림 켜진 루틴 전부를 다시 예약한다(예약은 재부팅 시 초기화되므로 필수). */
     suspend fun rescheduleAll(context: Context, repository: PhoneLockRepository) {
-        repository.getRoutines().forEach { scheduleNext(context, it) }
+        repository.getAllRoutines().forEach { scheduleNext(context, it) }
     }
 
     /** 스트릭 알림(전역, 루틴별 아님)을 하루에 한 번, 완전히 랜덤한 시각에 예약한다(58차 사용자 요청 —

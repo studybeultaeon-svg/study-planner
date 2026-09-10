@@ -17,13 +17,6 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("onboarding_shown", false)
         set(value) = prefs.edit().putBoolean("onboarding_shown", value).apply()
 
-    /** 그림으로 보는 기능 사용법 안내(GuideScreen)를 마지막으로 본 시점의 versionCode — onboardingShown(권한 안내)과는
-     *  별개 목적이라 따로 둔다. 이 값이 현재 versionCode와 다르면(최초 설치 포함, 기본값 -1은 절대 일치 안 함)
-     *  자동으로 다시 표시되고, 설정 화면 "도움말"에서도 언제든 다시 볼 수 있다. */
-    var lastSeenGuideVersion: Long
-        get() = prefs.getLong("last_seen_guide_version", -1L)
-        set(value) = prefs.edit().putLong("last_seen_guide_version", value).apply()
-
     // ---- 동기화 상태 대시보드(82차, 감사보고서 §10①) ----
     /** 가장 최근에 Firebase 동기화(어느 SyncClient든)가 성공한 시각. 설정 화면 상단 배지용, 판정 로직과 무관. */
     var lastSyncSuccessAtMillis: Long
@@ -264,6 +257,18 @@ class AppPreferences(context: Context) {
     var routinesTs: Long
         get() = prefs.getLong("routines_ts", 0L)
         set(value) = prefs.edit().putLong("routines_ts", value).apply()
+
+    /** 온라인/오프라인 모드(98차, 사용자 요청) — 사용자가 수동으로 강제 오프라인 전환. 기본 꺼짐(자동
+     *  감지 우선) — 켜면 실제 네트워크 연결 여부와 무관하게 항상 오프라인으로 취급한다. */
+    var offlineModeOverride: Boolean
+        get() = prefs.getBoolean("offline_mode_override", false)
+        set(value) = prefs.edit().putBoolean("offline_mode_override", value).apply()
+
+    /** 마지막으로 보고 있던 루틴 모드(98차) — 홈 화면 위젯이 앱이 안 켜져 있어도 어떤 모드의 루틴을
+     *  보여줄지 알아야 해서 SharedPreferences에 둔다(-1L = 미설정, 첫 모드로 폴백). */
+    var activeRoutineModeId: Long
+        get() = prefs.getLong("active_routine_mode_id", -1L)
+        set(value) = prefs.edit().putLong("active_routine_mode_id", value).apply()
 
     /** 그룹 설정(제어할 앱/사이트·groupEnabled·스누즈 진행상태 등 제외) 전체 문서 단위 Firebase LWW
      *  타임스탬프(87차+, 데스크탑판 groupSettingsTs와 동일 패턴) — users/{user}/groupSettings. */

@@ -25,7 +25,7 @@ object WeeklySummaryNotifier {
         val today = now.toLocalDate()
         val weekAgo = today.minusDays(6)
 
-        val routines = repository.getRoutines()
+        val routines = repository.getAllRoutines()
         var scheduledCount = 0
         var doneCount = 0
         for (i in 0..6) {

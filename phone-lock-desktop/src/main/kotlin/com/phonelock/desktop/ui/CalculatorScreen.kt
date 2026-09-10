@@ -47,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +71,7 @@ import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -96,18 +98,29 @@ fun CalculatorScreen(repository: Repository) {
     var tasks by remember { mutableStateOf(repository.getCalcTasks()) }
     var results by remember { mutableStateOf<List<Pair<CalcTask, CalcEngine.CalcOutcome>>>(emptyList()) }
     var savedRefreshTick by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
 
     fun refreshTasks() { tasks = repository.getCalcTasks() }
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { repository.syncCalculatorFromFirebase() }
+        withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncCalculatorFromFirebase() }
         refreshTasks()
         if (tasks.isEmpty()) { repository.addCalcTask(); refreshTasks() }
         savedRefreshTick++
     }
 
     Column(Modifier.fillMaxSize()) {
-        Text("🧮 계산기", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(Spacing.md))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            Text("🧮 계산기", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(Spacing.md))
+            // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
+            androidx.compose.material3.IconButton(onClick = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncCalculatorFromFirebase() }
+                    refreshTasks()
+                    savedRefreshTick++
+                }
+            }) { Text("🔄") }
+        }
         com.phonelock.desktop.ui.components.ResponsiveSplit(
             modifier = Modifier.weight(1f),
             leftWeight = 4f,
@@ -135,7 +148,10 @@ fun CalculatorScreen(repository: Repository) {
                                 onChanged = { refreshTasks() },
                                 onCalculate = { results = tasks.map { it to CalcEngine.calculate(it.toCalcInput()) } }
                             )
-                            1 -> CalcSavedTab(repository = repository, refreshTick = savedRefreshTick, onChanged = { savedRefreshTick++ })
+                            // 98차 버그 수정: "저장됨" 탭에서 불러오기(loadCalcSavedItemAsDraft)해도
+                            // 저장됨 목록만 새로고침되고 왼쪽 "업무 입력" 탭의 draft 목록(tasks)은 안
+                            // 갱신돼서, 다른 탭 갔다 오거나 앱을 재시작해야 보이던 버그(안드로이드판과 대칭).
+                            1 -> CalcSavedTab(repository = repository, refreshTick = savedRefreshTick, onChanged = { savedRefreshTick++; refreshTasks() })
                         }
                     }
                 }

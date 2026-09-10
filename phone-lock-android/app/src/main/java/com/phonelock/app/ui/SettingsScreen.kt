@@ -109,8 +109,7 @@ private fun syncElapsedLabel(atMillis: Long): String {
 fun SettingsScreen(
     repository: PhoneLockRepository,
     onNavigateToStudyLockApps: () -> Unit = {},
-    onThemeChange: (String) -> Unit = {},
-    onShowGuide: () -> Unit = {}
+    onThemeChange: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -300,21 +299,6 @@ fun SettingsScreen(
                 .padding(Spacing.md)
         ) {
           if (settingsSubTab == 0) {
-            // "도움말"은 원래 공통 탭 스크롤 맨 아래(업데이트 카드 다음)에 있어서, 정작 사용법을
-            // 모를 때 찾기가 가장 어려운 자리였다 — 탭을 열면 바로 보이도록 맨 위로 올린다.
-            SectionCard("도움말") {
-                Text(
-                    "그림으로 보는 사용법 안내를 다시 볼 수 있습니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                Button(onClick = onShowGuide, modifier = Modifier.fillMaxWidth()) {
-                    Text("앱 사용법 다시 보기")
-                }
-            }
-            Spacer(Modifier.height(Spacing.md))
-
             SectionCard("테마") {
                 Text(
                     "앱 전체 배경/포인트 색과 차단/실행 전 대기 화면 강조색, 홈 화면 위젯 색까지 함께 바뀝니다.",
@@ -783,6 +767,35 @@ fun SettingsScreen(
           }
 
           if (settingsSubTab == 0) {
+            // 98차(사용자 요청): 온라인/오프라인 모드 — 네트워크가 실제로 끊기면 자동으로 오프라인
+            // 전환되지만(NetworkMonitor), 필요하면 연결돼 있어도 수동으로 강제 오프라인 가능.
+            SectionCard("온라인 / 오프라인 모드") {
+                var offlineOverride by remember { mutableStateOf(prefs.offlineModeOverride) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("오프라인 모드로 강제 전환", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "켜면 인터넷이 연결돼 있어도 동기화/로그인/소셜 등 네트워크 기능을 쓰지 않고 이 " +
+                                "기기에서만 로컬로 사용합니다. 꺼둬도 실제로 인터넷이 끊기면 자동으로 오프라인 " +
+                                "처리됩니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = offlineOverride,
+                        onCheckedChange = { offlineOverride = it; prefs.offlineModeOverride = it }
+                    )
+                }
+                Spacer(Modifier.height(Spacing.xs))
+                Text(
+                    if (com.phonelock.app.service.NetworkMonitor.isOnline) "현재 인터넷 연결됨" else "현재 인터넷 연결 안 됨",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (com.phonelock.app.service.NetworkMonitor.isOnline) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+                )
+            }
+            Spacer(Modifier.height(Spacing.md))
+
             SectionCard("계정 동기화 (로그인 필수)") {
                 Text(
                     "동기화(실행 전 대기 단계/잠깐 풀기/일일사용량/캘린더/계산기/루틴)는 이제 로그인이 있어야만 " +

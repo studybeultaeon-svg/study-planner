@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AppGroup::class, GroupMember::class, UsageRecord::class,
         GroupSite::class, ConfirmEscalation::class, StudyLogEntry::class, CalendarTask::class,
         CalcTask::class, CalcSavedItem::class, ConfirmCounter::class,
-        Routine::class, RoutineLog::class, QuoteOutcome::class
+        Routine::class, RoutineLog::class, QuoteOutcome::class, RoutineMode::class
     ],
     // 82차: v30(calc_task autoGenEnabled/autoGenBatchSize) / v31(study_log_entry tag) / v32(quote_outcome
     // 신규 테이블) / v33(app_group selfMessageText) — 전부 아래 MIGRATION_29_33에서 명시적 ALTER/CREATE로
@@ -28,7 +28,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // 하드코딩 SNOOZE_DAILY_LIMIT과 동일값) 추가.
     // 94차: v37 — app_group에 syncEnabled(기본 false) 추가. 그룹 설정 동기화를 "전부 자동"에서 "그룹별
     // opt-in"으로 전환(자세한 배경은 DECISIONS.md 94차) — 기존 그룹은 전부 기본값(꺼짐)으로 시작한다.
-    version = 37,
+    // 98차: v38 — 루틴 모드(96차 설계, 97차 이월) 신규 routine_mode 테이블 + routine.modeId 추가. 기존
+    // 루틴은 전부 기본 모드(id=1)로 편입(MIGRATION_37_38 참고).
+    version = 38,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -44,6 +46,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun confirmCounterDao(): ConfirmCounterDao
     abstract fun routineDao(): RoutineDao
     abstract fun routineLogDao(): RoutineLogDao
+    abstract fun routineModeDao(): RoutineModeDao
     abstract fun quoteOutcomeDao(): QuoteOutcomeDao
 
     companion object {
@@ -114,6 +117,19 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE app_group ADD COLUMN syncEnabled INTEGER NOT NULL DEFAULT 0")
             }
         }
+        /** 98차: 루틴 모드 신규 — routine_mode 테이블 생성 + 기본 모드(id=1) 삽입 + 기존 루틴 전부 편입. */
+        private val MIGRATION_37_38 = object : Migration(37, 38) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS routine_mode (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "name TEXT NOT NULL, sortOrder INTEGER NOT NULL DEFAULT 0)"
+                )
+                db.execSQL("INSERT INTO routine_mode (id, name, sortOrder) VALUES (1, '기본', 0)")
+                db.execSQL("ALTER TABLE routine ADD COLUMN modeId INTEGER")
+                db.execSQL("UPDATE routine SET modeId = 1")
+            }
+        }
 
         fun getInstance(context: Context): AppDatabase =
             instance ?: synchronized(this) {
@@ -123,7 +139,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "phone_lock.db"
                 ).addMigrations(
                     MIGRATION_27_28, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
-                    MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37
+                    MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38
                 )
                     .fallbackToDestructiveMigration().build().also { instance = it }
             }

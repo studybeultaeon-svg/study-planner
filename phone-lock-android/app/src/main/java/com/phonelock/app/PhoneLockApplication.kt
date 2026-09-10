@@ -17,6 +17,7 @@ import java.util.Locale
 class PhoneLockApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        runCatching { com.phonelock.app.service.NetworkMonitor.register(this) }
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             runCatching {

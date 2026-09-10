@@ -115,7 +115,10 @@ private fun SettingsColumns(
  */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onShowGuide: () -> Unit = {}) {
+fun SettingsScreen(
+    repository: Repository,
+    onThemeChange: (String) -> Unit = {}
+) {
     var settingsSubTab by remember { mutableIntStateOf(0) }
     var themeMode by remember { mutableStateOf(repository.themeMode) }
     var customBgText by remember { mutableStateOf(repository.customThemeBackground) }
@@ -304,19 +307,6 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
             when (SettingsSubTab.entries[settingsSubTab]) {
                 SettingsSubTab.COMMON -> SettingsColumns(left = {
                     // 왼쪽: 앱 외형·계정 관련 카드
-                    // "도움말"은 원래 공통 탭 스크롤 한참 아래에 있어서, 정작 사용법을 모를 때
-                    // 찾기가 가장 어려운 자리였다 — 탭을 열면 바로 보이도록 맨 위로 올린다.
-                    SectionCard("도움말") {
-                        Text(
-                            "그림으로 보는 사용법 안내를 다시 볼 수 있습니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        Button(onClick = onShowGuide) { Text("앱 사용법 다시 보기") }
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
                     SectionCard("테마") {
                         Text(
                             "앱 전체 배경/포인트 색과 차단/실행 전 대기 화면 강조색, 브라우저 확장 색까지 함께 바뀝니다.",
@@ -432,6 +422,20 @@ fun SettingsScreen(repository: Repository, onThemeChange: (String) -> Unit = {},
                                 launchAtStartup = checked
                                 com.phonelock.desktop.setLaunchAtStartupEnabled(checked)
                             }
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    // 98차(사용자 요청): 온라인/오프라인 모드 — 네트워크가 실제로 끊기면 자동으로
+                    // 오프라인 전환되지만(NetworkMonitor), 필요하면 연결돼 있어도 수동으로 강제 오프라인 가능.
+                    SectionCard("온라인 / 오프라인 모드") {
+                        var offlineOverride by remember { mutableStateOf(repository.offlineModeOverride) }
+                        ToggleRow(
+                            title = "오프라인 모드로 강제 전환",
+                            description = "켜면 인터넷이 연결돼 있어도 동기화/로그인/소셜 등 네트워크 기능을 쓰지 않고 이 " +
+                                "기기에서만 로컬로 사용합니다. 꺼둬도 실제로 인터넷이 끊기면 자동으로 오프라인 처리됩니다.",
+                            checked = offlineOverride,
+                            onCheckedChange = { offlineOverride = it; repository.offlineModeOverride = it }
                         )
                     }
                     Spacer(Modifier.height(Spacing.md))

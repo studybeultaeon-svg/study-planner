@@ -170,13 +170,22 @@ fun CalendarScreen(repository: Repository) {
     }
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { repository.syncCalendarFromFirebase() }
+        withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncCalendarFromFirebase() }
         refresh()
     }
     LaunchedEffect(year, month, dayRefreshTick) { refresh() }
 
     Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Text("📅 캘린더", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            Text("📅 캘린더", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
+            androidx.compose.material3.IconButton(onClick = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncCalendarFromFirebase() }
+                    refresh()
+                }
+            }) { Text("🔄") }
+        }
         Spacer(Modifier.height(Spacing.md))
 
         // 데스크탑 전용 분할: 왼쪽(넓을 땐 좌측, 좁을 땐 위쪽)은 월 그리드, 오른쪽(넓을 땐 우측, 좁을 땐

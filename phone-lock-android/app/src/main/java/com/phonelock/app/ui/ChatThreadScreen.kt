@@ -53,7 +53,7 @@ private const val POLL_INTERVAL_MS = 4_000L
 fun ChatThreadScreen(
     myUid: String?,
     loadMessages: suspend () -> List<ChatSyncClient.ChatMessage>,
-    sendMessage: suspend (String) -> Unit,
+    sendMessage: suspend (String) -> Result<Unit>,
     toggleReaction: suspend (msgId: String, emoji: String, alreadySet: Boolean) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -61,6 +61,9 @@ fun ChatThreadScreen(
     var input by remember { mutableStateOf("") }
     var openReactionsFor by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
+    // 98차: sendMessage 실패(Result.failure)를 그동안 아무도 확인하지 않고 버려서 "쳐서 올려도
+    // 안 올라간다"는 제보가 원인 불명으로 남아있었다 — 실패 사유를 화면에 그대로 보여준다.
+    var sendError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(Unit) {
@@ -82,8 +85,13 @@ fun ChatThreadScreen(
         if (text.isBlank() || sending) return
         input = ""
         sending = true
+        sendError = null
         scope.launch {
-            sendMessage(text)
+            val result = sendMessage(text)
+            result.onFailure {
+                sendError = it.message ?: "메시지 전송에 실패했습니다."
+                input = text
+            }
             messages = loadMessages()
             if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
             sending = false
@@ -174,6 +182,14 @@ fun ChatThreadScreen(
             }
         }
 
+        sendError?.let {
+            Text(
+                "전송 실패: $it",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = Spacing.sm)
+            )
+        }
         Row(
             Modifier.fillMaxWidth().padding(Spacing.sm),
             verticalAlignment = Alignment.CenterVertically
@@ -183,7 +199,13 @@ fun ChatThreadScreen(
                 onValueChange = { input = it },
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("메시지 보내기") },
-                singleLine = true
+                singleLine = true,
+                // 96차 버그 수정: 채팅을 치고 엔터(모바일은 키보드의 "전송" 액션)를 눌러도 메시지가
+                // 올라가지 않던 버그 — 필드에 키보드 전송 액션 자체가 연결돼 있지 않아서, 엔터를
+                // 눌러도 singleLine이라 줄바꿈도 안 되고 아무 일도 안 일어났다. imeAction=Send +
+                // onSend로 전송 버튼(➤)과 동일한 sendCurrentInput()을 호출하도록 연결한다.
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Send),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = { sendCurrentInput() })
             )
             Spacer(Modifier.width(Spacing.xs))
             IconButton(onClick = { sendCurrentInput() }, enabled = input.isNotBlank() && !sending) {

@@ -13,6 +13,16 @@ private const val DAILY_USAGE_DEVICE = "desktop"
 internal fun effectiveDate(resetHour: Int, now: LocalDateTime = LocalDateTime.now()): LocalDate =
     if (now.hour < resetHour) now.toLocalDate().minusDays(1) else now.toLocalDate()
 
+/**
+ * 온라인/오프라인 모드(98차, 사용자 요청, 안드로이드판과 대칭) — 이 셋 중 하나라도 해당하면 네트워크
+ * (Firebase) 관련 기능을 건너뛴다: ① 설정에서 수동으로 켠 "오프라인 모드", ② 실제 인터넷 연결 끊김
+ * ([com.phonelock.desktop.monitor.NetworkMonitor]), ③ 게스트(익명) 계정.
+ */
+fun Repository.isEffectivelyOffline(): Boolean =
+    synchronized(lock) { data.offlineModeOverride } ||
+        !com.phonelock.desktop.monitor.NetworkMonitor.isOnline() ||
+        com.phonelock.desktop.monitor.AuthManager.isAnonymous
+
 class Repository {
     internal val lock = Any()
     internal var data: AppData = JsonStore.load()
@@ -504,13 +514,6 @@ class Repository {
             persist()
         }
 
-    var lastSeenGuideVersion: Long
-        get() = synchronized(lock) { data.lastSeenGuideVersion }
-        set(value) = synchronized(lock) {
-            data.lastSeenGuideVersion = value
-            persist()
-        }
-
     var themeMode: String
         get() = synchronized(lock) { data.themeMode }
         set(value) = synchronized(lock) {
@@ -629,6 +632,11 @@ class Repository {
     var permSocial: Boolean
         get() = synchronized(lock) { data.permSocial }
         set(value) = synchronized(lock) { data.permSocial = value; persist() }
+
+    /** 온라인/오프라인 모드(98차) 수동 강제 오프라인 토글 — [isEffectivelyOffline] 참고. */
+    var offlineModeOverride: Boolean
+        get() = synchronized(lock) { data.offlineModeOverride }
+        set(value) = synchronized(lock) { data.offlineModeOverride = value; persist() }
 
     /** 이 모임에서 마지막으로 확인한 넛지 시각(epoch millis, 없으면 0) — SocialGroupNotifier가 새 넛지 판정에 쓴다. */
     fun nudgeLastSeenFor(groupId: String): Long = synchronized(lock) { data.nudgeLastSeenByGroup[groupId] ?: 0L }

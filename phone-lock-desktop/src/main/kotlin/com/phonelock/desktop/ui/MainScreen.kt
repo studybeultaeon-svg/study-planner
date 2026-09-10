@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.isEffectivelyOffline
 import com.phonelock.desktop.data.syncGroupSettingsFromFirebase
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +42,7 @@ private enum class TopSection { MANAGE, STUDY, ROUTINE, SOCIAL_GROUP, SETTINGS }
  * 데스크탑다운 구조로, 모바일(하단 탭)과는 별개로 유지한다.
  */
 @Composable
-fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onShowGuide: () -> Unit = {}) {
+fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
     // 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임)에 맞춰 보이는 섹션만 남긴다 — 설정은 항상
     // 보임(로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 Repository가 전부 true를
     // 기본값으로 주므로 이 필터링으로 인한 회귀는 없다.
@@ -50,7 +51,8 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onS
             TopSection.ROUTINE.takeIf { repository.permRoutine },
             TopSection.STUDY.takeIf { repository.permStudy },
             TopSection.MANAGE.takeIf { repository.permManage },
-            TopSection.SOCIAL_GROUP.takeIf { repository.permSocial },
+            // 98차(사용자 요청, 안드로이드판과 대칭): 게스트(익명 계정)는 소셜 탭을 아예 못 쓰게 한다.
+            TopSection.SOCIAL_GROUP.takeIf { repository.permSocial && !com.phonelock.desktop.monitor.AuthManager.isAnonymous },
             TopSection.SETTINGS
         )
     }
@@ -76,7 +78,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onS
         if (section == TopSection.MANAGE && manageSubTab == 0) {
             // 그룹 탭 진입 시 1회 그룹 설정(제어할 앱/사이트·groupEnabled 등 제외) 동기화 — RoutineScreen의
             // syncRoutinesFromFirebase() 진입 시 호출과 동일 패턴(87차+).
-            withContext(Dispatchers.IO) { repository.syncGroupSettingsFromFirebase() }
+            withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncGroupSettingsFromFirebase() }
             refresh()
             while (true) {
                 delay(1000)
@@ -292,7 +294,10 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}, onS
                     }
                     TopSection.SETTINGS -> {
                         Box(Modifier.weight(1f)) {
-                            SettingsScreen(repository, onThemeChange = onThemeChange, onShowGuide = onShowGuide)
+                            SettingsScreen(
+                                repository,
+                                onThemeChange = onThemeChange
+                            )
                         }
                     }
                 }

@@ -115,6 +115,7 @@ object JsonStore {
             calcFolderTs = json.optLong("calcFolderTs", 0L),
             calcFolderOrderTs = json.optLong("calcFolderOrderTs", 0L),
             lastGroupAutoResetDate = if (json.isNull("lastGroupAutoResetDate")) null else json.optString("lastGroupAutoResetDate", null),
+            offlineModeOverride = json.optBoolean("offlineModeOverride", false),
             nextRoutineId = json.optLong("nextRoutineId", 1),
             cachedApprovalStatus = if (json.isNull("cachedApprovalStatus")) null else json.optString("cachedApprovalStatus", null),
             permRoutine = json.optBoolean("permRoutine", true),
@@ -350,12 +351,27 @@ object JsonStore {
             data.confirmCounters.add(ConfirmCounter(c.getLong("groupId"), c.getString("date"), c.optInt("count", 0)))
         }
 
+        // 루틴 모드(98차) — 없으면(레거시 파일) 기본 모드 하나만 채운다.
+        val routineModesJson = json.optJSONArray("routineModes")
+        if (routineModesJson == null || routineModesJson.length() == 0) {
+            data.routineModes.add(RoutineMode(id = 1L, name = "기본", sortOrder = 0))
+            data.nextRoutineModeId = 2L
+        } else {
+            for (i in 0 until routineModesJson.length()) {
+                val m = routineModesJson.getJSONObject(i)
+                data.routineModes.add(RoutineMode(id = m.getLong("id"), name = m.optString("name", "기본"), sortOrder = m.optInt("sortOrder", i)))
+            }
+            data.nextRoutineModeId = json.optLong("nextRoutineModeId", (data.routineModes.maxOfOrNull { it.id } ?: 0L) + 1)
+        }
+
         val routinesJson = json.optJSONArray("routines") ?: JSONArray()
         for (i in 0 until routinesJson.length()) {
             val r = routinesJson.getJSONObject(i)
             data.routines.add(
                 Routine(
                     id = r.getLong("id"),
+                    // 레거시 데이터(modeId 필드 없음)는 기본 모드(1L)로 자동 편입.
+                    modeId = if (r.has("modeId") && !r.isNull("modeId")) r.getLong("modeId") else 1L,
                     title = r.optString("title", ""),
                     icon = r.optString("icon", ""),
                     timeSlot = if (r.isNull("timeSlot")) null else r.optString("timeSlot", null),
@@ -419,6 +435,7 @@ object JsonStore {
         json.put("lastAutoStatsPruneDate", data.lastAutoStatsPruneDate)
         json.put("routinesTs", data.routinesTs)
         json.put("lastGroupAutoResetDate", data.lastGroupAutoResetDate ?: JSONObject.NULL)
+        json.put("offlineModeOverride", data.offlineModeOverride)
         json.put("nextRoutineId", data.nextRoutineId)
         json.put("blockReels", data.blockReels)
         json.put("blockShorts", data.blockShorts)
@@ -621,10 +638,22 @@ object JsonStore {
         }
         json.put("confirmCounters", confirmCountersJson)
 
+        val routineModesJson = JSONArray()
+        data.routineModes.forEach { m ->
+            routineModesJson.put(JSONObject().apply {
+                put("id", m.id)
+                put("name", m.name)
+                put("sortOrder", m.sortOrder)
+            })
+        }
+        json.put("routineModes", routineModesJson)
+        json.put("nextRoutineModeId", data.nextRoutineModeId)
+
         val routinesJson = JSONArray()
         data.routines.forEach { r ->
             routinesJson.put(JSONObject().apply {
                 put("id", r.id)
+                put("modeId", r.modeId ?: 1L)
                 put("title", r.title)
                 put("icon", r.icon)
                 put("timeSlot", r.timeSlot ?: JSONObject.NULL)

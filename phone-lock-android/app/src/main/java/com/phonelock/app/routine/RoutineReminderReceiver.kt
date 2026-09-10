@@ -62,7 +62,7 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                 if (routineId < 0) return
                 runAsync {
                     val repository = PhoneLockRepository(appContext)
-                    val routine = repository.getRoutines().find { it.id == routineId }
+                    val routine = repository.getAllRoutines().find { it.id == routineId }
                     if (routine != null && routine.notifyEnabled) {
                         com.phonelock.app.service.StudyNotificationGate.showOrQueue(
                             appContext, repository,
@@ -81,7 +81,7 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                     val repository = PhoneLockRepository(appContext)
                     val today = LocalDate.now().toString()
                     if (prefs.lastRoutineStreakNotifyDate != today) {
-                        val routines = repository.getRoutines()
+                        val routines = repository.getAllRoutines()
                         val completed = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
                         val streak = RoutineEngine.currentStreak(routines, completed, LocalDate.now().minusDays(1))
                         val message: String
@@ -128,7 +128,7 @@ class RoutineReminderReceiver : BroadcastReceiver() {
         val today = LocalDate.now()
         val weekAgo = today.minusDays(6)
 
-        val routines = repository.getRoutines()
+        val routines = repository.getAllRoutines()
         val completed = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
         var scheduledCount = 0
         var doneCount = 0

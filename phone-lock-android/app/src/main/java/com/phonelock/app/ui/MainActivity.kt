@@ -70,7 +70,10 @@ private fun visibleTabs(prefs: AppPreferences): List<Tab> = listOfNotNull(
     Tab.Routine.takeIf { prefs.permRoutine },
     Tab.Study.takeIf { prefs.permStudy },
     Tab.Manage.takeIf { prefs.permManage },
-    Tab.Group.takeIf { prefs.permSocial },
+    // 98차(사용자 요청): 게스트(익명 계정)는 소셜 탭을 아예 못 쓰게 한다 — 서버 profile.permissions가
+    // 아직 없으면(하위호환) 전부 true로 취급하는 fromProfile() 기본값 때문에 이 조건 없이는 게스트도
+    // 그냥 소셜 탭이 보였다.
+    Tab.Group.takeIf { prefs.permSocial && com.phonelock.app.service.AuthManager.currentUser?.isAnonymous != true },
     Tab.Settings
 )
 
@@ -97,6 +100,9 @@ class MainActivity : ComponentActivity() {
             AppPreferences(applicationContext).resetSyncTimestamps()
         }
         val repository = PhoneLockRepository(applicationContext)
+        // 신규 설치 등으로 마이그레이션 없이 v38 스키마가 바로 생성된 경우를 위한 안전장치(98차,
+        // 루틴 모드) — 모드가 하나도 없으면 기본 모드를 만든다.
+        lifecycleScope.launch { repository.ensureDefaultRoutineMode() }
 
         val watchdogRequest = PeriodicWorkRequestBuilder<AccessibilityWatchdogWorker>(15, TimeUnit.MINUTES).build()
         WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
@@ -159,17 +165,12 @@ class MainActivity : ComponentActivity() {
             var themeRefreshTick by remember { mutableStateOf(0) }
             val prefs = remember(themeRefreshTick) { AppPreferences(applicationContext) }
             var showOnboarding by remember { mutableStateOf(!AppPreferences(applicationContext).onboardingShown) }
-            // 그림으로 보는 기능 안내(신규) — 권한 온보딩과 별개로 최초 설치 시 자동 표시, 이후 설정 탭에서
-            // 다시 열 수 있음. 91차: 마지막으로 본 버전과 현재 버전이 다르면(최초 설치 포함) 업데이트 직후에도
-            // 다시 뜨도록 확장 — repository.currentVersionCode()는 이미 자체 업데이트 체크에 쓰이던 값.
-            var showGuide by remember { mutableStateOf(AppPreferences(applicationContext).lastSeenGuideVersion != repository.currentVersionCode()) }
             PhoneLockTheme(themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
                 Surface(modifier = Modifier) {
                     AccountGate(repository) {
                         PhoneLockApp(
                             repository,
-                            onThemeChange = { themeMode = it; themeRefreshTick++ },
-                            onShowGuide = { showGuide = true }
+                            onThemeChange = { themeMode = it; themeRefreshTick++ }
                         )
                     }
                 }
@@ -179,13 +180,6 @@ class MainActivity : ComponentActivity() {
                             AppPreferences(applicationContext).onboardingShown = true
                             showOnboarding = false
                             requestNotificationPermissionIfNeeded()
-                        }
-                    )
-                } else if (showGuide) {
-                    GuideScreen(
-                        onDismiss = {
-                            AppPreferences(applicationContext).lastSeenGuideVersion = repository.currentVersionCode()
-                            showGuide = false
                         }
                     )
                 }
@@ -218,7 +212,7 @@ private fun OnboardingDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String) -> Unit = {}, onShowGuide: () -> Unit = {}) {
+private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String) -> Unit = {}) {
     val navController = rememberNavController()
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { AppPreferences(context) }
@@ -307,8 +301,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                 SettingsScreen(
                     repository,
                     onNavigateToStudyLockApps = { navController.navigate("study_lock_apps") },
-                    onThemeChange = onThemeChange,
-                    onShowGuide = onShowGuide
+                    onThemeChange = onThemeChange
                 )
             }
             composable("study_lock_apps") {

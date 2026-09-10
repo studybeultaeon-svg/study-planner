@@ -2,7 +2,10 @@ package com.phonelock.app.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -13,6 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -21,12 +27,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -56,6 +60,9 @@ import com.phonelock.app.data.findRemoteGroupSettingByName
 import com.phonelock.app.service.LockEvaluator
 import org.json.JSONObject
 import com.phonelock.shared.PERSUASION_MESSAGES
+import com.phonelock.app.ui.components.CompactDateField
+import com.phonelock.app.ui.components.CompactField
+import com.phonelock.app.ui.components.CompactNumberField
 import com.phonelock.app.ui.components.DurationFieldsRow
 import com.phonelock.app.ui.components.PersuasionStepper
 import com.phonelock.app.ui.components.SectionCard
@@ -80,19 +87,29 @@ private fun textToMinutes(text: String): Int? {
     return h * 60 + m
 }
 
+// 96차: 사용자가 그려준 시안대로 사각 FilterChip 대신 동그란 요일 칩(선택 시 primary 채움)으로 교체.
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DayMaskRow(mask: Int, onMaskChange: (Int) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         DAY_LABELS.forEachIndexed { index, label ->
             val checked = (mask shr index) and 1 == 1
-            FilterChip(
-                selected = checked,
-                onClick = {
-                    onMaskChange(if (checked) mask and (1 shl index).inv() else mask or (1 shl index))
-                },
-                label = { Text(label) }
-            )
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable {
+                        onMaskChange(if (checked) mask and (1 shl index).inv() else mask or (1 shl index))
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
     Text(
@@ -368,6 +385,12 @@ fun GroupEditScreen(
                                             return@launch
                                         }
                                     }
+                                    // 98차 버그 수정(데스크탑판과 대칭): originalGroup은 이 화면 진입
+                                    // 시점의 스냅샷이라, 편집 중에 그룹 목록에서 켜짐/스누즈/차단 시도
+                                    // 등이 바뀌어도 반영이 안 돼 저장 시 그 변경을 그대로 덮어써버리는
+                                    // 버그가 있었다 — 저장 직전에 최신 상태를 다시 읽어와 이 화면에서
+                                    // 편집하지 않는 필드는 항상 최신값을 쓴다.
+                                    val currentGroup = groupId?.let { repository.getGroup(it) } ?: originalGroup
                                     val group = AppGroup(
                                         id = groupId ?: 0,
                                         name = finalName,
@@ -399,16 +422,20 @@ fun GroupEditScreen(
                                         snoozeEnabled = snoozeEnabled,
                                         snoozeMinutes = snoozeMinutesText.trim().toIntOrNull()?.coerceAtLeast(1) ?: 30,
                                         snoozeDailyLimit = snoozeDailyLimitText.trim().toIntOrNull()?.coerceAtLeast(1) ?: 3,
-                                        snoozedUntilEpochMillis = originalGroup?.snoozedUntilEpochMillis,
-                                        snoozeUsedDate = originalGroup?.snoozeUsedDate ?: "",
-                                        snoozeUsedCount = originalGroup?.snoozeUsedCount ?: 0,
+                                        snoozedUntilEpochMillis = currentGroup?.snoozedUntilEpochMillis,
+                                        snoozeUsedDate = currentGroup?.snoozeUsedDate ?: "",
+                                        snoozeUsedCount = currentGroup?.snoozeUsedCount ?: 0,
                                         forceEnabledFrom = forceEnabledFromText.trim().ifBlank { null },
                                         forceEnabledUntil = forceEnabledUntilText.trim().ifBlank { null },
                                         pomodoroUnlockEnabled = pomodoroUnlockEnabled,
                                         scheduleEnabled = scheduleEnabled,
-                                        groupEnabled = originalGroup?.groupEnabled ?: true,
-                                        groupOffPending = originalGroup?.groupOffPending ?: false,
-                                        groupOffMessageIndex = originalGroup?.groupOffMessageIndex ?: 0,
+                                        groupEnabled = currentGroup?.groupEnabled ?: true,
+                                        groupOffPending = currentGroup?.groupOffPending ?: false,
+                                        groupOffMessageIndex = currentGroup?.groupOffMessageIndex ?: 0,
+                                        // 98차 발견: 이 두 필드도 이 폼에 없어서 저장할 때마다 조롱 문구
+                                        // 강도(오늘 시도 횟수)가 매번 0으로 리셋되고 있었다.
+                                        blockAttemptDate = currentGroup?.blockAttemptDate ?: "",
+                                        blockAttemptCount = currentGroup?.blockAttemptCount ?: 0,
                                         syncEnabled = syncEnabled
                                     )
                                     val original = originalGroup
@@ -483,27 +510,25 @@ fun GroupEditScreen(
 
         LazyColumn(Modifier.fillMaxSize().padding(padding).padding(Spacing.md)) {
             item {
-                SectionCard("기본 정보") {
-                    OutlinedTextField(
+                SectionCard("기본 정보", emoji = "📝") {
+                    CompactField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("차단 규칙 이름") },
-                        modifier = Modifier.fillMaxWidth()
+                        label = "이름"
                     )
                     Spacer(Modifier.height(Spacing.sm))
-                    OutlinedTextField(
+                    CompactField(
                         value = description,
                         onValueChange = { description = it },
-                        label = { Text("설명 (선택, \"모임\"에 이 차단 규칙 이름과 함께 표시됩니다)") },
-                        modifier = Modifier.fillMaxWidth()
+                        label = "설명 (선택, \"모임\"에 이 차단 규칙 이름과 함께 표시됩니다)",
+                        placeholder = "선택 입력"
                     )
                     Spacer(Modifier.height(Spacing.sm))
-                    OutlinedTextField(
+                    CompactField(
                         value = selfMessageText,
                         onValueChange = { selfMessageText = it },
-                        label = { Text("미래의 나에게") },
-                        placeholder = { Text("예: 오늘 밤 11시 이후엔 진짜 그만 봐. 내일 시험이야.") },
-                        modifier = Modifier.fillMaxWidth()
+                        label = "미래의 나에게",
+                        placeholder = "예: 오늘 밤 11시 이후엔 진짜 그만 봐. 내일 시험이야."
                     )
                     Text(
                         "선택 사항입니다. 이 차단 규칙이 잠길 때 문구와 함께 보여줍니다.",
@@ -513,7 +538,7 @@ fun GroupEditScreen(
                 }
                 Spacer(Modifier.height(Spacing.md))
 
-                SectionCard("관리 종류") {
+                SectionCard("관리 종류", emoji = "🗂️") {
                     Text(
                         "이 차단 규칙에 적용할 관리 종류를 선택하세요.",
                         style = MaterialTheme.typography.bodySmall,
@@ -542,7 +567,7 @@ fun GroupEditScreen(
                 }
                 Spacer(Modifier.height(Spacing.md))
 
-                SectionCard("뽀모도로 연동") {
+                SectionCard("뽀모도로 연동", emoji = "🍅") {
                     ToggleRow(
                         title = "뽀모도로 휴식 시 자동 해제",
                         description = "공부앱(설정 메뉴에서 로그인 필요)의 뽀모도로 휴식 시간 동안 이 차단 규칙의 잠금을 임시로 해제합니다. 실행 전 대기 on/off와 무관하게 작동합니다.",
@@ -555,7 +580,7 @@ fun GroupEditScreen(
                 // "관리 종류"(스케줄/일일한도/실행 전 대기)와 성격이 달라 별도 섹션으로 분리(95차,
                 // 사용자 지적) — 켜고 끄는 스위치와 세부 설정(시간/횟수)을 한 카드에 같이 둔다. 동기화
                 // on/off 스위치는 편집 화면이 아니라 목록 화면(잠깐 풀기 버튼 옆)으로 이동했다.
-                SectionCard("잠깐 풀기") {
+                SectionCard("잠깐 풀기", emoji = "😴") {
                     ToggleRow(
                         title = "잠깐 풀기 사용",
                         description = "차단 규칙 목록 화면에서 확인 질문 절차 없이 즉시 임시 해제할 수 있는 버튼을 켭니다.",
@@ -571,40 +596,42 @@ fun GroupEditScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(Spacing.sm))
-                        OutlinedTextField(
+                        CompactNumberField(
                             value = snoozeMinutesText,
                             onValueChange = { snoozeMinutesText = it },
-                            label = { Text("잠깐 풀기 시간(분)") },
-                            modifier = Modifier.fillMaxWidth()
+                            label = "잠깐 풀기 시간(분)"
                         )
                         Spacer(Modifier.height(Spacing.sm))
-                        OutlinedTextField(
+                        CompactNumberField(
                             value = snoozeDailyLimitText,
                             onValueChange = { snoozeDailyLimitText = it },
-                            label = { Text("하루 잠깐 풀기 횟수") },
-                            modifier = Modifier.fillMaxWidth()
+                            label = "하루 잠깐 풀기 횟수"
                         )
                     }
                 }
                 Spacer(Modifier.height(Spacing.md))
 
                 if (scheduleEnabled) {
-                    SectionCard("스케줄") {
-                        Text("적용 시간대 (비워두면 미적용)", style = MaterialTheme.typography.bodySmall)
+                    SectionCard("스케줄", emoji = "🗓️") {
+                        Text("적용 시간대 (비워두면 미적용, HH:mm)", style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(Spacing.xs))
-                        OutlinedTextField(
-                            value = scheduleStartText,
-                            onValueChange = { scheduleStartText = it },
-                            label = { Text("시작 HH:mm") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        OutlinedTextField(
-                            value = scheduleEndText,
-                            onValueChange = { scheduleEndText = it },
-                            label = { Text("종료 HH:mm") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CompactField(
+                                value = scheduleStartText,
+                                onValueChange = { scheduleStartText = it },
+                                leadingEmoji = "🕐",
+                                centerValue = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
+                            CompactField(
+                                value = scheduleEndText,
+                                onValueChange = { scheduleEndText = it },
+                                leadingEmoji = "🕐",
+                                centerValue = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                         Spacer(Modifier.height(Spacing.sm))
                         DayMaskRow(mask = daysMask, onMaskChange = { daysMask = it })
                     }
@@ -612,7 +639,7 @@ fun GroupEditScreen(
                 }
 
                 if (dailyLimitEnabled) {
-                    SectionCard("일일 사용 한도") {
+                    SectionCard("일일 사용 한도", emoji = "⏱️") {
                         DurationFieldsRow(
                             label = "일일 사용 한도",
                             hoursText = dailyLimitHoursText,
@@ -623,21 +650,25 @@ fun GroupEditScreen(
                             onSecondsChange = { dailyLimitSecondsText = it }
                         )
                         Spacer(Modifier.height(Spacing.sm))
-                        Text("적용 시간대 (비워두면 하루 종일 적용)", style = MaterialTheme.typography.bodySmall)
+                        Text("적용 시간대 (비워두면 하루 종일 적용, HH:mm)", style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(Spacing.xs))
-                        OutlinedTextField(
-                            value = dailyLimitApplyStartText,
-                            onValueChange = { dailyLimitApplyStartText = it },
-                            label = { Text("적용 시작 HH:mm") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        OutlinedTextField(
-                            value = dailyLimitApplyEndText,
-                            onValueChange = { dailyLimitApplyEndText = it },
-                            label = { Text("적용 종료 HH:mm") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CompactField(
+                                value = dailyLimitApplyStartText,
+                                onValueChange = { dailyLimitApplyStartText = it },
+                                leadingEmoji = "🕐",
+                                centerValue = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
+                            CompactField(
+                                value = dailyLimitApplyEndText,
+                                onValueChange = { dailyLimitApplyEndText = it },
+                                leadingEmoji = "🕐",
+                                centerValue = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                         Text(
                             "이 시간대 안에 있을 때만 한도 초과로 잠깁니다. 사용 시간 누적 자체는 시간대와 무관하게 항상 기록됩니다.",
                             style = MaterialTheme.typography.bodySmall,
@@ -650,22 +681,26 @@ fun GroupEditScreen(
                 }
 
                 if (confirmEnabled) {
-                    SectionCard("실행 전 대기") {
-                        Text("적용 시간대 (비워두면 하루 종일 적용)", style = MaterialTheme.typography.bodySmall)
+                    SectionCard("실행 전 대기", emoji = "🛑") {
+                        Text("적용 시간대 (비워두면 하루 종일 적용, HH:mm)", style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(Spacing.xs))
-                        OutlinedTextField(
-                            value = confirmApplyStartText,
-                            onValueChange = { confirmApplyStartText = it },
-                            label = { Text("적용 시작 HH:mm") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        OutlinedTextField(
-                            value = confirmApplyEndText,
-                            onValueChange = { confirmApplyEndText = it },
-                            label = { Text("적용 종료 HH:mm") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CompactField(
+                                value = confirmApplyStartText,
+                                onValueChange = { confirmApplyStartText = it },
+                                leadingEmoji = "🕐",
+                                centerValue = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
+                            CompactField(
+                                value = confirmApplyEndText,
+                                onValueChange = { confirmApplyEndText = it },
+                                leadingEmoji = "🕐",
+                                centerValue = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                         Text(
                             "이 시간대 밖에서는 실행해도 확인창 없이 그냥 허용됩니다.",
                             style = MaterialTheme.typography.bodySmall,
@@ -741,11 +776,10 @@ fun GroupEditScreen(
                         )
                         if (usageOverlayEnabled) {
                             Spacer(Modifier.height(Spacing.sm))
-                            OutlinedTextField(
+                            CompactNumberField(
                                 value = overlayLevelStepsToMaxText,
                                 onValueChange = { overlayLevelStepsToMaxText = it },
-                                label = { Text("몇 번 재확인하면 화면이 가장 진해질지") },
-                                modifier = Modifier.fillMaxWidth()
+                                label = "몇 번 재확인하면 화면이 가장 진해질지"
                             )
                             Text(
                                 "재확인을 이 횟수만큼 반복하면 화면 덮개가 가장 진해집니다. 한 번 재확인할 때마다 진해지는 폭은 이 값에 맞춰 자동으로 계산됩니다.",
@@ -758,7 +792,7 @@ fun GroupEditScreen(
                 }
 
 
-                SectionCard("이 기간엔 끄기 금지 (시험기간 등)") {
+                SectionCard("이 기간엔 끄기 금지 (시험기간 등)", emoji = "🚫") {
                     Text(
                         "이 날짜 범위 안에서는 위 \"차단 규칙 전체 사용\" 스위치를 꺼도 실제로는 계속 켜진 것으로 취급됩니다" +
                             "(시간대/한도/실행 전 대기 설정 자체는 그대로 따릅니다). 비워두면 평소처럼 스위치를 그대로 따릅니다.",
@@ -766,19 +800,21 @@ fun GroupEditScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(Spacing.sm))
-                    OutlinedTextField(
-                        value = forceEnabledFromText,
-                        onValueChange = { forceEnabledFromText = it },
-                        label = { Text("시작일 (yyyy-MM-dd)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(Spacing.sm))
-                    OutlinedTextField(
-                        value = forceEnabledUntilText,
-                        onValueChange = { forceEnabledUntilText = it },
-                        label = { Text("종료일 (yyyy-MM-dd, 포함)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CompactDateField(
+                            value = forceEnabledFromText,
+                            onValueChange = { forceEnabledFromText = it },
+                            placeholder = "시작일",
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
+                        CompactDateField(
+                            value = forceEnabledUntilText,
+                            onValueChange = { forceEnabledUntilText = it },
+                            placeholder = "종료일(포함)",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
                 Spacer(Modifier.height(Spacing.md))
 
@@ -796,7 +832,14 @@ fun GroupEditScreen(
                 }
                 Spacer(Modifier.height(Spacing.md))
 
-                Text("차단 대상", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "🎯 차단 대상",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(50))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                )
                 Spacer(Modifier.height(Spacing.sm))
                 TabRow(selectedTabIndex = memberTab) {
                     Tab(selected = memberTab == 0, onClick = { memberTab = 0 }, text = { Text("앱") })
@@ -805,19 +848,19 @@ fun GroupEditScreen(
                 Spacer(Modifier.height(Spacing.sm))
 
                 if (memberTab == 0) {
-                    OutlinedTextField(
+                    CompactField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        label = { Text("앱 이름 검색") },
-                        modifier = Modifier.fillMaxWidth()
+                        leadingEmoji = "🔍",
+                        placeholder = "앱 이름 검색"
                     )
                     Spacer(Modifier.height(Spacing.sm))
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
+                        CompactField(
                             value = newSiteDomain,
                             onValueChange = { newSiteDomain = it },
-                            label = { Text("도메인 (예: youtube.com)") },
+                            placeholder = "도메인 (예: youtube.com)",
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(Modifier.width(Spacing.sm))
