@@ -58,7 +58,8 @@ import java.util.concurrent.TimeUnit
 private sealed class Tab(val route: String, val label: String, val emoji: String) {
     object Manage : Tab("manage", "관리", "🗂️")
     object Study : Tab("study", "공부", "📘")
-    object Routine : Tab("routine", "루틴", "🌱")
+    object Routine : Tab("routine", "루틴", "🔁")
+    object Plant : Tab("plant", "식물", "🌱")
     object Group : Tab("group", "소셜", "👥")
     object Settings : Tab("settings", "설정", "⚙️")
 }
@@ -70,6 +71,8 @@ private fun visibleTabs(prefs: AppPreferences): List<Tab> = listOfNotNull(
     Tab.Routine.takeIf { prefs.permRoutine },
     Tab.Study.takeIf { prefs.permStudy },
     Tab.Manage.takeIf { prefs.permManage },
+    // 104차 후속: "식물"은 레벨/경험치 확인용이라 별도 권한 없이 항상 보임(설정과 동일).
+    Tab.Plant,
     // 98차(사용자 요청): 게스트(익명 계정)는 소셜 탭을 아예 못 쓰게 한다 — 서버 profile.permissions가
     // 아직 없으면(하위호환) 전부 true로 취급하는 fromProfile() 기본값 때문에 이 조건 없이는 게스트도
     // 그냥 소셜 탭이 보였다.
@@ -250,6 +253,9 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             }
             composable(Tab.Routine.route) {
                 RoutineScreen(repository)
+            }
+            composable(Tab.Plant.route) {
+                PlantScreen(repository)
             }
             composable(Tab.Group.route) {
                 SocialGroupScreen(

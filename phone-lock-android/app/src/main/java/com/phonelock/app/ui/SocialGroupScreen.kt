@@ -1,4 +1,4 @@
-package com.phonelock.app.ui
+﻿package com.phonelock.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
@@ -48,8 +48,6 @@ import androidx.compose.ui.unit.sp
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.*
 import com.phonelock.app.ui.theme.Spacing
-import com.phonelock.shared.CharacterGrowth
-import com.phonelock.shared.StudyLevel
 import kotlinx.coroutines.launch
 
 private data class GroupSummary(val id: String, val name: String, val memberCount: Int, val avgTodayRate: Int)
@@ -300,8 +298,6 @@ fun SocialGroupScreen(
                 }
             }
             Spacer(Modifier.height(Spacing.lg))
-            SocialPointsSection(repository)
-            Spacer(Modifier.height(Spacing.lg))
             SectionPill("👥 모임")
             Spacer(Modifier.height(Spacing.sm))
             if (com.phonelock.app.ui.components.isTabletWidth()) {
@@ -399,167 +395,5 @@ fun SocialGroupScreen(
             }
         }
         }
-    }
-}
-
-/**
- * 포인트/보상 + 캐릭터 성장(102~103차, "루틴" 섹션에서 이동됨) — 사용자가 "소셜에 넣을 기능"이라고
- * 지정한 걸 문서화 없이 놓쳤던 걸 뒤늦게 바로잡음(103차 후속). 로직 자체(적립 기준/원장 합산/8단계 성장)는
- * RoutineScreen.kt에 있던 것과 동일, 화면 위치와 카드 스타일만 소셜 화면(RoundedCornerShape 16.dp,
- * SectionPill)에 맞춰 옮겼다.
- */
-@Composable
-private fun SocialPointsSection(repository: PhoneLockRepository) {
-    val scope = rememberCoroutineScope()
-    val balance by repository.observePointsBalance().collectAsState(initial = 0)
-    val earnedTotal by repository.observeEarnedPointsTotal().collectAsState(initial = 0)
-    val totalStudyMinutes by repository.observeTotalStudyMinutes().collectAsState(initial = 0)
-    val rewards by repository.observeRewards().collectAsState(initial = emptyList())
-    var showAddDialog by remember { mutableStateOf(false) }
-    var toastMessage by remember { mutableStateOf<String?>(null) }
-
-    SectionPill("🎁 포인트")
-    Spacer(Modifier.height(Spacing.sm))
-
-    val studyLevel = StudyLevel.levelFor(totalStudyMinutes)
-    val studyLevelProgress = StudyLevel.progressToNext(totalStudyMinutes)
-    val studyLevelMinutesLeft = StudyLevel.minutesToNextLevel(totalStudyMinutes)
-    Surface(
-        Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
-    ) {
-        Column(Modifier.fillMaxWidth().padding(Spacing.sm)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Lv.$studyLevel ${StudyLevel.tierLabel(studyLevel)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Text("누적 공부 ${totalStudyMinutes / 60}시간 ${totalStudyMinutes % 60}분", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Spacer(Modifier.height(Spacing.xs))
-            LinearProgressIndicator(
-                progress = { studyLevelProgress },
-                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                color = MaterialTheme.colorScheme.secondary
-            )
-            Spacer(Modifier.height(Spacing.xs))
-            Text("다음 레벨까지 공부 ${studyLevelMinutesLeft}분 남음", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-    Spacer(Modifier.height(Spacing.sm))
-
-    val stage = CharacterGrowth.stageFor(earnedTotal)
-    val progress = CharacterGrowth.progressToNext(earnedTotal)
-    val toNext = CharacterGrowth.pointsToNextStage(earnedTotal)
-    Surface(
-        Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-    ) {
-        Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(stage.emoji, fontSize = 56.sp)
-            Spacer(Modifier.height(Spacing.xs))
-            Text("${stage.label} (${stage.index + 1}/${CharacterGrowth.STAGES.size}단계)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(Spacing.sm))
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
-            )
-            Spacer(Modifier.height(Spacing.xs))
-            Text(
-                if (toNext != null) "다음 단계까지 ${toNext}P 남음" else "최종 단계 도달!",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(Spacing.sm))
-            Text("보유 ${balance}P", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        }
-    }
-    Spacer(Modifier.height(Spacing.sm))
-    Text(
-        "공부 10분당 1P · 루틴 완료 5P · 일정 완료 5P · 오늘 루틴 전부 완료 시 +10P",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(Modifier.height(Spacing.md))
-
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text("오늘의 보상", style = MaterialTheme.typography.titleSmall)
-        TextButton(onClick = { showAddDialog = true }) { Text("+ 보상 추가") }
-    }
-    Spacer(Modifier.height(Spacing.xs))
-
-    toastMessage?.let {
-        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(Spacing.xs))
-    }
-
-    if (rewards.isEmpty()) {
-        Text(
-            "등록된 보상이 없습니다\n\"+ 보상 추가\"로 원하는 보상을 만들어보세요",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    } else {
-        Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-            rewards.forEach { reward ->
-                Surface(
-                    Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(reward.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                            Text("${reward.cost}P", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Button(
-                            enabled = balance >= reward.cost,
-                            onClick = {
-                                scope.launch {
-                                    val ok = repository.redeemReward(reward)
-                                    toastMessage = if (ok) "\"${reward.name}\" 언락했습니다! 🎉" else "포인트가 부족합니다"
-                                }
-                            }
-                        ) { Text("언락") }
-                        Spacer(Modifier.width(Spacing.xs))
-                        TextButton(onClick = { scope.launch { repository.deleteReward(reward) } }) { Text("삭제") }
-                    }
-                }
-            }
-        }
-    }
-
-    if (showAddDialog) {
-        var name by remember { mutableStateOf("") }
-        var costText by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showAddDialog = false },
-            title = { Text("보상 추가") },
-            text = {
-                Column {
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("보상 이름") }, modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(Spacing.sm))
-                    OutlinedTextField(
-                        value = costText,
-                        onValueChange = { costText = it.filter { c -> c.isDigit() } },
-                        label = { Text("필요 포인트") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = name.isNotBlank() && (costText.toIntOrNull() ?: 0) > 0,
-                    onClick = {
-                        val cost = costText.toIntOrNull() ?: 0
-                        scope.launch { repository.addReward(name.trim(), cost) }
-                        showAddDialog = false
-                    }
-                ) { Text("추가") }
-            },
-            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("취소") } }
-        )
     }
 }
