@@ -51,8 +51,6 @@ import com.phonelock.desktop.data.redeemReward
 import com.phonelock.desktop.monitor.AuthManager
 import com.phonelock.desktop.monitor.SocialGroupSyncClient
 import com.phonelock.desktop.ui.theme.Spacing
-import com.phonelock.shared.CharacterGrowth
-import com.phonelock.shared.StudyLevel
 
 /** 소셜 화면 배경(사용자 지적으로 재디자인, 안드로이드판과 대칭) — 공부 잠금 화면과 같은 중앙 원형
  *  `radialGradient`를 그대로 썼더니, 그 "빛나는 원"은 잠금 화면의 원형 진행률 링과 짝을 이루는

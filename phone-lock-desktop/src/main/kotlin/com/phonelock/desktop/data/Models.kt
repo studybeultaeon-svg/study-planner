@@ -421,5 +421,10 @@ data class AppData(
     val rewards: MutableList<Reward> = mutableListOf(),
     var nextRewardId: Long = 1,
     /** 포인트 전체 문서 단위 LWW 타임스탬프(routinesTs와 동일 패턴) — users/{user}/points. */
-    var pointsTs: Long = 0L
+    var pointsTs: Long = 0L,
+    /** "식물 성장" 시스템(105차 후속) — 현재 환생 사이클의 누적 EXP(환생 시 0으로 초기화).
+     *  레벨/칭호는 이 값에서 GrowthSystem으로 매번 계산하며 별도 저장하지 않는다. */
+    var growthExpTotal: Double = 0.0,
+    /** 완료한 환생 횟수(영구 유지, 환생해도 초기화 안 됨) — EXP 배율의 기준. */
+    var rebirthCount: Int = 0
 )
