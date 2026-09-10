@@ -692,7 +692,7 @@ private fun MemberStudyStatsTab(member: SocialGroupSyncClient.MemberStats) {
         MemberStatTile("연속 완료일(최근 범위 내)", "${streak}일", Modifier.fillMaxWidth())
         if (stageCounts.isNotEmpty()) {
             Spacer(Modifier.height(Spacing.sm))
-            Text("회독 단계별 일정 수", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("복습 단계별 일정 수", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(Spacing.xs))
             stageCounts.entries.sortedByDescending { it.value }.forEach { (stage, count) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), horizontalArrangement = Arrangement.SpaceBetween) {

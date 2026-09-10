@@ -35,6 +35,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -46,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +67,7 @@ import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
@@ -214,6 +217,20 @@ fun StudyTimerScreen(repository: Repository) {
         todayLog = repository.getTodayStudyLog()
     }
 
+    // 당겨서 새로고침(사용자 요청, 안드로이드판은 스와이프) — 이 탭은 이미 5초/30초 주기로 자동
+    // 동기화되지만, 계산기 동기화는 자동 루프에 없어서 수동으로 즉시 최신화하고 싶을 때를 위해 추가한다.
+    val scope = rememberCoroutineScope()
+    suspend fun refreshNow() {
+        withContext(Dispatchers.IO) {
+            repository.syncCalendarFromFirebase()
+            repository.syncCalculatorFromFirebase()
+        }
+        todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
+        calcTasksForSummary = repository.getCalcTasks()
+        todayLog = repository.getTodayStudyLog()
+        refreshStreakAndWeek()
+    }
+
     if (showStopNoteDialog) {
         AlertDialog(
             onDismissRequest = { showStopNoteDialog = false },
@@ -259,7 +276,10 @@ fun StudyTimerScreen(repository: Repository) {
     }
 
     Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            IconButton(onClick = { scope.launch { refreshNow() } }) { Text("🔄") }
+        }
         Spacer(Modifier.height(Spacing.md))
 
         TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
@@ -938,7 +958,7 @@ internal fun LockListEditor(items: List<String>, placeholder: String, onAdd: (St
 
 private fun taskDropdownLabel(task: CalendarTask): String {
     val done = if (task.status == "O") " ✅" else ""
-    return "${task.name}$done · ${task.passIndex + 1}회독"
+    return "${task.name}$done · ${task.passIndex + 1}회 복습"
 }
 
 internal fun formatHmsLog(totalSeconds: Long): String {

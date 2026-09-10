@@ -130,6 +130,9 @@ object JsonStore {
         val nudgeLastSeenJson = json.optJSONObject("nudgeLastSeenByGroup") ?: JSONObject()
         nudgeLastSeenJson.keys().forEach { key -> data.nudgeLastSeenByGroup[key] = nudgeLastSeenJson.optLong(key, 0L) }
 
+        val chatLastSeenJson = json.optJSONObject("chatLastSeenByChat") ?: JSONObject()
+        chatLastSeenJson.keys().forEach { key -> data.chatLastSeenByChat[key] = chatLastSeenJson.optLong(key, 0L) }
+
         val groupShareJson = json.optJSONObject("groupShareSettings") ?: JSONObject()
         groupShareJson.keys().forEach { groupId ->
             val g = groupShareJson.getJSONObject(groupId)
@@ -460,6 +463,9 @@ object JsonStore {
         val nudgeLastSeenJson = JSONObject()
         data.nudgeLastSeenByGroup.forEach { (key, millis) -> nudgeLastSeenJson.put(key, millis) }
         json.put("nudgeLastSeenByGroup", nudgeLastSeenJson)
+        val chatLastSeenJson = JSONObject()
+        data.chatLastSeenByChat.forEach { (key, millis) -> chatLastSeenJson.put(key, millis) }
+        json.put("chatLastSeenByChat", chatLastSeenJson)
         val groupShareJson = JSONObject()
         data.groupShareSettings.forEach { (groupId, s) ->
             groupShareJson.put(groupId, JSONObject().apply {

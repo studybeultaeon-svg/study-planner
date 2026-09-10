@@ -14,6 +14,13 @@ suspend fun PhoneLockRepository.readGroupChatMessages(groupId: String) =
 suspend fun PhoneLockRepository.toggleGroupChatReaction(groupId: String, msgId: String, emoji: String, alreadySet: Boolean) =
     com.phonelock.app.service.ChatSyncClient.toggleGroupMessageReaction(fbDatabaseUrl, fbApiKey, groupId, msgId, emoji, alreadySet)
 
+/** 채팅 알림(2026-09-10) — [WalkieTalkieService] 폴링에서 새 메시지 유무만 가볍게 확인하는 용도. */
+suspend fun PhoneLockRepository.peekLatestGroupChatMessage(groupId: String) =
+    com.phonelock.app.service.ChatSyncClient.peekLatestGroupMessage(fbDatabaseUrl, fbApiKey, groupId)
+
+suspend fun PhoneLockRepository.peekLatestDmChatMessage(chatId: String) =
+    com.phonelock.app.service.ChatSyncClient.peekLatestDmMessage(fbDatabaseUrl, fbApiKey, chatId)
+
 /** "소셜" 개편 Phase 2 — 1:1 DM(커스텀 아이디 전역 검색). */
 suspend fun PhoneLockRepository.searchDmUserByCode(code: String) =
     com.phonelock.app.service.ChatSyncClient.searchUserByCode(fbDatabaseUrl, fbApiKey, code)

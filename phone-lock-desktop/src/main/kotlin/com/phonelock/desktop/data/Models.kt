@@ -380,6 +380,9 @@ data class AppData(
     val groupRandomNudgeEnabled: MutableMap<String, Boolean> = mutableMapOf(),
     /** 모임별 마지막으로 확인한 넛지 시각(epoch millis) — groupId -> millis. 새 넛지 도착 판정용. */
     val nudgeLastSeenByGroup: MutableMap<String, Long> = mutableMapOf(),
+    /** 채팅방(groupId 또는 dmChatId)별 마지막으로 확인한 메시지 시각(epoch millis) — 채팅 알림
+     *  신규(2026-09-10), nudgeLastSeenByGroup과 동일 패턴. */
+    val chatLastSeenByChat: MutableMap<String, Long> = mutableMapOf(),
     /** 가입 신청/승인 게이트(AccountGateScreen) — 마지막으로 서버에서 확인한 내 승인 상태
      *  ("pending"/"approved"/"rejected", 아직 한 번도 확인 못했으면 null). "approved"였다면 앱 시작 시
      *  네트워크 응답이 오기 전에도 낙관적으로 메인 화면을 먼저 보여주고 백그라운드에서 재확인한다. */

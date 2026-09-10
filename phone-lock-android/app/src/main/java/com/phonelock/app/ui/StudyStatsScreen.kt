@@ -58,12 +58,22 @@ fun StudyStatsScreen(repository: PhoneLockRepository) {
     var allTasks by remember { mutableStateOf<List<CalendarTask>>(emptyList()) }
     var allStudyLog by remember { mutableStateOf<List<com.phonelock.app.data.StudyLogEntry>>(emptyList()) }
 
-    LaunchedEffect(Unit) {
+    suspend fun load() {
         repository.syncCalendarFromFirebase()
         allTasks = repository.getAllCalendarTasksOnce()
         allStudyLog = repository.getAllStudyLogOnce()
     }
 
+    LaunchedEffect(Unit) { load() }
+
+    // 당겨서 새로고침 추가(사용자 요청, 98차 6개 화면과 같은 패턴).
+    com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = { load() }) {
+        StudyStatsContent(allTasks, allStudyLog)
+    }
+}
+
+@Composable
+private fun StudyStatsContent(allTasks: List<CalendarTask>, allStudyLog: List<com.phonelock.app.data.StudyLogEntry>) {
     if (allTasks.isEmpty()) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text(
@@ -126,7 +136,7 @@ fun StudyStatsScreen(repository: PhoneLockRepository) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text("📈 통계", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-                Text("캘린더 회독 진행 기준", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("캘린더 복습 진행 기준", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // 82차(§9 "월간 통계 리포트(이미지)"): 지금 보이는 통계 화면 그대로를 PNG로 저장한다.
             Button(onClick = {

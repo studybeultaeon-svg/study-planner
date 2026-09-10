@@ -30,6 +30,7 @@ fun DmChatScreen(repository: PhoneLockRepository, chatId: String, peerUid: Strin
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             ChatThreadScreen(
+                chatId = chatId,
                 myUid = AuthManager.currentUser?.uid,
                 loadMessages = { repository.readDmChatMessages(chatId) },
                 sendMessage = { text -> repository.sendDmChatMessage(chatId, peerUid, text) },

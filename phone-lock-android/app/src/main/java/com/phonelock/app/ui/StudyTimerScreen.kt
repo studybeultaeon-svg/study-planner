@@ -202,6 +202,17 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
         studyStreak = streak
     }
 
+    // 당겨서 새로고침(사용자 요청) — 이 탭은 이미 5초/30초 주기로 자동 동기화되지만, 계산기 동기화는
+    // 자동 루프에 없어서(캘린더만 있음) 수동으로 즉시 최신화하고 싶을 때를 위해 추가한다.
+    suspend fun refresh() {
+        repository.syncCalendarFromFirebase()
+        repository.syncCalculatorFromFirebase()
+        todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
+        calcTasksForSummary = repository.getCalcTasks()
+        todayLog = repository.getTodayStudyLog()
+        refreshStreakAndWeek()
+    }
+
     LaunchedEffect(Unit) {
         todayLog = repository.getTodayStudyLog()
         todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
@@ -587,6 +598,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
         }
     }
 
+    com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = { refresh() }) {
     if (com.phonelock.app.ui.components.isTabletWidth()) {
         // 태블릿은 데스크탑 StudyTimerScreen.kt와 같은 좌(타이머 본체)/우(허용 앱·사이트+오늘 기록)
         // 분할 — 데스크탑도 넓은 화면에서 세로로 다 쌓지 않고 역할별로 좌우로 나눠 쓴다.
@@ -618,6 +630,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
 
             extrasContent()
         }
+    }
     }
 }
 
@@ -993,7 +1006,7 @@ internal fun LockListEditor(items: List<String>, placeholder: String, onAdd: (St
 
 private fun taskDropdownLabel(task: CalendarTask): String {
     val done = if (task.status == "O") " ✅" else ""
-    return "${task.name}$done · ${task.passIndex + 1}회독"
+    return "${task.name}$done · ${task.passIndex + 1}회 복습"
 }
 
 internal fun formatHmsLog(totalSeconds: Long): String {

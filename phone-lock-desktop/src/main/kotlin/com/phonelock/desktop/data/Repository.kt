@@ -646,6 +646,15 @@ class Repository {
         persist()
     }
 
+    /** 채팅방(groupId 또는 dmChatId)별 마지막으로 확인한 메시지 시각 — [com.phonelock.desktop.routine.ChatNotifier]가
+     *  새 메시지 도착 판정에 쓴다(채팅 알림 신규, 2026-09-10). */
+    fun chatLastSeenFor(chatId: String): Long = synchronized(lock) { data.chatLastSeenByChat[chatId] ?: 0L }
+
+    fun setChatLastSeen(chatId: String, millis: Long) = synchronized(lock) {
+        data.chatLastSeenByChat[chatId] = millis
+        persist()
+    }
+
     var blockReels: Boolean
         get() = synchronized(lock) { data.blockReels }
         set(value) = synchronized(lock) {

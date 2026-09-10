@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -27,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +41,7 @@ import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.util.Locale
@@ -67,11 +70,14 @@ private data class WeekTaskRow(val task: CalcTask, val start: LocalDate, val dda
 fun TimetableScreen(repository: Repository) {
     var tasks by remember { mutableStateOf(repository.getCalcTasks()) }
     var weekOffset by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    suspend fun refresh() {
         withContext(Dispatchers.IO) { repository.syncCalculatorFromFirebase() }
         tasks = repository.getCalcTasks()
     }
+
+    LaunchedEffect(Unit) { refresh() }
 
     val today = LocalDate.now()
     val currentSunday = today.minusDays(today.dayOfWeek.value.toLong() % 7)
@@ -86,8 +92,14 @@ fun TimetableScreen(repository: Repository) {
     }
 
     Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Text("🗓️ 일정표", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-        Text("할당량 계산기 업무 입력 기준", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text("🗓️ 일정표", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                Text("할당량 계산기 업무 입력 기준", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // 사용자 요청(안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
+            IconButton(onClick = { scope.launch { refresh() } }) { Text("🔄") }
+        }
         Spacer(Modifier.height(Spacing.md))
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {

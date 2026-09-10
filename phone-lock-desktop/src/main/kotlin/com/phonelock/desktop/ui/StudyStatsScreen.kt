@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -25,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +40,7 @@ import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
@@ -54,12 +57,15 @@ private data class DayStat(val date: LocalDate, val cnt: Int, val done: Int)
 fun StudyStatsScreen(repository: Repository) {
     var allTasks by remember { mutableStateOf(emptyList<CalendarTask>()) }
     var allStudyLog by remember { mutableStateOf(emptyList<com.phonelock.desktop.data.StudyLogEntry>()) }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    suspend fun refresh() {
         withContext(Dispatchers.IO) { repository.syncCalendarFromFirebase() }
         allTasks = repository.getAllCalendarTasks()
         allStudyLog = repository.getAllStudyLogOnce()
     }
+
+    LaunchedEffect(Unit) { refresh() }
 
     if (allTasks.isEmpty()) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -69,6 +75,8 @@ fun StudyStatsScreen(repository: Repository) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
+            Spacer(Modifier.height(Spacing.sm))
+            IconButton(onClick = { scope.launch { refresh() } }) { Text("🔄") }
         }
         return
     }
@@ -117,8 +125,14 @@ fun StudyStatsScreen(repository: Repository) {
     val collapsedCalcNames = remember { mutableStateOf(setOf<String>()) }
 
     Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Text("📈 통계", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-        Text("캘린더 회독 진행 기준", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text("📈 통계", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                Text("캘린더 복습 진행 기준", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // 사용자 요청(안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
+            IconButton(onClick = { scope.launch { refresh() } }) { Text("🔄") }
+        }
         Spacer(Modifier.height(Spacing.md))
 
         // 90차(사용자 요청): 넓은 데스크탑 창에서 세로 한 줄로만 쌓이던 걸 좌(요약 지표)/우(그래프·상세)

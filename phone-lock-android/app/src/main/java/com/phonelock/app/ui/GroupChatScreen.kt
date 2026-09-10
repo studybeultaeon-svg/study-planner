@@ -11,6 +11,7 @@ import com.phonelock.app.service.AuthManager
 @Composable
 fun GroupChatScreen(repository: PhoneLockRepository, groupId: String) {
     ChatThreadScreen(
+        chatId = groupId,
         myUid = AuthManager.currentUser?.uid,
         loadMessages = { repository.readGroupChatMessages(groupId) },
         sendMessage = { text -> repository.sendGroupChatMessage(groupId, text) },

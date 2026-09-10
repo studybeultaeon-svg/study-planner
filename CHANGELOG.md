@@ -4,6 +4,40 @@
 
 ---
 
+## 2026-09-10 (99차 세션) — 소셜 채팅 버그 해결 + 사진/GIF 첨부 구현 후 삭제 + 채팅 알림 신규 + 새로고침 버그 수정 + "회독"→"복습" 용어 변경
+
+### 소셜 채팅 "전송은 되는데 목록에 안 뜨는" 버그 — 근본 원인 확정·해결(96차부터 이월)
+- **원인**: Firebase RTDB가 `orderBy=%22sentAtMillis%22` 조회에 `.indexOn` 색인이 없다는 이유로 읽기 요청 자체를 HTTP 400으로 거부하고 있었다. 메시지 전송(쓰기)은 색인과 무관해 항상 성공했고, 읽기 실패는 98차까지 조용히 삼켜지고(빈 목록으로 덮어씀) 있어 "쓰는 건 되는데 안 보인다"는 증상만 남았다.
+- **해결**: `phone-lock-android/firebase-database.rules.json`의 `groupChats/{groupId}/messages`와 `dmChats/{chatId}/messages`에 `.indexOn: ["sentAtMillis"]` 추가. 사용자가 Firebase 콘솔에 재게시 후 실사용으로 확인 완료.
+- **후속 계측**: `ChatSyncClient.kt`(양 플랫폼)의 `readGroupMessages`/`readDmMessages`가 `List<ChatMessage>` 대신 `Result<List<ChatMessage>>`를 반환하도록 변경 — 읽기 실패 사유도 "목록 불러오기 실패: ..."로 화면에 표시(기존 전송 실패 표시와 대칭). `ChatThreadScreen.kt`(양 플랫폼)에 `loadError` 상태 추가.
+
+### 채팅 사진/GIF 첨부 — 구현 후 사용자 요청으로 전면 삭제
+- 최초 구현: `ChatSyncClient.uploadChatMedia()`(Firebase Storage REST 업로드, `CloudBackupClient`와 동일 패턴), `ChatMessage.mediaUrl` 필드, `sendGroupMessage`/`sendDmMessage`에 `mediaUrl` 파라미터, 안드로이드 `ActivityResultContracts.PickVisualMedia`+Coil(`coil-compose`/`coil-gif`) 이미지 표시, 데스크탑 `java.awt.FileDialog`+Skia 디코드 표시, `firebase-storage.rules`에 `chatMedia/` 경로 규칙 추가.
+- 사용자가 "사진, gif 보내기 기능 삭제해" 요청 → 위 전부 원복. Coil 의존성(`app/build.gradle.kts`)/`PhoneLockApplication`의 `ImageLoaderFactory` 구현도 제거. 현재 코드에 흔적 없음.
+
+### 채팅 알림(사용자 요청 — 진동 없이)
+- 안드로이드: `WalkieTalkieService.kt`에 `pollChatMessages()` 신규 — 기존 7초 폴링 루프에 편승해 내가 속한 모임 대화방(`readMySocialGroupIds()`)+DM(`readMyDmChats()`)을 순회, `ChatSyncClient.peekLatestGroupMessage`/`peekLatestDmMessage`(신규, `limitToLast=1` 경량 조회)로 새 메시지 유무만 확인. 새 알림 채널 `chat_message`(`enableVibration(false)` — 이 앱에서 처음부터 진동을 끈 유일한 채널, 다른 채널들은 전부 `enableVibration(true)`가 기본이라 명시적으로 켜야 했던 것과 반대). `AppPreferences.chatLastSeenByChat`(신규, Map<String,Long>)으로 마지막 확인 시각 저장.
+- `ui/ChatThreadScreen.kt`(양 플랫폼)에 `ActiveChatTracker`(전역 `@Volatile var openChatId`) 신규 — 화면이 열려있는 동안 자신의 chatId를 채워두고, 백그라운드 폴러가 지금 보고 있는 방이면 알림을 건너뛴다.
+- 데스크탑: `routine/ChatNotifier.kt`(신규, `SocialGroupNotifier`와 동일한 tick() 구조) — `Main.kt`의 기존 7초 루프에 호출 추가. 트레이 풍선 알림이라 진동 개념 자체가 없어 "진동 없이" 요구사항이 자동 충족됨. `Repository.chatLastSeenFor`/`setChatLastSeen`(신규, `Models.kt`/`JsonStore.kt`에 `chatLastSeenByChat` 필드+저장 로직 추가) — `nudgeLastSeenByGroup`과 동일 패턴.
+
+### 새로고침 버그 수정 + 범위 확장
+- **스피너 고정 버그**(사용자 제보, 캘린더에서 재현): `ui/components/PullToRefreshBox.kt`(안드로이드)의 `LaunchedEffect(Unit) { onRefresh(); state.endRefresh() }`가 `onRefresh()` 실패 시 `endRefresh()`를 건너뛰어 `state.isRefreshing`이 영원히 true로 남는 버그였다 — try/finally로 감싸 실패해도 항상 인디케이터가 닫히도록 수정. 새로고침이 달린 모든 화면(루틴/캘린더/계산기/차단규칙목록/소셜/모임멤버 + 이번에 추가된 3개)에 공통 적용.
+- **누락 화면 3개 추가**(사용자 요청): `StudyStatsScreen.kt`/`TimetableScreen.kt`/`StudyTimerScreen.kt`(양 플랫폼) — 안드로이드는 `PullToRefreshBox`로 감싸기 위해 `StudyStatsScreen`/`TimetableScreen`의 early `return`이 있는 본문을 `StudyStatsContent`/`TimetableContent`(신규 private 컴포저블)로 추출(일반 함수 `return`은 유효, 람다 안 non-local return은 불가하므로). `StudyTimerScreen`은 early return이 없어 구조 변경 없이 루트 레이아웃만 감쌈. 데스크탑은 기존 6개 화면과 동일하게 헤더에 "🔄" `IconButton` 추가.
+- **미해결로 남긴 것**: 안드로이드에서 당겨서 새로고침이 스크롤과 겹쳐 잘 안 되는 문제는 원인을 못 좁혔다 — 현재 쓰는 Material3 `rememberPullToRefreshState`/`PullToRefreshContainer`가 실험적(`@ExperimentalMaterial3Api`) 버전이라 제스처 인식이 상대적으로 불안정한 것으로 추정, 근본 해결은 더 안정적인 최신 pull-to-refresh API로 이전(Compose BOM/Material3 버전 업그레이드 필요, 다른 화면 영향 범위가 커서 이번엔 보류).
+
+### "회독"→"복습" 용어 변경(사용자 요청)
+- 숫자가 붙는 경우 "N회독"→"N회 복습"(예: `passLabel()`, 색상 선택 라벨, 간격 라벨), 숫자 없이 기능을 가리키는 경우(설정 섹션 제목, 토글 이름 등) "복습"으로 통일.
+- 대상: `CalendarScreen.kt`(`passLabel`/`multiPassEnabled` 토글/색상 선택 라벨, 데스크탑은 미사용 `COLOR_LABEL` 맵도 포함), `CalculatorScreen.kt`(복습 설정 섹션 전체), `SettingsScreen.kt`(캘린더 복습 기본값 섹션), `SocialGroupMemberDetailScreen.kt`, `StudyTimerScreen.kt`, `StudyStatsScreen.kt` — 양 플랫폼 전부.
+- 내부 변수명(`passIndex`/`passTotal`/`passCount`/`multiPassEnabled` 등)과 코드 주석, 이 문서 체계(BUGS/DECISIONS/HANDOFF 등)의 기존 서술은 그대로 유지 — 화면에 실제로 보이는 문자열만 교체.
+
+### Firebase 요금제 안내(코드 변경 없음)
+- 사용자 질문에 답변: Spark(무료) 요금제는 저장 1GB/월 다운로드 10GB 한도. 이 앱은 저장 용량보다 무전기 서비스의 상시 7초 폴링(사용자 수 × 모임/DM 개수에 비례)이 트래픽 병목이라는 점을 설명 — 대략적 추정치로 무료 요금제는 10~20명 선까지 여유로울 것으로 안내(실측 아님, Firebase 콘솔 사용량 탭에서 재확인 권장).
+
+### 빌드/배포
+- 양 플랫폼 컴파일 확인(단계별로 여러 차례) 후 릴리스 빌드 — 안드로이드 versionCode `1789016348`, 데스크탑 BuildInfo `1789016291`. 호스트 배포(해시 검증 포함) 완료. **GitHub 릴리스는 이번 세션에 게시하지 않음.**
+
+---
+
 ## 2026-09-10 (98차 세션) — 루틴 모드 신규 + 온라인/오프라인 모드 신규 + 당겨서 새로고침 신규 + 버그 5건
 
 ### 루틴 모드(96차 설계 확정, 이번에 구현) — Room DB v37→v38

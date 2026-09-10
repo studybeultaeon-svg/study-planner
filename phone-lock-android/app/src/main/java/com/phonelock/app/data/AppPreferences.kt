@@ -457,6 +457,23 @@ class AppPreferences(context: Context) {
         nudgeLastSeenByGroupJson = json.toString()
     }
 
+    /** 채팅방ID(groupId 또는 dmChatId) -> 마지막으로 확인한 채팅 메시지 시각(epoch millis).
+     *  채팅 알림 신규(2026-09-10) — nudgeLastSeenByGroup과 동일한 저장 패턴. */
+    var chatLastSeenByChatJson: String
+        get() = prefs.getString("chat_last_seen_by_chat_json", "{}") ?: "{}"
+        set(value) = prefs.edit().putString("chat_last_seen_by_chat_json", value).apply()
+
+    fun chatLastSeenByChat(): Map<String, Long> {
+        val json = org.json.JSONObject(chatLastSeenByChatJson)
+        return json.keys().asSequence().associateWith { json.optLong(it, 0L) }
+    }
+
+    fun setChatLastSeen(chatId: String, atMillis: Long) {
+        val json = org.json.JSONObject(chatLastSeenByChatJson)
+        json.put(chatId, atMillis)
+        chatLastSeenByChatJson = json.toString()
+    }
+
     // ---- 가입/승인 계정 게이트 ----
     /** 마지막으로 확인된 계정 승인 상태("approved" 등) — 오프라인일 때도 승인된 사용자가 앱을 열 수 있도록
      *  낙관적으로 먼저 content()를 보여주는 데 쓴다([AccountGate] 참고). */
