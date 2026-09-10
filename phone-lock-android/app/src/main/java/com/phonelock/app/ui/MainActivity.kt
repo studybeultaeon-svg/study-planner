@@ -58,25 +58,25 @@ import java.util.concurrent.TimeUnit
 private sealed class Tab(val route: String, val label: String, val emoji: String) {
     object Manage : Tab("manage", "관리", "🗂️")
     object Study : Tab("study", "공부", "📘")
-    object Routine : Tab("routine", "루틴", "🔁")
+    object Routine : Tab("routine", "루틴", "📋")
     object Plant : Tab("plant", "식물", "🌱")
     object Group : Tab("group", "소셜", "👥")
     object Settings : Tab("settings", "설정", "⚙️")
 }
 
-/** 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임)에 맞춰 보이는 탭만 남긴다 — 설정은 항상 보임
+/** 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임/식물)에 맞춰 보이는 탭만 남긴다 — 설정은 항상 보임
  *  (로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 [AppPreferences]가 전부 true를
  *  기본값으로 주므로 이 필터링으로 인한 회귀는 없다. */
 private fun visibleTabs(prefs: AppPreferences): List<Tab> = listOfNotNull(
     Tab.Routine.takeIf { prefs.permRoutine },
     Tab.Study.takeIf { prefs.permStudy },
     Tab.Manage.takeIf { prefs.permManage },
-    // 104차 후속: "식물"은 레벨/경험치 확인용이라 별도 권한 없이 항상 보임(설정과 동일).
-    Tab.Plant,
     // 98차(사용자 요청): 게스트(익명 계정)는 소셜 탭을 아예 못 쓰게 한다 — 서버 profile.permissions가
     // 아직 없으면(하위호환) 전부 true로 취급하는 fromProfile() 기본값 때문에 이 조건 없이는 게스트도
     // 그냥 소셜 탭이 보였다.
     Tab.Group.takeIf { prefs.permSocial && com.phonelock.app.service.AuthManager.currentUser?.isAnonymous != true },
+    // 105차 후속(사용자 요청): 관리자 패널에서 제한 가능한 권한으로 승격, 소셜 오른쪽에 배치.
+    Tab.Plant.takeIf { prefs.permPlant },
     Tab.Settings
 )
 

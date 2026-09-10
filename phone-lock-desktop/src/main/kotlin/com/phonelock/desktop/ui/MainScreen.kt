@@ -51,10 +51,10 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
             TopSection.ROUTINE.takeIf { repository.permRoutine },
             TopSection.STUDY.takeIf { repository.permStudy },
             TopSection.MANAGE.takeIf { repository.permManage },
-            // 104차 후속: "식물"은 레벨/경험치 확인용이라 별도 권한 없이 항상 보임(설정과 동일).
-            TopSection.PLANT,
             // 98차(사용자 요청, 안드로이드판과 대칭): 게스트(익명 계정)는 소셜 탭을 아예 못 쓰게 한다.
             TopSection.SOCIAL_GROUP.takeIf { repository.permSocial && !com.phonelock.desktop.monitor.AuthManager.isAnonymous },
+            // 105차 후속(사용자 요청): 관리자 패널에서 제한 가능한 권한으로 승격, 소셜 오른쪽에 배치.
+            TopSection.PLANT.takeIf { repository.permPlant },
             TopSection.SETTINGS
         )
     }
@@ -133,7 +133,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                     NavigationRailItem(
                         selected = section == TopSection.ROUTINE,
                         onClick = { section = TopSection.ROUTINE },
-                        icon = { Text("🔁") },
+                        icon = { Text("📋") },
                         label = { Text("루틴") },
                         colors = railColors
                     )
@@ -156,21 +156,21 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                         colors = railColors
                     )
                 }
-                if (TopSection.PLANT in visibleSections) {
-                    NavigationRailItem(
-                        selected = section == TopSection.PLANT,
-                        onClick = { section = TopSection.PLANT },
-                        icon = { Text("🌱") },
-                        label = { Text("식물") },
-                        colors = railColors
-                    )
-                }
                 if (TopSection.SOCIAL_GROUP in visibleSections) {
                     NavigationRailItem(
                         selected = section == TopSection.SOCIAL_GROUP,
                         onClick = { section = TopSection.SOCIAL_GROUP },
                         icon = { Text("👥") },
                         label = { Text("소셜") },
+                        colors = railColors
+                    )
+                }
+                if (TopSection.PLANT in visibleSections) {
+                    NavigationRailItem(
+                        selected = section == TopSection.PLANT,
+                        onClick = { section = TopSection.PLANT },
+                        icon = { Text("🌱") },
+                        label = { Text("식물") },
                         colors = railColors
                     )
                 }

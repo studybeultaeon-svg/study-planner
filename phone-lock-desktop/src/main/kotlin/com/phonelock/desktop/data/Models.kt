@@ -407,6 +407,7 @@ data class AppData(
     var permStudy: Boolean = true,
     var permManage: Boolean = true,
     var permSocial: Boolean = true,
+    var permPlant: Boolean = true,
     // ---- 자체 업데이트 확인(GitHub Releases, 2026-08-30) ----
     /** 마지막으로 GitHub Releases를 확인한 날짜(effectiveDate 기준) — 안드로이드판 lastUpdateCheckDate와 동일 패턴. */
     var lastUpdateCheckDate: String? = null,

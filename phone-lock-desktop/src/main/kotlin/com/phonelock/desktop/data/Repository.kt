@@ -629,6 +629,9 @@ class Repository {
     var permManage: Boolean
         get() = synchronized(lock) { data.permManage }
         set(value) = synchronized(lock) { data.permManage = value; persist() }
+    var permPlant: Boolean
+        get() = synchronized(lock) { data.permPlant }
+        set(value) = synchronized(lock) { data.permPlant = value; persist() }
     var permSocial: Boolean
         get() = synchronized(lock) { data.permSocial }
         set(value) = synchronized(lock) { data.permSocial = value; persist() }

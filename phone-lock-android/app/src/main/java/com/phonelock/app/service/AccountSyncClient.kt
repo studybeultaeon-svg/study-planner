@@ -33,13 +33,13 @@ object AccountSyncClient {
         val uid: String, val customId: String, val nickname: String, val isGuest: Boolean, val permissions: Permissions
     )
 
-    /** 관리자가 사용자별로 켜고 끌 수 있는 기능 범위 — 루틴/공부/관리(앱 차단)/모임 4개. */
-    data class Permissions(val routine: Boolean, val study: Boolean, val manage: Boolean, val social: Boolean) {
+    /** 관리자가 사용자별로 켜고 끌 수 있는 기능 범위 — 루틴/공부/관리(앱 차단)/모임/식물 5개. */
+    data class Permissions(val routine: Boolean, val study: Boolean, val manage: Boolean, val social: Boolean, val plant: Boolean) {
         fun toJson() = JSONObject().apply {
-            put("routine", routine); put("study", study); put("manage", manage); put("social", social)
+            put("routine", routine); put("study", study); put("manage", manage); put("social", social); put("plant", plant)
         }
         companion object {
-            val ALL = Permissions(routine = true, study = true, manage = true, social = true)
+            val ALL = Permissions(routine = true, study = true, manage = true, social = true, plant = true)
             /** 필드가 아예 없으면(옛 승인 사용자) 전부 허용으로 취급 — 하위호환. */
             fun fromProfile(profile: JSONObject?): Permissions {
                 val p = profile?.optJSONObject("permissions") ?: return ALL
@@ -47,7 +47,8 @@ object AccountSyncClient {
                     routine = p.optBoolean("routine", true),
                     study = p.optBoolean("study", true),
                     manage = p.optBoolean("manage", true),
-                    social = p.optBoolean("social", true)
+                    social = p.optBoolean("social", true),
+                    plant = p.optBoolean("plant", true)
                 )
             }
         }

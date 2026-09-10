@@ -28,6 +28,26 @@
 ### 빌드/배포
 - 양 플랫폼 컴파일 확인(`compileKotlin`/`compileDebugKotlin`, 확장 함수 import 누락·`InfiniteTransition.animateFloat` import 누락 2건 수정 후 통과) → 릴리스 빌드(`assembleRelease`/`packageMsi createDistributable`) → 데스크탑 호스트(`PhoneLockDesktopApp`)+`vm-build-output` 양쪽 배포, 안드로이드 APK 3위치 배포 → GitHub 릴리스 게시(안드로이드 `android-1789045423`, 데스크탑 `desktop-1789045322`) → `sync-public-repo.ps1`로 공개 저장소 push까지 완료. 실사용 검증은 안 됨.
 
+### 같은 세션 후속 수정(사용자 피드백 즉시 반영)
+
+**"식물" 권한을 관리자 패널 대상으로 승격 + 탭 위치 변경**
+- `AccountSyncClient.Permissions`(양 플랫폼) data class에 `plant: Boolean` 필드 추가 — `toJson()`/`fromProfile()`/`ALL` 전부 갱신.
+- 데스크탑 `Models.kt`/`JsonStore.kt`/`Repository.kt`, 안드로이드 `AppPreferences.kt`에 `permPlant` 저장값 추가(기본값 true, 하위호환).
+- 양 플랫폼 `AccountGateScreen.kt`에서 서버 프로필 동기화 시 `permPlant`도 캐시.
+- 관리자 패널 `PermissionChipsRow`(양 플랫폼 `SettingsScreen.kt`)에 "식물" 칩 추가 — 루틴/공부/관리/모임과 동일한 방식으로 사용자별 on/off 가능.
+- 데스크탑 `MainScreen.kt`의 `TopSection.PLANT`, 안드로이드 `MainActivity.kt`의 `Tab.Plant`를 이제 `permPlant`로 게이팅(이전엔 항상 보임).
+- 탭 표시 순서를 "관리→식물→소셜"에서 "관리→소셜→식물"로 변경(사용자 요청: "소셜의 오른쪽에 배치").
+
+**루틴 탭 아이콘 재교체**
+- 사용자가 🔁(반복)를 "구리다"고 평가 — 📋(클립보드)로 재교체(데스크탑 `NavigationRailItem`, 안드로이드 `Tab.Routine`).
+
+**식물 탭을 "화면 전체 땅 배경 + 그 위에 뜨는 UI" 구조로 재설계**
+- 기존 `PlantScene`(고정 높이 220dp 박스 안의 하늘+땅 장면)을 화면 전체를 채우는 `GroundScene`으로 교체 — `PlantScreen` 전체를 `Box(Modifier.fillMaxSize())`로 감싸고, `GroundScene`을 배경으로 먼저 그린 뒤 그 위에 레벨/경험치 카드와 보상 카드를 `verticalScroll` 가능한 `Column`으로 오버레이.
+- 하늘 비중을 20%로 줄이고 나머지 80%를 잔디(`#8BC34A`)→흙(`#6D4C2F`) 버티컬 그라디언트 땅으로 채움 + 잔디/흙 경계선 + 장식용 잔디 더미 2개/돌 2개 추가(`drawGrassTuft` 신설).
+- 모든 드로잉 치수(화분/줄기/잎/꽃/구름/태양 반지름 등)를 고정 px 대신 `scale = (min(w,h) / 400f).coerceIn(0.7f, 3.5f)` 배율로 계산 — 작은 데스크탑 창이든 고밀도 폰 화면이든 비율이 유지되도록 함(기존엔 220dp 고정 박스 기준 고정 px였어서 전체화면으로 늘리면 상대적으로 너무 작아 보였을 문제를 미리 방지).
+- 레벨/경험치 카드와 보상 카드는 `MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)`로 살짝 반투명하게 해서 배경 땅의 존재감을 살리고, 두 카드 사이에 280dp 빈 공간을 둬서 배경의 식물이 가려지지 않고 보이게 함(가운데 캐릭터+위/아래 패널이라는 버츄얼펫 게임 구도 참고).
+- 양 플랫폼 재컴파일+재빌드(`assembleRelease`/`packageMsi createDistributable`)+재배포(호스트+3위치 APK)+GitHub 재릴리스(안드로이드 `android-1789046547`, 데스크탑 `desktop-1789046483`)+공개 저장소 push까지 완료. 실사용 검증은 안 됨.
+
 ---
 
 ## 2026-09-10 (104차 세션) — 레벨업 시스템(누적 공부시간 기준) 신규
