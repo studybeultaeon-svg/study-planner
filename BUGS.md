@@ -4,6 +4,16 @@
 
 ---
 
+## Fixed (2026-09-11, 105차 세션) — 안드로이드 릴리스가 빌드 경로 오타로 구버전 그대로 배포됨
+
+- **경위**: 105차에서 "레벨업+식물 성장" 통합 시스템을 구현한 뒤 GitHub에 `android-1789051210` 릴리스를 게시했는데, 사용자가 앱 자체 업데이트로 설치해보니 여전히 구버전(식물 탭 없음, 소셜 탭만)이었다고 제보.
+- **원인**: 소스 동기화 robocopy 명령에서 안드로이드 공식 빌드 경로를 `C:\Users\sunae\AndroidBuilds\phone-lock-android`가 아니라 `C:\AndroidBuilds\phone-lock-android`(`\Users\sunae\` 빠짐)로 잘못 입력 — 이 둘은 심볼릭 링크가 아니라 **완전히 다른 실제 디렉터리**(`fsutil reparsepoint query`로 심볼릭 링크가 아님을 확인)다. robocopy 자체는 그 잘못된 경로로 "정상 복사됨"을 보고했지만, 그 직후 `gradle assembleRelease`는 **올바른(캐노니컬) 경로**에서 실행했기 때문에, 동기화가 전혀 안 된 옛 소스 그대로 빌드되어 버렸다. 컴파일 확인(`compileDebugKotlin`)은 별도의 `C:\build\phonelock-android-check` 스크래치 경로를 썼기 때문에 거기서는 정상적으로 새 코드가 반영돼 통과했고, 그래서 "컴파일 성공"만 보고 실제 릴리스 빌드도 맞게 됐을 거라고 착각했다.
+- **발견/확정 방법**: 빌드된 APK(`app-release.apk`)를 `unzip`으로 풀어 `classes.dex`를 `grep -a`로 열어, 새로 추가한 문자열 리터럴(`growth_exp_total`, `jinseok_tralalero` 등 SharedPreferences 키/`illustrationId` 값)이 실제로 포함돼 있는지 확인 — 전혀 없었다(반면 기존에 있던 `study-planner`, `permRoutine` 같은 문자열은 정상적으로 검출돼, grep 방법 자체는 유효함을 먼저 검증). 데스크탑은 이런 이름 충돌 경로가 없어(`C:\build\phone-lock-desktop` 하나만 사용) 영향 없음.
+- **해결**: 올바른 경로로 재동기화(재확인: `Select-String`으로 `growthExpTotal` 필드가 실제로 들어있는지 확인) → 재빌드 → APK의 `classes.dex`에서 새 문자열이 실제로 존재하는지 먼저 검증 → 3위치 재배포 → 기존 잘못된 릴리스(`android-1789051210`)는 `gh release delete`로 제거하고 올바른 빌드로 새 릴리스(`android-1789082482`) 게시.
+- **재발 방지**: [[HANDOFF.md]] "현재 주의사항"에 경로 혼동 경고 추가. 앞으로 릴리스용 빌드를 만들 때는 robocopy의 "복사됨" 로그를 믿지 말고, **빌드 산출물(APK/jar)에서 이번에 추가한 문자열이 실제로 들어있는지 직접 확인하는 단계를 항상 거칠 것** — 이번처럼 "컴파일은 통과했으니 빌드도 맞을 것"이라는 추론이 틀릴 수 있다(컴파일 확인과 릴리스 빌드가 서로 다른 소스 디렉터리를 쓰는 구조이기 때문).
+
+---
+
 ## Fixed (2026-09-10, 99차 세션)
 
 ### 소셜 채팅을 쳐서 보내도 메시지가 안 올라감 (96차 최초 제보 → 98차 원인 미확정 → 99차 해결)
