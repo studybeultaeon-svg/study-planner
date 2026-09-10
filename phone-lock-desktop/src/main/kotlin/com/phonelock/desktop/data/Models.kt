@@ -301,6 +301,10 @@ data class AppData(
     var pomodoroBreakMinutes: Int = 5,
     /** 타이머 시작 전 "뽀모도로 모드" 토글의 마지막 선택값(탭을 이동했다 돌아와도 유지). */
     var pomodoroModeEnabled: Boolean = false,
+    /** 스톱워치(일반) 모드 진행률 문구용 목표 시간(분), 0이면 미설정(99차+). */
+    var studyGoalMinutes: Int = 0,
+    /** 뽀모도로 모드 진행률 문구용 목표 사이클 수, 0이면 미설정(99차+). */
+    var pomodoroTargetCycles: Int = 0,
     val studyLog: MutableList<StudyLogEntry> = mutableListOf(),
     /** 회유 멘트 성공률 통계(82차, §9/§11). */
     val quoteOutcomes: MutableList<QuoteOutcome> = mutableListOf(),

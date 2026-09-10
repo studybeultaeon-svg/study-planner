@@ -179,6 +179,16 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("pomodoro_mode_enabled", false)
         set(value) = prefs.edit().putBoolean("pomodoro_mode_enabled", value).apply()
 
+    /** 스톱워치(일반) 모드 진행률 문구용 목표 시간(분), 0이면 미설정(99차+, 데스크탑판과 대칭). */
+    var studyGoalMinutes: Int
+        get() = prefs.getInt("study_goal_minutes", 0)
+        set(value) = prefs.edit().putInt("study_goal_minutes", value).apply()
+
+    /** 뽀모도로 모드 진행률 문구용 목표 사이클 수, 0이면 미설정(99차+, 데스크탑판과 대칭). */
+    var pomodoroTargetCycles: Int
+        get() = prefs.getInt("pomodoro_target_cycles", 0)
+        set(value) = prefs.edit().putInt("pomodoro_target_cycles", value).apply()
+
     /** 일일 사용 한도(dailyLimitMinutes)의 "하루" 기준이 되는 시각 (0~23시, 기본값 0 = 자정). */
     var dailyResetHour: Int
         get() = prefs.getInt("daily_reset_hour", 0)

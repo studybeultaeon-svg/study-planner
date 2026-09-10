@@ -884,6 +884,14 @@ class Repository {
         get() = synchronized(lock) { data.pomodoroModeEnabled }
         set(value) = synchronized(lock) { data.pomodoroModeEnabled = value; persist() }
 
+    var studyGoalMinutes: Int
+        get() = synchronized(lock) { data.studyGoalMinutes }
+        set(value) = synchronized(lock) { data.studyGoalMinutes = value; persist() }
+
+    var pomodoroTargetCycles: Int
+        get() = synchronized(lock) { data.pomodoroTargetCycles }
+        set(value) = synchronized(lock) { data.pomodoroTargetCycles = value; persist() }
+
     var studyLockAllowedApps: List<String>
         get() = synchronized(lock) { data.studyLockAllowedApps.toList() }
         set(value) = synchronized(lock) { data.studyLockAllowedApps = value.toMutableList(); persist() }

@@ -100,6 +100,8 @@ object JsonStore {
             pomodoroStudyMinutes = json.optInt("pomodoroStudyMinutes", 25),
             pomodoroBreakMinutes = json.optInt("pomodoroBreakMinutes", 5),
             pomodoroModeEnabled = json.optBoolean("pomodoroModeEnabled", false),
+            studyGoalMinutes = json.optInt("studyGoalMinutes", 0),
+            pomodoroTargetCycles = json.optInt("pomodoroTargetCycles", 0),
             studyLockAllowedApps = run {
                 val arr = json.optJSONArray("studyLockAllowedApps") ?: JSONArray()
                 (0 until arr.length()).map { arr.getString(it) }.toMutableList()
@@ -450,6 +452,8 @@ object JsonStore {
         json.put("pomodoroStudyMinutes", data.pomodoroStudyMinutes)
         json.put("pomodoroBreakMinutes", data.pomodoroBreakMinutes)
         json.put("pomodoroModeEnabled", data.pomodoroModeEnabled)
+        json.put("studyGoalMinutes", data.studyGoalMinutes)
+        json.put("pomodoroTargetCycles", data.pomodoroTargetCycles)
         json.put("studyLockAllowedApps", JSONArray(data.studyLockAllowedApps))
         json.put("studyLockAllowedSites", JSONArray(data.studyLockAllowedSites))
         json.put("cachedApprovalStatus", data.cachedApprovalStatus ?: JSONObject.NULL)

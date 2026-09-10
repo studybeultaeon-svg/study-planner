@@ -54,8 +54,9 @@ fun Repository.sortCalendarDay(dateKey: String) {
     if (indices.size < 2) return
     // 85차 발견: koreanCollator만 쓰면 순수 사전식이라 "문제10"이 "문제2"보다 앞에 온다(문자 '1'<'2') —
     // 이름에 섞인 숫자는 자연 정렬(NaturalOrder)로 값 비교해야 사용자가 기대하는 "숫자 순서"가 된다.
+    // 기본 정렬 규칙: 1회독부터 오름차순(passIndex 오름차순)
     val sorted = indices.map { data.calendarTasks[it] }.sortedWith(
-        compareBy<CalendarTask> { it.passTotal - 1 - it.passIndex }
+        compareBy<CalendarTask> { it.passIndex }
             .thenComparator { a, b -> com.phonelock.shared.NaturalOrder.comparator.compare(a.name, b.name) }
     )
     indices.forEachIndexed { i, globalIdx -> data.calendarTasks[globalIdx] = sorted[i] }

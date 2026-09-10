@@ -78,6 +78,7 @@ import com.phonelock.app.data.TimerRunState
 import com.phonelock.app.service.PomodoroSyncClient
 import com.phonelock.app.ui.components.SectionCard
 import com.phonelock.app.ui.theme.Spacing
+import com.phonelock.shared.StudyProgressQuotes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -108,6 +109,10 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     var pomodoroEnabled by remember { mutableStateOf(repository.pomodoroModeEnabled) }
     var studyMinText by remember { mutableStateOf(repository.pomodoroStudyMinutes.toString()) }
     var breakMinText by remember { mutableStateOf(repository.pomodoroBreakMinutes.toString()) }
+    // 99차+(사용자 요청): 목표 시간/사이클 대비 진행률에 따라 응원 문구를 보여주기 위한 선택 입력값 —
+    // 0/빈 칸이면 목표 미설정으로 취급해 문구를 아예 안 띄운다(기존 동작 보존, 데스크탑판과 대칭).
+    var studyGoalText by remember { mutableStateOf(repository.studyGoalMinutes.let { if (it > 0) it.toString() else "" }) }
+    var pomodoroTargetCyclesText by remember { mutableStateOf(repository.pomodoroTargetCycles.let { if (it > 0) it.toString() else "" }) }
     var todayLog by remember { mutableStateOf(listOf<StudyLogEntry>()) }
     // 92차(사용자 요청, "타이머 화면이 여전히 비어보인다"): 스트릭/주간 그래프 2개를 채우려고 추가.
     // `getAllStudyLogOnce()`는 이 기기 로컬 기록만 반환해서(다른 기기가 그날 올린 기록은
@@ -408,6 +413,32 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                     }
                     Spacer(Modifier.height(Spacing.sm))
                 }
+                // 99차+(사용자 요청): 목표(뽀모도로=사이클 수, 일반=시간) 설정, 선택 입력 — 비워두면
+                // 진행률 문구를 안 띄우던 기존 동작 그대로 유지(데스크탑판과 대칭).
+                if (pomodoroEnabled) {
+                    OutlinedTextField(
+                        value = pomodoroTargetCyclesText,
+                        onValueChange = { text ->
+                            pomodoroTargetCyclesText = text
+                            val n = text.toIntOrNull()
+                            repository.pomodoroTargetCycles = if (n != null && n > 0) n else 0
+                        },
+                        label = { Text("목표 사이클 수(선택)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = studyGoalText,
+                        onValueChange = { text ->
+                            studyGoalText = text
+                            val n = text.toIntOrNull()
+                            repository.studyGoalMinutes = if (n != null && n > 0) n else 0
+                        },
+                        label = { Text("목표 시간(분, 선택)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Spacer(Modifier.height(Spacing.sm))
                 Button(
                     onClick = {
                         repository.timerStart(taskName, pomodoroEnabled)
@@ -479,6 +510,41 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(Spacing.md))
+
+                // 99차+(사용자 요청): 목표(뽀모도로=사이클 수, 일반=시간) 대비 진행률에 따른 응원
+                // 문구 — 목표 미설정(0)이면 아예 표시 안 함(기존 동작 보존, 데스크탑판과 대칭).
+                val progress: Double? = if (current.mode == "pomodoro") {
+                    val targetCycles = repository.pomodoroTargetCycles
+                    if (targetCycles > 0) {
+                        val phaseFraction = if (current.phase == "study" && current.phaseEndAt > current.phaseStartedAt) {
+                            ((nowMillis - current.phaseStartedAt).toDouble() / (current.phaseEndAt - current.phaseStartedAt)).coerceIn(0.0, 1.0)
+                        } else 0.0
+                        (current.cycleCount + phaseFraction) / targetCycles
+                    } else null
+                } else {
+                    val goalMinutes = repository.studyGoalMinutes
+                    if (goalMinutes > 0) (nowMillis - current.phaseStartedAt).toDouble() / (goalMinutes * 60_000.0) else null
+                }
+                if (progress != null) {
+                    val tier = StudyProgressQuotes.tierFor(progress)
+                    val quote = remember(tier) { StudyProgressQuotes.forProgress(progress) }
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        color = GREEN.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, GREEN.copy(alpha = 0.35f))
+                    ) {
+                        Text(
+                            quote,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = GREEN,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.sm))
+                }
                 if (isMirror) {
                     // 다른 기기가 시작한 세션을 미러링하는 중 — 이 기기에서 시작하지 않았으므로
                     // 정지/전환은 그 기기에서만 가능하다(19차 세션에서 겪은 remoteCommand 왕복 문제를
