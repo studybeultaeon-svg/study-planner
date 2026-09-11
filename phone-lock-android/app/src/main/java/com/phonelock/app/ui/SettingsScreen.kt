@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -73,17 +72,18 @@ import com.phonelock.app.widget.RoutineWidgetProvider
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
-private fun isIgnoringBatteryOptimizations(context: android.content.Context): Boolean {
+// 106차: PermissionOnboardingScreen.kt(같은 패키지)도 재사용하므로 private에서 internal로 완화.
+internal fun isIgnoringBatteryOptimizations(context: android.content.Context): Boolean {
     val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
     return powerManager.isIgnoringBatteryOptimizations(context.packageName)
 }
 
-private fun isDeviceAdminActive(context: android.content.Context): Boolean {
+internal fun isDeviceAdminActive(context: android.content.Context): Boolean {
     val dpm = context.getSystemService(android.content.Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
     return dpm.isAdminActive(PhoneLockDeviceAdminReceiver.componentName(context))
 }
 
-private fun canScheduleExactAlarms(context: android.content.Context): Boolean {
+internal fun canScheduleExactAlarms(context: android.content.Context): Boolean {
     if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return true
     val am = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
     return am.canScheduleExactAlarms()
@@ -124,6 +124,9 @@ fun SettingsScreen(
     var deviceAdminActive by remember { mutableStateOf(isDeviceAdminActive(context)) }
     var batteryOptIgnored by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
     var exactAlarmGranted by remember { mutableStateOf(canScheduleExactAlarms(context)) }
+    // 106차: 개별 권한 카드 여러 개 대신 "권한 설정 가이드" 진입점 하나로 통합 — 최초 실행 때 본 것과
+    // 같은 화면을 여기서 다시 연다.
+    var showPermissionGuide by remember { mutableStateOf(false) }
     var blockReels by remember { mutableStateOf(prefs.blockReels) }
     var blockShorts by remember { mutableStateOf(prefs.blockShorts) }
     var routineStreakNotifyEnabled by remember { mutableStateOf(prefs.routineStreakNotifyEnabled) }
@@ -194,27 +197,6 @@ fun SettingsScreen(
         }
     }
 
-    val deviceAdminLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        deviceAdminActive = isDeviceAdminActive(context)
-    }
-
-    val batteryOptLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        batteryOptIgnored = isIgnoringBatteryOptimizations(context)
-    }
-
-    val exactAlarmLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        exactAlarmGranted = canScheduleExactAlarms(context)
-        if (exactAlarmGranted) {
-            scope.launch { RoutineAlarmScheduler.rescheduleAll(context, repository) }
-        }
-    }
-
     if (showRestoreConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showRestoreConfirmDialog = false },
@@ -267,6 +249,17 @@ fun SettingsScreen(
                 TextButton(onClick = { showRoutineRestoreConfirmDialog = false }) { Text("취소") }
             }
         )
+    }
+
+    if (showPermissionGuide) {
+        PermissionOnboardingScreen(repository = repository, onDone = {
+            showPermissionGuide = false
+            accessibilityEnabled = AccessibilityServiceChecker.isEnabled(context)
+            deviceAdminActive = isDeviceAdminActive(context)
+            batteryOptIgnored = isIgnoringBatteryOptimizations(context)
+            exactAlarmGranted = canScheduleExactAlarms(context)
+        })
+        return
     }
 
     Scaffold(
@@ -447,118 +440,23 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(Spacing.md))
 
-            SectionCard("권한 / 백그라운드 보호") {
+            // 106차: 접근성/배터리/알람/삭제방지 4개 카드를 따로 나열하던 것을 하나의 진입점으로
+            // 통합 — 최초 로그인 직후에 봤던 것과 같은 PermissionOnboardingScreen을 여기서도 재사용한다.
+            SectionCard("권한 설정") {
+                val allGranted = accessibilityEnabled && batteryOptIgnored && exactAlarmGranted && isNotificationGranted(context)
                 Text(
-                    if (accessibilityEnabled) "접근성 서비스: 활성화됨" else "접근성 서비스: 비활성화됨",
-                    style = MaterialTheme.typography.bodyLarge
+                    if (allGranted) "모든 필수 권한이 설정되어 있습니다." else "일부 권한이 아직 설정되지 않았습니다.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (allGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                 )
                 Text(
-                    "차단 규칙 잠금/실행 전 대기 기능이 동작하려면 켜야 합니다.",
+                    "알림 / 접근성 서비스 / 백그라운드 실행 보호 / 정확한 알람 / 삭제 방지를 한 화면에서 확인하고 설정할 수 있습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(Spacing.sm))
-                Button(
-                    onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("접근성 설정 열기")
-                }
-                Spacer(Modifier.height(Spacing.sm))
-                Button(
-                    onClick = { accessibilityEnabled = AccessibilityServiceChecker.isEnabled(context) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("상태 새로고침")
-                }
-
-                Spacer(Modifier.height(Spacing.md))
-                Text(
-                    if (batteryOptIgnored) "백그라운드 실행 보호: 활성화됨" else "백그라운드 실행 보호: 비활성화됨",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    "배터리 최적화 대상에서 제외해서, 제조사 배터리 관리 기능이 앱을 강제로 죽이는 것을 막아줍니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (!batteryOptIgnored) {
-                    Spacer(Modifier.height(Spacing.sm))
-                    Button(
-                        onClick = {
-                            val intent = Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                            batteryOptLauncher.launch(intent)
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("백그라운드 실행 보호 켜기")
-                    }
-                }
-
-                Spacer(Modifier.height(Spacing.md))
-                Text(
-                    if (exactAlarmGranted) "정확한 알람: 허용됨" else "정확한 알람: 거부됨",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    "허용하면 루틴 알림이 정확한 시각에 옵니다. 꺼져 있으면 배터리 절약 때문에 몇 분 늦게 올 수 있습니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (!exactAlarmGranted) {
-                    Spacer(Modifier.height(Spacing.sm))
-                    Button(
-                        onClick = {
-                            val intent = Intent(
-                                Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                            exactAlarmLauncher.launch(intent)
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("정확한 알람 허용하기")
-                    }
-                }
-
-                Spacer(Modifier.height(Spacing.md))
-                Text(
-                    if (deviceAdminActive) "삭제 방지: 활성화됨" else "삭제 방지: 비활성화됨",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    "켜두면 삭제 전에 이 권한부터 해제해야 해서 충동적인 삭제를 막아줍니다. (강제종료는 안드로이드 시스템 자체가 막고 있어 어떤 앱도 방지할 수 없습니다.)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                if (deviceAdminActive) {
-                    Button(
-                        onClick = {
-                            val dpm = context.getSystemService(android.content.Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                            dpm.removeActiveAdmin(PhoneLockDeviceAdminReceiver.componentName(context))
-                            deviceAdminActive = isDeviceAdminActive(context)
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("삭제 방지 해제")
-                    }
-                } else {
-                    Button(
-                        onClick = {
-                            val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, PhoneLockDeviceAdminReceiver.componentName(context))
-                                putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, context.getString(R.string.device_admin_description))
-                            }
-                            deviceAdminLauncher.launch(intent)
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("삭제 방지 켜기")
-                    }
+                Button(onClick = { showPermissionGuide = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("권한 설정 가이드 열기")
                 }
             }
             Spacer(Modifier.height(Spacing.md))
@@ -769,32 +667,36 @@ fun SettingsScreen(
           if (settingsSubTab == 0) {
             // 98차(사용자 요청): 온라인/오프라인 모드 — 네트워크가 실제로 끊기면 자동으로 오프라인
             // 전환되지만(NetworkMonitor), 필요하면 연결돼 있어도 수동으로 강제 오프라인 가능.
-            SectionCard("온라인 / 오프라인 모드") {
-                var offlineOverride by remember { mutableStateOf(prefs.offlineModeOverride) }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.weight(1f)) {
-                        Text("오프라인 모드로 강제 전환", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "켜면 인터넷이 연결돼 있어도 동기화/로그인/소셜 등 네트워크 기능을 쓰지 않고 이 " +
-                                "기기에서만 로컬로 사용합니다. 꺼둬도 실제로 인터넷이 끊기면 자동으로 오프라인 " +
-                                "처리됩니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+            // 106차 후속: 이 수동 전환 UI는 게스트(익명 로그인) 전용 기능이므로 게스트에게만 노출한다
+            // — 회원가입/정상 로그인 계정은 항상 온라인이 기본이라 이 스위치가 필요 없다.
+            if (AuthManager.currentUser?.isAnonymous == true) {
+                SectionCard("온라인 / 오프라인 모드") {
+                    var offlineOverride by remember { mutableStateOf(prefs.offlineModeOverride) }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("오프라인 모드로 강제 전환", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "켜면 인터넷이 연결돼 있어도 동기화/로그인/소셜 등 네트워크 기능을 쓰지 않고 이 " +
+                                    "기기에서만 로컬로 사용합니다. 꺼둬도 실제로 인터넷이 끊기면 자동으로 오프라인 " +
+                                    "처리됩니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = offlineOverride,
+                            onCheckedChange = { offlineOverride = it; prefs.offlineModeOverride = it }
                         )
                     }
-                    androidx.compose.material3.Switch(
-                        checked = offlineOverride,
-                        onCheckedChange = { offlineOverride = it; prefs.offlineModeOverride = it }
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text(
+                        if (com.phonelock.app.service.NetworkMonitor.isOnline) "현재 인터넷 연결됨" else "현재 인터넷 연결 안 됨",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (com.phonelock.app.service.NetworkMonitor.isOnline) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
                     )
                 }
-                Spacer(Modifier.height(Spacing.xs))
-                Text(
-                    if (com.phonelock.app.service.NetworkMonitor.isOnline) "현재 인터넷 연결됨" else "현재 인터넷 연결 안 됨",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (com.phonelock.app.service.NetworkMonitor.isOnline) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
-                )
+                Spacer(Modifier.height(Spacing.md))
             }
-            Spacer(Modifier.height(Spacing.md))
 
             SectionCard("계정 동기화 (로그인 필수)") {
                 Text(

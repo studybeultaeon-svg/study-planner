@@ -78,7 +78,16 @@ fun AccountGate(repository: Repository, content: @Composable () -> Unit) {
                 }
                 onDone(JSONObjectStatus(profile, status))
             }.onFailure { e ->
-                serverChecked = true
+                // 106차 버그 수정: 이미 승인된 상태를 알고 있었다면(캐시든, 이전 폴링에서의 실제 확인이든)
+                // 네트워크 오류 하나로 그 상태를 지우지 않는다 — 예전엔 여기서 무조건 serverChecked=true로
+                // 만들어서, 불안정한 네트워크에서 폴링이 한 번만 실패해도 "!serverChecked && optimisticApproved
+                // -> content()" 낙관적 표시 조건을 벗어나 버렸고, serverStatus는 여전히 null이라 바로 아래
+                // "가입 신청" 화면(UsernameStep)으로 떨어져서 마치 로그아웃된 것처럼 보였다. 실제 로그인
+                // 세션(AuthManager)은 전혀 건드리지 않았는데도 화면만 로그아웃된 것처럼 보이는 버그였다.
+                val hadKnownApproval = serverStatus == "approved" || optimisticApproved
+                if (!hadKnownApproval) {
+                    serverChecked = true
+                }
                 onDone(JSONObjectStatus(null, null, e.message))
             }
         }.start()

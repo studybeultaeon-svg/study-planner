@@ -151,6 +151,21 @@ object AccountSyncClient {
         putJson(URL("$base/allowedUsers/$uid.json?auth=$token"), "true", raw = true)
     }
 
+    /** 과거 버그(가입 신청 시 실제 로그인 방식과 무관하게 isGuest=true로 저장되던 문제)로 잘못 기록된
+     *  내 프로필의 isGuest 값을, 지금 로그인 세션의 실제 값([actualIsGuest])과 다르면 바로잡는다. */
+    suspend fun fixGuestFlagIfNeeded(databaseUrl: String?, apiKey: String?, actualIsGuest: Boolean): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, uid) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+                val base = databaseUrl.trimEnd('/')
+                sendPatch(URL("$base/users/$uid/profile.json?auth=$token"), JSONObject().apply { put("isGuest", actualIsGuest) })
+            }
+        }
+    }
+
     /** 닉네임만 부분 갱신한다. */
     suspend fun updateNickname(databaseUrl: String?, apiKey: String?, nickname: String): Result<Unit> {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
