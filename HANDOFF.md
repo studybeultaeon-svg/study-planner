@@ -396,6 +396,7 @@ curl -s "http://127.0.0.1:47882/overlay-status?domain=youtube.com"
 15. **텍스트 자동 축소(shrink-to-fit) 로직을 짤 땐 "무엇을 막으려는지"에 맞는 조건을 고를 것**: "N줄을 넘칠 때" 줄이는 로직(`maxLines=N`+`didOverflowHeight`)과 "1줄에 안 들어갈 때" 줄이는 로직(`maxLines=1`+`didOverflowWidth`)은 다르다 — "짧은 줄바꿈 자체가 보기 싫다"는 요구엔 후자가 맞는데, 전자로 짜면 대부분 케이스에서 로직이 아예 발동하지 않아 "안 바뀐 것 같다"는 피드백을 받게 된다.
 16. **화면 폭 기준으로 기기 종류를 나눌 땐 표준 브레이크포인트(sw600dp)부터 검토할 것**: `LocalConfiguration.current.screenWidthDp >= 600`으로 태블릿/폰을 판정(`InterstitialScreen.kt`) — 폼팩터별 분기가 또 필요해지면 이 임계값부터 재사용 검토할 것.
 17. **새 순수 로직/계산 함수는 먼저 `:shared`에 넣을 자리인지 검토할 것(82차 도입, 103차 재확인)**: Room 엔티티나 플랫폼 데이터클래스에 결합되지 않는 순수 함수(포인트 계산, 문구, 스트릭 등)는 안드로이드/데스크탑 양쪽에 복붙하지 말고 `shared/src/main/kotlin/com/phonelock/shared/`에 한 번만 작성 — 두 앱 모두 `implementation("com.phonelock:shared")`로 이미 연결돼 있어 import만 추가하면 된다. 안드로이드에서 컴파일 확인 시 `AndroidBuilds/phone-lock-android`의 **형제 디렉터리**로 `AndroidBuilds/shared`도 함께 robocopy해야 한다(`../shared` composite build 참조, 안 하면 "Unresolved reference" 오류).
+18. **다음 세션 최우선 작업 = "식물 탭 개편"(107차 사용자 지정, 아직 스펙 없음)**: 107차에서 요청받은 6개 항목(권한 온보딩/게스트 판정/온라인-오프라인/루틴 이모지 등)과 오인 로그아웃 버그를 전부 처리한 뒤 "다음은 식물 탭 개편"이라는 지시만 받았고, **구체적으로 무엇을 바꿔야 하는지는 아직 전달받지 못함**. `PlantScreen.kt`(양 플랫폼)나 `GrowthSystem.kt`를 추측해서 임의로 리디자인하지 말 것(CLAUDE.md "추측하거나 임의로 구현하지 말고" 원칙) — 세션 시작 시 사용자에게 구체적인 요구사항부터 물어볼 것.
 
 ---
 
