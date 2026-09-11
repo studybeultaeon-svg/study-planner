@@ -85,40 +85,6 @@ fun Repository.onCalendarTaskCompletionChanged(refId: String, dateKey: String, c
 }
 
 // ══════════════════════════════════════════════════════
-// 보상("오늘의 보상") — 사용자가 직접 등록/삭제하는 이름+필요 포인트 목록.
-// ══════════════════════════════════════════════════════
-
-fun Repository.getRewards(): List<Reward> = synchronized(lock) { data.rewards.sortedBy { it.sortOrder } }
-
-fun Repository.addReward(name: String, cost: Int) = synchronized(lock) {
-    val nextOrder = (data.rewards.maxOfOrNull { it.sortOrder } ?: -1) + 1
-    data.rewards.add(Reward(id = data.nextRewardId, name = name, cost = cost, sortOrder = nextOrder))
-    data.nextRewardId++
-    persist()
-    pushPointsToFirebase()
-}
-
-fun Repository.deleteReward(rewardId: Long) = synchronized(lock) {
-    data.rewards.removeAll { it.id == rewardId }
-    persist()
-    pushPointsToFirebase()
-}
-
-/** 보상 교환 — 잔액이 모자라면 아무 일도 안 하고 false. */
-fun Repository.redeemReward(rewardId: Long): Boolean = synchronized(lock) {
-    val reward = data.rewards.find { it.id == rewardId } ?: return@synchronized false
-    val balance = data.pointsLedger.sumOf { it.delta }
-    if (balance < reward.cost) return@synchronized false
-    val dateKey = effectiveDate(data.dailyResetHour).toString()
-    data.pointsLedger.add(
-        PointsLedgerEntry(delta = -reward.cost, reason = "REDEEM", refId = "reward:${reward.id}", dateKey = dateKey, timestampMillis = System.currentTimeMillis())
-    )
-    persist()
-    pushPointsToFirebase()
-    true
-}
-
-// ══════════════════════════════════════════════════════
 // Firebase 동기화 — 캘린더/루틴과 동일한 "전체 문서 단위 LWW"(users/{user}/points).
 // ══════════════════════════════════════════════════════
 
@@ -129,14 +95,6 @@ private fun pointsLedgerToJson(ledger: List<PointsLedgerEntry>): JSONArray {
             put("delta", e.delta); put("reason", e.reason); put("refId", e.refId)
             put("dateKey", e.dateKey); put("timestampMillis", e.timestampMillis)
         })
-    }
-    return arr
-}
-
-private fun rewardsToJson(rewards: List<Reward>): JSONArray {
-    val arr = JSONArray()
-    rewards.sortedBy { it.sortOrder }.forEach { r ->
-        arr.put(JSONObject().apply { put("name", r.name); put("cost", r.cost); put("sortOrder", r.sortOrder) })
     }
     return arr
 }
@@ -158,24 +116,16 @@ private fun pointsLedgerFromJson(json: JSONArray): MutableList<PointsLedgerEntry
     return out
 }
 
-private fun rewardsFromJson(json: JSONArray): MutableList<Reward> {
-    val out = mutableListOf<Reward>()
-    for (i in 0 until json.length()) {
-        val r = json.getJSONObject(i)
-        out.add(Reward(id = (i + 1).toLong(), name = r.optString("name", ""), cost = r.optInt("cost", 0), sortOrder = r.optInt("sortOrder", i)))
-    }
-    return out
-}
-
-/** 변경 직후 fire-and-forget으로 Firebase에 전체 포인트 문서(원장+보상)를 올린다(호출부는 이미 lock을 쥐고 있음). */
+/** 변경 직후 fire-and-forget으로 Firebase에 포인트 원장을 올린다(호출부는 이미 lock을 쥐고 있음).
+ *  "보상" 필드는 108차에 기능 자체가 삭제됐지만, 다른 기기의 구버전 앱이 같은 문서를 읽을 수 있어
+ *  와이어 포맷은 그대로 유지하고 빈 배열만 채워 보낸다. */
 fun Repository.pushPointsToFirebase() {
     val ts = System.currentTimeMillis()
     data.pointsTs = ts
     val ledgerJson = pointsLedgerToJson(data.pointsLedger)
-    val rewardsJson = rewardsToJson(data.rewards)
     val url = data.fbDatabaseUrl; val key = data.fbApiKey
     Thread {
-        com.phonelock.desktop.monitor.PomodoroSyncClient.writePoints(url, key, ledgerJson, rewardsJson, ts)
+        com.phonelock.desktop.monitor.PomodoroSyncClient.writePoints(url, key, ledgerJson, JSONArray(), ts)
     }.start()
 }
 
@@ -189,10 +139,7 @@ fun Repository.syncPointsFromFirebase() {
     synchronized(lock) {
         if (result.ts > data.pointsTs) {
             val ledger = pointsLedgerFromJson(result.ledgerJson)
-            val rewards = rewardsFromJson(result.rewardsJson)
             data.pointsLedger.clear(); data.pointsLedger.addAll(ledger)
-            data.rewards.clear(); data.rewards.addAll(rewards)
-            data.nextRewardId = (rewards.maxOfOrNull { it.id } ?: 0L) + 1
             data.pointsTs = result.ts
             persist()
         } else if (data.pointsTs > result.ts) {

@@ -1,5 +1,6 @@
 package com.phonelock.app.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -7,6 +8,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +24,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -27,13 +31,13 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,59 +55,101 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.phonelock.app.data.PhoneLockRepository
-import com.phonelock.app.data.*
+import com.phonelock.app.data.applyPendingGrowthExp
+import com.phonelock.app.data.getGrowthExpPending
+import com.phonelock.app.data.getGrowthExpTotal
+import com.phonelock.app.data.getRebirthCount
+import com.phonelock.app.data.observePointsBalance
+import com.phonelock.app.data.rebirth
+import com.phonelock.app.service.GrowthSoundPlayer
 import com.phonelock.app.ui.theme.Spacing
 import com.phonelock.shared.GrowthSystem
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.collectAsState
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * "식물" 탭(105차, 데스크탑판과 대칭) — 기존 레벨(StudyLevel)/캐릭터(CharacterGrowth) 2개 축을
- * `shared/GrowthSystem.kt` 하나로 통합했다: 레벨 숫자는 자주 오르고, 칭호(식물 이름)는 정해진 레벨
- * 구간에서만 바뀐다. 칭호는 런타임에 랜덤 생성하지 않고 전부 미리 정해둔 고정 테이블
- * (`GrowthSystem.STAGES`)이며, 칭호마다 전용 일러스트(`illustrationId`)가 1:1로 짝지어져 있다.
- * 레벨/경험치 HUD는 화면 위쪽에, 보상 패널은 아래쪽에(기본 접힘) 도킹하고 가운데는 항상 비워 식물이
- * 보이게 했다(105차 1차 버전의 레이아웃 버그 수정).
+ * "식물" 탭(105차 신설, 108차 게임성 강화 개편, 데스크탑판과 대칭) — 레벨/칭호는
+ * `shared/GrowthSystem.kt` 하나로 계산한다. 108차부터 EXP는 적립 즉시 레벨에 반영되지 않고
+ * "대기 EXP"([PhoneLockRepository.getGrowthExpPending])로 먼저 쌓이며, 사용자가 아래쪽 HUD의
+ * "경험치 적용" 버튼을 눌러야 그 순간 [PhoneLockRepository.applyPendingGrowthExp]가 레벨에 실제로
+ * 반영한다 — 그 반영 과정을 경험치바가 차오르고(레벨업 시 넘치면 다음 레벨로 이어서) 레벨업 연출이 뜨는
+ * 애니메이션으로 보여줘서 사용자가 레벨업 과정에 직접 참여하는 느낌을 준다(사용자 요청). 환생도 기존부터
+ * 버튼+확인 다이얼로그로 이미 수동이었다(자동 환생 로직 없음, 이번에 구조 변경 없음). 보상함(포인트→보상
+ * 교환) UI는 108차에 완전히 삭제됨 — 관련 로직(Reward 데이터/Room 테이블/함수)도 전부 제거했다
+ * (사용자 확정, [[DECISIONS.md]] 108차 참고).
  */
 @Composable
 fun PlantScreen(repository: PhoneLockRepository) {
     val scope = rememberCoroutineScope()
     val balance by repository.observePointsBalance().collectAsState(initial = 0)
-    val rewards by repository.observeRewards().collectAsState(initial = emptyList())
-    // growthExpTotal/rebirthCount는 Room Flow가 아니라 AppPreferences 스칼라값이라 refreshTick으로 재조회.
+    // growthExpPending/rebirthCount는 Room Flow가 아니라 AppPreferences 스칼라값이라 refreshTick으로 재조회.
     var refreshTick by remember { mutableIntStateOf(0) }
-    val growthExp = remember(refreshTick) { repository.getGrowthExpTotal() }
+    val growthExpPending = remember(refreshTick) { repository.getGrowthExpPending() }
     val rebirthCount = remember(refreshTick) { repository.getRebirthCount() }
-    var showAddDialog by remember { mutableStateOf(false) }
-    var showRebirthDialog by remember { mutableStateOf(false) }
-    var rewardsExpanded by remember { mutableStateOf(false) }
-    var toastMessage by remember { mutableStateOf<String?>(null) }
     fun refresh() { refreshTick++ }
 
-    val level = GrowthSystem.levelForExp(growthExp)
-    val levelProgress = GrowthSystem.progressToNextLevel(growthExp)
-    val stage = GrowthSystem.stageForLevel(level)
+    var displayedExp by remember { mutableDoubleStateOf(repository.getGrowthExpTotal()) }
+    var displayedLevel by remember { mutableIntStateOf(GrowthSystem.levelForExp(displayedExp)) }
+    var isApplying by remember { mutableStateOf(false) }
+    var levelUpFlash by remember { mutableStateOf<Int?>(null) }
+    var showRebirthDialog by remember { mutableStateOf(false) }
+    var toastMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(refreshTick) {
+        if (!isApplying) {
+            displayedExp = repository.getGrowthExpTotal()
+            displayedLevel = GrowthSystem.levelForExp(displayedExp)
+        }
+    }
+
+    val stage = GrowthSystem.stageForLevel(displayedLevel)
     val stageIndex = GrowthSystem.STAGES.indexOf(stage)
-    val canRebirth = GrowthSystem.canRebirth(level, rebirthCount)
+    val levelProgress = GrowthSystem.progressToNextLevel(displayedExp)
+    val canRebirth = GrowthSystem.canRebirth(displayedLevel, rebirthCount)
     val nextRebirthLevel = GrowthSystem.rebirthRequiredLevel(rebirthCount + 1)
     val multiplier = GrowthSystem.expMultiplier(rebirthCount)
+
+    fun applyPendingExp() {
+        if (isApplying) return
+        val result = repository.applyPendingGrowthExp() ?: return
+        refresh()
+        isApplying = true
+        GrowthSoundPlayer.playExpTick()
+        scope.launch {
+            animateExpApplication(
+                result = result,
+                onProgress = { exp, level -> displayedExp = exp; displayedLevel = level },
+                onLevelUp = { level ->
+                    GrowthSoundPlayer.playLevelUp()
+                    levelUpFlash = level
+                    delay(900)
+                    levelUpFlash = null
+                }
+            )
+            isApplying = false
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         GroundScene(stageIndex = stageIndex, stage = stage, modifier = Modifier.fillMaxSize())
 
-        // 상단 HUD(레벨/경험치) — 화면 위쪽에만 도킹, 가운데는 비워서 식물이 보이게 한다.
+        // 레벨/경험치 HUD — 108차부터 화면 아래쪽에 도킹(기존엔 위쪽), 위쪽은 전부 비워 식물이 잘 보이게 함.
         Surface(
-            Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(Spacing.lg),
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(Spacing.lg)
+                .heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
         ) {
             Column(Modifier.fillMaxWidth().padding(Spacing.md)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Lv.$level", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("Lv.$displayedLevel", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     if (rebirthCount > 0) {
                         Text("환생 ${rebirthCount}회 · EXP ×${"%.1f".format(multiplier)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -115,118 +161,57 @@ fun PlantScreen(repository: PhoneLockRepository) {
                     modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
                 )
                 Spacer(Modifier.height(Spacing.xs))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("보유 ${balance}P", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (canRebirth) {
+                    if (canRebirth && !isApplying) {
                         TextButton(onClick = { showRebirthDialog = true }) { Text("🔁 환생 가능!") }
                     } else {
                         Text("환생까지 Lv.$nextRebirthLevel", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-            }
-        }
-
-        // 하단 보상 패널 — 기본 접힘(헤더만), 펼치면 기존 보상 등록/교환 기능 그대로.
-        Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(Spacing.lg)
-                .heightIn(max = 420.dp)
-        ) {
-            Surface(
-                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
-            ) {
-                Column(Modifier.fillMaxWidth().padding(Spacing.md)) {
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(onClick = { rewardsExpanded = !rewardsExpanded }) {
-                            Text(if (rewardsExpanded) "🎁 보상함 (${rewards.size}개) ▲" else "🎁 보상함 (${rewards.size}개) ▼")
-                        }
-                        if (rewardsExpanded) {
-                            TextButton(onClick = { showAddDialog = true }) { Text("+ 보상 추가") }
-                        }
+                Spacer(Modifier.height(Spacing.sm))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (growthExpPending > 0.0) "대기 중 경험치 +${"%.1f".format(growthExpPending)}" else "적용할 경험치가 없습니다",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (growthExpPending > 0.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(enabled = growthExpPending > 0.0 && !isApplying, onClick = { applyPendingExp() }) {
+                        Text(if (isApplying) "적용 중..." else "✨ 경험치 적용")
                     }
-                    if (rewardsExpanded) {
-                        toastMessage?.let {
-                            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.height(Spacing.xs))
-                        }
-                        if (rewards.isEmpty()) {
-                            Text(
-                                "등록된 보상이 없습니다\n\"+ 보상 추가\"로 원하는 보상을 만들어보세요",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                                rewards.forEach { reward ->
-                                    Surface(
-                                        Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
-                                    ) {
-                                        Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                                            Column(Modifier.weight(1f)) {
-                                                Text(reward.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                                                Text("${reward.cost}P", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            }
-                                            Button(
-                                                enabled = balance >= reward.cost,
-                                                onClick = {
-                                                    scope.launch {
-                                                        val ok = repository.redeemReward(reward)
-                                                        toastMessage = if (ok) "\"${reward.name}\" 언락했습니다! 🎉" else "포인트가 부족합니다"
-                                                    }
-                                                }
-                                            ) { Text("언락") }
-                                            Spacer(Modifier.width(Spacing.xs))
-                                            TextButton(onClick = { scope.launch { repository.deleteReward(reward) } }) { Text("삭제") }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                }
+                toastMessage?.let {
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
-    }
 
-    if (showAddDialog) {
-        var name by remember { mutableStateOf("") }
-        var costText by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showAddDialog = false },
-            title = { Text("보상 추가") },
-            text = {
-                Column {
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("보상 이름") }, modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(Spacing.sm))
-                    OutlinedTextField(
-                        value = costText,
-                        onValueChange = { costText = it.filter { c -> c.isDigit() } },
-                        label = { Text("필요 포인트") },
-                        modifier = Modifier.fillMaxWidth()
+        // 레벨업 연출 — 화면 중앙, 짧게 튀어나왔다가 사라진다.
+        AnimatedVisibility(
+            visible = levelUpFlash != null,
+            modifier = Modifier.align(Alignment.Center),
+            enter = scaleIn(initialScale = 0.6f, animationSpec = tween(220)) + fadeIn(tween(150)),
+            exit = scaleOut(targetScale = 1.15f, animationSpec = tween(300)) + fadeOut(tween(300))
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "레벨업!",
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 44.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                levelUpFlash?.let { lvl ->
+                    Text(
+                        "Lv.$lvl 달성",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = name.isNotBlank() && (costText.toIntOrNull() ?: 0) > 0,
-                    onClick = {
-                        val cost = costText.toIntOrNull() ?: 0
-                        scope.launch { repository.addReward(name.trim(), cost) }
-                        showAddDialog = false
-                    }
-                ) { Text("추가") }
-            },
-            dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("취소") } }
-        )
+            }
+        }
     }
 
     if (showRebirthDialog) {
@@ -247,6 +232,41 @@ fun PlantScreen(repository: PhoneLockRepository) {
             dismissButton = { TextButton(onClick = { showRebirthDialog = false }) { Text("취소") } }
         )
     }
+}
+
+/** 대기 EXP를 레벨에 적용하는 과정을 단계별로 재생 — 레벨이 여러 번 오르면 "경험치 주입 → 상승 → 레벨업 →
+ *  다음 레벨 경험치 주입 → 다시 상승"을 레벨 경계마다 반복한 뒤 마지막 구간을 마저 채운다. */
+private suspend fun animateExpApplication(
+    result: GrowthSystem.ApplyResult,
+    onProgress: (exp: Double, level: Int) -> Unit,
+    onLevelUp: suspend (level: Int) -> Unit
+) {
+    var level = result.levelBefore
+    var currentExp = result.expBefore
+    while (level < result.levelAfter) {
+        val target = GrowthSystem.cumulativeExpForLevel(level + 1)
+        animateExpSegment(currentExp, target) { v -> onProgress(v, level) }
+        level += 1
+        currentExp = target
+        onProgress(currentExp, level)
+        onLevelUp(level)
+    }
+    animateExpSegment(currentExp, result.expAfter) { v -> onProgress(v, level) }
+}
+
+private suspend fun animateExpSegment(from: Double, to: Double, onProgress: (Double) -> Unit) {
+    if (to <= from) {
+        onProgress(to)
+        return
+    }
+    val steps = 22
+    for (i in 1..steps) {
+        val frac = i / steps.toFloat()
+        val eased = 1f - (1f - frac) * (1f - frac)
+        onProgress(from + (to - from) * eased)
+        delay(18L)
+    }
+    onProgress(to)
 }
 
 // ══════════════════════════════════════════════════════

@@ -13,7 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         GroupSite::class, ConfirmEscalation::class, StudyLogEntry::class, CalendarTask::class,
         CalcTask::class, CalcSavedItem::class, ConfirmCounter::class,
         Routine::class, RoutineLog::class, QuoteOutcome::class, RoutineMode::class,
-        PointsLedgerEntry::class, Reward::class
+        PointsLedgerEntry::class
     ],
     // 82차: v30(calc_task autoGenEnabled/autoGenBatchSize) / v31(study_log_entry tag) / v32(quote_outcome
     // 신규 테이블) / v33(app_group selfMessageText) — 전부 아래 MIGRATION_29_33에서 명시적 ALTER/CREATE로
@@ -32,7 +32,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // 98차: v38 — 루틴 모드(96차 설계, 97차 이월) 신규 routine_mode 테이블 + routine.modeId 추가. 기존
     // 루틴은 전부 기본 모드(id=1)로 편입(MIGRATION_37_38 참고).
     // 101차: v39 — 포인트/보상 시스템(IDEAS.md 최우선 후보) 신규 points_ledger/reward 테이블(MIGRATION_38_39 참고).
-    version = 39,
+    // 108차: v40 — 식물 탭 개편으로 "보상함" 기능 전체 삭제, reward 테이블 drop(MIGRATION_39_40 참고).
+    // points_ledger(포인트 원장)는 EXP 계산에 계속 쓰여 그대로 유지.
+    version = 40,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -51,7 +53,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun routineModeDao(): RoutineModeDao
     abstract fun quoteOutcomeDao(): QuoteOutcomeDao
     abstract fun pointsLedgerDao(): PointsLedgerDao
-    abstract fun rewardDao(): RewardDao
 
     companion object {
         @Volatile
@@ -150,6 +151,13 @@ abstract class AppDatabase : RoomDatabase() {
                 )
             }
         }
+        /** 108차: 식물 탭 개편 — "보상함" 기능 전체 삭제에 따라 더 이상 쓰지 않는 reward 테이블 drop.
+         *  points_ledger는 EXP 계산에 계속 쓰이므로 그대로 둔다. */
+        private val MIGRATION_39_40 = object : Migration(39, 40) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS reward")
+            }
+        }
 
         fun getInstance(context: Context): AppDatabase =
             instance ?: synchronized(this) {
@@ -160,7 +168,7 @@ abstract class AppDatabase : RoomDatabase() {
                 ).addMigrations(
                     MIGRATION_27_28, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
                     MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38,
-                    MIGRATION_38_39
+                    MIGRATION_38_39, MIGRATION_39_40
                 )
                     .fallbackToDestructiveMigration().build().also { instance = it }
             }

@@ -284,6 +284,12 @@ class AppPreferences(context: Context) {
         get() = prefs.getInt("rebirth_count", 0)
         set(value) = prefs.edit().putInt("rebirth_count", value).apply()
 
+    /** 획득했지만 아직 레벨에 반영 안 된 "대기 EXP"(108차 후속) — 식물 탭에서 사용자가 "적용" 버튼을
+     *  눌러야 growthExpTotal로 이동한다. growthExpTotal과 동일하게 Double을 문자열로 저장. */
+    var growthExpPending: Double
+        get() = prefs.getString("growth_exp_pending", null)?.toDoubleOrNull() ?: 0.0
+        set(value) = prefs.edit().putString("growth_exp_pending", value.toString()).apply()
+
     /** 온라인/오프라인 모드(98차, 사용자 요청) — 사용자가 수동으로 강제 오프라인 전환. 기본 꺼짐(자동
      *  감지 우선) — 켜면 실제 네트워크 연결 여부와 무관하게 항상 오프라인으로 취급한다. */
     var offlineModeOverride: Boolean

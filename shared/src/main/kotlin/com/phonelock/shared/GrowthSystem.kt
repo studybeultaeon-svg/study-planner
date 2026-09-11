@@ -16,6 +16,8 @@ package com.phonelock.shared
  * - 환생(Rebirth): 레벨/경험치를 초기화하는 대신 영구 EXP 배율을 얻는다. 요구 레벨은 완만하게
  *   증가(+5/회)하고 배율도 선형(+1.5/회)으로만 늘어 폭주하지 않는다 — 실제 시뮬레이션으로 검증(첫
  *   9~10회 환생까지는 매 회차가 이전보다 빨라짐, [[DECISIONS.md]] 105차 참고).
+ * - EXP 획득 시 레벨에 즉시 반영되지 않는다(108차 후속) — 획득분은 별도 "대기 EXP"에 먼저 쌓이고,
+ *   사용자가 식물 탭에서 "적용" 버튼을 눌러야 그 순간 누적 EXP에 실제로 더해진다([ApplyResult] 참고).
  */
 object GrowthSystem {
 
@@ -76,6 +78,14 @@ object GrowthSystem {
     /** 현재 레벨로 환생 가능한지(완료한 환생 횟수 기준 다음 환생 요구 레벨과 비교). */
     fun canRebirth(currentLevel: Int, rebirthCount: Int): Boolean =
         currentLevel >= rebirthRequiredLevel(rebirthCount + 1)
+
+    // ---- 경험치 적용(108차 후속: 획득한 EXP는 즉시 반영되지 않고 누적됐다가 사용자가 "적용"할 때 반영) ----
+
+    /** [Repository/PhoneLockRepository].applyPendingGrowthExp()의 결과 — 적용 전/후 누적 EXP와 레벨을
+     *  함께 담아, 호출부(UI)가 그 구간을 애니메이션(경험치바 상승 → 레벨업 → 다음 레벨...)으로 재생할 수 있게 한다. */
+    data class ApplyResult(val expBefore: Double, val expAfter: Double, val levelBefore: Int, val levelAfter: Int) {
+        val leveledUp: Boolean get() = levelAfter > levelBefore
+    }
 
     // ---- 성장 단계(칭호+일러스트, 전부 미리 정해둔 고정 테이블) ----
 
