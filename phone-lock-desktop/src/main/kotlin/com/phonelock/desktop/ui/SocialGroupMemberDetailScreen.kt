@@ -169,7 +169,7 @@ fun SocialGroupMemberDetailScreen(
         var studySubTab by remember { mutableStateOf(0) }
 
         TabRow(selectedTabIndex = section, containerColor = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
-            Tab(selected = section == 0, onClick = { section = 0 }, text = { Text("🌱 루틴") })
+            Tab(selected = section == 0, onClick = { section = 0 }, text = { Text("📋 루틴") })
             Tab(selected = section == 1, onClick = { section = 1 }, text = { Text("📘 공부") })
         }
         Spacer(Modifier.height(Spacing.sm))

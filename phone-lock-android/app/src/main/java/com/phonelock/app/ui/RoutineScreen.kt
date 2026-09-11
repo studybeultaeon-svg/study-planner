@@ -143,7 +143,7 @@ fun RoutineScreen(repository: PhoneLockRepository) {
     Column(Modifier.fillMaxSize().padding(Spacing.md)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
-                Text("🌱 루틴", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                Text("📋 루틴", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
                 Text("반복 할 일 · 통계", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             OutlinedButton(onClick = { showAddDialog = true }) { Text("+ 추가") }

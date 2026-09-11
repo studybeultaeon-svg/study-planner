@@ -83,6 +83,13 @@ fun AccountGate(repository: PhoneLockRepository, content: @Composable () -> Unit
                 "approved" -> {
                     prefs.cachedApprovalStatus = "approved"
                     cachePermissions(profile)
+                    // 과거 버그로 잘못 저장된 isGuest 값을 실제 로그인 방식 기준으로 자동 교정(하위호환).
+                    val actualIsGuest = AuthManager.currentUser?.isAnonymous == true
+                    if (profile?.optBoolean("isGuest", false) != actualIsGuest) {
+                        scope.launch {
+                            AccountSyncClient.fixGuestFlagIfNeeded(repository.fbDatabaseUrl, repository.fbApiKey, actualIsGuest)
+                        }
+                    }
                     GateState.APPROVED
                 }
                 "pending" -> GateState.PENDING
@@ -204,7 +211,7 @@ fun AccountGate(repository: PhoneLockRepository, content: @Composable () -> Unit
                                 .mapCatching {
                                     AccountSyncClient.submitProfile(
                                         repository.fbDatabaseUrl, repository.fbApiKey, effectiveId, nickname,
-                                        isGuest = true
+                                        isGuest = isGuest
                                     ).getOrThrow()
                                 }
                         }

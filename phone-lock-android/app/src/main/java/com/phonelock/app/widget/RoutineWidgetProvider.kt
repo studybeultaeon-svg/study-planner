@@ -79,7 +79,7 @@ class RoutineWidgetProvider : AppWidgetProvider() {
             views.setTextColor(R.id.widget_empty, palette.muted.toArgb())
 
             val today = LocalDate.now()
-            val dateLabel = "🌱 ${today.monthValue}월 ${today.dayOfMonth}일 (${today.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN)})"
+            val dateLabel = "📋 ${today.monthValue}월 ${today.dayOfMonth}일 (${today.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN)})"
             views.setTextViewText(R.id.widget_date, dateLabel)
 
             // 위젯마다 서로 다른 Intent로 구분돼야 시스템이 RemoteViewsFactory를 위젯별로 따로 관리한다.

@@ -94,7 +94,7 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                             message = RoutineQuotes.forZeroStreak(prefs.zeroStreakDays, broken)
                         }
                         com.phonelock.app.service.StudyNotificationGate.showOrQueue(
-                            appContext, repository, STREAK_NOTIFICATION_ID, CHANNEL_ID, "🌱 루틴 연속 기록", message
+                            appContext, repository, STREAK_NOTIFICATION_ID, CHANNEL_ID, "📋 루틴 연속 기록", message
                         )
                         prefs.lastRoutineStreak = streak
                         prefs.lastRoutineStreakNotifyDate = today
