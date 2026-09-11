@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-09-11 (108차 세션, 버그 수정) — 소셜 통계 동기화 취소를 실패로 오인하던 버그 수정
+
+- 사용자 제보 로그: `[SocialGroupSync] pushMySocialStats failed: The coroutine scope left the composition`.
+- **원인**: 이 메시지는 실제 네트워크 실패가 아니라 Compose `rememberCoroutineScope()`가 화면(예: 모임 멤버 목록) 이탈로 자신의 `Job`을 취소할 때 내부적으로 붙이는 `CancellationException`의 메시지다. `PhoneLockRepository.Social.kt`의 `pushMySocialStats()`가 `SocialGroupSyncClient.pushMyStats(...)` 호출을 `runCatching{}.onFailure{}`로 감싸고 있었는데, Kotlin의 `runCatching`은 `CancellationException`도 그냥 잡아버린다(구조적 동시성 규칙 위반) — 그 결과 사용자가 동기화 도중 화면을 떠나기만 해도 `recordSyncFailure()`가 호출되고 로그에 "실패"로 남아, 설정 탭 "N분 전 · 정상/실패 N회" 배지에도 잘못 집계되고 있었다.
+- **수정**: `onFailure` 블록 맨 앞에서 `e is CancellationException`이면 그대로 다시 던지도록 추가 — 진짜 실패(네트워크 오류 등)만 `recordSyncFailure()`/로그 기록 대상이 되도록 함. [PhoneLockRepository.Social.kt](phone-lock-android/app/src/main/java/com/phonelock/app/data/PhoneLockRepository.Social.kt) 한 곳만 수정(`recordSyncFailure`/`recordSyncSuccess`가 이 함수에서만 쓰여 다른 곳엔 동일 패턴 없음을 확인).
+- 빌드/배포: 안드로이드 컴파일/릴리스 빌드 확인 및 3위치(`AndroidBuilds`/OneDrive 원본/`vm-build-output`) 재배포, GitHub 릴리스(`android-1789120132`) 게시까지 완료. 데스크탑 쪽 변경 없음(안드로이드 전용 코드).
+
+---
+
 ## 2026-09-11 (107차 세션) — 권한 설정 온보딩 신설 + 게스트/온라인-오프라인/루틴 이모지 버그 수정 + 오인 로그아웃 버그 수정
 
 - **권한 설정 온보딩 신설(안드로이드)**: `PermissionOnboardingScreen.kt` 신규 — 로그인/가입승인 직후(`AccountGate`가 content()를 보여주는 시점) 한 번 뜨며, 알림/접근성 서비스/백그라운드 실행 보호(배터리 최적화 제외)/정확한 알람/삭제 방지(기기 관리자) 5개 항목을 각각 "왜 필요한지 / 어떤 기능에 쓰이는지 / 어디서 설정하는지" 순서로 안내하고, OS 공식 API(권한 요청 런처, `Settings.ACTION_*` 인텐트)로만 해당 설정 화면으로 이동시킨다 — 시스템 설정 화면의 특정 버튼을 대신 눌러주는 자동화는 만들지 않았다(요청받은 원칙 그대로). 화면이 다시 보일 때(`ON_RESUME`, 시스템 설정 앱 다녀온 경우 포함)마다 각 권한 상태를 자동 새로고침. 이미 온보딩을 마친 사용자는 다시 뜨지 않음(기존 `AppPreferences.onboardingShown` 플래그를 그대로 재사용 — 새 플래그 추가 없이 "최초 실행 시 왜 필요한지 설명만 하던" 예전 `OnboardingDialog`의 의미를 "실제로 권한을 설정까지 시키는 화면"으로 확장). 알림 권한 요청 시점도 앱 시작과 동시에 불쑥 요청하던 것에서 이 가이드 화면 안으로 옮김(신규 사용자 기준 — 이미 온보딩 마친 사용자는 기존처럼 앱 시작 시 조용히 재요청).

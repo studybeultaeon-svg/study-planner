@@ -146,6 +146,9 @@ suspend fun PhoneLockRepository.pushMySocialStats(groupId: String) {
     }.onSuccess {
         preferences.recordSyncSuccess()
     }.onFailure { e ->
+        // 화면 이탈로 rememberCoroutineScope가 취소된 것뿐인 CancellationException까지
+        // "동기화 실패"로 오인/집계하지 않도록 구조적 동시성 규칙대로 다시 던진다.
+        if (e is kotlinx.coroutines.CancellationException) throw e
         preferences.recordSyncFailure()
         com.phonelock.app.util.InAppLogger.log(appContext, "SocialGroupSync", "pushMySocialStats failed: ${e.message}")
     }
