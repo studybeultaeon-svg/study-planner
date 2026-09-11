@@ -175,7 +175,46 @@ object AuthManager {
         newSession.uid
     }
 
-    /** 비밀번호 변경 — 로그인 아이디(이메일)는 가입 신청 아이디와 통합돼있어 영구 고정이라 바꿀 수 없다. */
+    /**
+     * 아이디(로그인 이메일) 변경 — 118차부터 지원. 호출 전에 반드시 [AccountSyncClient.claimUsername]으로
+     * `usernames/{newId}`를 먼저 선점해야 한다(선점 성공 = 그 아이디가 비어있었다는 뜻). 이 함수는 Firebase
+     * Auth 계정의 로그인 이메일만 새 합성 이메일로 바꾼다 — profile.customId 갱신은 호출부(SettingsScreen)
+     * 책임이다.
+     */
+    fun changeCustomId(newId: String, apiKey: String): Result<Unit> = runCatching {
+        val idToken = ensureIdToken(apiKey) ?: error("로그인이 필요합니다.")
+        val body = JSONObject().apply {
+            put("idToken", idToken)
+            put("email", idToSyntheticEmail(newId))
+            put("returnSecureToken", true)
+        }
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create("https://identitytoolkit.googleapis.com/v1/accounts:update?key=$apiKey"))
+            .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+            .build()
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        if (response.statusCode() !in 200..299) {
+            val message = runCatching { JSONObject(response.body()).getJSONObject("error").getString("message") }.getOrNull()
+            error(firebaseErrorToMessage(message))
+        }
+        // 이메일 변경도 비밀번호 변경과 마찬가지로 기존 refreshToken을 무효화하므로 응답의 새 refreshToken으로
+        // 세션 전체를 교체해서 영속화해야 다음 실행 때도 로그인이 유지된다.
+        val json = JSONObject(response.body())
+        val current = session ?: error("로그인이 필요합니다.")
+        val newSession = current.copy(
+            email = idToSyntheticEmail(newId),
+            idToken = json.getString("idToken"),
+            refreshToken = json.optString("refreshToken", current.refreshToken),
+            expiresAtMillis = System.currentTimeMillis() + json.optString("expiresIn", "3600").toLong() * 1000L
+        )
+        session = newSession
+        persist(newSession)
+        Unit
+    }
+
+    /** 비밀번호 변경 — 아이디(로그인 이메일) 자체를 바꾸려면 위 [changeCustomId]를 쓴다. */
     fun changePassword(newPassword: String, apiKey: String): Result<Unit> = runCatching {
         val idToken = ensureIdToken(apiKey) ?: error("로그인이 필요합니다.")
         val body = JSONObject().apply {

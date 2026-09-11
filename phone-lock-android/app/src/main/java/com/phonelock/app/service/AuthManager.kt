@@ -61,7 +61,22 @@ object AuthManager {
         FirebaseAuth.getInstance().signOut()
     }
 
-    /** 비밀번호 변경 — 로그인 아이디(이메일)는 가입 신청 아이디와 통합돼있어 영구 고정이라 바꿀 수 없다. */
+    /**
+     * 아이디(로그인 이메일) 변경 — 118차부터 지원(데스크탑판과 대칭). 호출 전 반드시
+     * [AccountSyncClient.claimUsername]으로 `usernames/{newId}`를 먼저 선점해야 한다. profile.customId
+     * 갱신은 호출부(SettingsScreen) 책임이다.
+     */
+    suspend fun changeCustomId(newId: String): Result<Unit> {
+        val user = currentUser ?: return Result.failure(IllegalStateException("로그인이 필요합니다."))
+        return try {
+            user.updateEmail(idToSyntheticEmail(newId)).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /** 비밀번호 변경 — 아이디(로그인 이메일) 자체를 바꾸려면 위 [changeCustomId]를 쓴다. */
     suspend fun changePassword(newPassword: String): Result<Unit> {
         val user = currentUser ?: return Result.failure(IllegalStateException("로그인이 필요합니다."))
         return try {

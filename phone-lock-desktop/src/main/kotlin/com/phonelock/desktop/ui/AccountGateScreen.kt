@@ -34,7 +34,8 @@ import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.delay
 
-private val CUSTOM_ID_REGEX = Regex("^[A-Za-z0-9]{3,20}$")
+// 118차: 설정 > 프로필의 "아이디 변경"에서도 같은 검증 규칙을 써야 해서 파일 전용(private)에서 풀었다.
+val CUSTOM_ID_REGEX = Regex("^[A-Za-z0-9]{3,20}$")
 private const val POLL_INTERVAL_MS = 7_000L
 
 /**

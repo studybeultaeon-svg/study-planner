@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,15 +24,12 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +69,21 @@ private fun pickOpenFile(title: String): File? {
     return File(dir, name)
 }
 
-private enum class SettingsSubTab { COMMON, ROUTINE, STUDY, MANAGE, SOCIAL }
+/** 118차: 설정 카테고리 — 탭(TabRow) 대신 좌측 카테고리 목록 + 우측 세부 설정 2단 구조로 개편했다.
+ *  기존 SettingsSubTab(COMMON/ROUTINE/STUDY/MANAGE/SOCIAL) 5분류를 성격별로 더 잘게 나눴다: 계정 관련
+ *  카드는 PROFILE로, 테마는 DISPLAY로, 백업/내보내기/정리는 DATA로, 자동실행/업데이트/워치독/종료확인은
+ *  SYSTEM으로, 관리자 전용 카드는 ADMIN으로 독립시켰다. */
+private enum class SettingsCategory(val label: String, val emoji: String) {
+    PROFILE("프로필", "👤"),
+    DISPLAY("화면", "🎨"),
+    RULES("규칙", "🗂️"),
+    STUDY("공부", "📘"),
+    ROUTINE("루틴", "📋"),
+    SOCIAL("소셜", "👥"),
+    DATA("데이터", "💾"),
+    SYSTEM("시스템", "⚙️"),
+    ADMIN("관리자 패널", "🛡️")
+}
 
 /**
  * 90차(사용자 요청): 설정 카드들이 넓은 데스크탑 창에서도 한 줄로만 길게 쌓여 좌우 공간을 못 쓰던 문제를
@@ -82,7 +94,7 @@ private enum class SettingsSubTab { COMMON, ROUTINE, STUDY, MANAGE, SOCIAL }
  */
 @Composable
 private fun SettingsColumns(
-    narrowBreakpoint: androidx.compose.ui.unit.Dp = 900.dp,
+    narrowBreakpoint: androidx.compose.ui.unit.Dp = 700.dp,
     left: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
     right: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
 ) {
@@ -103,23 +115,17 @@ private fun SettingsColumns(
 }
 
 /**
- * 설정 화면 — 공통/루틴/공부/관리 4개 서브탭으로 세분화(MainScreen의 MANAGE/STUDY 서브탭과 동일한
- * TabRow 패턴). 기존 SectionCard들은 로직 변경 없이 재배치만 했다:
- * 공통 = 테마/일일한도초기화시각/계정동기화/모임 공유 설정(신규)/일일백업복원/
- *        설정그룹내보내기가져오기/오래된통계정리/종료방지
- * 루틴 = 루틴스트릭알림/루틴내보내기가져오기, 공부 = 캘린더N회독기본값/공부중허용프로그램·사이트(90차에
- *        타이머 탭에서 이동), 관리 = 일일한도초기화시각/종료확인/릴스쇼츠차단
- *
- * 90차: 각 서브탭 안의 카드들을 [SettingsColumns]로 2열 배치해 넓은 창에서도 좌우를 쓰게 했다(카드
- * 내용/순서/로직은 그대로, 배치만 변경). 창이 좁아지면 예전처럼 한 컬럼으로 돌아간다.
+ * 설정 화면 — 118차부터 탭이 아니라 홈(식물) 화면 우상단 버튼으로 들어오는 전용 화면이 되었고, 내부
+ * 구조도 좌측 카테고리 목록(약 20%) + 우측 세부 설정(약 80%)으로 바뀌었다. 기존 SectionCard들은 로직
+ * 변경 없이 카테고리별로 재배치만 했다 — 아이디 변경(프로필 카테고리)만 이번에 신규 추가.
  */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     repository: Repository,
-    onThemeChange: (String) -> Unit = {}
+    onThemeChange: (String) -> Unit = {},
+    onClose: () -> Unit = {}
 ) {
-    var settingsSubTab by remember { mutableIntStateOf(0) }
     var themeMode by remember { mutableStateOf(repository.themeMode) }
     var customBgText by remember { mutableStateOf(repository.customThemeBackground) }
     var customAccentText by remember { mutableStateOf(repository.customThemeAccent) }
@@ -161,6 +167,13 @@ fun SettingsScreen(
     var nicknameSaving by remember { mutableStateOf(false) }
     var nicknameMessage by remember { mutableStateOf<String?>(null) }
 
+    // 아이디 변경(118차 신규)
+    var currentCustomId by remember { mutableStateOf(AuthManager.currentLoginId ?: "") }
+    var newIdText by remember { mutableStateOf("") }
+    var idCurrentPasswordText by remember { mutableStateOf("") }
+    var idSaving by remember { mutableStateOf(false) }
+    var idMessage by remember { mutableStateOf<String?>(null) }
+
     // 관리자 패널(가입 승인) — usernames/BEULTAEON == 내 uid일 때만 표시.
     var isAdmin by remember { mutableStateOf(false) }
     var pendingUsers by remember { mutableStateOf<List<AccountSyncClient.PendingUser>>(emptyList()) }
@@ -197,6 +210,21 @@ fun SettingsScreen(
             if (admin) refreshAdminLists()
         }.start()
     }
+
+    val visibleCategories = remember(isAdmin) {
+        listOfNotNull(
+            SettingsCategory.PROFILE,
+            SettingsCategory.DISPLAY,
+            SettingsCategory.RULES.takeIf { repository.permManage },
+            SettingsCategory.STUDY.takeIf { repository.permStudy },
+            SettingsCategory.ROUTINE.takeIf { repository.permRoutine },
+            SettingsCategory.SOCIAL.takeIf { repository.permSocial },
+            SettingsCategory.DATA,
+            SettingsCategory.SYSTEM,
+            SettingsCategory.ADMIN.takeIf { isAdmin }
+        )
+    }
+    var category by remember { mutableStateOf(SettingsCategory.PROFILE) }
 
     pendingRestoreFile?.let { file ->
         AlertDialog(
@@ -273,357 +301,792 @@ fun SettingsScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Text("설정", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(Spacing.md))
-
-        TabRow(
-            selectedTabIndex = settingsSubTab,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
+        Row(
+            Modifier.fillMaxWidth().padding(Spacing.md),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // 관리자가 승인 시 지정한 기능 범위(MainScreen.kt의 permXxx와 동일)에 맞춰 해당 서브탭만
-            // 보여준다 — "공통"은 로그아웃 등 항상 필요한 항목이라 예외로 항상 표시. 본문 각 섹션은
-            // 여전히 고정 인덱스(0~4)로 분기하므로 숨긴 탭은 그냥 선택 불가능해질 뿐이다.
-            Tab(selected = settingsSubTab == 0, onClick = { settingsSubTab = 0 }, text = { Text("앱 전체") })
-            if (repository.permRoutine) {
-                Tab(selected = settingsSubTab == 1, onClick = { settingsSubTab = 1 }, text = { Text("루틴") })
-            }
-            if (repository.permStudy) {
-                Tab(selected = settingsSubTab == 2, onClick = { settingsSubTab = 2 }, text = { Text("공부") })
-            }
-            if (repository.permManage) {
-                Tab(selected = settingsSubTab == 3, onClick = { settingsSubTab = 3 }, text = { Text("관리") })
-            }
-            if (repository.permSocial) {
-                Tab(selected = settingsSubTab == 4, onClick = { settingsSubTab = 4 }, text = { Text("모임") })
-            }
+            Text("설정", style = MaterialTheme.typography.headlineMedium)
+            TextButton(onClick = onClose) { Text("✕ 닫기") }
         }
 
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(Spacing.md)
-        ) {
-            when (SettingsSubTab.entries[settingsSubTab]) {
-                SettingsSubTab.COMMON -> SettingsColumns(left = {
-                    // 왼쪽: 앱 외형·계정 관련 카드
-                    SectionCard("테마") {
-                        Text(
-                            "앱 전체 배경/포인트 색과 차단/실행 전 대기 화면 강조색, 브라우저 확장 색까지 함께 바뀝니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        androidx.compose.foundation.layout.FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
-                        ) {
-                            com.phonelock.desktop.ui.theme.THEME_DISPLAY_NAMES.forEach { (mode, label) ->
-                                FilterChip(
-                                    selected = themeMode == mode,
-                                    onClick = { themeMode = mode; repository.themeMode = mode; onThemeChange(mode) },
-                                    label = { Text(label) }
-                                )
+        Row(Modifier.weight(1f).fillMaxSize()) {
+            // 좌측: 카테고리 목록.
+            Column(
+                Modifier.width(200.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.sm)
+            ) {
+                visibleCategories.forEach { cat ->
+                    val selected = category == cat
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp).clickable { category = cat },
+                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                            Text(cat.emoji, modifier = Modifier.padding(end = Spacing.sm))
+                            Text(
+                                cat.label,
+                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 우측: 선택된 카테고리의 세부 설정.
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(Spacing.md)
+            ) {
+                when (category) {
+                    SettingsCategory.PROFILE -> {
+                        SectionCard("닉네임 설정") {
+                            OutlinedTextField(
+                                value = nicknameText,
+                                onValueChange = { nicknameText = it },
+                                label = { Text("닉네임 (1~20자)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            Button(
+                                onClick = {
+                                    val trimmed = nicknameText.trim()
+                                    if (trimmed.isEmpty() || trimmed.length > 20) {
+                                        nicknameMessage = "닉네임은 1~20자여야 합니다."
+                                        return@Button
+                                    }
+                                    val url = repository.fbDatabaseUrl
+                                    val key = repository.fbApiKey
+                                    nicknameSaving = true
+                                    nicknameMessage = null
+                                    Thread {
+                                        val result = AccountSyncClient.updateNickname(url, key, trimmed)
+                                        nicknameSaving = false
+                                        result.onSuccess { nicknameMessage = "저장되었습니다." }
+                                        result.onFailure { e -> nicknameMessage = e.message ?: "저장 실패" }
+                                    }.start()
+                                },
+                                enabled = !nicknameSaving,
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(if (nicknameSaving) "저장 중..." else "저장") }
+                            nicknameMessage?.let { msg ->
+                                Spacer(Modifier.height(Spacing.xs))
+                                Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        // 79차(사용자 요청): 배경색/포인트색 두 개만 직접 골라 나만의 테마를 만드는 기능.
-                        // 나머지 색(텍스트/카드/보조색 등)은 buildCustomPalette()가 이 둘로부터 자동 계산한다.
-                        if (themeMode == com.phonelock.desktop.ui.theme.ThemeMode.CUSTOM) {
-                            Spacer(Modifier.height(Spacing.sm))
-                            val bgPreview = com.phonelock.desktop.ui.theme.parseHexColor(customBgText)
-                            val accentPreview = com.phonelock.desktop.ui.theme.parseHexColor(customAccentText)
-                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.height(Spacing.md))
+
+                        if (AuthManager.isSignedIn && !AuthManager.isAnonymous) {
+                            SectionCard("아이디 변경") {
+                                val isAdminAccount = currentCustomId.equals(AccountSyncClient.ADMIN_USERNAME, ignoreCase = true)
+                                Text("현재 아이디: ${currentCustomId.ifBlank { "-" }}", style = MaterialTheme.typography.bodyMedium)
+                                Spacer(Modifier.height(Spacing.sm))
+                                if (isAdminAccount) {
+                                    Text(
+                                        "관리자 계정은 아이디를 바꿀 수 없습니다.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                } else {
+                                    Text(
+                                        "이전 아이디는 이후 본인을 포함해 아무도 다시 쓸 수 없게 영구히 잠기며, 다른 사람이 " +
+                                            "검색하면 옛 아이디로도 여전히 본인이 나옵니다.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(Spacing.sm))
+                                    OutlinedTextField(
+                                        value = newIdText,
+                                        onValueChange = { newIdText = it; idMessage = null },
+                                        label = { Text("새 아이디 (영문/숫자 3~20자)") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(Modifier.height(Spacing.sm))
+                                    OutlinedTextField(
+                                        value = idCurrentPasswordText,
+                                        onValueChange = { idCurrentPasswordText = it; idMessage = null },
+                                        label = { Text("현재 비밀번호 확인") },
+                                        singleLine = true,
+                                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(Modifier.height(Spacing.sm))
+                                    val idValid = CUSTOM_ID_REGEX.matches(newIdText.trim().uppercase()) && idCurrentPasswordText.isNotBlank()
+                                    Button(
+                                        enabled = idValid && !idSaving,
+                                        onClick = {
+                                            val apiKey = repository.fbApiKey
+                                            val dbUrl = repository.fbDatabaseUrl
+                                            if (apiKey.isNullOrBlank()) { idMessage = "Firebase 설정이 비어있습니다."; return@Button }
+                                            idSaving = true
+                                            idMessage = null
+                                            val loginIdForVerify = currentCustomId
+                                            val newId = newIdText.trim()
+                                            val passwordForVerify = idCurrentPasswordText
+                                            Thread {
+                                                // 본인 확인 — 현재 아이디+비밀번호로 다시 로그인해본다.
+                                                val verify = AuthManager.signIn(loginIdForVerify, passwordForVerify, apiKey)
+                                                if (verify.isFailure) {
+                                                    idSaving = false
+                                                    idMessage = "비밀번호가 올바르지 않습니다."
+                                                    return@Thread
+                                                }
+                                                val claimResult = AccountSyncClient.claimUsername(dbUrl, apiKey, newId)
+                                                if (claimResult.isFailure) {
+                                                    idSaving = false
+                                                    idMessage = claimResult.exceptionOrNull()?.message ?: "이미 사용 중인 아이디입니다."
+                                                    return@Thread
+                                                }
+                                                val emailResult = AuthManager.changeCustomId(newId, apiKey)
+                                                if (emailResult.isFailure) {
+                                                    idSaving = false
+                                                    idMessage = emailResult.exceptionOrNull()?.message ?: "변경 실패"
+                                                    return@Thread
+                                                }
+                                                val profileResult = AccountSyncClient.updateCustomId(dbUrl, apiKey, newId)
+                                                idSaving = false
+                                                profileResult.onSuccess {
+                                                    currentCustomId = newId.uppercase()
+                                                    googleEmail = AuthManager.currentLoginId ?: AuthManager.currentEmail
+                                                    newIdText = ""
+                                                    idCurrentPasswordText = ""
+                                                    idMessage = "아이디가 ${newId.uppercase()}(으)로 변경되었습니다."
+                                                }
+                                                profileResult.onFailure { e ->
+                                                    idMessage = e.message ?: "프로필 갱신 실패 — 로그인 아이디는 이미 바뀌었으니 다시 로그인해 재시도하세요."
+                                                }
+                                            }.start()
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) { Text(if (idSaving) "변경 중..." else "아이디 변경") }
+                                    idMessage?.let { msg ->
+                                        Spacer(Modifier.height(Spacing.xs))
+                                        Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(Spacing.md))
+
+                            SectionCard("비밀번호 변경") {
+                                var newPassword by remember { mutableStateOf("") }
+                                var newPasswordConfirm by remember { mutableStateOf("") }
+                                var pwSaving by remember { mutableStateOf(false) }
+                                var pwResult by remember { mutableStateOf<String?>(null) }
+                                val pwValid = newPassword.length in 6..50 && newPassword == newPasswordConfirm
+
                                 OutlinedTextField(
-                                    value = customBgText,
-                                    onValueChange = { text ->
-                                        customBgText = text
-                                        if (com.phonelock.desktop.ui.theme.parseHexColor(text) != null) {
-                                            repository.customThemeBackground = text.trim()
-                                            onThemeChange(themeMode)
-                                        }
-                                    },
-                                    label = { Text("배경색") },
-                                    placeholder = { Text("#FAFBF6") },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true
+                                    value = newPassword,
+                                    onValueChange = { newPassword = it; pwResult = null },
+                                    label = { Text("새 비밀번호 (6자 이상)") },
+                                    singleLine = true,
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                    modifier = Modifier.fillMaxWidth()
                                 )
-                                // 86차(사용자 요청): 미리보기 상자를 누르면 헥스 직접 입력 대신 프리셋
-                                // 팔레트에서 골라 고를 수 있다(안드로이드판과 대칭).
-                                Box(
-                                    Modifier.size(36.dp)
-                                        .background(bgPreview ?: Color.Gray, MaterialTheme.shapes.small)
-                                        .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
-                                        .clickable { showBgPalette = true }
+                                Spacer(Modifier.height(Spacing.sm))
+                                OutlinedTextField(
+                                    value = newPasswordConfirm,
+                                    onValueChange = { newPasswordConfirm = it; pwResult = null },
+                                    label = { Text("새 비밀번호 확인") },
+                                    singleLine = true,
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(Modifier.height(Spacing.sm))
+                                Button(
+                                    onClick = {
+                                        val apiKey = repository.fbApiKey
+                                        if (apiKey.isNullOrBlank()) {
+                                            pwResult = "Firebase 설정이 비어있습니다."
+                                            return@Button
+                                        }
+                                        pwSaving = true
+                                        pwResult = null
+                                        Thread {
+                                            val result = AuthManager.changePassword(newPassword, apiKey)
+                                            pwSaving = false
+                                            result.onSuccess {
+                                                pwResult = "변경되었습니다."
+                                                newPassword = ""
+                                                newPasswordConfirm = ""
+                                            }
+                                            result.onFailure { e ->
+                                                pwResult = e.message ?: "변경 실패 — 오래 전에 로그인했다면 로그아웃 후 다시 로그인해서 시도해주세요."
+                                            }
+                                        }.start()
+                                    },
+                                    enabled = pwValid && !pwSaving,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text(if (pwSaving) "변경 중..." else "비밀번호 변경") }
+                                pwResult?.let {
+                                    Spacer(Modifier.height(Spacing.sm))
+                                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Spacer(Modifier.height(Spacing.md))
+                        }
+
+                        // 98차(사용자 요청): 온라인/오프라인 모드 — 네트워크가 실제로 끊기면 자동으로
+                        // 오프라인 전환되지만(NetworkMonitor), 필요하면 연결돼 있어도 수동으로 강제 오프라인 가능.
+                        // 106차 후속: 게스트(익명 로그인) 전용 기능이므로 게스트에게만 노출한다.
+                        if (AuthManager.isAnonymous) {
+                            SectionCard("온라인 / 오프라인 모드") {
+                                var offlineOverride by remember { mutableStateOf(repository.offlineModeOverride) }
+                                ToggleRow(
+                                    title = "오프라인 모드로 강제 전환",
+                                    description = "켜면 인터넷이 연결돼 있어도 동기화/로그인/소셜 등 네트워크 기능을 쓰지 않고 이 " +
+                                        "기기에서만 로컬로 사용합니다. 꺼둬도 실제로 인터넷이 끊기면 자동으로 오프라인 처리됩니다.",
+                                    checked = offlineOverride,
+                                    onCheckedChange = { offlineOverride = it; repository.offlineModeOverride = it }
                                 )
                             }
-                            Spacer(Modifier.height(Spacing.sm))
-                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                                OutlinedTextField(
-                                    value = customAccentText,
-                                    onValueChange = { text ->
-                                        customAccentText = text
-                                        if (com.phonelock.desktop.ui.theme.parseHexColor(text) != null) {
-                                            repository.customThemeAccent = text.trim()
-                                            onThemeChange(themeMode)
-                                        }
-                                    },
-                                    label = { Text("포인트색") },
-                                    placeholder = { Text("#8BC34A") },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true
-                                )
-                                Box(
-                                    Modifier.size(36.dp)
-                                        .background(accentPreview ?: Color.Gray, MaterialTheme.shapes.small)
-                                        .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
-                                        .clickable { showAccentPalette = true }
-                                )
-                            }
-                            Spacer(Modifier.height(Spacing.xs))
+                            Spacer(Modifier.height(Spacing.md))
+                        }
+
+                        SectionCard("계정 동기화 (로그인 필수)") {
                             Text(
-                                "직접 입력하거나, 오른쪽 색상 상자를 눌러 팔레트에서 고를 수 있습니다. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
+                                "동기화(실행 전 대기 단계/잠깐 풀기/일일사용량/캘린더/계산기/루틴)는 이제 로그인이 있어야만 " +
+                                    "작동합니다. 같은 계정으로 로그인한 기기끼리 자동으로 연결됩니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (showBgPalette) {
-                                com.phonelock.desktop.ui.components.ColorPaletteDialog(
-                                    title = "배경색 고르기",
-                                    currentHex = customBgText,
-                                    onSelect = { hex ->
-                                        customBgText = hex
-                                        repository.customThemeBackground = hex
-                                        onThemeChange(themeMode)
-                                    },
-                                    onDismiss = { showBgPalette = false }
-                                )
-                            }
-                            if (showAccentPalette) {
-                                com.phonelock.desktop.ui.components.ColorPaletteDialog(
-                                    title = "포인트색 고르기",
-                                    currentHex = customAccentText,
-                                    onSelect = { hex ->
-                                        customAccentText = hex
-                                        repository.customThemeAccent = hex
-                                        onThemeChange(themeMode)
-                                    },
-                                    onDismiss = { showAccentPalette = false }
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    SectionCard("자동 실행") {
-                        ToggleRow(
-                            title = "컴퓨터 시작 시 자동 실행",
-                            description = "Windows 로그인 시 이 계정으로 앱이 자동으로 켜집니다.",
-                            checked = launchAtStartup,
-                            onCheckedChange = { checked ->
-                                launchAtStartup = checked
-                                com.phonelock.desktop.setLaunchAtStartupEnabled(checked)
-                            }
-                        )
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    // 98차(사용자 요청): 온라인/오프라인 모드 — 네트워크가 실제로 끊기면 자동으로
-                    // 오프라인 전환되지만(NetworkMonitor), 필요하면 연결돼 있어도 수동으로 강제 오프라인 가능.
-                    // 106차 후속: 게스트(익명 로그인) 전용 기능이므로 게스트에게만 노출한다.
-                    if (AuthManager.isAnonymous) {
-                        SectionCard("온라인 / 오프라인 모드") {
-                            var offlineOverride by remember { mutableStateOf(repository.offlineModeOverride) }
-                            ToggleRow(
-                                title = "오프라인 모드로 강제 전환",
-                                description = "켜면 인터넷이 연결돼 있어도 동기화/로그인/소셜 등 네트워크 기능을 쓰지 않고 이 " +
-                                    "기기에서만 로컬로 사용합니다. 꺼둬도 실제로 인터넷이 끊기면 자동으로 오프라인 처리됩니다.",
-                                checked = offlineOverride,
-                                onCheckedChange = { offlineOverride = it; repository.offlineModeOverride = it }
-                            )
-                        }
-                        Spacer(Modifier.height(Spacing.md))
-                    }
-
-                    SectionCard("계정 동기화 (로그인 필수)") {
-                        Text(
-                            "동기화(실행 전 대기 단계/잠깐 풀기/일일사용량/캘린더/계산기/루틴)는 이제 로그인이 있어야만 " +
-                                "작동합니다. 같은 계정으로 로그인한 기기끼리 자동으로 연결됩니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        if (AuthManager.isSignedIn) {
-                            Text("로그인됨: ${googleEmail ?: AuthManager.currentUid}", style = MaterialTheme.typography.bodyLarge)
                             Spacer(Modifier.height(Spacing.sm))
-                            Button(
-                                onClick = {
-                                    AuthManager.signOut()
-                                    googleEmail = null
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("로그아웃") }
-                        } else {
+                            if (AuthManager.isSignedIn) {
+                                Text("로그인됨: ${googleEmail ?: AuthManager.currentUid}", style = MaterialTheme.typography.bodyLarge)
+                                Spacer(Modifier.height(Spacing.sm))
+                                Button(
+                                    onClick = {
+                                        AuthManager.signOut()
+                                        googleEmail = null
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("로그아웃") }
+                            } else {
+                                Text(
+                                    "로그아웃되었습니다. 앱을 다시 시작해서 로그인해주세요.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (AuthManager.isSignedIn) {
+                                Spacer(Modifier.height(Spacing.sm))
+                                var showDeleteConfirm by remember { mutableStateOf(false) }
+                                var deleteError by remember { mutableStateOf<String?>(null) }
+                                var deleting by remember { mutableStateOf(false) }
+                                Button(
+                                    onClick = { showDeleteConfirm = true },
+                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("계정 삭제") }
+                                deleteError?.let { msg ->
+                                    Spacer(Modifier.height(Spacing.xs))
+                                    Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                                }
+                                if (showDeleteConfirm) {
+                                    AlertDialog(
+                                        onDismissRequest = { if (!deleting) showDeleteConfirm = false },
+                                        title = { Text("계정을 삭제할까요?") },
+                                        text = {
+                                            Text(
+                                                "루틴/캘린더/계산기/모임 기록이 이 기기에서 로그아웃되며, 서버의 계정 데이터도 " +
+                                                    "삭제됩니다(되돌릴 수 없음). 사용하던 아이디는 이후 본인을 포함해 아무도 다시 " +
+                                                    "쓸 수 없게 영구히 잠깁니다."
+                                            )
+                                        },
+                                        confirmButton = {
+                                            Button(
+                                                enabled = !deleting,
+                                                onClick = {
+                                                    val url = repository.fbDatabaseUrl
+                                                    val key = repository.fbApiKey
+                                                    deleting = true
+                                                    deleteError = null
+                                                    Thread {
+                                                        val delResult = AccountSyncClient.deleteMyData(url, key)
+                                                        val authResult = if (key != null) AuthManager.deleteAccount(key) else Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+                                                        deleting = false
+                                                        if (authResult.isSuccess) {
+                                                            showDeleteConfirm = false
+                                                            googleEmail = null
+                                                        } else {
+                                                            deleteError = delResult.exceptionOrNull()?.message
+                                                                ?: authResult.exceptionOrNull()?.message
+                                                                ?: "삭제 실패"
+                                                        }
+                                                    }.start()
+                                                }
+                                            ) { Text(if (deleting) "삭제 중..." else "삭제") }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { showDeleteConfirm = false }, enabled = !deleting) { Text("취소") }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsCategory.DISPLAY -> {
+                        SectionCard("테마") {
                             Text(
-                                "로그아웃되었습니다. 앱을 다시 시작해서 로그인해주세요.",
-                                style = MaterialTheme.typography.bodyMedium,
+                                "앱 전체 배경/포인트 색과 차단/실행 전 대기 화면 강조색, 브라우저 확장 색까지 함께 바뀝니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            androidx.compose.foundation.layout.FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                            ) {
+                                com.phonelock.desktop.ui.theme.THEME_DISPLAY_NAMES.forEach { (mode, label) ->
+                                    FilterChip(
+                                        selected = themeMode == mode,
+                                        onClick = { themeMode = mode; repository.themeMode = mode; onThemeChange(mode) },
+                                        label = { Text(label) }
+                                    )
+                                }
+                            }
+                            // 79차(사용자 요청): 배경색/포인트색 두 개만 직접 골라 나만의 테마를 만드는 기능.
+                            // 나머지 색(텍스트/카드/보조색 등)은 buildCustomPalette()가 이 둘로부터 자동 계산한다.
+                            if (themeMode == com.phonelock.desktop.ui.theme.ThemeMode.CUSTOM) {
+                                Spacer(Modifier.height(Spacing.sm))
+                                val bgPreview = com.phonelock.desktop.ui.theme.parseHexColor(customBgText)
+                                val accentPreview = com.phonelock.desktop.ui.theme.parseHexColor(customAccentText)
+                                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedTextField(
+                                        value = customBgText,
+                                        onValueChange = { text ->
+                                            customBgText = text
+                                            if (com.phonelock.desktop.ui.theme.parseHexColor(text) != null) {
+                                                repository.customThemeBackground = text.trim()
+                                                onThemeChange(themeMode)
+                                            }
+                                        },
+                                        label = { Text("배경색") },
+                                        placeholder = { Text("#FAFBF6") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                    // 86차(사용자 요청): 미리보기 상자를 누르면 헥스 직접 입력 대신 프리셋
+                                    // 팔레트에서 골라 고를 수 있다(안드로이드판과 대칭).
+                                    Box(
+                                        Modifier.size(36.dp)
+                                            .background(bgPreview ?: Color.Gray, MaterialTheme.shapes.small)
+                                            .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                            .clickable { showBgPalette = true }
+                                    )
+                                }
+                                Spacer(Modifier.height(Spacing.sm))
+                                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedTextField(
+                                        value = customAccentText,
+                                        onValueChange = { text ->
+                                            customAccentText = text
+                                            if (com.phonelock.desktop.ui.theme.parseHexColor(text) != null) {
+                                                repository.customThemeAccent = text.trim()
+                                                onThemeChange(themeMode)
+                                            }
+                                        },
+                                        label = { Text("포인트색") },
+                                        placeholder = { Text("#8BC34A") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                    )
+                                    Box(
+                                        Modifier.size(36.dp)
+                                            .background(accentPreview ?: Color.Gray, MaterialTheme.shapes.small)
+                                            .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                            .clickable { showAccentPalette = true }
+                                    )
+                                }
+                                Spacer(Modifier.height(Spacing.xs))
+                                Text(
+                                    "직접 입력하거나, 오른쪽 색상 상자를 눌러 팔레트에서 고를 수 있습니다. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (showBgPalette) {
+                                    com.phonelock.desktop.ui.components.ColorPaletteDialog(
+                                        title = "배경색 고르기",
+                                        currentHex = customBgText,
+                                        onSelect = { hex ->
+                                            customBgText = hex
+                                            repository.customThemeBackground = hex
+                                            onThemeChange(themeMode)
+                                        },
+                                        onDismiss = { showBgPalette = false }
+                                    )
+                                }
+                                if (showAccentPalette) {
+                                    com.phonelock.desktop.ui.components.ColorPaletteDialog(
+                                        title = "포인트색 고르기",
+                                        currentHex = customAccentText,
+                                        onSelect = { hex ->
+                                            customAccentText = hex
+                                            repository.customThemeAccent = hex
+                                            onThemeChange(themeMode)
+                                        },
+                                        onDismiss = { showAccentPalette = false }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    SettingsCategory.RULES -> SettingsColumns(left = {
+                        SectionCard("일일 사용 한도 초기화 시각") {
+                            OutlinedTextField(
+                                value = dailyResetHourText,
+                                onValueChange = { text ->
+                                    dailyResetHourText = text
+                                    text.toIntOrNull()?.let { if (it in 0..23) { repository.dailyResetHour = it; repository.pushSettingsToFirebase() } }
+                                },
+                                label = { Text("초기화 시각 (0~23시)") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                "이 시각이 되면 차단 규칙별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        if (AuthManager.isSignedIn) {
+                    }, right = {
+                        SectionCard("릴스/쇼츠 차단") {
+                            ToggleRow(
+                                title = "릴스 차단 (인스타그램)",
+                                checked = blockReels,
+                                onCheckedChange = { checked ->
+                                    blockReels = checked
+                                    repository.blockReels = checked
+                                }
+                            )
+                            ToggleRow(
+                                title = "쇼츠 차단 (유튜브)",
+                                checked = blockShorts,
+                                onCheckedChange = { checked ->
+                                    blockShorts = checked
+                                    repository.blockShorts = checked
+                                }
+                            )
+                            Text(
+                                "브라우저 확장프로그램이 youtube.com/shorts, instagram.com/reels URL을 감지해서 차단합니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    })
+
+                    SettingsCategory.STUDY -> SettingsColumns(left = {
+                        SectionCard("캘린더 복습 기본값") {
+                            ToggleRow(
+                                title = "새 일정을 복습으로 시작",
+                                description = "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 복습을 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
+                                checked = defaultMultiPassEnabled,
+                                onCheckedChange = { checked ->
+                                    defaultMultiPassEnabled = checked
+                                    repository.defaultMultiPassEnabled = checked
+                                    repository.pushSettingsToFirebase()
+                                }
+                            )
                             Spacer(Modifier.height(Spacing.sm))
-                            var showDeleteConfirm by remember { mutableStateOf(false) }
-                            var deleteError by remember { mutableStateOf<String?>(null) }
-                            var deleting by remember { mutableStateOf(false) }
-                            Button(
-                                onClick = { showDeleteConfirm = true },
-                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("계정 삭제") }
-                            deleteError?.let { msg ->
-                                Spacer(Modifier.height(Spacing.xs))
-                                Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                            }
-                            if (showDeleteConfirm) {
-                                AlertDialog(
-                                    onDismissRequest = { if (!deleting) showDeleteConfirm = false },
-                                    title = { Text("계정을 삭제할까요?") },
-                                    text = {
-                                        Text(
-                                            "루틴/캘린더/계산기/모임 기록이 이 기기에서 로그아웃되며, 서버의 계정 데이터도 " +
-                                                "삭제됩니다(되돌릴 수 없음). 사용하던 아이디는 이후 본인을 포함해 아무도 다시 " +
-                                                "쓸 수 없게 영구히 잠깁니다."
-                                        )
-                                    },
-                                    confirmButton = {
-                                        Button(
-                                            enabled = !deleting,
-                                            onClick = {
-                                                val url = repository.fbDatabaseUrl
-                                                val key = repository.fbApiKey
-                                                deleting = true
-                                                deleteError = null
-                                                Thread {
-                                                    val delResult = AccountSyncClient.deleteMyData(url, key)
-                                                    val authResult = if (key != null) AuthManager.deleteAccount(key) else Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
-                                                    deleting = false
-                                                    if (authResult.isSuccess) {
-                                                        showDeleteConfirm = false
-                                                        googleEmail = null
-                                                    } else {
-                                                        deleteError = delResult.exceptionOrNull()?.message
-                                                            ?: authResult.exceptionOrNull()?.message
-                                                            ?: "삭제 실패"
-                                                    }
-                                                }.start()
-                                            }
-                                        ) { Text(if (deleting) "삭제 중..." else "삭제") }
-                                    },
-                                    dismissButton = {
-                                        TextButton(onClick = { showDeleteConfirm = false }, enabled = !deleting) { Text("취소") }
-                                    }
-                                )
+                            Text(
+                                "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 복습 횟수/간격입니다 " +
+                                    "(계산기 업무는 업무별로 각 업무 입력 카드에서 따로 설정).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.xs))
+                            com.phonelock.desktop.ui.components.NumberStepperField(
+                                label = "기본 복습 횟수",
+                                value = defaultPassCount.toString(),
+                                onValueChange = { text ->
+                                    val newCount = (text.toIntOrNull() ?: defaultPassCount)
+                                        .coerceIn(com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT, com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT)
+                                    defaultPassCount = newCount
+                                    repository.defaultPassCount = newCount
+                                    defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.defaultPassIntervals(newCount)
+                                    repository.defaultPassIntervalsCsv = defaultPassIntervals.joinToString(",")
+                                    repository.pushSettingsToFirebase()
+                                },
+                                min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
+                                max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
+                                modifier = Modifier.width(160.dp)
+                            )
+                            Spacer(Modifier.height(Spacing.xs))
+                            Text("복습별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            androidx.compose.foundation.layout.FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                            ) {
+                                defaultPassIntervals.forEachIndexed { i, days ->
+                                    com.phonelock.desktop.ui.components.NumberStepperField(
+                                        label = "${i + 1}→${i + 2}회 복습",
+                                        value = days.toString(),
+                                        onValueChange = { text ->
+                                            val newDays = (text.toIntOrNull() ?: days).coerceIn(1, 90)
+                                            val updated = defaultPassIntervals.toMutableList().also { it[i] = newDays }
+                                            defaultPassIntervals = updated
+                                            repository.defaultPassIntervalsCsv = updated.joinToString(",")
+                                            repository.pushSettingsToFirebase()
+                                        },
+                                        min = 1, max = 90,
+                                        modifier = Modifier.width(140.dp)
+                                    )
+                                }
                             }
                         }
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    if (AuthManager.isSignedIn && !AuthManager.isAnonymous) {
-                        SectionCard("비밀번호 변경") {
-                            var newPassword by remember { mutableStateOf("") }
-                            var newPasswordConfirm by remember { mutableStateOf("") }
-                            var pwSaving by remember { mutableStateOf(false) }
-                            var pwResult by remember { mutableStateOf<String?>(null) }
-                            val pwValid = newPassword.length in 6..50 && newPassword == newPasswordConfirm
-
-                            OutlinedTextField(
-                                value = newPassword,
-                                onValueChange = { newPassword = it; pwResult = null },
-                                label = { Text("새 비밀번호 (6자 이상)") },
-                                singleLine = true,
-                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                                modifier = Modifier.fillMaxWidth()
+                    }, right = {
+                        SectionCard("🔒 공부 중 허용 프로그램") {
+                            Text(
+                                "공부 페이즈가 진행 중일 때만(휴식 중엔 아님) 데스크탑이 잠기고, 여기 등록한 프로그램만 열 수 있습니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(Spacing.sm))
-                            OutlinedTextField(
-                                value = newPasswordConfirm,
-                                onValueChange = { newPasswordConfirm = it; pwResult = null },
-                                label = { Text("새 비밀번호 확인") },
-                                singleLine = true,
-                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                                modifier = Modifier.fillMaxWidth()
+                            LockListEditor(
+                                items = studyAllowedApps,
+                                placeholder = "예: chrome.exe",
+                                onAdd = { name -> studyAllowedApps = studyAllowedApps + name; repository.studyLockAllowedApps = studyAllowedApps },
+                                onRemove = { idx -> studyAllowedApps = studyAllowedApps.toMutableList().apply { removeAt(idx) }; repository.studyLockAllowedApps = studyAllowedApps }
                             )
-                            Spacer(Modifier.height(Spacing.sm))
-                            Button(
-                                onClick = {
-                                    val apiKey = repository.fbApiKey
-                                    if (apiKey.isNullOrBlank()) {
-                                        pwResult = "Firebase 설정이 비어있습니다."
-                                        return@Button
-                                    }
-                                    pwSaving = true
-                                    pwResult = null
-                                    Thread {
-                                        val result = AuthManager.changePassword(newPassword, apiKey)
-                                        pwSaving = false
-                                        result.onSuccess {
-                                            pwResult = "변경되었습니다."
-                                            newPassword = ""
-                                            newPasswordConfirm = ""
-                                        }
-                                        result.onFailure { e ->
-                                            pwResult = e.message ?: "변경 실패 — 오래 전에 로그인했다면 로그아웃 후 다시 로그인해서 시도해주세요."
-                                        }
-                                    }.start()
-                                },
-                                enabled = pwValid && !pwSaving,
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text(if (pwSaving) "변경 중..." else "비밀번호 변경") }
-                            pwResult?.let {
-                                Spacer(Modifier.height(Spacing.sm))
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
                         }
                         Spacer(Modifier.height(Spacing.md))
+
+                        SectionCard("🌐 공부 중 허용 사이트") {
+                            Text(
+                                "공부 페이즈 중엔 브라우저를 열어도 여기 등록한 사이트만 접속할 수 있습니다. 이 기기에만 적용됩니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            LockListEditor(
+                                items = studyAllowedSites,
+                                placeholder = "예: google.com",
+                                onAdd = { name -> studyAllowedSites = studyAllowedSites + name; repository.studyLockAllowedSites = studyAllowedSites },
+                                onRemove = { idx -> studyAllowedSites = studyAllowedSites.toMutableList().apply { removeAt(idx) }; repository.studyLockAllowedSites = studyAllowedSites }
+                            )
+                        }
+                    })
+
+                    SettingsCategory.ROUTINE -> SettingsColumns(left = {
+                        SectionCard("루틴 연속 기록 알림") {
+                            ToggleRow(
+                                title = "연속 기록 알림 받기",
+                                checked = routineStreakNotifyEnabled,
+                                onCheckedChange = { checked ->
+                                    routineStreakNotifyEnabled = checked
+                                    repository.routineStreakNotifyEnabled = checked
+                                }
+                            )
+                            Text(
+                                "하루 중 랜덤한 시각에 어제 루틴 연속 기록 상태를 트레이 알림으로 알려줍니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }, right = {
+                        SectionCard("루틴 내보내기 · 가져오기") {
+                            Text(
+                                "루틴 목록과 체크 기록만 파일로 저장하거나 불러옵니다. 루틴은 이미 Firebase로 기기 간 자동 " +
+                                    "동기화되지만, 위 전체 백업과 달리 루틴만 골라서 다른 계정으로 옮기거나 별도 보관할 때 씁니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                Button(onClick = {
+                                    pickSaveFile("루틴 내보내기", "phonelock_routines_${java.time.LocalDate.now()}.json")?.let { file ->
+                                        file.writeText(repository.exportRoutinesBackupJson())
+                                    }
+                                }) { Text("📤 내보내기") }
+                                OutlinedButton(onClick = {
+                                    pickOpenFile("루틴 가져오기")?.let { file -> pendingRoutineImportFile = file }
+                                }) { Text("📥 가져오기") }
+                            }
+                        }
+                    })
+
+                    SettingsCategory.SOCIAL -> {
+                        SectionCard("모임 공유 설정") {
+                            Text(
+                                "모임마다 공개할 내 정보(루틴/공부/연속 기록/오늘 일정/공부중 여부/작동 중인 차단 규칙)를 " +
+                                    "다르게 정할 수 있어, 여기가 아니라 각 모임 화면의 🔒 공유 설정에서 모임별로 관리합니다. " +
+                                    "특정 멤버에게만 내 정보를 숨기거나 특정 멤버의 정보를 안 보이게 하는 것도 그 " +
+                                    "멤버의 상세 화면에서 따로 설정할 수 있습니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            "깨우기 메시지(음성/텍스트) 수신 설정도 모임마다 다르게 정할 수 있어 여기가 아니라 각 " +
+                                "모임 화면의 ⚙ 깨우기 메시지 설정에서 관리합니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
 
-                    SectionCard("닉네임 설정") {
-                        OutlinedTextField(
-                            value = nicknameText,
-                            onValueChange = { nicknameText = it },
-                            label = { Text("닉네임 (1~20자)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        Button(
-                            onClick = {
-                                val trimmed = nicknameText.trim()
-                                if (trimmed.isEmpty() || trimmed.length > 20) {
-                                    nicknameMessage = "닉네임은 1~20자여야 합니다."
-                                    return@Button
+                    SettingsCategory.DATA -> SettingsColumns(left = {
+                        SectionCard("일일 백업 · 복원") {
+                            Text(
+                                "앱 시작 시 하루 한 번 전체 데이터(차단 규칙/사용시간/캘린더/계산기 등)를 자동 백업합니다. " +
+                                    "최근 7일치를 보관하며, 복원하면 현재 데이터가 완전히 대체됩니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            if (backups.isEmpty()) {
+                                Text("아직 백업이 없습니다(다음 앱 재시작 시 처음 만들어집니다).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else {
+                                backups.forEach { file ->
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(file.name.removePrefix("backup_").removeSuffix(".json"), style = MaterialTheme.typography.bodyMedium)
+                                        OutlinedButton(onClick = { pendingRestoreFile = file }) { Text("이 시점으로 복원") }
+                                    }
                                 }
-                                val url = repository.fbDatabaseUrl
-                                val key = repository.fbApiKey
-                                nicknameSaving = true
-                                nicknameMessage = null
-                                Thread {
-                                    val result = AccountSyncClient.updateNickname(url, key, trimmed)
-                                    nicknameSaving = false
-                                    result.onSuccess { nicknameMessage = "저장되었습니다." }
-                                    result.onFailure { e -> nicknameMessage = e.message ?: "저장 실패" }
-                                }.start()
-                            },
-                            enabled = !nicknameSaving,
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text(if (nicknameSaving) "저장 중..." else "저장") }
-                        nicknameMessage?.let { msg ->
-                            Spacer(Modifier.height(Spacing.xs))
-                            Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Spacer(Modifier.height(Spacing.sm))
+                            Button(onClick = { backups = repository.listBackups() }) { Text("목록 새로고침") }
                         }
-                    }
-                }, right = {
-                    // 오른쪽: 데이터 관리·유지보수 카드
-                    if (isAdmin) {
-                        SectionCard("관리자 패널 — 가입 승인 대기") {
+                        Spacer(Modifier.height(Spacing.md))
+
+                        SectionCard("설정·차단 규칙 내보내기 · 가져오기") {
+                            Text(
+                                "기기 교체나 재설치 시 현재 데이터 전체(차단 규칙/사용시간/캘린더/계산기 등)를 원하는 위치에 파일로 저장하거나, " +
+                                    "저장해둔 파일에서 그대로 불러올 수 있습니다. 위 자동 백업과 달리 파일 위치를 직접 고를 수 있어 다른 PC로 옮길 때 유용합니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                Button(onClick = {
+                                    pickSaveFile("설정·차단 규칙 내보내기", "phonelock_export_${java.time.LocalDate.now()}.json")?.let { file ->
+                                        repository.exportDataToFile(file)
+                                    }
+                                }) { Text("📤 내보내기") }
+                                OutlinedButton(onClick = {
+                                    pickOpenFile("설정·차단 규칙 가져오기")?.let { file -> pendingImportFile = file }
+                                }) { Text("📥 가져오기") }
+                            }
+                        }
+                        // 85차(사용자 요청): "자동 백업 (Firebase)" 설정 UI를 제거했다 — 로그인/Storage 활성화
+                        // 등 전제조건이 많아 실사용 검증이 부족한 상태였다. cloudBackupEnabled/CloudBackupClient
+                        // 등 하위 코드는 그대로 남겨뒀으니(제거하지 않음) 나중에 제대로 재설계해 다시 노출할 수
+                        // 있다 — 자세한 경위는 IDEAS.md/DECISIONS.md 85차 참고.
+                    }, right = {
+                        SectionCard("오래된 사용 기록 정리") {
+                            var lastResult by remember { mutableStateOf<Int?>(null) }
+                            Text(
+                                "12개월 이상 지난 사용시간/재확인 통과 횟수/공부 기록을 영구 삭제합니다(되돌리기 없음). " +
+                                    "캘린더 일정과 연속 기록 계산에는 영향을 주지 않습니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            Button(onClick = { lastResult = repository.pruneOldStats(12) }) { Text("🧹 12개월 이상 지난 기록 정리") }
+                            lastResult?.let {
+                                Spacer(Modifier.height(Spacing.xs))
+                                Text("$it 건 삭제됨", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    })
+
+                    SettingsCategory.SYSTEM -> SettingsColumns(left = {
+                        SectionCard("자동 실행") {
+                            ToggleRow(
+                                title = "컴퓨터 시작 시 자동 실행",
+                                description = "Windows 로그인 시 이 계정으로 앱이 자동으로 켜집니다.",
+                                checked = launchAtStartup,
+                                onCheckedChange = { checked ->
+                                    launchAtStartup = checked
+                                    com.phonelock.desktop.setLaunchAtStartupEnabled(checked)
+                                }
+                            )
+                        }
+                        Spacer(Modifier.height(Spacing.md))
+
+                        SectionCard("업데이트") {
+                            var checking by remember { mutableStateOf(false) }
+                            var installerUrl by remember { mutableStateOf(repository.pendingUpdateInstallerUrl()) }
+                            var lastOutcome by remember { mutableStateOf<Repository.UpdateCheckOutcome?>(null) }
+                            Text(
+                                "현재 빌드: ${repository.currentBuildTimestamp()} · 초기화 시각이 지나면 하루 1회 자동으로도 확인합니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            Button(enabled = !checking, onClick = {
+                                checking = true
+                                repository.checkForUpdateNow { outcome ->
+                                    lastOutcome = outcome
+                                    installerUrl = (outcome as? Repository.UpdateCheckOutcome.Available)?.installerUrl
+                                    checking = false
+                                }
+                            }) {
+                                Text(if (checking) "확인 중..." else "지금 확인")
+                            }
+                            installerUrl?.let { url ->
+                                Spacer(Modifier.height(Spacing.sm))
+                                UpdateBanner(repository, url)
+                            }
+                            if (!checking) {
+                                when (val outcome = lastOutcome) {
+                                    is Repository.UpdateCheckOutcome.UpToDate -> {
+                                        Spacer(Modifier.height(Spacing.xs))
+                                        Text("최신 버전입니다", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    is Repository.UpdateCheckOutcome.Failed -> {
+                                        Spacer(Modifier.height(Spacing.xs))
+                                        Text(
+                                            "확인 실패: ${outcome.reason} — 잠시 후 다시 시도해주세요",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                    else -> {}
+                                }
+                            }
+                        }
+                    }, right = {
+                        SectionCard("자동 재시작(워치독)") {
+                            Text(
+                                "감시 프로세스와 작업 스케줄러가 함께 지켜보다가, 작업 관리자로 강제종료해도 자동으로 다시 실행됩니다. " +
+                                    "트레이 메뉴의 \"종료\"로 10분 대기를 마치고 정식으로 나가야만 꺼진 상태가 유지됩니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.height(Spacing.md))
+
+                        // 91차(사용자 요청): 관리(차단) 탭에서 이리로 이동 — 워치독과 함께 "앱을 끄기 어렵게
+                        // 만드는" 설정이라 옆에 두는 게 자연스럽다. 기본값은 false(OFF, Models.kt 기존값 그대로).
+                        SectionCard("종료 시 확인 질문") {
+                            ToggleRow(
+                                title = "종료 시 확인 질문 20개 확인",
+                                description = "꺼두면 트레이 \"종료\"를 눌렀을 때 이 확인 없이 바로 꺼집니다.",
+                                checked = exitConfirmEnabled,
+                                onCheckedChange = { checked ->
+                                    if (checked) {
+                                        exitConfirmEnabled = true
+                                        repository.exitConfirmEnabled = true
+                                    } else {
+                                        // 끄는 것 자체를 같은 절차로 보호 — 바로 끄지 않고 확인 게이트를 띄운다.
+                                        showExitConfirmGate = true
+                                    }
+                                }
+                            )
+                        }
+                    })
+
+                    SettingsCategory.ADMIN -> SettingsColumns(left = {
+                        SectionCard("가입 승인 대기") {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(
                                     "새로 가입 신청한 사용자를 승인/거절합니다.",
@@ -684,9 +1147,8 @@ fun SettingsScreen(
                                 }
                             }
                         }
-                        Spacer(Modifier.height(Spacing.md))
-
-                        SectionCard("관리자 패널 — 승인된 사용자 관리") {
+                    }, right = {
+                        SectionCard("승인된 사용자 관리") {
                             if (approvedUsers.isEmpty()) {
                                 Text("승인된 사용자가 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             } else {
@@ -719,350 +1181,8 @@ fun SettingsScreen(
                                 }
                             }
                         }
-                        Spacer(Modifier.height(Spacing.md))
-                    }
-
-                    SectionCard("일일 백업 · 복원") {
-                        Text(
-                            "앱 시작 시 하루 한 번 전체 데이터(차단 규칙/사용시간/캘린더/계산기 등)를 자동 백업합니다. " +
-                                "최근 7일치를 보관하며, 복원하면 현재 데이터가 완전히 대체됩니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        if (backups.isEmpty()) {
-                            Text("아직 백업이 없습니다(다음 앱 재시작 시 처음 만들어집니다).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        } else {
-                            backups.forEach { file ->
-                                Row(
-                                    Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(file.name.removePrefix("backup_").removeSuffix(".json"), style = MaterialTheme.typography.bodyMedium)
-                                    OutlinedButton(onClick = { pendingRestoreFile = file }) { Text("이 시점으로 복원") }
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(Spacing.sm))
-                        Button(onClick = { backups = repository.listBackups() }) { Text("목록 새로고침") }
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    SectionCard("설정·차단 규칙 내보내기 · 가져오기") {
-                        Text(
-                            "기기 교체나 재설치 시 현재 데이터 전체(차단 규칙/사용시간/캘린더/계산기 등)를 원하는 위치에 파일로 저장하거나, " +
-                                "저장해둔 파일에서 그대로 불러올 수 있습니다. 위 자동 백업과 달리 파일 위치를 직접 고를 수 있어 다른 PC로 옮길 때 유용합니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                            Button(onClick = {
-                                pickSaveFile("설정·차단 규칙 내보내기", "phonelock_export_${java.time.LocalDate.now()}.json")?.let { file ->
-                                    repository.exportDataToFile(file)
-                                }
-                            }) { Text("📤 내보내기") }
-                            OutlinedButton(onClick = {
-                                pickOpenFile("설정·차단 규칙 가져오기")?.let { file -> pendingImportFile = file }
-                            }) { Text("📥 가져오기") }
-                        }
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    // 85차(사용자 요청): "자동 백업 (Firebase)" 설정 UI를 제거했다 — 로그인/Storage 활성화
-                    // 등 전제조건이 많아 실사용 검증이 부족한 상태였다. cloudBackupEnabled/CloudBackupClient
-                    // 등 하위 코드는 그대로 남겨뒀으니(제거하지 않음) 나중에 제대로 재설계해 다시 노출할 수
-                    // 있다 — 자세한 경위는 IDEAS.md/DECISIONS.md 85차 참고.
-
-                    SectionCard("오래된 사용 기록 정리") {
-                        var lastResult by remember { mutableStateOf<Int?>(null) }
-                        Text(
-                            "12개월 이상 지난 사용시간/재확인 통과 횟수/공부 기록을 영구 삭제합니다(되돌리기 없음). " +
-                                "캘린더 일정과 연속 기록 계산에는 영향을 주지 않습니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        Button(onClick = { lastResult = repository.pruneOldStats(12) }) { Text("🧹 12개월 이상 지난 기록 정리") }
-                        lastResult?.let {
-                            Spacer(Modifier.height(Spacing.xs))
-                            Text("$it 건 삭제됨", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    SectionCard("업데이트") {
-                        var checking by remember { mutableStateOf(false) }
-                        var installerUrl by remember { mutableStateOf(repository.pendingUpdateInstallerUrl()) }
-                        var lastOutcome by remember { mutableStateOf<Repository.UpdateCheckOutcome?>(null) }
-                        Text(
-                            "현재 빌드: ${repository.currentBuildTimestamp()} · 초기화 시각이 지나면 하루 1회 자동으로도 확인합니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        Button(enabled = !checking, onClick = {
-                            checking = true
-                            repository.checkForUpdateNow { outcome ->
-                                lastOutcome = outcome
-                                installerUrl = (outcome as? Repository.UpdateCheckOutcome.Available)?.installerUrl
-                                checking = false
-                            }
-                        }) {
-                            Text(if (checking) "확인 중..." else "지금 확인")
-                        }
-                        installerUrl?.let { url ->
-                            Spacer(Modifier.height(Spacing.sm))
-                            UpdateBanner(repository, url)
-                        }
-                        if (!checking) {
-                            when (val outcome = lastOutcome) {
-                                is Repository.UpdateCheckOutcome.UpToDate -> {
-                                    Spacer(Modifier.height(Spacing.xs))
-                                    Text("최신 버전입니다", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                is Repository.UpdateCheckOutcome.Failed -> {
-                                    Spacer(Modifier.height(Spacing.xs))
-                                    Text(
-                                        "확인 실패: ${outcome.reason} — 잠시 후 다시 시도해주세요",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                }
-                                else -> {}
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    SectionCard("자동 재시작(워치독)") {
-                        Text(
-                            "감시 프로세스와 작업 스케줄러가 함께 지켜보다가, 작업 관리자로 강제종료해도 자동으로 다시 실행됩니다. " +
-                                "트레이 메뉴의 \"종료\"로 10분 대기를 마치고 정식으로 나가야만 꺼진 상태가 유지됩니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    // 91차(사용자 요청): 관리(차단) 탭에서 이리로 이동 — 워치독과 함께 "앱을 끄기 어렵게
-                    // 만드는" 설정이라 옆에 두는 게 자연스럽다. 기본값은 false(OFF, Models.kt 기존값 그대로).
-                    SectionCard("종료 시 확인 질문") {
-                        ToggleRow(
-                            title = "종료 시 확인 질문 20개 확인",
-                            description = "꺼두면 트레이 \"종료\"를 눌렀을 때 이 확인 없이 바로 꺼집니다.",
-                            checked = exitConfirmEnabled,
-                            onCheckedChange = { checked ->
-                                if (checked) {
-                                    exitConfirmEnabled = true
-                                    repository.exitConfirmEnabled = true
-                                } else {
-                                    // 끄는 것 자체를 같은 절차로 보호 — 바로 끄지 않고 확인 게이트를 띄운다.
-                                    showExitConfirmGate = true
-                                }
-                            }
-                        )
-                    }
-                })
-
-                SettingsSubTab.SOCIAL -> {
-                    SectionCard("모임 공유 설정") {
-                        Text(
-                            "모임마다 공개할 내 정보(루틴/공부/연속 기록/오늘 일정/공부중 여부/작동 중인 차단 규칙)를 " +
-                                "다르게 정할 수 있어, 여기가 아니라 각 모임 화면의 🔒 공유 설정에서 모임별로 관리합니다. " +
-                                "특정 멤버에게만 내 정보를 숨기거나 특정 멤버의 정보를 안 보이게 하는 것도 그 " +
-                                "멤버의 상세 화면에서 따로 설정할 수 있습니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Text(
-                        "깨우기 메시지(음성/텍스트) 수신 설정도 모임마다 다르게 정할 수 있어 여기가 아니라 각 " +
-                            "모임 화면의 ⚙ 깨우기 메시지 설정에서 관리합니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    })
                 }
-
-                SettingsSubTab.ROUTINE -> SettingsColumns(left = {
-                    SectionCard("루틴 연속 기록 알림") {
-                        ToggleRow(
-                            title = "연속 기록 알림 받기",
-                            checked = routineStreakNotifyEnabled,
-                            onCheckedChange = { checked ->
-                                routineStreakNotifyEnabled = checked
-                                repository.routineStreakNotifyEnabled = checked
-                            }
-                        )
-                        Text(
-                            "하루 중 랜덤한 시각에 어제 루틴 연속 기록 상태를 트레이 알림으로 알려줍니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }, right = {
-                    SectionCard("루틴 내보내기 · 가져오기") {
-                        Text(
-                            "루틴 목록과 체크 기록만 파일로 저장하거나 불러옵니다. 루틴은 이미 Firebase로 기기 간 자동 " +
-                                "동기화되지만, 위 전체 백업과 달리 루틴만 골라서 다른 계정으로 옮기거나 별도 보관할 때 씁니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                            Button(onClick = {
-                                pickSaveFile("루틴 내보내기", "phonelock_routines_${java.time.LocalDate.now()}.json")?.let { file ->
-                                    file.writeText(repository.exportRoutinesBackupJson())
-                                }
-                            }) { Text("📤 내보내기") }
-                            OutlinedButton(onClick = {
-                                pickOpenFile("루틴 가져오기")?.let { file -> pendingRoutineImportFile = file }
-                            }) { Text("📥 가져오기") }
-                        }
-                    }
-                })
-
-                SettingsSubTab.STUDY -> SettingsColumns(left = {
-                    SectionCard("캘린더 복습 기본값") {
-                        ToggleRow(
-                            title = "새 일정을 복습으로 시작",
-                            description = "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 복습을 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
-                            checked = defaultMultiPassEnabled,
-                            onCheckedChange = { checked ->
-                                defaultMultiPassEnabled = checked
-                                repository.defaultMultiPassEnabled = checked
-                                repository.pushSettingsToFirebase()
-                            }
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        Text(
-                            "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 복습 횟수/간격입니다 " +
-                                "(계산기 업무는 업무별로 각 업무 입력 카드에서 따로 설정).",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.xs))
-                        com.phonelock.desktop.ui.components.NumberStepperField(
-                            label = "기본 복습 횟수",
-                            value = defaultPassCount.toString(),
-                            onValueChange = { text ->
-                                val newCount = (text.toIntOrNull() ?: defaultPassCount)
-                                    .coerceIn(com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT, com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT)
-                                defaultPassCount = newCount
-                                repository.defaultPassCount = newCount
-                                defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.defaultPassIntervals(newCount)
-                                repository.defaultPassIntervalsCsv = defaultPassIntervals.joinToString(",")
-                                repository.pushSettingsToFirebase()
-                            },
-                            min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
-                            max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
-                            modifier = Modifier.width(160.dp)
-                        )
-                        Spacer(Modifier.height(Spacing.xs))
-                        Text("복습별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        // 2열 배치(90차)로 카드 폭이 절반이 되면 입력칸 7개가 한 줄에 안 들어가므로
-                        // 넘치면 다음 줄로 접히도록 FlowRow로 바꾼다(테마 칩과 같은 패턴).
-                        androidx.compose.foundation.layout.FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
-                        ) {
-                            defaultPassIntervals.forEachIndexed { i, days ->
-                                com.phonelock.desktop.ui.components.NumberStepperField(
-                                    label = "${i + 1}→${i + 2}회 복습",
-                                    value = days.toString(),
-                                    onValueChange = { text ->
-                                        val newDays = (text.toIntOrNull() ?: days).coerceIn(1, 90)
-                                        val updated = defaultPassIntervals.toMutableList().also { it[i] = newDays }
-                                        defaultPassIntervals = updated
-                                        repository.defaultPassIntervalsCsv = updated.joinToString(",")
-                                        repository.pushSettingsToFirebase()
-                                    },
-                                    min = 1, max = 90,
-                                    modifier = Modifier.width(140.dp)
-                                )
-                            }
-                        }
-                    }
-                }, right = {
-                    // 90차(사용자 요청): 타이머 탭 오른쪽에 있던 두 카드를 여기로 옮겼다 — 매번 보는
-                    // 화면이 아니라 한 번 정해두는 설정이라 설정 탭이 제자리다. 저장 위치
-                    // (studyLockAllowedApps/Sites)와 LockListEditor 컴포넌트는 그대로 재사용한다.
-                    SectionCard("🔒 공부 중 허용 프로그램") {
-                        Text(
-                            "공부 페이즈가 진행 중일 때만(휴식 중엔 아님) 데스크탑이 잠기고, 여기 등록한 프로그램만 열 수 있습니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        LockListEditor(
-                            items = studyAllowedApps,
-                            placeholder = "예: chrome.exe",
-                            onAdd = { name -> studyAllowedApps = studyAllowedApps + name; repository.studyLockAllowedApps = studyAllowedApps },
-                            onRemove = { idx -> studyAllowedApps = studyAllowedApps.toMutableList().apply { removeAt(idx) }; repository.studyLockAllowedApps = studyAllowedApps }
-                        )
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-
-                    SectionCard("🌐 공부 중 허용 사이트") {
-                        Text(
-                            "공부 페이즈 중엔 브라우저를 열어도 여기 등록한 사이트만 접속할 수 있습니다. 이 기기에만 적용됩니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        LockListEditor(
-                            items = studyAllowedSites,
-                            placeholder = "예: google.com",
-                            onAdd = { name -> studyAllowedSites = studyAllowedSites + name; repository.studyLockAllowedSites = studyAllowedSites },
-                            onRemove = { idx -> studyAllowedSites = studyAllowedSites.toMutableList().apply { removeAt(idx) }; repository.studyLockAllowedSites = studyAllowedSites }
-                        )
-                    }
-                })
-
-                SettingsSubTab.MANAGE -> SettingsColumns(left = {
-                    SectionCard("일일 사용 한도 초기화 시각") {
-                        OutlinedTextField(
-                            value = dailyResetHourText,
-                            onValueChange = { text ->
-                                dailyResetHourText = text
-                                text.toIntOrNull()?.let { if (it in 0..23) { repository.dailyResetHour = it; repository.pushSettingsToFirebase() } }
-                            },
-                            label = { Text("초기화 시각 (0~23시)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            "이 시각이 되면 차단 규칙별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // 91차(사용자 요청): "종료 시 확인 질문"은 관리(차단) 기능이 아니라 앱을 끄는 절차 자체에
-                    // 관한 설정이라 성격이 비슷한 "자동 재시작(워치독)" 옆(공통/앱 전체 탭)으로 옮겼다.
-                }, right = {
-                    SectionCard("릴스/쇼츠 차단") {
-                        ToggleRow(
-                            title = "릴스 차단 (인스타그램)",
-                            checked = blockReels,
-                            onCheckedChange = { checked ->
-                                blockReels = checked
-                                repository.blockReels = checked
-                            }
-                        )
-                        ToggleRow(
-                            title = "쇼츠 차단 (유튜브)",
-                            checked = blockShorts,
-                            onCheckedChange = { checked ->
-                                blockShorts = checked
-                                repository.blockShorts = checked
-                            }
-                        )
-                        Text(
-                            "브라우저 확장프로그램이 youtube.com/shorts, instagram.com/reels URL을 감지해서 차단합니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                })
             }
         }
     }
@@ -1091,7 +1211,7 @@ private fun PermissionChipsRow(
         FilterChip(
             selected = permissions.manage,
             onClick = { onChange(permissions.copy(manage = !permissions.manage)) },
-            label = { Text("관리") }
+            label = { Text("규칙") }
         )
         FilterChip(
             selected = permissions.social,
@@ -1101,7 +1221,7 @@ private fun PermissionChipsRow(
         FilterChip(
             selected = permissions.plant,
             onClick = { onChange(permissions.copy(plant = !permissions.plant)) },
-            label = { Text("식물") }
+            label = { Text("홈(식물)") }
         )
     }
 }

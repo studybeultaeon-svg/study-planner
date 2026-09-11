@@ -34,7 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-private enum class TopSection { MANAGE, STUDY, ROUTINE, PLANT, SOCIAL_GROUP, SETTINGS }
+private enum class TopSection { HOME, ROUTINE, STUDY, MANAGE, SOCIAL_GROUP }
 
 /**
  * 데스크탑 전용 레이아웃: 왼쪽 사이드바(NavigationRail)로 관리앱/공부앱/설정을 고르고, 관리앱·공부앱은
@@ -48,17 +48,18 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
     // 기본값으로 주므로 이 필터링으로 인한 회귀는 없다.
     val visibleSections = remember {
         listOfNotNull(
+            // 홈(구 "식물")은 항상 맨 앞 — 설정 진입점(우상단 원형 버튼)이 이 화면에만 있으므로 절대 숨기지
+            // 않는다. permPlant가 꺼진 사용자는 HOME 화면 안에서 식물 성장 콘텐츠 대신 안내문+설정 버튼만 봄.
+            TopSection.HOME,
             TopSection.ROUTINE.takeIf { repository.permRoutine },
             TopSection.STUDY.takeIf { repository.permStudy },
             TopSection.MANAGE.takeIf { repository.permManage },
             // 98차(사용자 요청, 안드로이드판과 대칭): 게스트(익명 계정)는 소셜 탭을 아예 못 쓰게 한다.
-            TopSection.SOCIAL_GROUP.takeIf { repository.permSocial && !com.phonelock.desktop.monitor.AuthManager.isAnonymous },
-            // 105차 후속(사용자 요청): 관리자 패널에서 제한 가능한 권한으로 승격, 소셜 오른쪽에 배치.
-            TopSection.PLANT.takeIf { repository.permPlant },
-            TopSection.SETTINGS
+            TopSection.SOCIAL_GROUP.takeIf { repository.permSocial && !com.phonelock.desktop.monitor.AuthManager.isAnonymous }
         )
     }
     var section by remember { mutableStateOf(visibleSections.first()) }
+    var settingsOpen by remember { mutableStateOf(false) }
     var manageSubTab by remember { mutableIntStateOf(0) }
     var studySubTab by remember { mutableIntStateOf(0) }
     var editingGroupId by remember { mutableStateOf<Long?>(null) }
@@ -129,10 +130,20 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
 
         Row(Modifier.weight(1f).fillMaxWidth()) {
             NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
+                // 홈(구 "식물")이 항상 맨 위 — 앱의 메인 화면.
+                if (TopSection.HOME in visibleSections) {
+                    NavigationRailItem(
+                        selected = !settingsOpen && section == TopSection.HOME,
+                        onClick = { section = TopSection.HOME; settingsOpen = false },
+                        icon = { Text("🌱") },
+                        label = { Text("홈") },
+                        colors = railColors
+                    )
+                }
                 if (TopSection.ROUTINE in visibleSections) {
                     NavigationRailItem(
-                        selected = section == TopSection.ROUTINE,
-                        onClick = { section = TopSection.ROUTINE },
+                        selected = !settingsOpen && section == TopSection.ROUTINE,
+                        onClick = { section = TopSection.ROUTINE; settingsOpen = false },
                         icon = { Text("📋") },
                         label = { Text("루틴") },
                         colors = railColors
@@ -140,8 +151,8 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                 }
                 if (TopSection.STUDY in visibleSections) {
                     NavigationRailItem(
-                        selected = section == TopSection.STUDY,
-                        onClick = { section = TopSection.STUDY },
+                        selected = !settingsOpen && section == TopSection.STUDY,
+                        onClick = { section = TopSection.STUDY; settingsOpen = false },
                         icon = { Text("📘") },
                         label = { Text("공부") },
                         colors = railColors
@@ -149,38 +160,22 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                 }
                 if (TopSection.MANAGE in visibleSections) {
                     NavigationRailItem(
-                        selected = section == TopSection.MANAGE,
-                        onClick = { section = TopSection.MANAGE; refresh() },
+                        selected = !settingsOpen && section == TopSection.MANAGE,
+                        onClick = { section = TopSection.MANAGE; settingsOpen = false; refresh() },
                         icon = { Text("🗂️") },
-                        label = { Text("관리") },
+                        label = { Text("규칙") },
                         colors = railColors
                     )
                 }
                 if (TopSection.SOCIAL_GROUP in visibleSections) {
                     NavigationRailItem(
-                        selected = section == TopSection.SOCIAL_GROUP,
-                        onClick = { section = TopSection.SOCIAL_GROUP },
+                        selected = !settingsOpen && section == TopSection.SOCIAL_GROUP,
+                        onClick = { section = TopSection.SOCIAL_GROUP; settingsOpen = false },
                         icon = { Text("👥") },
                         label = { Text("소셜") },
                         colors = railColors
                     )
                 }
-                if (TopSection.PLANT in visibleSections) {
-                    NavigationRailItem(
-                        selected = section == TopSection.PLANT,
-                        onClick = { section = TopSection.PLANT },
-                        icon = { Text("🌱") },
-                        label = { Text("식물") },
-                        colors = railColors
-                    )
-                }
-                NavigationRailItem(
-                    selected = section == TopSection.SETTINGS,
-                    onClick = { section = TopSection.SETTINGS },
-                    icon = { Text("⚙️") },
-                    label = { Text("설정") },
-                    colors = railColors
-                )
             }
 
             Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -200,7 +195,15 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                     }
                 }
 
-                when (section) {
+                if (settingsOpen) {
+                    Box(Modifier.weight(1f)) {
+                        SettingsScreen(
+                            repository,
+                            onThemeChange = onThemeChange,
+                            onClose = { settingsOpen = false }
+                        )
+                    }
+                } else when (section) {
                     TopSection.MANAGE -> {
                         TabRow(
                             selectedTabIndex = manageSubTab,
@@ -285,9 +288,13 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                             RoutineScreen(repository)
                         }
                     }
-                    TopSection.PLANT -> {
+                    TopSection.HOME -> {
                         Box(Modifier.weight(1f)) {
-                            PlantScreen(repository)
+                            PlantScreen(
+                                repository,
+                                permPlant = repository.permPlant,
+                                onOpenSettings = { settingsOpen = true }
+                            )
                         }
                     }
                     TopSection.SOCIAL_GROUP -> {
@@ -306,14 +313,6 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                                     onOpenDm = { chatId, peerUid, peerLabel -> selectedDmChat = Triple(chatId, peerUid, peerLabel) }
                                 )
                             }
-                        }
-                    }
-                    TopSection.SETTINGS -> {
-                        Box(Modifier.weight(1f)) {
-                            SettingsScreen(
-                                repository,
-                                onThemeChange = onThemeChange
-                            )
                         }
                     }
                 }

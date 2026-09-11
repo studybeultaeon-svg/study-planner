@@ -7,8 +7,9 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/** 앱 내부 관리자 아이디(대문자, `usernames/BEULTAEON`에 저장된 uid와 내 uid가 같으면 관리자). */
-private const val ADMIN_USERNAME = "BEULTAEON"
+/** 앱 내부 관리자 아이디(대문자, `usernames/BEULTAEON`에 저장된 uid와 내 uid가 같으면 관리자).
+ *  118차: 설정 > 프로필의 "아이디 변경"에서 관리자 계정 변경을 막기 위해 참조해야 해서 공개로 완화. */
+const val ADMIN_USERNAME = "BEULTAEON"
 
 /**
  * Firebase 콘솔에서 수동으로 whitelist(`allowedUsers`)를 등록하던 방식을 대체하는 "앱 내 가입 → 관리자
@@ -176,6 +177,25 @@ object AccountSyncClient {
                 val (token, uid) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
                 val base = databaseUrl.trimEnd('/')
                 sendPatch(URL("$base/users/$uid/profile.json?auth=$token"), JSONObject().apply { put("nickname", nickname.trim()) })
+            }
+        }
+    }
+
+    /**
+     * 아이디 변경(118차, 데스크탑판과 대칭) — 호출 순서: (1) [claimUsername]으로 새 아이디 선점 →
+     * (2) [AuthManager.changeCustomId]로 로그인 이메일 교체 → (3) 이 함수로 profile.customId를 PATCH.
+     * `usernames/{oldId}`는 규칙상(create-only) 영구히 지울 수 없으므로 그대로 남겨둔다.
+     */
+    suspend fun updateCustomId(databaseUrl: String?, apiKey: String?, newCustomId: String): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, uid) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+                val base = databaseUrl.trimEnd('/')
+                val normalized = newCustomId.trim().uppercase()
+                sendPatch(URL("$base/users/$uid/profile.json?auth=$token"), JSONObject().apply { put("customId", normalized) })
             }
         }
     }

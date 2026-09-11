@@ -8,6 +8,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +19,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -42,6 +45,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -84,7 +88,21 @@ import kotlin.math.sin
  * 완전히 삭제됨.
  */
 @Composable
-fun PlantScreen(repository: PhoneLockRepository) {
+fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOpenSettings: () -> Unit = {}) {
+    if (!permPlant) {
+        // 관리자가 이 사용자의 식물 기능을 껐어도 홈은 항상 존재해야 설정 진입점(우상단 버튼)을 잃지 않는다.
+        Box(Modifier.fillMaxSize()) {
+            Box(Modifier.align(Alignment.Center).padding(Spacing.lg)) {
+                Text(
+                    "식물 기능이 비활성화되어 있습니다.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            HomeSettingsButton(onOpenSettings, Modifier.align(Alignment.TopEnd).padding(Spacing.lg))
+        }
+        return
+    }
     val scope = rememberCoroutineScope()
     val balance by repository.observePointsBalance().collectAsState(initial = 0)
     // growthExpPending/rebirthCount는 Room Flow가 아니라 AppPreferences 스칼라값이라 refreshTick으로 재조회.
@@ -139,6 +157,8 @@ fun PlantScreen(repository: PhoneLockRepository) {
 
     Box(Modifier.fillMaxSize()) {
         GroundScene(stageIndex = stageIndex, stage = stage, rebirthCount = rebirthCount, modifier = Modifier.fillMaxSize())
+
+        HomeSettingsButton(onOpenSettings, Modifier.align(Alignment.TopEnd).padding(Spacing.lg))
 
         // 레벨/경험치 HUD — 108차부터 화면 아래쪽에 도킹(기존엔 위쪽), 위쪽은 전부 비워 식물이 잘 보이게 함.
         Surface(
@@ -300,6 +320,21 @@ private data class GrowthAnim(
     val flicker: Float
 )
 
+/** 홈 화면 우상단 설정 진입점 — 118차부터 설정은 탭이 아니라 이 버튼을 통해서만 들어간다. */
+@Composable
+private fun HomeSettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.size(44.dp).clickable(onClick = onClick),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text("⚙️", fontSize = 20.sp)
+        }
+    }
+}
+
 private const val RAD2DEG = 57.29578f
 private const val SHAKE_MARGIN = 34f
 
@@ -333,7 +368,9 @@ private fun GroundScene(stageIndex: Int, stage: GrowthSystem.Stage, rebirthCount
     }
     val anim = growthAnimForTier(stage.tier, nowMs)
 
-    Canvas(modifier) {
+    // tier2+ 장식·흔들림 효과가 이 컴포저블에 할당된 영역(좌측 NavigationRail 옆 콘텐츠 영역, 태블릿 기준) 밖으로
+    // 번져 나가 탭 바를 가리지 않도록 그리기 자체를 자기 경계 안으로 가둔다.
+    Canvas(modifier.clipToBounds()) {
         val w = size.width
         val h = size.height
         val scale = (min(w, h) / 400f).coerceIn(0.7f, 3.5f)

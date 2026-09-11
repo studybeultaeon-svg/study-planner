@@ -172,6 +172,23 @@ object AccountSyncClient {
         }
     }
 
+    /**
+     * 아이디 변경(118차) — 호출 순서는 반드시: (1) [claimUsername]으로 새 아이디 선점 성공 확인 →
+     * (2) [AuthManager.changeCustomId]로 로그인 이메일 교체 → (3) 이 함수로 profile.customId를 PATCH.
+     * `usernames/{oldId}`는 규칙상(create-only) 영구히 지울 수 없으므로 그대로 남겨둔다 — 같은 uid를
+     * 계속 가리키므로 사칭 위험은 없지만, 옛 아이디로 검색해도 여전히 이 사람이 나온다.
+     */
+    fun updateCustomId(databaseUrl: String?, apiKey: String?, newCustomId: String): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        return runCatching {
+            val (token, uid) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+            val base = databaseUrl.trimEnd('/')
+            val normalized = newCustomId.trim().uppercase()
+            val body = JSONObject().apply { put("customId", normalized) }
+            patchOrThrow(base, "users/$uid/profile", token, body.toString())
+        }
+    }
+
     /** 내가 관리자(usernames/BEULTAEON == 내 uid)인지. */
     fun isAdmin(databaseUrl: String?, apiKey: String?): Boolean {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return false
