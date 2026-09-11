@@ -14,9 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -267,7 +267,13 @@ fun SocialGroupScreen(
             reload()
             reloadDmChats()
         }) {
-        Column(Modifier.fillMaxSize().background(socialGradientBackground()).padding(padding).padding(Spacing.md)) {
+        // 106차(사용자 요청): 소셜 탭 메인 화면 전체 스크롤 — 예전엔 아래 모임 목록만 LazyColumn으로
+        // 자체 스크롤하고 위쪽(1:1 대화 목록+헤더)은 스크롤 밖이라, 모임/대화가 많으면 화면 위쪽이
+        // 잘려 안 보였다. 전체를 하나의 verticalScroll Column으로 통일.
+        Column(
+            Modifier.fillMaxSize().background(socialGradientBackground()).padding(padding)
+                .verticalScroll(rememberScrollState()).padding(Spacing.md)
+        ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 SectionPill("💬 1:1 대화")
                 TextButton(onClick = { showNewDmDialog = true }) { Text("+ 새 대화") }
@@ -334,8 +340,8 @@ fun SocialGroupScreen(
                 Spacer(Modifier.height(Spacing.sm))
             }
             when {
-                loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                summaries.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                loading -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                summaries.isEmpty() -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("🌱", style = MaterialTheme.typography.headlineLarge)
                         Spacer(Modifier.height(Spacing.sm))
@@ -348,8 +354,8 @@ fun SocialGroupScreen(
                         )
                     }
                 }
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    items(summaries) { s ->
+                else -> Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    summaries.forEach { s ->
                         Surface(
                             modifier = Modifier.fillMaxWidth().clickable { onOpenGroup(s.id) },
                             shape = RoundedCornerShape(16.dp),
