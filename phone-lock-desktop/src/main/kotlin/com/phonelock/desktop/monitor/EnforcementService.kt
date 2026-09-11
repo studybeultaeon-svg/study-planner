@@ -2,6 +2,7 @@ package com.phonelock.desktop.monitor
 
 import com.phonelock.desktop.data.Group
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.checkAndResetGrowthSeasonIfNeeded
 import java.io.File
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -86,6 +87,7 @@ class EnforcementService(
      */
     private suspend fun tick() {
         repository.applyDailyGroupResetIfNeeded()
+        repository.checkAndResetGrowthSeasonIfNeeded()
         repository.checkForUpdateIfNeeded()
         val pid = ForegroundWindowWatcher.currentProcessId() ?: return
         val processName = ForegroundWindowWatcher.currentProcessName() ?: return

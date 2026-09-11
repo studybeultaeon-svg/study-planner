@@ -13,16 +13,18 @@ import kotlin.math.sin
 object GrowthSoundEffects {
     const val SAMPLE_RATE = 44100
 
-    /** 경험치가 주입되는 순간의 짧은 "틱" 효과음 — 음 높이가 빠르게 올라가는 단일 블립. */
-    fun expTickSamples(): ShortArray = toneSweep(startHz = 520.0, endHz = 880.0, durationMs = 90, amplitude = 0.5)
+    /** 경험치가 주입되는 순간의 짧은 "틱" 효과음 — 음 높이가 빠르게 올라가는 단일 블립.
+     *  진폭은 0.5였다가 "소리가 너무 크다"는 피드백으로 0.2로 낮췄다. */
+    fun expTickSamples(): ShortArray = toneSweep(startHz = 520.0, endHz = 880.0, durationMs = 90, amplitude = 0.2)
 
-    /** 레벨업 순간의 3음 상승 아르페지오(도-미-솔 느낌) — 각 음이 살짝 겹치며 밝게 울린다. */
+    /** 레벨업 순간의 3음 상승 아르페지오(도-미-솔 느낌) — 각 음이 살짝 겹치며 밝게 울린다.
+     *  진폭은 0.55였다가 "소리가 너무 크다"는 피드백으로 0.24로 낮췄다. */
     fun levelUpSamples(): ShortArray {
         val notes = listOf(523.25, 659.25, 783.99, 1046.50) // C5, E5, G5, C6
         val noteDurationMs = 110
         val overlapMs = 35
         val stepSamples = ((noteDurationMs - overlapMs) * SAMPLE_RATE / 1000.0).toInt()
-        val toneSamples = notes.map { tone(it, noteDurationMs, amplitude = 0.55) }
+        val toneSamples = notes.map { tone(it, noteDurationMs, amplitude = 0.24) }
         val totalLength = stepSamples * (notes.size - 1) + toneSamples.last().size
         val out = DoubleArray(totalLength)
         toneSamples.forEachIndexed { i, samples ->

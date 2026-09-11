@@ -41,8 +41,8 @@ fun Repository.applyPendingGrowthExp(): GrowthSystem.ApplyResult? = synchronized
     GrowthSystem.ApplyResult(before, after, levelBefore, GrowthSystem.levelForExp(after))
 }
 
-/** 환생 — 현재 레벨이 다음 환생에 필요한 레벨 이상이면 누적/대기 EXP를 전부 초기화하고 환생 횟수를 올린다
- *  (영구, EXP 배율 상승). 조건 미달이면 아무 일도 안 하고 false. */
+/** 환생 — 현재 레벨이 다음 환생에 필요한 레벨 이상이면 누적/대기 EXP를 전부 초기화하고 이번 시즌 환생
+ *  횟수를 올린다(EXP 배율 상승, LEVEL_CAP 도달 전까지 유효). 조건 미달이면 아무 일도 안 하고 false. */
 fun Repository.rebirth(): Boolean = synchronized(lock) {
     val level = GrowthSystem.levelForExp(data.growthExpTotal)
     if (!GrowthSystem.canRebirth(level, data.rebirthCount)) return@synchronized false
@@ -51,4 +51,30 @@ fun Repository.rebirth(): Boolean = synchronized(lock) {
     data.rebirthCount += 1
     persist()
     true
+}
+
+fun Repository.getLifetimeMaxLevel(): Int = synchronized(lock) { data.lifetimeMaxLevel }
+
+fun Repository.getLifetimeRebirthCount(): Int = synchronized(lock) { data.lifetimeRebirthCount }
+
+/** 연간 시즌 초기화(109차 후속, "500레벨+연간 성장 시스템") — 매년 1월 1일(dailyResetHour 기준 "오늘")이
+ *  지나면 이번 시즌의 성장 기록(누적/대기 EXP, 이번 시즌 환생 횟수)만 초기화한다. 계정/설정/포인트 등
+ *  다른 데이터는 손대지 않는다 — "무엇을 초기화할지"는 이 3개 필드로 명확히 한정된다. 초기화 직전 값은
+ *  버리지 않고 영구 기록([AppData.lifetimeMaxLevel]/[lifetimeRebirthCount])에 누적해서 남긴다. 최초
+ *  실행(growthSeasonYear=0)이면 지울 게 없으므로 연도만 기록하고 끝낸다. 하루 1회 그룹 자동 재활성화
+ *  (`applyDailyGroupResetIfNeeded`)와 같은 tick에서 호출되는 걸 전제로, 이미 올해 처리됐으면 아무 일도
+ *  안 한다(가벼운 가드라 매 tick 호출해도 무방). */
+fun Repository.checkAndResetGrowthSeasonIfNeeded() = synchronized(lock) {
+    val currentYear = effectiveDate(data.dailyResetHour).year
+    if (data.growthSeasonYear == currentYear) return@synchronized
+    if (data.growthSeasonYear != 0) {
+        val level = GrowthSystem.levelForExp(data.growthExpTotal)
+        data.lifetimeMaxLevel = maxOf(data.lifetimeMaxLevel, level)
+        data.lifetimeRebirthCount += data.rebirthCount
+        data.growthExpTotal = 0.0
+        data.growthExpPending = 0.0
+        data.rebirthCount = 0
+    }
+    data.growthSeasonYear = currentYear
+    persist()
 }

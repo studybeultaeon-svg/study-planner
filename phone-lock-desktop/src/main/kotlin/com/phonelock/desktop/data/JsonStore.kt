@@ -70,6 +70,9 @@ object JsonStore {
             growthExpTotal = json.optDouble("growthExpTotal", 0.0),
             growthExpPending = json.optDouble("growthExpPending", 0.0),
             rebirthCount = json.optInt("rebirthCount", 0),
+            growthSeasonYear = json.optInt("growthSeasonYear", 0),
+            lifetimeMaxLevel = json.optInt("lifetimeMaxLevel", 0),
+            lifetimeRebirthCount = json.optInt("lifetimeRebirthCount", 0),
             themeMode = json.optString("themeMode", "LIGHT_ORANGE"),
             customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
@@ -721,6 +724,9 @@ object JsonStore {
         json.put("growthExpTotal", data.growthExpTotal)
         json.put("growthExpPending", data.growthExpPending)
         json.put("rebirthCount", data.rebirthCount)
+        json.put("growthSeasonYear", data.growthSeasonYear)
+        json.put("lifetimeMaxLevel", data.lifetimeMaxLevel)
+        json.put("lifetimeRebirthCount", data.lifetimeRebirthCount)
 
         val escalationsJson = JSONArray()
         data.confirmEscalations.forEach { e ->

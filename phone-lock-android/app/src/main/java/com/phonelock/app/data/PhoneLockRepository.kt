@@ -200,6 +200,7 @@ class PhoneLockRepository(context: Context) {
      */
     suspend fun runDailyMaintenanceIfNeeded() {
         val today = effectiveDate(dailyResetHour).toString()
+        runCatching { checkAndResetGrowthSeasonIfNeeded() }
 
         val lastPrune = preferences.lastAutoStatsPruneDate
         val prevPruneRunLongAgo = lastPrune.isBlank() ||

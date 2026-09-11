@@ -38,8 +38,8 @@ fun PhoneLockRepository.applyPendingGrowthExp(): GrowthSystem.ApplyResult? {
     return GrowthSystem.ApplyResult(before, after, levelBefore, GrowthSystem.levelForExp(after))
 }
 
-/** 환생 — 현재 레벨이 다음 환생에 필요한 레벨 이상이면 누적/대기 EXP를 전부 초기화하고 환생 횟수를 올린다
- *  (영구, EXP 배율 상승). 조건 미달이면 아무 일도 안 하고 false. */
+/** 환생 — 현재 레벨이 다음 환생에 필요한 레벨 이상이면 누적/대기 EXP를 전부 초기화하고 이번 시즌 환생
+ *  횟수를 올린다(EXP 배율 상승, LEVEL_CAP 도달 전까지 유효). 조건 미달이면 아무 일도 안 하고 false. */
 fun PhoneLockRepository.rebirth(): Boolean {
     val level = GrowthSystem.levelForExp(preferences.growthExpTotal)
     if (!GrowthSystem.canRebirth(level, preferences.rebirthCount)) return false
@@ -47,4 +47,28 @@ fun PhoneLockRepository.rebirth(): Boolean {
     preferences.growthExpPending = 0.0
     preferences.rebirthCount += 1
     return true
+}
+
+fun PhoneLockRepository.getLifetimeMaxLevel(): Int = preferences.lifetimeMaxLevel
+
+fun PhoneLockRepository.getLifetimeRebirthCount(): Int = preferences.lifetimeRebirthCount
+
+/** 연간 시즌 초기화(109차 후속, "500레벨+연간 성장 시스템", 데스크탑판과 대칭) — 매년 1월 1일
+ *  (dailyResetHour 기준 "오늘")이 지나면 이번 시즌의 성장 기록(누적/대기 EXP, 이번 시즌 환생 횟수)만
+ *  초기화한다. 계정/설정/포인트 등 다른 데이터는 손대지 않는다. 초기화 직전 값은 영구 기록
+ *  (lifetimeMaxLevel/lifetimeRebirthCount)에 누적해서 남긴다. 최초 실행(growthSeasonYear=0)이면
+ *  지울 게 없으므로 연도만 기록하고 끝낸다. `runDailyMaintenanceIfNeeded`와 같은 하루 1회 가드 경로에서
+ *  호출되는 걸 전제로, 이미 올해 처리됐으면 아무 일도 안 한다. */
+fun PhoneLockRepository.checkAndResetGrowthSeasonIfNeeded() {
+    val currentYear = effectiveDate(preferences.dailyResetHour).year
+    if (preferences.growthSeasonYear == currentYear) return
+    if (preferences.growthSeasonYear != 0) {
+        val level = GrowthSystem.levelForExp(preferences.growthExpTotal)
+        preferences.lifetimeMaxLevel = maxOf(preferences.lifetimeMaxLevel, level)
+        preferences.lifetimeRebirthCount += preferences.rebirthCount
+        preferences.growthExpTotal = 0.0
+        preferences.growthExpPending = 0.0
+        preferences.rebirthCount = 0
+    }
+    preferences.growthSeasonYear = currentYear
 }

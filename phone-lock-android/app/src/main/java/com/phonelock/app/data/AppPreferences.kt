@@ -279,10 +279,29 @@ class AppPreferences(context: Context) {
         get() = prefs.getString("growth_exp_total", null)?.toDoubleOrNull() ?: 0.0
         set(value) = prefs.edit().putString("growth_exp_total", value.toString()).apply()
 
-    /** 완료한 환생 횟수(영구 유지) — EXP 배율의 기준. */
+    /** 이번 시즌(올해)에 완료한 환생 횟수 — EXP 배율의 기준. 109차 "500레벨+연간 시즌" 개편부터 매년
+     *  1월 1일에 growthExpTotal/growthExpPending과 함께 0으로 초기화된다(연간 시즌 갱신 시
+     *  lifetimeRebirthCount로 누적 이관됨, PhoneLockRepository.checkAndResetGrowthSeasonIfNeeded 참고). */
     var rebirthCount: Int
         get() = prefs.getInt("rebirth_count", 0)
         set(value) = prefs.edit().putInt("rebirth_count", value).apply()
+
+    /** 연간 시즌 관리(109차 후속) — 마지막으로 시즌 초기화를 적용한 연도(effectiveDate 기준). 0이면
+     *  아직 한 번도 초기화 로직을 안 거친 상태(최초 실행 등)로, 이때는 기존 값을 지우지 않고 올해로만
+     *  설정한다. */
+    var growthSeasonYear: Int
+        get() = prefs.getInt("growth_season_year", 0)
+        set(value) = prefs.edit().putInt("growth_season_year", value).apply()
+
+    /** 역대 최고 도달 레벨(영구 기록, 시즌이 바뀌어도 초기화 안 됨). */
+    var lifetimeMaxLevel: Int
+        get() = prefs.getInt("lifetime_max_level", 0)
+        set(value) = prefs.edit().putInt("lifetime_max_level", value).apply()
+
+    /** 역대 누적 환생 횟수(영구 기록) — 시즌 초기화 시 그 시즌의 rebirthCount를 더해서 누적. */
+    var lifetimeRebirthCount: Int
+        get() = prefs.getInt("lifetime_rebirth_count", 0)
+        set(value) = prefs.edit().putInt("lifetime_rebirth_count", value).apply()
 
     /** 획득했지만 아직 레벨에 반영 안 된 "대기 EXP"(108차 후속) — 식물 탭에서 사용자가 "적용" 버튼을
      *  눌러야 growthExpTotal로 이동한다. growthExpTotal과 동일하게 Double을 문자열로 저장. */
