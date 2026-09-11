@@ -271,9 +271,6 @@ data class RoutineMode(val id: Long, val name: String = "", val sortOrder: Int =
  */
 data class PointsLedgerEntry(val delta: Int, val reason: String, val refId: String = "", val dateKey: String, val timestampMillis: Long)
 
-/** 사용자가 직접 등록하는 "오늘의 보상" 언락 항목 — 이름+필요 포인트만 가진다. */
-data class Reward(val id: Long, val name: String = "", val cost: Int = 0, val sortOrder: Int = 0)
-
 /**
  * 앱이 접속할 Firebase 프로젝트(study-fc3bf) 고정값 — 62차까지는 설정 화면에서 사용자가 직접 입력했지만,
  * 이제 로그인만으로 동기화되도록 하드코딩(안드로이드 google-services.json과 같은 프로젝트).
@@ -417,14 +414,24 @@ data class AppData(
     var updateAvailableInstallerUrl: String? = null,
     /** 포인트/보상 시스템(101차+) — 적립/차감 원장. */
     val pointsLedger: MutableList<PointsLedgerEntry> = mutableListOf(),
-    /** 사용자가 등록한 보상 목록과 다음 id 발급용 카운터(routines와 동일 패턴). */
-    val rewards: MutableList<Reward> = mutableListOf(),
-    var nextRewardId: Long = 1,
     /** 포인트 전체 문서 단위 LWW 타임스탬프(routinesTs와 동일 패턴) — users/{user}/points. */
     var pointsTs: Long = 0L,
     /** "식물 성장" 시스템(105차 후속) — 현재 환생 사이클의 누적 EXP(환생 시 0으로 초기화).
      *  레벨/칭호는 이 값에서 GrowthSystem으로 매번 계산하며 별도 저장하지 않는다. */
     var growthExpTotal: Double = 0.0,
-    /** 완료한 환생 횟수(영구 유지, 환생해도 초기화 안 됨) — EXP 배율의 기준. */
-    var rebirthCount: Int = 0
+    /** 획득했지만 아직 레벨에 반영 안 된 "대기 EXP"(108차 후속) — 식물 탭에서 사용자가 "적용" 버튼을
+     *  눌러야 [growthExpTotal]로 이동한다([Repository.applyPendingGrowthExp] 참고). */
+    var growthExpPending: Double = 0.0,
+    /** 이번 시즌(올해)에 완료한 환생 횟수 — EXP 배율의 기준. 109차 "500레벨+연간 시즌" 개편부터 매년
+     *  1월 1일에 growthExpTotal/growthExpPending과 함께 0으로 초기화된다(연간 시즌 갱신 시
+     *  [lifetimeRebirthCount]로 누적 이관됨, [Repository.checkAndResetGrowthSeasonIfNeeded] 참고). */
+    var rebirthCount: Int = 0,
+    /** 연간 시즌 관리(109차 후속) — 마지막으로 시즌 초기화를 적용한 연도(effectiveDate 기준). 0이면
+     *  아직 한 번도 초기화 로직을 안 거친 상태(최초 실행 등)로, 이때는 기존 값을 지우지 않고 올해로만
+     *  설정한다. */
+    var growthSeasonYear: Int = 0,
+    /** 역대 최고 도달 레벨(영구 기록, 시즌이 바뀌어도 초기화 안 됨) — 시즌 초기화 직전 레벨과 비교해 갱신. */
+    var lifetimeMaxLevel: Int = 0,
+    /** 역대 누적 환생 횟수(영구 기록) — 시즌 초기화 시 그 시즌의 [rebirthCount]를 더해서 누적. */
+    var lifetimeRebirthCount: Int = 0
 )

@@ -323,12 +323,3 @@ data class PointsLedgerEntry(
     val dateKey: String,
     val timestampMillis: Long
 )
-
-/** 사용자가 직접 등록하는 "오늘의 보상" 언락 항목 — 이름+필요 포인트만 가진다. */
-@Entity(tableName = "reward")
-data class Reward(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String = "",
-    val cost: Int = 0,
-    val sortOrder: Int = 0
-)

@@ -104,41 +104,6 @@ suspend fun PhoneLockRepository.onCalendarTaskCompletionChanged(taskId: Long, da
 }
 
 // ══════════════════════════════════════════════════════
-// 보상("오늘의 보상") — 사용자가 직접 등록/삭제하는 이름+필요 포인트 목록.
-// ══════════════════════════════════════════════════════
-
-fun PhoneLockRepository.observeRewards(): Flow<List<Reward>> = rewardDao.observeAll()
-
-suspend fun PhoneLockRepository.getRewards(): List<Reward> = rewardDao.getAll()
-
-suspend fun PhoneLockRepository.addReward(name: String, cost: Int) {
-    val nextOrder = (rewardDao.getAll().maxOfOrNull { it.sortOrder } ?: -1) + 1
-    rewardDao.insert(Reward(name = name, cost = cost, sortOrder = nextOrder))
-    pushPointsToFirebase()
-}
-
-suspend fun PhoneLockRepository.updateReward(reward: Reward) {
-    rewardDao.update(reward)
-    pushPointsToFirebase()
-}
-
-suspend fun PhoneLockRepository.deleteReward(reward: Reward) {
-    rewardDao.delete(reward)
-    pushPointsToFirebase()
-}
-
-/** 보상 교환 — 잔액이 모자라면 아무 일도 안 하고 false. */
-suspend fun PhoneLockRepository.redeemReward(reward: Reward): Boolean {
-    if (pointsLedgerDao.getBalance() < reward.cost) return false
-    val dateKey = effectiveDate(preferences.dailyResetHour).toString()
-    pointsLedgerDao.insert(
-        PointsLedgerEntry(delta = -reward.cost, reason = "REDEEM", refId = "reward:${reward.id}", dateKey = dateKey, timestampMillis = System.currentTimeMillis())
-    )
-    pushPointsToFirebase()
-    return true
-}
-
-// ══════════════════════════════════════════════════════
 // Firebase 동기화 — 캘린더/루틴과 동일한 "전체 문서 단위 LWW"(users/{user}/points).
 // ══════════════════════════════════════════════════════
 
@@ -151,18 +116,6 @@ fun PhoneLockRepository.pointsLedgerToJson(ledger: List<PointsLedgerEntry>): JSO
             put("refId", e.refId)
             put("dateKey", e.dateKey)
             put("timestampMillis", e.timestampMillis)
-        })
-    }
-    return arr
-}
-
-fun PhoneLockRepository.rewardsToJson(rewards: List<Reward>): JSONArray {
-    val arr = JSONArray()
-    rewards.sortedBy { it.sortOrder }.forEach { r ->
-        arr.put(JSONObject().apply {
-            put("name", r.name)
-            put("cost", r.cost)
-            put("sortOrder", r.sortOrder)
         })
     }
     return arr
@@ -185,23 +138,15 @@ private fun pointsLedgerFromJson(json: JSONArray): List<PointsLedgerEntry> {
     return out
 }
 
-private fun rewardsFromJson(json: JSONArray): List<Reward> {
-    val out = mutableListOf<Reward>()
-    for (i in 0 until json.length()) {
-        val r = json.getJSONObject(i)
-        out.add(Reward(name = r.optString("name", ""), cost = r.optInt("cost", 0), sortOrder = r.optInt("sortOrder", i)))
-    }
-    return out
-}
-
-/** 변경 직후 fire-and-forget으로 Firebase에 전체 포인트 문서(원장+보상)를 올린다. */
+/** 변경 직후 fire-and-forget으로 Firebase에 포인트 원장을 올린다. "보상" 필드는 108차에 기능 자체가
+ *  삭제됐지만, 다른 기기의 구버전 앱이 같은 문서를 읽을 수 있어 와이어 포맷은 그대로 유지하고 빈 배열만
+ *  채워 보낸다. */
 fun PhoneLockRepository.pushPointsToFirebase() {
     val ts = System.currentTimeMillis()
     pointsTs = ts
     ioScope.launch {
         val ledgerJson = pointsLedgerToJson(pointsLedgerDao.getAllOnce())
-        val rewardsJson = rewardsToJson(rewardDao.getAll())
-        com.phonelock.app.service.PomodoroSyncClient.writePoints(fbDatabaseUrl, fbApiKey, ledgerJson, rewardsJson, ts)
+        com.phonelock.app.service.PomodoroSyncClient.writePoints(fbDatabaseUrl, fbApiKey, ledgerJson, JSONArray(), ts)
     }
 }
 
@@ -210,12 +155,9 @@ suspend fun PhoneLockRepository.syncPointsFromFirebase() {
     val result = com.phonelock.app.service.PomodoroSyncClient.readPoints(fbDatabaseUrl, fbApiKey) ?: return
     if (result.ts > pointsTs) {
         val ledger = pointsLedgerFromJson(result.ledgerJson)
-        val rewards = rewardsFromJson(result.rewardsJson)
         db.withTransaction {
             pointsLedgerDao.deleteAll()
             ledger.forEach { pointsLedgerDao.insert(it) }
-            rewardDao.deleteAll()
-            rewards.forEach { rewardDao.insert(it) }
         }
         pointsTs = result.ts
     } else if (pointsTs > result.ts) {

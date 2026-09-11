@@ -4,6 +4,45 @@
 
 ---
 
+## 2026-09-12 (110차 세션) — "식물" 탭 500레벨 등급/칭호 체계 전면 재설계 + 등급별 하늘/땅/나무 일러스트·애니메이션 전면 개편
+
+109차까지의 EXP 대기/적용 시스템(HUD·애니메이션·효과음)은 그대로 두고, 이번엔 **레벨/칭호 테이블과 식물 일러스트 자체**를 다시 설계.
+
+- **레벨/칭호 체계 재설계**: `shared/GrowthSystem.kt`의 `Stage`에 `tier: Int`(0~4) 필드 추가, `STAGES`를 LEVEL_CAP=500 안에 전부 들어가는 23단계로 교체 — 정상(tier0, Lv.1~125, 씨앗~거목)/이상함(tier1, Lv.150~225)/초월급(tier2, Lv.250~310)/종말급(tier3, Lv.350~410)/최강자급(tier4, Lv.450~500, 한자 병기 허용은 여기만). 기존엔 지수 곡선 때문에 최상위 칭호가 레벨 1150대까지 밀려나 사실상 도달 불가능했던 문제가 해소됨([[IDEAS.md]] 참고).
+- **일러스트 시스템 전면 재작성** — 양 플랫폼 `PlantScreen.kt`의 `GroundScene`을 기존 "9단계 성장률+Italian-brainrot 테마 데코" 방식에서, 등급(tier)마다 **하늘 색/땅 색/전경 파티클/나무 형태가 전부 다른** 장면으로 교체:
+  - 하늘(`drawSky`)·땅(`drawGroundLayer`)이 tier별로 5가지 그라디언트 팔레트(정상=푸른 하늘, 이상함=탁한 녹회색, 초월급=우주 보라+별, 종말급=잉걸불 레드, 최강자급=칠흑+오로라)
+  - 나무 렌더러 5종: `drawBranchingTree`(정상/이상함 공용, 실제 가지 갈래+잎뭉치가 있는 나무, `twisted` 플래그로 이상함 등급의 비틀린 가지 표현), `drawRadiantTree`(초월급, 만다라 광륜+승천하는 빛의 존재), `drawCorruptedTree`(종말급, 뒤틀린 검은 덩어리+"심연의 눈"+하늘로 뻗는 균열), `drawWorldTree`(최강자급, 3기둥 세계수+다층 화관+빛의 존재) — tier2 이상은 화면 폭 상당을 차지하도록 크기를 키움(사용자: "같은 식물이라고?" 수준의 변화 요구)
+  - 초반(Lv.95 미만, "든든한 나무" 이전)은 기존처럼 단순한 줄기+잎쌍 형태 유지(`drawYoungPlant`)
+  - tier2 이상 전체 화면 배경 워시(`drawCosmicBackdrop`), tier3 상승하는 잉걸불 파티클(`drawEmberOverlay`), tier4 떠다니는 빛 파티클(`drawTranscendentOverlay`) 추가
+  - 칭호별 전용 장식(`drawGrowthIllustration`, 23개 `illustrationId` 전부 교체) — 칭호 텍스트와 그림이 항상 1:1로 일치
+  - 환생 횟수를 레벨과 무관하게 영구 표시하는 금빛 링(`drawRebirthAura`) 신규 추가
+- **애니메이션을 등급별로 질적으로 다르게**(`growthAnimForTier`, `withFrameNanos` 연속 클록으로 교체 — 기존 `rememberInfiniteTransition` 단일 sway 대신): 정상=단순 좌우 sway, 이상함=불규칙 이중 sine(경련), 초월급=오라 맥동+서서히 회전, 종말급=카메라 셰이크+깜빡임 추가, 최강자급=전부 결합.
+- **화면 흔들림이 배경 가장자리를 노출하던 버그 수정**(효과 세기는 그대로 유지) — `SHAKE_MARGIN` 상수로 하늘/땅 배경 사각형을 흔들림 폭만큼 오버사이즈해서 그리고, 하늘을 포함한 모든 드로잉을 하나의 `translate` 블록 안에 통일. 자세한 설계 배경은 [[DECISIONS.md]] 110차 참고.
+- **Kotlin 이식 중 발견한 플랫폼별 Compose API 차이**: desktop(`Path.quadraticBezierTo`) vs android(`Path.quadraticTo` 권장) 메서드명 차이, `DrawScope.translate`/`.rotate`가 멤버가 아니라 최상위 확장 함수라 명시적 import 필요 — 둘 다 컴파일 에러로 발견해 수정.
+- 빌드/배포: 데스크탑(`compileKotlin`)·안드로이드(`compileDebugKotlin`) 컴파일 확인 → android `assembleRelease`/desktop `packageMsi createDistributable` 공식 경로 빌드까지 전부 성공. 안드로이드 3위치(`AndroidBuilds`/OneDrive 원본/`vm-build-output`) 재배포, 데스크탑 호스트(`PhoneLockDesktopApp`)·`vm-build-output` 재배포 후 재기동 완료.
+
+---
+
+## 2026-09-11 (109차 세션) — "식물" 탭 게임성 개편: 보상함 삭제, 경험치 수동 적용+애니메이션/효과음, 레벨업 연출
+
+기존 시스템(105차 `GrowthSystem`)을 먼저 확인 후 그 위에서 동작 방식만 개편. 레벨/칭호 계산·환생 요구치/배율 공식·칭호 고정 테이블은 전혀 안 건드림.
+
+- **보상함 완전 삭제**(사용자 확정: UI뿐 아니라 관련 로직 전부 제거). 조사 결과 "보상함"은 소셜 탭이 아니라 **식물 탭에만 존재하는 유일한 UI**였음(소셜 탭엔 죽은 import만 남아있었음) — 삭제하면 보상 등록/교환 기능 자체가 앱 전체에서 없어진다는 걸 확인하고 사용자에게 확인 후 진행.
+  - 삭제: `Reward` 데이터클래스/Room 엔티티(android)·`rewardDao`/`RewardDao`, `Repository.Points.kt`/`PhoneLockRepository.Points.kt`의 addReward/deleteReward/redeemReward/getRewards/observeRewards + rewardsToJson/FromJson, 데스크탑 `AppData.rewards`/`nextRewardId`, `SocialGroupScreen.kt`(desktop)의 죽은 import 4개.
+  - Android Room `reward` 테이블은 `MIGRATION_39_40`(v39→40)으로 DROP. `points_ledger`(포인트 원장, EXP 계산에 계속 쓰임)는 그대로 유지.
+  - Firebase `writePoints`/`readPoints` 와이어 포맷(ledgerJson, rewardsJson)은 그대로 두고 rewardsJson 자리에 빈 배열만 보냄 — 다른 기기의 구버전 앱이 같은 문서를 읽어도 깨지지 않도록.
+- **레벨/경험치 HUD를 화면 하단으로 이동**(기존 상단) — 보상함이 있던 하단 자리를 대체, 위쪽은 비워 식물이 잘 보이게 유지.
+- **경험치 적립 방식을 "즉시 반영" → "대기 후 수동 적용"으로 변경**. `AppData.growthExpTotal`(desktop)/`AppPreferences.growthExpTotal`(android)은 그대로 "적용된" 누적치로 두고, 신규 `growthExpPending` 필드를 추가해 적립분은 여기 먼저 쌓임(`awardGrowthExp()`가 대상을 변경). 사용자가 "✨ 경험치 적용" 버튼을 눌러야 `applyPendingGrowthExp()`(신규, `shared/GrowthSystem.ApplyResult` 반환)가 그 순간 `growthExpPending`을 `growthExpTotal`로 이동 — 적용 전/후 EXP·레벨을 함께 반환해 UI가 그 구간을 애니메이션으로 재생.
+  - 애니메이션: 레벨 경계(`GrowthSystem.cumulativeExpForLevel`)마다 경험치바를 0→100%로 채우고, 다 채워지면 레벨 넘버 증가+레벨업 연출+효과음을 재생한 뒤 다음 레벨 구간을 이어서 채움(여러 레벨이 한 번에 오르는 경우도 순차 재생). 마지막 구간은 실제 도달한 진행률까지만 채움.
+  - 중복 적용 방지: `applyPendingGrowthExp()`가 호출 즉시 대기 EXP를 0으로 비우는 원자적 동작(desktop `synchronized(lock)`, android 저장소 직접 갱신)이라 버튼을 연타해도 두 번째 호출은 `pending<=0`으로 즉시 null 반환.
+  - 환생(`rebirth()`)은 이번에 `growthExpPending`도 함께 0으로 초기화하도록 수정(기존엔 `growthExpTotal`만 리셋).
+- **레벨업 연출**: 화면 중앙에 "레벨업!"+도달 레벨 텍스트가 scale+fade로 튀어나왔다 사라짐(`AnimatedVisibility`), 약 0.9초 유지.
+- **효과음**: 프로젝트에 번들 오디오 에셋 파이프라인이 없어(무전기 기능도 런타임 WAV 직접 생성/임시파일 재생 방식) 신규 `shared/GrowthSystem.kt`(경험치 적용 시)에 짧은 상승음, 레벨업 시 3음 아르페지오를 16bit PCM으로 순수 Kotlin 합성하는 공용 로직(`shared/GrowthSoundEffects.kt`)을 추가하고, 플랫폼별 재생기(desktop `monitor/GrowthSoundPlayer.kt` — `SourceDataLine` 직접 스트리밍, android `service/GrowthSoundPlayer.kt` — `AudioTrack` STATIC 모드)를 새로 만듦. 둘 다 STREAM_MUSIC/기본 라인이라 기기 볼륨/무음 설정을 그대로 존중.
+- **환생 자동 실행 여부 확인**: 조사 결과 환생은 105차부터 이미 버튼("🔁 환생 가능!")+확인 다이얼로그를 거쳐야만 실행되는 구조였음(자동 실행 로직 없음) — 이번 요구사항은 이미 충족돼 있어 구조 변경 없음.
+- 빌드/배포: 데스크탑(`compileKotlin`)·안드로이드(`compileDebugKotlin`) 스크래치 경로 컴파일 확인 → android `assembleRelease`(versionCode `1789121587`)/desktop `packageMsi createDistributable`(BuildInfo `1789121757`) 공식 경로 빌드까지 전부 성공. 안드로이드 3위치(`AndroidBuilds`/OneDrive 원본/`vm-build-output`) 재배포 완료, 데스크탑 호스트(`PhoneLockDesktopApp`)·`vm-build-output` 재배포 후 재기동 완료(watchdog 재시도 후 성공). GitHub 공개 저장소 동기화(`sync-public-repo.ps1`, 커밋 `26cae56`)와 두 릴리스([android-1789121587](https://github.com/studybeultaeon-svg/study-planner/releases/tag/android-1789121587)/[desktop-1789121757](https://github.com/studybeultaeon-svg/study-planner/releases/tag/desktop-1789121757))도 사용자 확인 후 게시까지 완료(auto mode 분류기가 1차 시도는 차단했으나 사용자가 직접 재승인해 이어서 처리함).
+
+---
+
 ## 2026-09-11 (108차 세션, 버그 수정) — 소셜 통계 동기화 취소를 실패로 오인하던 버그 수정
 
 - 사용자 제보 로그: `[SocialGroupSync] pushMySocialStats failed: The coroutine scope left the composition`.

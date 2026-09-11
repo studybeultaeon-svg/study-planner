@@ -68,7 +68,11 @@ object JsonStore {
             routinesTs = json.optLong("routinesTs", 0L),
             pointsTs = json.optLong("pointsTs", 0L),
             growthExpTotal = json.optDouble("growthExpTotal", 0.0),
+            growthExpPending = json.optDouble("growthExpPending", 0.0),
             rebirthCount = json.optInt("rebirthCount", 0),
+            growthSeasonYear = json.optInt("growthSeasonYear", 0),
+            lifetimeMaxLevel = json.optInt("lifetimeMaxLevel", 0),
+            lifetimeRebirthCount = json.optInt("lifetimeRebirthCount", 0),
             themeMode = json.optString("themeMode", "LIGHT_ORANGE"),
             customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
@@ -417,13 +421,6 @@ object JsonStore {
                 )
             )
         }
-        val rewardsJson = json.optJSONArray("rewards") ?: JSONArray()
-        for (i in 0 until rewardsJson.length()) {
-            val r = rewardsJson.getJSONObject(i)
-            data.rewards.add(Reward(id = r.getLong("id"), name = r.optString("name", ""), cost = r.optInt("cost", 0), sortOrder = r.optInt("sortOrder", i)))
-        }
-        data.nextRewardId = json.optLong("nextRewardId", (data.rewards.maxOfOrNull { it.id } ?: 0L) + 1)
-
         return data
     }
 
@@ -723,15 +720,13 @@ object JsonStore {
             })
         }
         json.put("pointsLedger", pointsLedgerJson)
-        val rewardsJson = JSONArray()
-        data.rewards.forEach { r ->
-            rewardsJson.put(JSONObject().apply { put("id", r.id); put("name", r.name); put("cost", r.cost); put("sortOrder", r.sortOrder) })
-        }
-        json.put("rewards", rewardsJson)
-        json.put("nextRewardId", data.nextRewardId)
         json.put("pointsTs", data.pointsTs)
         json.put("growthExpTotal", data.growthExpTotal)
+        json.put("growthExpPending", data.growthExpPending)
         json.put("rebirthCount", data.rebirthCount)
+        json.put("growthSeasonYear", data.growthSeasonYear)
+        json.put("lifetimeMaxLevel", data.lifetimeMaxLevel)
+        json.put("lifetimeRebirthCount", data.lifetimeRebirthCount)
 
         val escalationsJson = JSONArray()
         data.confirmEscalations.forEach { e ->

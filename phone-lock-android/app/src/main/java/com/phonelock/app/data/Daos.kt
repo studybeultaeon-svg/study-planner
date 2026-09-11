@@ -330,24 +330,3 @@ interface PointsLedgerDao {
     @Query("DELETE FROM points_ledger")
     suspend fun deleteAll()
 }
-
-@Dao
-interface RewardDao {
-    @Query("SELECT * FROM reward ORDER BY sortOrder")
-    fun observeAll(): Flow<List<Reward>>
-
-    @Query("SELECT * FROM reward ORDER BY sortOrder")
-    suspend fun getAll(): List<Reward>
-
-    @Insert
-    suspend fun insert(reward: Reward): Long
-
-    @Update
-    suspend fun update(reward: Reward)
-
-    @Delete
-    suspend fun delete(reward: Reward)
-
-    @Query("DELETE FROM reward")
-    suspend fun deleteAll()
-}

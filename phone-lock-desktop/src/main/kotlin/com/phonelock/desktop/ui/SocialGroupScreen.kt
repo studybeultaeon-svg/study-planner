@@ -44,10 +44,6 @@ import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.data.getEarnedPointsTotal
 import com.phonelock.desktop.data.getTotalStudyMinutes
 import com.phonelock.desktop.data.getPointsBalance
-import com.phonelock.desktop.data.getRewards
-import com.phonelock.desktop.data.addReward
-import com.phonelock.desktop.data.deleteReward
-import com.phonelock.desktop.data.redeemReward
 import com.phonelock.desktop.monitor.AuthManager
 import com.phonelock.desktop.monitor.SocialGroupSyncClient
 import com.phonelock.desktop.ui.theme.Spacing
