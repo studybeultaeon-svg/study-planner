@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-09-12 (111차 세션) — "식물"→"홈" 탭 승격 + 배경 침범 버그 수정 + "관리"→"규칙" 개명 + 설정 시스템 전면 재구성(홈 진입점+카테고리 구조) + 아이디 변경 기능 신규
+
+- **식물 탭 배경 침범 버그 수정**: 양 플랫폼 `PlantScreen.kt`의 `GroundScene`이 `Canvas(modifier)`에 `clipToBounds()`가 없어, tier2+ 장식/흔들림 효과가 자기 영역(데스크탑/태블릿 NavigationRail 옆 콘텐츠 영역)을 벗어나 탭 바를 가리던 문제를 `Canvas(modifier.clipToBounds())`로 수정. 그리기 좌표/디자인은 전혀 손대지 않았다.
+- **"식물" 탭을 "홈"으로 승격**: 양 플랫폼에서 최상단(데스크탑 NavigationRail)/최좌측(안드로이드 하단 탭·태블릿 레일) 첫 번째 탭으로 재배치, 라벨 "식물"→"홈"(아이콘 🌱 유지). `TopSection.PLANT`→`TopSection.HOME`(desktop), `Tab.Plant`→`Tab.Home`(android, route `"plant"`→`"home"`)로 이름 변경. `permPlant`가 꺼진 사용자도 홈 탭 자체는 항상 보이도록(설정 진입점이 여기뿐이므로) — 콘텐츠만 "식물 기능 비활성화" 안내문+설정 버튼으로 대체(`PlantScreen(permPlant=false)` 분기).
+- **"관리" → "규칙" 개명**: 데스크탑 `MainScreen.kt`/안드로이드 `Tab.Manage`의 표시 라벨을 "규칙"으로 변경(내부 식별자 `TopSection.MANAGE`/`Tab("manage", ...)`는 유지). 설정 화면의 해당 카테고리 라벨도 동일하게 "규칙"으로 맞춤. `permManage`의 관리자 패널 권한 칩 라벨도 "관리"→"규칙"으로 통일.
+- **설정을 탭에서 제거 + 홈 우상단 원형 버튼 진입점으로 개편**: 데스크탑 `NavigationRail`/안드로이드 하단 탭·태블릿 레일에서 "설정" 항목 삭제. `PlantScreen`(홈) 루트 우상단에 반투명 원형 ⚙️ 버튼(`HomeSettingsButton`) 신규 — 데스크탑은 `settingsOpen` 상태로 콘텐츠 영역을 설정 화면으로 스왑, 안드로이드는 `navController.navigate("settings")`로 독립 라우트 진입(진입 중엔 하단 탭/레일 숨김). 양쪽 모두 설정 화면에 닫기 버튼(`onClose` 콜백) 신규.
+- **설정 화면 구조 전면 재구성 — TabRow 5분류 → 카테고리 9분류 + 좌우(태블릿·데스크탑)/드로어(폰) 구조**: 기존 `SettingsSubTab{COMMON,ROUTINE,STUDY,MANAGE,SOCIAL}`를 `SettingsCategory{PROFILE,DISPLAY,RULES,STUDY,ROUTINE,SOCIAL,DATA,SYSTEM,ADMIN}`로 재편(양 플랫폼 동일 구조, UI 코드는 플랫폼별 독립 구현). 기존 SectionCard들은 로직 변경 없이 카테고리별로만 재배치:
+  - PROFILE: 닉네임/**아이디 변경(신규)**/비밀번호 변경/온라인·오프라인 모드/계정 동기화
+  - DISPLAY: 테마
+  - RULES: 일일 사용 한도 초기화 시각/릴스·쇼츠 차단/(안드로이드) 차단 규칙 데이터 복구
+  - STUDY/ROUTINE/SOCIAL: 기존과 동일한 카드 구성 유지
+  - DATA: 백업·복원/설정·차단규칙 내보내기·가져오기/오래된 기록 정리 — **안드로이드는 기존에 "관리"(permManage) 뒤에 숨어있던 백업·복원/자동백업을 항상 노출로 변경(데스크탑과 동작 통일)**
+  - SYSTEM: 자동 실행(데스크탑)/표시·진단·권한설정(안드로이드)/업데이트/워치독/종료 시 확인 질문
+  - ADMIN: 가입 승인 대기+승인된 사용자 관리(관리자 전용, `isAdmin`일 때만 노출)
+  - 데스크탑/안드로이드 태블릿: 좌측 카테고리 목록(약 200dp)+우측 세부 설정 2단. 안드로이드 폰: 기본은 선택된 카테고리 세부 화면, 좌상단 ☰ 버튼으로 `ModalNavigationDrawer` 카테고리 목록을 열고 고르면 자동으로 닫힘.
+- **프로필 "아이디 변경" 기능 신규**: `usernames/{customId}` create-only 영구 잠금 규칙([[DECISIONS.md]] 655행)을 깨지 않는 절충안으로 구현 — (1) `AccountSyncClient.claimUsername`(기존 함수 재사용)으로 새 아이디 선점 → (2) 데스크탑 `AuthManager.changeCustomId`(REST `accounts:update`의 `email` 필드)/안드로이드 `AuthManager.changeCustomId`(Firebase SDK `updateEmail`)로 로그인 이메일 교체 → (3) 신규 `AccountSyncClient.updateCustomId`로 `profile.customId` PATCH. 저장 전 현재 비밀번호 재입력으로 본인 확인(`AuthManager.signIn` 재사용). 옛 아이디는 규칙상 영구히 지울 수 없어 같은 uid를 계속 가리키는 채로 남김(사칭 위험 없음, 검색 시 옛 아이디로도 계속 본인이 나오는 부작용은 안내 문구로 고지). 관리자 계정(`BEULTAEON`)은 변경 UI 자체를 숨김. `CUSTOM_ID_REGEX`/`idPattern`을 각 플랫폼 `AccountGateScreen.kt`에서 `private`→공개로 완화해 재사용.
+- 미반영 후속 과제(다음 세션): DM 미리보기 라벨(`peerLabel`)이 상대의 customId를 스냅샷 캐싱하고 있어 상대가 아이디를 바꾸면 스테일해지는 문제 — [[BUGS.md]]/[[IDEAS.md]] 참고.
+
+## 2026-09-12 (111차 후속 세션) — 컴파일 확인 + 빌드/배포 + GitHub 게시
+
+직전 111차 세션이 Gradle 실행 불가 환경이라 못 했던 검증/배포를 이어서 처리.
+
+- 양 플랫폼 `compileKotlin`/`compileDebugKotlin` 정상 통과 확인(에러 없음, 기존부터 있던 경고만 존재).
+- android `assembleRelease`(versionCode `1789141469`) 빌드 후 3위치(`AndroidBuilds\phone-lock-app-release.apk`, OneDrive 원본, `vm-build-output\android`) 배포 완료.
+- desktop `packageMsi createDistributable`(BuildInfo `1789141595`) 빌드 후 호스트(`C:\Users\sunae\PhoneLockDesktopApp`)+`vm-build-output\PhoneLockDesktop` 배포+재기동 완료. 배포 중 데스크탑 앱 인메모리 워치독이 `Stop-Process` 직후 자동 재기동해 robocopy가 `ERROR 32`로 재시도 루프에 빠졌던 것은 문서화된 절차대로 `Stop-Process` 재실행 후 즉시 재시도로 해결(신규 버그 아님).
+- `sync-public-repo.ps1`로 공개 저장소(`study-planner`) 소스 동기화 + GitHub 릴리스 2건(`android-1789141469`, `desktop-1789141595`) 게시 완료.
+
+---
+
 ## 2026-09-12 (110차 세션) — "식물" 탭 500레벨 등급/칭호 체계 전면 재설계 + 등급별 하늘/땅/나무 일러스트·애니메이션 전면 개편
 
 109차까지의 EXP 대기/적용 시스템(HUD·애니메이션·효과음)은 그대로 두고, 이번엔 **레벨/칭호 테이블과 식물 일러스트 자체**를 다시 설계.

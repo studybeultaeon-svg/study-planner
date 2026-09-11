@@ -250,7 +250,8 @@ private fun LoadingScreen() {
     }
 }
 
-private val idPattern = Regex("^[A-Za-z0-9]{3,20}$")
+// 118차: 설정 > 프로필의 "아이디 변경"에서도 같은 검증 규칙을 써야 해서 파일 전용(private)에서 풀었다.
+val idPattern = Regex("^[A-Za-z0-9]{3,20}$")
 
 /** 게스트 아이디 입력칸을 숨기기 위한 자리표시자 — 실제 제출값은 항상 [randomGuestId]로 새로 뽑는다. */
 private const val GUEST_ID_PLACEHOLDER = "GUEST"

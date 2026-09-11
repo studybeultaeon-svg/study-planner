@@ -55,28 +55,28 @@ import java.util.concurrent.TimeUnit
 /** 하단 탭은 "관리앱"(그룹/통계)/"공부앱"(타이머/캘린더/계산기)/"설정" 3개로만 두고, 그 안을
  * 서브탭으로 나눈다 — 데스크탑판(왼쪽 사이드바 + 서브탭)과 같은 2단 구조를 모바일에서는 하단 탭으로 구현. */
 private sealed class Tab(val route: String, val label: String, val emoji: String) {
-    object Manage : Tab("manage", "관리", "🗂️")
-    object Study : Tab("study", "공부", "📘")
+    object Home : Tab("home", "홈", "🌱")
     object Routine : Tab("routine", "루틴", "📋")
-    object Plant : Tab("plant", "식물", "🌱")
+    object Study : Tab("study", "공부", "📘")
+    object Manage : Tab("manage", "규칙", "🗂️")
     object Group : Tab("group", "소셜", "👥")
+    // 118차부터 설정은 탭이 아니라 홈 화면 우상단 버튼으로만 들어가는 독립 라우트 — visibleTabs()엔
+    // 포함하지 않지만 NavHost 등록/네비게이션 대상으로는 그대로 쓴다.
     object Settings : Tab("settings", "설정", "⚙️")
 }
 
-/** 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임/식물)에 맞춰 보이는 탭만 남긴다 — 설정은 항상 보임
- *  (로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 [AppPreferences]가 전부 true를
+/** 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임)에 맞춰 보이는 탭만 남긴다 — 홈은 설정 진입점이
+ *  이 화면에만 있으므로 항상 맨 앞에 보인다. 옛 승인 사용자는 필드가 없으면 [AppPreferences]가 전부 true를
  *  기본값으로 주므로 이 필터링으로 인한 회귀는 없다. */
 private fun visibleTabs(prefs: AppPreferences): List<Tab> = listOfNotNull(
+    Tab.Home,
     Tab.Routine.takeIf { prefs.permRoutine },
     Tab.Study.takeIf { prefs.permStudy },
     Tab.Manage.takeIf { prefs.permManage },
     // 98차(사용자 요청): 게스트(익명 계정)는 소셜 탭을 아예 못 쓰게 한다 — 서버 profile.permissions가
     // 아직 없으면(하위호환) 전부 true로 취급하는 fromProfile() 기본값 때문에 이 조건 없이는 게스트도
     // 그냥 소셜 탭이 보였다.
-    Tab.Group.takeIf { prefs.permSocial && com.phonelock.app.service.AuthManager.currentUser?.isAnonymous != true },
-    // 105차 후속(사용자 요청): 관리자 패널에서 제한 가능한 권한으로 승격, 소셜 오른쪽에 배치.
-    Tab.Plant.takeIf { prefs.permPlant },
-    Tab.Settings
+    Tab.Group.takeIf { prefs.permSocial && com.phonelock.app.service.AuthManager.currentUser?.isAnonymous != true }
 )
 
 class MainActivity : ComponentActivity() {
@@ -233,8 +233,12 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             composable(Tab.Routine.route) {
                 RoutineScreen(repository)
             }
-            composable(Tab.Plant.route) {
-                PlantScreen(repository)
+            composable(Tab.Home.route) {
+                PlantScreen(
+                    repository,
+                    permPlant = prefs.permPlant,
+                    onOpenSettings = { navController.navigate(Tab.Settings.route) }
+                )
             }
             composable(Tab.Group.route) {
                 SocialGroupScreen(
@@ -286,7 +290,8 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                 SettingsScreen(
                     repository,
                     onNavigateToStudyLockApps = { navController.navigate("study_lock_apps") },
-                    onThemeChange = onThemeChange
+                    onThemeChange = onThemeChange,
+                    onClose = { navController.popBackStack() }
                 )
             }
             composable("study_lock_apps") {
@@ -295,40 +300,18 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
         }
     }
 
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = backStackEntry?.destination
+    // 설정은 118차부터 탭이 아니라 홈의 원형 버튼으로만 들어가는 전용 화면이라, 그 위에 있는 동안은
+    // 하단 탭/좌측 레일을 아예 숨겨 카테고리→세부설정 흐름에 화면을 온전히 내준다.
+    val onSettingsRoute = currentDestination?.hierarchy?.any { it.route == Tab.Settings.route } == true
+
     if (isTablet) {
         Row(Modifier.fillMaxSize()) {
-            androidx.compose.material3.NavigationRail {
-                val backStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = backStackEntry?.destination
-                tabs.forEach { tab ->
-                    androidx.compose.material3.NavigationRailItem(
-                        selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true,
-                        onClick = {
-                            navController.navigate(tab.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = { Text(tab.emoji) },
-                        label = { Text(tab.label) }
-                    )
-                }
-            }
-            Column(Modifier.weight(1f).fillMaxSize()) {
-                pendingUpdateApkUrl?.let { url -> UpdateBanner(url) }
-                navHostContent(Modifier.weight(1f))
-            }
-        }
-    } else {
-        Scaffold(
-            bottomBar = {
-                NavigationBar {
-                    val backStackEntry by navController.currentBackStackEntryAsState()
-                    val currentDestination = backStackEntry?.destination
-
+            if (!onSettingsRoute) {
+                androidx.compose.material3.NavigationRail {
                     tabs.forEach { tab ->
-                        NavigationBarItem(
+                        androidx.compose.material3.NavigationRailItem(
                             selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true,
                             onClick = {
                                 navController.navigate(tab.route) {
@@ -340,6 +323,33 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                             icon = { Text(tab.emoji) },
                             label = { Text(tab.label) }
                         )
+                    }
+                }
+            }
+            Column(Modifier.weight(1f).fillMaxSize()) {
+                pendingUpdateApkUrl?.let { url -> UpdateBanner(url) }
+                navHostContent(Modifier.weight(1f))
+            }
+        }
+    } else {
+        Scaffold(
+            bottomBar = {
+                if (!onSettingsRoute) {
+                    NavigationBar {
+                        tabs.forEach { tab ->
+                            NavigationBarItem(
+                                selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true,
+                                onClick = {
+                                    navController.navigate(tab.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                icon = { Text(tab.emoji) },
+                                label = { Text(tab.label) }
+                            )
+                        }
                     }
                 }
             }
