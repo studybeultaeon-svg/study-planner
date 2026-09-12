@@ -305,7 +305,11 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                                 val (chatId, peerUid, peerLabel) = dmChat
                                 DmChatScreen(repository, chatId, peerUid, peerLabel, onBack = { selectedDmChat = null })
                             } else if (groupId != null) {
-                                SocialGroupMembersScreen(repository, groupId, onBack = { selectedSocialGroupId = null })
+                                SocialGroupMembersScreen(
+                                    repository, groupId,
+                                    onOpenDm = { chatId, peerUid, peerLabel -> selectedDmChat = Triple(chatId, peerUid, peerLabel) },
+                                    onBack = { selectedSocialGroupId = null }
+                                )
                             } else {
                                 SocialGroupScreen(
                                     repository,

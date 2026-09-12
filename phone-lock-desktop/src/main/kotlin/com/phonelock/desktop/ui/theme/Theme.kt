@@ -49,10 +49,10 @@ private fun colorSchemeFor(palette: PhoneLockPalette) = if (palette.isDark) {
 
 /**
  * 앱 테마(설정 화면에서 고름, ThemeMode 3종). 모든 화면은 MaterialTheme 대신 이걸로 감싼다.
- * themeMode를 생략하면 기본값(화이트+오렌지, 104차 후속)을 쓴다.
+ * themeMode를 생략하면 기본값(라이트+그린, 112차부터)을 쓴다.
  */
 @Composable
-fun PhoneLockTheme(themeMode: String = ThemeMode.LIGHT_ORANGE, content: @Composable () -> Unit) {
+fun PhoneLockTheme(themeMode: String = ThemeMode.LIGHT_GREEN, content: @Composable () -> Unit) {
     PhoneLockTheme(paletteFor(themeMode), content)
 }
 

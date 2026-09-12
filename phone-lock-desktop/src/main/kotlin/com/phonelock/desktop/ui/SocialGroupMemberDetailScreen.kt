@@ -92,6 +92,7 @@ fun SocialGroupMemberDetailScreen(
     member: SocialGroupSyncClient.MemberStats,
     isSelf: Boolean,
     onNudge: () -> Unit,
+    onOpenDm: (String, String, String) -> Unit = { _, _, _ -> },
     onSendVoice: (ByteArray, Long) -> Unit = { _, _ -> },
     onSendText: (String) -> Unit = {},
     onShareSettingsChanged: () -> Unit = {}
@@ -106,9 +107,18 @@ fun SocialGroupMemberDetailScreen(
 
     Column(Modifier.fillMaxSize().background(socialGradientBackground()).verticalScroll(rememberScrollState()).padding(Spacing.md)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            MemberHeaderCard(member.displayName, member.updatedAt, Modifier.weight(1f))
+            MemberHeaderCard(member.displayName, member.updatedAt, Modifier.weight(1f), profileImage = member.profileImage)
             if (!isSelf) {
                 Spacer(Modifier.width(Spacing.sm))
+                TextButton(onClick = {
+                    val url = repository.fbDatabaseUrl
+                    val key = repository.fbApiKey
+                    Thread {
+                        com.phonelock.desktop.monitor.ChatSyncClient.ensureDmChat(url, key, member.uid, member.displayName).onSuccess { chatId ->
+                            onOpenDm(chatId, member.uid, member.displayName)
+                        }
+                    }.start()
+                }) { Text("💬 DM") }
                 Button(onClick = { wakeStep = "options" }) { Text("😴 깨우기") }
             }
         }
@@ -169,13 +179,21 @@ fun SocialGroupMemberDetailScreen(
         var studySubTab by remember { mutableStateOf(0) }
 
         TabRow(selectedTabIndex = section, containerColor = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
-            Tab(selected = section == 0, onClick = { section = 0 }, text = { Text("📋 루틴") })
-            Tab(selected = section == 1, onClick = { section = 1 }, text = { Text("📘 공부") })
+            Tab(selected = section == 0, onClick = { section = 0 }, text = { Text("🏠 홈") })
+            Tab(selected = section == 1, onClick = { section = 1 }, text = { Text("📋 루틴") })
+            Tab(selected = section == 2, onClick = { section = 2 }, text = { Text("📘 공부") })
         }
         Spacer(Modifier.height(Spacing.sm))
 
         when (section) {
             0 -> {
+                if (!member.sharePlant) {
+                    Text("비공개", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    MemberHomeTab(member)
+                }
+            }
+            1 -> {
                 TabRow(selectedTabIndex = routineSubTab, containerColor = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
                     Tab(selected = routineSubTab == 0, onClick = { routineSubTab = 0 }, text = { Text("오늘") })
                     Tab(selected = routineSubTab == 1, onClick = { routineSubTab = 1 }, text = { Text("🔥 연속 기록") })
@@ -188,7 +206,7 @@ fun SocialGroupMemberDetailScreen(
                     else -> MemberRoutineStatsTab(member)
                 }
             }
-            1 -> {
+            2 -> {
                 if (member.shareStudy || member.shareStudyingNow) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (member.shareStudy) {
@@ -261,7 +279,7 @@ fun SocialGroupMemberDetailScreen(
 }
 
 @Composable
-private fun MemberHeaderCard(displayName: String, updatedAt: Long, modifier: Modifier = Modifier) {
+private fun MemberHeaderCard(displayName: String, updatedAt: Long, modifier: Modifier = Modifier, profileImage: String? = null) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -274,12 +292,17 @@ private fun MemberHeaderCard(displayName: String, updatedAt: Long, modifier: Mod
                 color = MaterialTheme.colorScheme.primary
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        displayName.take(1).uppercase(),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontWeight = FontWeight.Bold
-                    )
+                    val emoji = com.phonelock.desktop.ui.components.AvatarCatalog.emojiFor(profileImage)
+                    if (emoji != null) {
+                        Text(emoji, style = MaterialTheme.typography.titleLarge)
+                    } else {
+                        Text(
+                            displayName.take(1).uppercase(),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
             Spacer(Modifier.width(Spacing.md))
@@ -291,6 +314,57 @@ private fun MemberHeaderCard(displayName: String, updatedAt: Long, modifier: Mod
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                 )
             }
+        }
+    }
+}
+
+/** 등급(tier)별 톤 — [com.phonelock.shared.GrowthSystem.Stage.tier]와 같은 5단계 매핑
+ *  (안드로이드판과 대칭). */
+private fun tierColor(tier: Int): Color = when (tier) {
+    0 -> Color(0xFF66BB6A)
+    1 -> Color(0xFF8FA08A)
+    2 -> Color(0xFF7846C8)
+    3 -> Color(0xFFC0392B)
+    4 -> Color(0xFF6A1B9A)
+    else -> Color(0xFF66BB6A)
+}
+
+private fun tierLabel(tier: Int): String = when (tier) {
+    0 -> "정상"
+    1 -> "이상함"
+    2 -> "초월급"
+    3 -> "종말급"
+    4 -> "최강자급"
+    else -> "정상"
+}
+
+/**
+ * "홈" 탭(112차, 모임원 상세에 홈 화면 추가, 안드로이드판과 대칭) — 라이브 [PlantScreen]의 애니메이션
+ * 전체를 그대로 재사용하지 않고(다른 탭들과 같은 이유: 읽기전용 요약), [SocialGroupSyncClient.MemberStats]에
+ * 담긴 레벨/칭호/등급/진행률/환생 횟수 스냅샷만 카드 형태로 보여준다.
+ */
+@Composable
+private fun MemberHomeTab(member: SocialGroupSyncClient.MemberStats) {
+    val color = tierColor(member.plantTier)
+    Column(Modifier.fillMaxWidth()) {
+        Surface(shape = MaterialTheme.shapes.medium, color = color.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(Spacing.md), verticalAlignment = Alignment.CenterVertically) {
+                CircularPercentGauge(percent = (member.plantProgress * 100).toInt(), color = color)
+                Spacer(Modifier.width(Spacing.md))
+                Column {
+                    Text(
+                        "Lv.${member.plantLevel} · ${member.plantTitle.ifBlank { "씨앗" }}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    SectionPill(tierLabel(member.plantTier), color = color)
+                }
+            }
+        }
+        Spacer(Modifier.height(Spacing.sm))
+        if (member.plantRebirthCount > 0) {
+            Text("🔁 환생 ${member.plantRebirthCount}회", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -680,8 +754,6 @@ private fun MemberStudyStatsTab(member: SocialGroupSyncClient.MemberStats) {
         if (dayTasks.count { it.status == "O" } == dayTasks.size) streak++ else break
     }
 
-    val stageCounts = member.schedule.groupBy { it.color }.mapValues { it.value.size }
-
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             MemberStatTile("오늘 일정", "${todayTasks.size}개", Modifier.weight(1f))
@@ -690,17 +762,6 @@ private fun MemberStudyStatsTab(member: SocialGroupSyncClient.MemberStats) {
         }
         Spacer(Modifier.height(Spacing.sm))
         MemberStatTile("연속 완료일(최근 범위 내)", "${streak}일", Modifier.fillMaxWidth())
-        if (stageCounts.isNotEmpty()) {
-            Spacer(Modifier.height(Spacing.sm))
-            Text("복습 단계별 일정 수", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(Spacing.xs))
-            stageCounts.entries.sortedByDescending { it.value }.forEach { (stage, count) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(stage, style = MaterialTheme.typography.bodySmall, color = stageTextColor(stage))
-                    Text("${count}개", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
     }
 }
 
