@@ -48,6 +48,8 @@ object SocialGroupSyncClient {
     data class MemberStats(
         val uid: String,
         val displayName: String,
+        /** 프로필 사진 프리셋 id(119차) — [com.phonelock.app.ui.components.AvatarCatalog] 참고, 없으면 null. */
+        val profileImage: String?,
         val updatedAt: Long,
         val shareRoutines: Boolean,
         val shareStudy: Boolean,
@@ -68,7 +70,14 @@ object SocialGroupSyncClient {
         /** "루틴 - 통계" 탭의 최고 스트릭 타일용. */
         val routineBestStreak: Int?,
         /** 이 사람이 "내 정보 숨기기"로 지정한 상대 uid 목록 — 이 목록에 내 uid가 있으면 위 항목을 전부 "비공개"로 취급한다. */
-        val hiddenFromUids: Set<String>
+        val hiddenFromUids: Set<String>,
+        /** "홈"(식물 성장) 탭 공유 여부 및 스냅샷(119차, 모임원 상세에 홈 탭 추가) — GrowthSystem 기준 레벨/칭호/등급. */
+        val sharePlant: Boolean = false,
+        val plantLevel: Int? = null,
+        val plantTitle: String? = null,
+        val plantTier: Int? = null,
+        val plantProgress: Float? = null,
+        val plantRebirthCount: Int? = null
     )
 
     data class NudgeInfo(val groupId: String, val fromUid: String, val fromName: String, val sentAtMillis: Long)
@@ -488,12 +497,15 @@ object SocialGroupSyncClient {
      *  용도라 그 자체는 "공개할 정보"가 아니라 접근제어 메타데이터이기 때문). */
     suspend fun pushMyStats(
         databaseUrl: String?, apiKey: String?, groupId: String, displayName: String,
+        profileImage: String,
         shareRoutines: Boolean, shareStudy: Boolean, shareStreak: Boolean,
         shareSchedule: Boolean, shareStudyingNow: Boolean,
         routines: List<RoutineStat>, studyTodaySeconds: Int, studyProgressPercent: Int, streak: Int, routineBestStreak: Int,
         schedule: List<ScheduleStat>, calcTasks: List<CalcTaskStat>, studySecondsByDate: Map<String, Int>,
         studyingNow: Boolean, studyingTaskName: String,
-        hiddenFromUids: Set<String>
+        hiddenFromUids: Set<String>,
+        sharePlant: Boolean = false, plantLevel: Int = 1, plantTitle: String = "", plantTier: Int = 0,
+        plantProgress: Float = 0f, plantRebirthCount: Int = 0
     ) {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         withContext(Dispatchers.IO) {
@@ -502,6 +514,7 @@ object SocialGroupSyncClient {
                 val base = databaseUrl.trimEnd('/')
                 val body = JSONObject().apply {
                     put("displayName", displayName)
+                    if (profileImage.isNotBlank()) put("profileImage", profileImage)
                     put("updatedAt", System.currentTimeMillis())
                     put("shareRoutines", shareRoutines)
                     put("shareStudy", shareStudy)
@@ -562,6 +575,14 @@ object SocialGroupSyncClient {
                         put("studyingNow", studyingNow)
                         put("studyingTaskName", studyingTaskName)
                     }
+                    put("sharePlant", sharePlant)
+                    if (sharePlant) {
+                        put("plantLevel", plantLevel)
+                        put("plantTitle", plantTitle)
+                        put("plantTier", plantTier)
+                        put("plantProgress", plantProgress)
+                        put("plantRebirthCount", plantRebirthCount)
+                    }
                 }
                 putJson(URL("$base/groups/$groupId/stats/$uid.json?auth=$token"), body)
             }
@@ -588,6 +609,7 @@ object SocialGroupSyncClient {
                     MemberStats(
                         uid = memberUid,
                         displayName = s.optString("displayName", "사용자"),
+                        profileImage = s.optString("profileImage", "").takeIf { it.isNotBlank() },
                         updatedAt = s.optLong("updatedAt", 0L),
                         shareRoutines = shareRoutines,
                         shareStudy = shareStudy,
@@ -642,7 +664,13 @@ object SocialGroupSyncClient {
                         studyingNow = if (shareStudyingNow) s.optBoolean("studyingNow", false) else null,
                         studyingTaskName = if (shareStudyingNow) s.optString("studyingTaskName", "") else null,
                         routineBestStreak = if (shareStreak) s.optInt("routineBestStreak", 0) else null,
-                        hiddenFromUids = (0 until hiddenArr.length()).map { hiddenArr.getString(it) }.toSet()
+                        hiddenFromUids = (0 until hiddenArr.length()).map { hiddenArr.getString(it) }.toSet(),
+                        sharePlant = s.optBoolean("sharePlant", false),
+                        plantLevel = if (s.optBoolean("sharePlant", false)) s.optInt("plantLevel", 1) else null,
+                        plantTitle = if (s.optBoolean("sharePlant", false)) s.optString("plantTitle", "") else null,
+                        plantTier = if (s.optBoolean("sharePlant", false)) s.optInt("plantTier", 0) else null,
+                        plantProgress = if (s.optBoolean("sharePlant", false)) s.optDouble("plantProgress", 0.0).toFloat() else null,
+                        plantRebirthCount = if (s.optBoolean("sharePlant", false)) s.optInt("plantRebirthCount", 0) else null
                     )
                 }.toList()
             }.getOrDefault(emptyList())

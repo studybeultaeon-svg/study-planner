@@ -85,7 +85,8 @@ private data class MemberRow(
     val weekRate: Int?,
     val streak: Int?,
     val hasStats: Boolean,
-    val shareRoutines: Boolean
+    val shareRoutines: Boolean,
+    val profileImage: String? = null
 )
 
 /** 멤버 이름 첫 글자를 원형 배지로(데스크탑판 MemberAvatar와 대칭). 82차(§6 UX 폴리싱): 전원이 같은
@@ -93,7 +94,7 @@ private data class MemberRow(
  *  하나를 고정 배정해(같은 사람은 항상 같은 색) 목록에 시각적 구분을 준다. 하드코딩 hex 대신 테마
  *  컬러스킴을 쓰므로 10종 테마 어느 걸 골라도 자동으로 어울린다. */
 @Composable
-private fun MemberAvatar(name: String) {
+private fun MemberAvatar(name: String, profileImage: String? = null) {
     val trimmed = name.trim()
     val idx = (trimmed.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }) % 3
     val (bg, fg) = when (idx) {
@@ -101,11 +102,16 @@ private fun MemberAvatar(name: String) {
         1 -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
         else -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
     }
+    val emoji = com.phonelock.app.ui.components.AvatarCatalog.emojiFor(profileImage)
     Box(
         modifier = Modifier.size(40.dp).clip(CircleShape).background(bg),
         contentAlignment = Alignment.Center
     ) {
-        Text(trimmed.firstOrNull()?.uppercase() ?: "?", style = MaterialTheme.typography.titleSmall, color = fg)
+        if (emoji != null) {
+            Text(emoji, style = MaterialTheme.typography.titleMedium)
+        } else {
+            Text(trimmed.firstOrNull()?.uppercase() ?: "?", style = MaterialTheme.typography.titleSmall, color = fg)
+        }
     }
 }
 
@@ -119,6 +125,7 @@ fun SocialGroupMembersScreen(
     repository: PhoneLockRepository,
     groupId: String,
     onOpenMember: (String) -> Unit,
+    onOpenDm: (String, String, String) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -213,7 +220,7 @@ fun SocialGroupMembersScreen(
                     val weekTasks = s.schedule?.filter { it.dateKey in weekAgoKey..todayKey } ?: emptyList()
                     if (weekTasks.isNotEmpty()) weekTasks.count { it.status == "O" } * 100 / weekTasks.size else null
                 } else null
-                MemberRow(m.uid, s?.displayName ?: m.displayName, rate, weekRate, if (s?.shareStreak == true) s.streak else null, s != null, s?.shareRoutines == true)
+                MemberRow(m.uid, s?.displayName ?: m.displayName, rate, weekRate, if (s?.shareStreak == true) s.streak else null, s != null, s?.shareRoutines == true, s?.profileImage)
             }.sortedWith(compareBy { it.todayRate ?: -1 })
             groupGoalTodaySeconds = stats.values.filter { it.shareStudy }.sumOf { it.studyTodaySeconds ?: 0 }
             announcement = repository.readSocialGroupAnnouncement(groupId)
@@ -624,7 +631,7 @@ fun SocialGroupMembersScreen(
                             Modifier.fillMaxWidth().padding(Spacing.md),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            MemberAvatar(row.displayName)
+                            MemberAvatar(row.displayName, row.profileImage)
                             Spacer(Modifier.width(Spacing.sm))
                             Column(Modifier.weight(1f)) {
                                 Text(row.displayName + if (row.uid == myUid) " (나)" else "", style = MaterialTheme.typography.titleMedium)
@@ -648,6 +655,18 @@ fun SocialGroupMembersScreen(
                                 SectionPill(percentLabel)
                             }
                             if (row.uid != myUid) {
+                                IconButton(
+                                    onClick = {
+                                        scope.launch {
+                                            repository.ensureDmChat(row.uid, row.displayName).onSuccess { chatId ->
+                                                onOpenDm(chatId, row.uid, row.displayName)
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.semantics {
+                                        contentDescription = "${row.displayName}에게 DM 보내기"
+                                    }
+                                ) { Text("💬") }
                                 IconButton(
                                     onClick = {
                                         wakeTarget = row.uid to row.displayName
@@ -691,7 +710,7 @@ fun SocialGroupMembersScreen(
                                 )
                             }
                         } else {
-                            SocialGroupMemberDetailScreen(repository, groupId, uid, onBack = { selectedUid = null })
+                            SocialGroupMemberDetailScreen(repository, groupId, uid, onOpenDm = onOpenDm, onBack = { selectedUid = null })
                         }
                     }
                 }

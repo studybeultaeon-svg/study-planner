@@ -42,11 +42,6 @@ class AppPreferences(context: Context) {
         get() = prefs.getFloat("font_scale", 1.0f)
         set(value) = prefs.edit().putFloat("font_scale", value).apply()
 
-    /** 발견된 새 릴리스의 노트(GitHub Release body) — 업데이트 배너에 "이번 업데이트 내용"으로 표시(82차). */
-    var updateAvailableReleaseNotes: String
-        get() = prefs.getString("update_available_release_notes", "") ?: ""
-        set(value) = prefs.edit().putString("update_available_release_notes", value).apply()
-
     // ---- 자동 백업/정리(82차, §9 "자동 백업 클라우드 업로드"/"12개월 정리 자동 스케줄") ----
     /** 매일 1회 전체 데이터를 Firebase Storage에 자동 업로드할지 — 기본 off(로그인 필요, 데이터 사용량 발생). */
     var cloudBackupEnabled: Boolean
@@ -197,7 +192,7 @@ class AppPreferences(context: Context) {
     /** 앱 전체 테마 선택(설정 화면) — ThemeMode.LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE. 데스크탑판과 달리
      *  Room이 아니라 다른 설정들처럼 SharedPreferences에 둔다. */
     var themeMode: String
-        get() = prefs.getString("theme_mode", "LIGHT_ORANGE") ?: "LIGHT_ORANGE"
+        get() = prefs.getString("theme_mode", "LIGHT_GREEN") ?: "LIGHT_GREEN"
         set(value) = prefs.edit().putString("theme_mode", value).apply()
 
     /** 커스텀 테마(79차, 사용자 요청)용 배경/포인트 색 — "#RRGGBB" 문자열, 데스크탑판과 동일 구조. */
@@ -399,7 +394,9 @@ class AppPreferences(context: Context) {
         /** 오늘 캘린더 일정 목록(이름+완료여부). */
         val shareSchedule: Boolean = true,
         /** 지금 공부 중(뽀모도로 포함)인지 여부 + 업무 이름. */
-        val shareStudyingNow: Boolean = true
+        val shareStudyingNow: Boolean = true,
+        /** "홈"(식물 성장 레벨/칭호/등급) 공유 여부(119차, 모임원 상세 홈 탭 추가). */
+        val sharePlant: Boolean = true
     )
 
     /** 모임ID -> 공유 설정(JSON 객체 문자열) — nudgeLastSeenByGroupJson과 동일한 맵 저장 패턴. */
@@ -414,7 +411,8 @@ class AppPreferences(context: Context) {
             shareStudy = g.optBoolean("shareStudy", true),
             shareStreak = g.optBoolean("shareStreak", true),
             shareSchedule = g.optBoolean("shareSchedule", true),
-            shareStudyingNow = g.optBoolean("shareStudyingNow", true)
+            shareStudyingNow = g.optBoolean("shareStudyingNow", true),
+            sharePlant = g.optBoolean("sharePlant", true)
         )
     }
 
@@ -426,6 +424,7 @@ class AppPreferences(context: Context) {
             put("shareStreak", settings.shareStreak)
             put("shareSchedule", settings.shareSchedule)
             put("shareStudyingNow", settings.shareStudyingNow)
+            put("sharePlant", settings.sharePlant)
         })
         groupShareSettingsJson = json.toString()
     }

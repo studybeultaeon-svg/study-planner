@@ -181,6 +181,21 @@ object AccountSyncClient {
         }
     }
 
+    /** 프로필 사진(119차) — 갤러리 업로드 대신 앱이 제공하는 프리셋 동물 아바타 id만 저장한다
+     *  ([com.phonelock.app.ui.components.AvatarCatalog] 참고, Firebase Storage 불필요). */
+    suspend fun updateProfileImage(databaseUrl: String?, apiKey: String?, avatarId: String): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, uid) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+                val base = databaseUrl.trimEnd('/')
+                sendPatch(URL("$base/users/$uid/profile.json?auth=$token"), JSONObject().apply { put("profileImage", avatarId) })
+            }
+        }
+    }
+
     /**
      * 아이디 변경(118차, 데스크탑판과 대칭) — 호출 순서: (1) [claimUsername]으로 새 아이디 선점 →
      * (2) [AuthManager.changeCustomId]로 로그인 이메일 교체 → (3) 이 함수로 profile.customId를 PATCH.

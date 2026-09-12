@@ -108,6 +108,7 @@ fun SocialGroupMemberDetailScreen(
     repository: PhoneLockRepository,
     groupId: String,
     targetUid: String,
+    onOpenDm: (String, String, String) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -142,6 +143,13 @@ fun SocialGroupMemberDetailScreen(
             title = { Text(displayName) },
             actions = {
                 if (targetUid != myUid) {
+                    TextButton(onClick = {
+                        scope.launch {
+                            repository.ensureDmChat(targetUid, displayName).onSuccess { chatId ->
+                                onOpenDm(chatId, targetUid, displayName)
+                            }
+                        }
+                    }) { Text("💬 DM") }
                     Button(onClick = { wakeStep = "options" }) { Text("😴 깨우기") }
                 }
             }
@@ -165,7 +173,7 @@ fun SocialGroupMemberDetailScreen(
                 return@Column
             }
 
-            MemberHeaderCard(displayName = displayName, updatedAt = s.updatedAt)
+            MemberHeaderCard(displayName = displayName, updatedAt = s.updatedAt, profileImage = s.profileImage)
             Spacer(Modifier.height(Spacing.md))
 
             if (targetUid != myUid) {
@@ -222,13 +230,21 @@ fun SocialGroupMemberDetailScreen(
             var studySubTab by remember { mutableStateOf(0) }
 
             TabRow(selectedTabIndex = section) {
-                Tab(selected = section == 0, onClick = { section = 0 }, text = { Text("📋 루틴") })
-                Tab(selected = section == 1, onClick = { section = 1 }, text = { Text("📘 공부") })
+                Tab(selected = section == 0, onClick = { section = 0 }, text = { Text("🏠 홈") })
+                Tab(selected = section == 1, onClick = { section = 1 }, text = { Text("📋 루틴") })
+                Tab(selected = section == 2, onClick = { section = 2 }, text = { Text("📘 공부") })
             }
             Spacer(Modifier.height(Spacing.sm))
 
             when (section) {
                 0 -> {
+                    if (!s.sharePlant) {
+                        Text("비공개", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        MemberHomeTab(s)
+                    }
+                }
+                1 -> {
                     TabRow(selectedTabIndex = routineSubTab) {
                         Tab(selected = routineSubTab == 0, onClick = { routineSubTab = 0 }, text = { Text("오늘") })
                         Tab(selected = routineSubTab == 1, onClick = { routineSubTab = 1 }, text = { Text("🔥 연속 기록") })
@@ -242,7 +258,7 @@ fun SocialGroupMemberDetailScreen(
                         MemberRoutineStatsTab(s)
                     }
                 }
-                1 -> {
+                2 -> {
                     if (s.shareStudy || s.shareStudyingNow) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (s.shareStudy) {
@@ -340,7 +356,7 @@ fun SocialGroupMemberDetailScreen(
 }
 
 @Composable
-private fun MemberHeaderCard(displayName: String, updatedAt: Long) {
+private fun MemberHeaderCard(displayName: String, updatedAt: Long, profileImage: String? = null) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -353,12 +369,17 @@ private fun MemberHeaderCard(displayName: String, updatedAt: Long) {
                 color = MaterialTheme.colorScheme.primary
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        displayName.take(1).uppercase(),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontWeight = FontWeight.Bold
-                    )
+                    val emoji = com.phonelock.app.ui.components.AvatarCatalog.emojiFor(profileImage)
+                    if (emoji != null) {
+                        Text(emoji, style = MaterialTheme.typography.titleLarge)
+                    } else {
+                        Text(
+                            displayName.take(1).uppercase(),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
             Spacer(Modifier.width(Spacing.md))
@@ -370,6 +391,59 @@ private fun MemberHeaderCard(displayName: String, updatedAt: Long) {
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                 )
             }
+        }
+    }
+}
+
+/** 등급(tier)별 톤 — [com.phonelock.shared.GrowthSystem.Stage.tier]와 같은 5단계 매핑
+ *  (PlantScreen.kt의 GroundScene 하늘색 계열과 비슷한 톤을 가볍게 재사용). */
+private fun tierColor(tier: Int): Color = when (tier) {
+    0 -> Color(0xFF66BB6A)
+    1 -> Color(0xFF8FA08A)
+    2 -> Color(0xFF7846C8)
+    3 -> Color(0xFFC0392B)
+    4 -> Color(0xFF6A1B9A)
+    else -> Color(0xFF66BB6A)
+}
+
+private fun tierLabel(tier: Int): String = when (tier) {
+    0 -> "정상"
+    1 -> "이상함"
+    2 -> "초월급"
+    3 -> "종말급"
+    4 -> "최강자급"
+    else -> "정상"
+}
+
+/**
+ * "홈" 탭(119차, 모임원 상세에 홈 화면 추가) — 라이브 [PlantScreen]의 애니메이션 전체를 그대로
+ * 재사용하지 않고(다른 탭들과 같은 이유: 읽기전용 요약, 사용자 확인), [SocialGroupSyncClient.MemberStats]에
+ * 담긴 레벨/칭호/등급/진행률/환생 횟수 스냅샷만 카드 형태로 보여준다.
+ */
+@Composable
+private fun MemberHomeTab(s: SocialGroupSyncClient.MemberStats) {
+    val level = s.plantLevel ?: 1
+    val title = s.plantTitle?.takeIf { it.isNotBlank() } ?: "씨앗"
+    val tier = s.plantTier ?: 0
+    val progress = s.plantProgress ?: 0f
+    val rebirthCount = s.plantRebirthCount ?: 0
+    val color = tierColor(tier)
+
+    Column(Modifier.fillMaxWidth()) {
+        Surface(shape = MaterialTheme.shapes.medium, color = color.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(Spacing.md), verticalAlignment = Alignment.CenterVertically) {
+                CircularPercentGauge(percent = (progress * 100).toInt(), color = color)
+                Spacer(Modifier.width(Spacing.md))
+                Column {
+                    Text("Lv.$level · $title", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(2.dp))
+                    SectionPill(tierLabel(tier), color = color)
+                }
+            }
+        }
+        Spacer(Modifier.height(Spacing.sm))
+        if (rebirthCount > 0) {
+            Text("🔁 환생 ${rebirthCount}회", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -789,8 +863,6 @@ private fun MemberStudyStatsTab(s: SocialGroupSyncClient.MemberStats) {
         if (dayTasks.count { it.status == "O" } == dayTasks.size) streak++ else break
     }
 
-    val stageCounts = schedule.groupBy { it.color }.mapValues { it.value.size }
-
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             MemberStatTile("오늘 일정", "${todayTasks.size}개", Modifier.weight(1f))
@@ -799,17 +871,6 @@ private fun MemberStudyStatsTab(s: SocialGroupSyncClient.MemberStats) {
         }
         Spacer(Modifier.height(Spacing.sm))
         MemberStatTile("연속 완료일(최근 범위 내)", "${streak}일", Modifier.fillMaxWidth())
-        if (stageCounts.isNotEmpty()) {
-            Spacer(Modifier.height(Spacing.sm))
-            Text("복습 단계별 일정 수", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(Spacing.xs))
-            stageCounts.entries.sortedByDescending { it.value }.forEach { (stage, count) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(stage, style = MaterialTheme.typography.bodySmall, color = memberCalStageColor(stage))
-                    Text("${count}개", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
     }
 }
 
