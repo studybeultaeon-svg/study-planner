@@ -81,6 +81,9 @@ object SocialGroupSyncClient {
         val plantProgress: Float = 0f,
         val plantRebirthCount: Int = 0
     )
+    /** 닉네임 옆에 붙이는 레벨/칭호 배지(122차, 사용자 요청) — [findMemberPlantBadge] 참고. */
+    data class PlantBadge(val level: Int, val title: String)
+
     data class NudgeInfo(val fromUid: String, val fromName: String, val sentAtMillis: Long)
     /** [textMessage]가 비어있지 않으면 TTS로 읽어줄 텍스트 메시지, 비어있으면 [audioBase64]를 재생하는
      *  녹음 음성 메시지 — 두 종류를 같은 저장 구조(voiceMessages)에 함께 담는다. */
@@ -708,6 +711,28 @@ object SocialGroupSyncClient {
                 )
             }
         }.getOrDefault(emptyList())
+    }
+
+    /** 채팅 목록/DM/대화방에서 상대의 레벨·칭호를 보여주기 위한 조회(122차, 사용자 요청) — "홈" 공유는
+     *  모임 단위(`groups/{id}/stats/{uid}`)로만 저장돼 전역 공개 경로가 없으므로, 내가 속한 모임들을
+     *  순서대로 뒤져 그 사람이 sharePlant를 켠 모임을 찾으면 그 값을 쓴다(하나도 없으면 null — 이 경우
+     *  UI는 배지 없이 이름만 보여준다). 상대가 sharePlant를 껐으면 애초에 서버 값 자체가 없다. */
+    fun findMemberPlantBadge(databaseUrl: String?, apiKey: String?, targetUid: String): PlantBadge? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: return@runCatching null
+            val base = databaseUrl.trimEnd('/')
+            val myGroupIds = readMyGroupIds(databaseUrl, apiKey)
+            for (groupId in myGroupIds) {
+                val body = get(base, "groups/$groupId/stats/$targetUid", token) ?: continue
+                val json = JSONObject(body)
+                if (!json.optBoolean("sharePlant", false)) continue
+                val title = json.optString("plantTitle", "")
+                if (title.isBlank()) continue
+                return@runCatching PlantBadge(json.optInt("plantLevel", 1), title)
+            }
+            null
+        }.getOrNull()
     }
 
     /** 넛지("깨우기") 보내기 — 과거 넛지 유무 무관하게 항상 최신 1건으로 덮어쓴다. */

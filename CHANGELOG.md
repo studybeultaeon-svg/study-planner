@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-09-12 (114차) — 모임원 상세 캘린더를 안드로이드 자체 스타일로 교정 + 소셜탭 닉네임 옆 레벨/칭호 배지
+
+사용자 요청 2건, 양 플랫폼(안드로이드/데스크탑) 동일 적용(1번은 안드로이드 전용):
+
+- **모임원 상세 "공부" 탭 캘린더가 안드로이드 자체 스타일을 따르도록 수정**: 안드로이드 실제 메인 캘린더(`CalendarScreen.kt`의 `CalendarMonthGrid`)는 날짜 칸에 "완료 개수 배지"(전체완료=초록/일부=노랑/미완료=빨강)만 보여주고 개별 일정 이름은 날짜를 클릭했을 때만 보여주는데, 소셜탭 모임원 상세의 읽기전용 미니 캘린더(`ReadOnlyMiniCalendar`)는 데스크탑 메인 캘린더 스타일(날짜 칸 안에 일정 칩을 최대 2개까지 바로 나열)을 그대로 쓰고 있었다(안드로이드/데스크탑 두 `ReadOnlyMiniCalendar` 구현이 애초에 거의 동일한 코드였음). 안드로이드 쪽만 완료 개수 배지 방식으로 교체(`SocialGroupMemberDetailScreen.kt`, 날짜 칸 높이도 64dp→44dp로 축소) — 이제 안 쓰는 `MemberCalTaskChip` 및 관련 미사용 import 정리. 데스크탑은 원래부터 데스크탑 스타일을 따르는 게 맞으므로 변경 없음.
+- **소셜탭 닉네임 왼쪽 레벨/칭호 배지(양 플랫폼)**: 모임 멤버 목록, 모임원 상세 헤더, 통합 채팅 목록(DM 행), 그룹 대화방 발신자 이름, DM 대화방 헤더 5곳에 상대의 "홈"(식물 성장) 레벨/칭호를 `Lv.N 칭호` 형태의 작은 pill 배지로 표시(`PlantLevelBadge`, 새 `SectionPill` 변형). 상대가 "홈 공유"를 꺼두면 서버 값 자체가 없어 자동으로 배지가 안 뜬다(사용자가 명시적으로 선택한 방식). 멤버 목록/상세/그룹 대화방은 이미 그 모임의 `MemberStats`(sharePlant/plantLevel/plantTitle 포함)를 갖고 있어 그대로 재사용했지만, 통합 채팅 목록의 DM 행과 DM 대화방은 그 상대와 같은 모임에 있다는 보장이 없어(전역 검색으로 DM 시작 가능) 새 함수 `SocialGroupSyncClient.findMemberPlantBadge()`(내가 속한 모임들을 순회하며 상대가 sharePlant 켠 곳을 찾음, 하나도 없으면 배지 없이 이름만)를 추가했다. `ChatThreadScreen`에 `senderBadges: Map<uid, PlantBadge>` 파라미터를 새로 추가해 그룹 대화(`GroupChatScreen`, 모임 전체 멤버 배지 일괄 조회)와 DM 대화(`DmChatScreen`, 상대 1명만 조회) 양쪽에서 재사용.
+- **빌드/배포**: `AndroidBuilds\phone-lock-android`/`C:\build\phone-lock-desktop`에 최신 소스+`shared` 동기화 후 `compileDebugKotlin`+`assembleRelease`(versionCode `1789224201`), `compileKotlin`+`packageMsi createDistributable`(BuildInfo `1789224344`) 전부 정상 통과(경고는 전부 기존에 있던 것과 동일 패턴, 새로 생긴 경고 없음). 안드로이드 APK 3위치(`AndroidBuilds`, OneDrive 원본, `vm-build-output`) 해시 일치 배포, 데스크탑 호스트(`PhoneLockDesktopApp`)+`vm-build-output` 배포 및 재기동 완료. GitHub 릴리스 게시(`android-1789224201`, `desktop-1789224344`), `sync-public-repo.ps1`로 공개 저장소 push까지 완료. **실사용 검증은 안 됨.**
+
+---
+
 ## 2026-09-12 (113차) — 소셜탭 "모임" 섹션 순서 변경 + 모임원 상세 "홈" 탭을 실제 홈 화면으로 개편
 
 사용자 요청 2건, 양 플랫폼(안드로이드/데스크탑) 동일 적용:

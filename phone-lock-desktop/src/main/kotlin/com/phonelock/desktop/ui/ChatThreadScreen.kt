@@ -64,7 +64,9 @@ fun ChatThreadScreen(
     myUid: String?,
     loadMessages: suspend () -> Result<List<ChatSyncClient.ChatMessage>>,
     sendMessage: suspend (String) -> Result<Unit>,
-    toggleReaction: suspend (msgId: String, emoji: String, alreadySet: Boolean) -> Unit
+    toggleReaction: suspend (msgId: String, emoji: String, alreadySet: Boolean) -> Unit,
+    /** 발신자 uid -> 레벨/칭호 배지(122차, 사용자 요청) — 값이 없는 발신자는 이름만 보여준다. */
+    senderBadges: Map<String, com.phonelock.desktop.monitor.SocialGroupSyncClient.PlantBadge> = emptyMap()
 ) {
     val scope = rememberCoroutineScope()
     var messages by remember { mutableStateOf<List<ChatSyncClient.ChatMessage>>(emptyList()) }
@@ -148,12 +150,20 @@ fun ChatThreadScreen(
                         horizontalAlignment = if (mine) Alignment.End else Alignment.Start
                     ) {
                         if (!mine) {
-                            Text(
-                                msg.senderName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
-                            )
+                            ) {
+                                senderBadges[msg.senderUid]?.let { badge ->
+                                    PlantLevelBadge(badge.level, badge.title)
+                                    Spacer(Modifier.width(4.dp))
+                                }
+                                Text(
+                                    msg.senderName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                         Surface(
                             modifier = Modifier
