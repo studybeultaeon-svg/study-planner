@@ -189,6 +189,18 @@ object AccountSyncClient {
         }
     }
 
+    /** 프로필 사진(112차, 안드로이드판과 대칭) — 갤러리 업로드 대신 앱이 제공하는 프리셋 동물 아바타
+     *  id만 저장한다([com.phonelock.desktop.ui.components.AvatarCatalog] 참고, Firebase Storage 불필요). */
+    fun updateProfileImage(databaseUrl: String?, apiKey: String?, avatarId: String): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        return runCatching {
+            val (token, uid) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+            val base = databaseUrl.trimEnd('/')
+            val body = JSONObject().apply { put("profileImage", avatarId) }
+            patchOrThrow(base, "users/$uid/profile", token, body.toString())
+        }
+    }
+
     /** 내가 관리자(usernames/BEULTAEON == 내 uid)인지. */
     fun isAdmin(databaseUrl: String?, apiKey: String?): Boolean {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return false

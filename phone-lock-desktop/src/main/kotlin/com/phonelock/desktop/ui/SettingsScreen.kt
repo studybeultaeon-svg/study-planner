@@ -381,6 +381,55 @@ fun SettingsScreen(
                         }
                         Spacer(Modifier.height(Spacing.md))
 
+                        SectionCard("프로필 사진 선택") {
+                            var selectedAvatar by remember { mutableStateOf<String?>(null) }
+                            var avatarSaving by remember { mutableStateOf(false) }
+                            LaunchedEffect(Unit) {
+                                val url = repository.fbDatabaseUrl
+                                val key = repository.fbApiKey
+                                val profile = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    AccountSyncClient.fetchMyProfile(url, key).getOrNull()
+                                }
+                                selectedAvatar = profile?.optString("profileImage", "")?.takeIf { it.isNotBlank() }
+                            }
+                            Text(
+                                "동물 프로필 사진 중 하나를 골라보세요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            androidx.compose.foundation.layout.FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                            ) {
+                                com.phonelock.desktop.ui.components.AvatarCatalog.PRESETS.forEach { (id, emoji) ->
+                                    val selected = selectedAvatar == id
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clickable(enabled = !avatarSaving) {
+                                                selectedAvatar = id
+                                                avatarSaving = true
+                                                val url = repository.fbDatabaseUrl
+                                                val key = repository.fbApiKey
+                                                Thread {
+                                                    AccountSyncClient.updateProfileImage(url, key, id)
+                                                    avatarSaving = false
+                                                }.start()
+                                            },
+                                        shape = androidx.compose.foundation.shape.CircleShape,
+                                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                        border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                            Text(emoji, style = MaterialTheme.typography.titleLarge)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(Spacing.md))
+
                         if (AuthManager.isSignedIn && !AuthManager.isAnonymous) {
                             SectionCard("아이디 변경") {
                                 val isAdminAccount = currentCustomId.equals(AccountSyncClient.ADMIN_USERNAME, ignoreCase = true)

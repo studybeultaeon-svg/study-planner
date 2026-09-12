@@ -62,7 +62,7 @@ import java.util.Base64
  *  고정 배정해 전원이 같은 색으로 밋밋해 보이던 걸 개선 — 선택된(highlighted) 상태는 기존처럼 primary로
  *  그대로 둬 "지금 보고 있는 멤버"라는 신호가 색 변주에 묻히지 않게 한다. */
 @Composable
-private fun MemberAvatar(name: String, highlighted: Boolean) {
+private fun MemberAvatar(name: String, highlighted: Boolean, profileImage: String? = null) {
     val trimmed = name.trim()
     val (bg, fg) = if (highlighted) {
         MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.onPrimary
@@ -74,11 +74,16 @@ private fun MemberAvatar(name: String, highlighted: Boolean) {
             else -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
         }
     }
+    val emoji = com.phonelock.desktop.ui.components.AvatarCatalog.emojiFor(profileImage)
     Box(
         modifier = Modifier.size(36.dp).clip(CircleShape).background(bg),
         contentAlignment = Alignment.Center
     ) {
-        Text(trimmed.firstOrNull()?.uppercase() ?: "?", style = MaterialTheme.typography.labelLarge, color = fg)
+        if (emoji != null) {
+            Text(emoji, style = MaterialTheme.typography.labelLarge)
+        } else {
+            Text(trimmed.firstOrNull()?.uppercase() ?: "?", style = MaterialTheme.typography.labelLarge, color = fg)
+        }
     }
 }
 
@@ -103,7 +108,12 @@ private fun weekCompletionRatio(m: SocialGroupSyncClient.MemberStats): Double? {
  * 나가기/삭제(모임장만)를 제공한다.
  */
 @Composable
-fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: () -> Unit) {
+fun SocialGroupMembersScreen(
+    repository: Repository,
+    groupId: String,
+    onOpenDm: (String, String, String) -> Unit,
+    onBack: () -> Unit
+) {
     var loading by remember { mutableStateOf(true) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<SocialGroupSyncClient.GroupInfo?>(null) }
@@ -539,7 +549,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                             Modifier.fillMaxWidth().padding(Spacing.sm),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            MemberAvatar(m.displayName, highlighted = isSelected)
+                            MemberAvatar(m.displayName, highlighted = isSelected, profileImage = m.profileImage)
                             Spacer(Modifier.width(Spacing.sm))
                             Column(Modifier.weight(1f)) {
                                 Text(m.displayName + if (isSelfRow) " (나)" else "", style = MaterialTheme.typography.bodyLarge)
@@ -558,6 +568,16 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                             Spacer(Modifier.width(Spacing.sm))
                             SectionPill(percentLabel)
                             if (!isSelfRow) {
+                                Spacer(Modifier.width(Spacing.xs))
+                                TextButton(onClick = {
+                                    val dmUrl = repository.fbDatabaseUrl
+                                    val dmKey = repository.fbApiKey
+                                    Thread {
+                                        com.phonelock.desktop.monitor.ChatSyncClient.ensureDmChat(dmUrl, dmKey, m.uid, m.displayName).onSuccess { chatId ->
+                                            onOpenDm(chatId, m.uid, m.displayName)
+                                        }
+                                    }.start()
+                                }) { Text("💬") }
                                 Spacer(Modifier.width(Spacing.xs))
                                 TextButton(onClick = {
                                     wakeTarget = m.uid to m.displayName
@@ -579,6 +599,7 @@ fun SocialGroupMembersScreen(repository: Repository, groupId: String, onBack: ()
                     groupId = groupId,
                     member = selected,
                     isSelf = selected.uid == myUid,
+                    onOpenDm = onOpenDm,
                     onShareSettingsChanged = { refresh() },
                     onNudge = {
                         Thread {

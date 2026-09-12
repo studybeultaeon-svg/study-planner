@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-09-12 (112차 후속 — 데스크탑 이식) — 같은 9개 항목을 phone-lock-desktop에도 동일하게 적용
+
+바로 위 112차 세션은 안드로이드만 대상으로 했는데, 사용자가 데스크탑에도 동일하게 반영해달라고 후속 요청 —
+같은 9개 항목을 desktop 코드베이스(Compose Desktop)에 이식했다. 구조가 다른 부분만 다르게 처리:
+
+- **홈 화면 태양/기본 테마/앱 아이콘**: `PlantScreen.kt`(desktop) `drawSky()` 태양 좌표를 안드로이드와 동일하게 `w*0.85`→`w*0.72`로. 기본 테마 `Models.kt`(AppData.themeMode 기본값)와 `Theme.kt`(PhoneLockTheme 파라미터 기본값) 둘 다 `LIGHT_ORANGE`→`LIGHT_GREEN`. 트레이/창 아이콘(`SunriseIcon.kt`, 객체 이름은 변경 범위를 줄이려 유지)과 `packaging/generate_icon.ps1`(빌드용 `app-icon.ico` 생성 스크립트)을 새싹 디자인으로 재작성 후 `.ico`/미리보기 PNG 재생성.
+- **프로필 사진**: 안드로이드와 동일한 `AvatarCatalog`(동물 이모지 10종)를 desktop에도 신규 작성. `AccountSyncClient.kt`(desktop, 동기 함수 스타일)에 `updateProfileImage` 추가, `SettingsScreen.kt`의 "닉네임 설정"/"아이디 변경" 사이에 "프로필 사진 선택" `SectionCard` 신규(desktop은 `Thread{}` 기반 비동기 패턴을 그대로 따름). `SocialGroupSyncClient.MemberStats`/`pushMyStats`/`readGroupStats`에 `profileImage` 필드 추가, `SocialGroupMembersScreen`/`SocialGroupMemberDetailScreen`의 아바타 표시에 반영.
+- **소셜탭 통합 채팅 목록**: `SocialGroupScreen.kt`(desktop)도 안드로이드와 같은 `ChatRow`/`reloadChatRows()` 패턴으로 "💬 1:1 대화"/"👥 모임" 두 섹션을 "💬 채팅" 통합 목록 하나로 재구성(desktop 고유의 `ChatSyncClient.peekLatestDmMessage`/`peekLatestGroupMessage`, `Thread{}` 비동기 패턴 사용). 모임 진행률 카드는 "👥 모임 현황"으로 이름만 변경.
+- **모임 내 DM**: `SocialGroupMembersScreen`(멤버 행 "💬" 버튼)과 `SocialGroupMemberDetailScreen`(상단 "💬 DM" 버튼)에서 `ChatSyncClient.ensureDmChat`을 호출해 대화 시작. `MainScreen.kt`의 화면 전환 상태(`selectedDmChat`)에 새 콜백을 배선.
+- **모임원 상세 홈 탭**: 안드로이드와 동일하게 `MemberStats`에 `plantLevel`/`plantTitle`/`plantTier`/`plantProgress`/`plantRebirthCount` 추가, 탭 순서를 홈/루틴/공부로, `MemberHomeTab` 신규 추가. 공유 토글은 `GroupShareSettings.sharePlant`(desktop, `Models.kt`/`JsonStore.kt`/`GroupShareSettingsDialog.kt`) 신규 추가.
+- **업데이트 로그**: desktop은 원래부터 "이번 업데이트 내용" 텍스트를 표시한 적이 없어(코드로 확인) 변경 사항 없음.
+- **학습통계 "복습 단계별 일정 수" 제거**: `SocialGroupMemberDetailScreen.MemberStudyStatsTab`에서 동일하게 삭제.
+- **빌드/배포**: `compileKotlin` 정상 통과(에러 없음, 기존 경고만 남음), `packageMsi createDistributable`로 BuildInfo `1789189764` 빌드, 호스트(`PhoneLockDesktopApp`)+`vm-build-output` 양쪽 재배포 및 앱 재기동 완료.
+
+---
+
 ## 2026-09-12 (112차 세션, 안드로이드 전용) — 홈 화면 태양 위치/기본 테마/앱 아이콘 + 프로필 사진 + 소셜탭 통합 채팅 목록 + 모임 내 DM + 모임원 상세 홈 탭 + 업데이트 로그 제거 + 학습통계 항목 삭제
 
 사용자가 지정한 9개 항목을 한 세션에서 일괄 구현(안드로이드만 대상, 데스크탑/브라우저 확장은 이번 세션에서 변경 없음).

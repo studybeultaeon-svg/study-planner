@@ -50,6 +50,8 @@ object SocialGroupSyncClient {
     data class MemberStats(
         val uid: String,
         val displayName: String,
+        /** 프로필 사진 프리셋 id(112차) — [com.phonelock.desktop.ui.components.AvatarCatalog] 참고, 없으면 "". */
+        val profileImage: String = "",
         val updatedAt: Long,
         val shareRoutines: Boolean,
         val shareStudy: Boolean,
@@ -70,7 +72,14 @@ object SocialGroupSyncClient {
         /** "루틴 - 통계" 탭의 최고 스트릭 타일용. */
         val routineBestStreak: Int,
         /** 이 사람이 "내 정보 숨기기"로 지정한 상대 uid 목록 — 이 목록에 내 uid가 있으면 위 항목을 전부 "비공개"로 취급한다. */
-        val hiddenFromUids: Set<String>
+        val hiddenFromUids: Set<String>,
+        /** "홈"(식물 성장) 탭 공유 여부 및 스냅샷(112차, 모임원 상세에 홈 탭 추가) — GrowthSystem 기준 레벨/칭호/등급. */
+        val sharePlant: Boolean = false,
+        val plantLevel: Int = 1,
+        val plantTitle: String = "",
+        val plantTier: Int = 0,
+        val plantProgress: Float = 0f,
+        val plantRebirthCount: Int = 0
     )
     data class NudgeInfo(val fromUid: String, val fromName: String, val sentAtMillis: Long)
     /** [textMessage]가 비어있지 않으면 TTS로 읽어줄 텍스트 메시지, 비어있으면 [audioBase64]를 재생하는
@@ -506,8 +515,13 @@ object SocialGroupSyncClient {
             val share = repository.groupShareSettings(groupId)
             val hiddenFromUids = repository.hiddenFromUidsFor(groupId)
 
+            val myProfileImage = runCatching {
+                AccountSyncClient.fetchMyProfile(databaseUrl, apiKey).getOrNull()?.optString("profileImage", "")
+            }.getOrNull() ?: ""
+
             val stats = JSONObject().apply {
                 put("displayName", myDisplayName(databaseUrl, apiKey))
+                if (myProfileImage.isNotBlank()) put("profileImage", myProfileImage)
                 put("updatedAt", System.currentTimeMillis())
                 put("shareRoutines", share.shareRoutines)
                 put("shareStudy", share.shareStudy)
@@ -515,6 +529,17 @@ object SocialGroupSyncClient {
                 put("shareSchedule", share.shareSchedule)
                 put("shareStudyingNow", share.shareStudyingNow)
                 put("hiddenFromUids", JSONArray(hiddenFromUids.toList()))
+                put("sharePlant", share.sharePlant)
+                if (share.sharePlant) {
+                    val expTotal = repository.getGrowthExpTotal()
+                    val level = com.phonelock.shared.GrowthSystem.levelForExp(expTotal)
+                    val stage = com.phonelock.shared.GrowthSystem.stageForLevel(level)
+                    put("plantLevel", level)
+                    put("plantTitle", stage.title)
+                    put("plantTier", stage.tier)
+                    put("plantProgress", com.phonelock.shared.GrowthSystem.progressToNextLevel(expTotal))
+                    put("plantRebirthCount", repository.getRebirthCount())
+                }
             }
 
             if (share.shareRoutines) {
@@ -652,9 +677,11 @@ object SocialGroupSyncClient {
                     studySecondsByDateObj.keySet().associateWith { studySecondsByDateObj.optInt(it, 0) }
                 } else emptyMap()
                 val hiddenArr = s.optJSONArray("hiddenFromUids") ?: JSONArray()
+                val sharePlant = s.optBoolean("sharePlant", false)
                 MemberStats(
                     uid = uid,
                     displayName = s.optString("displayName", uid),
+                    profileImage = s.optString("profileImage", ""),
                     updatedAt = s.optLong("updatedAt", 0L),
                     shareRoutines = s.optBoolean("shareRoutines", false),
                     shareStudy = s.optBoolean("shareStudy", false),
@@ -671,7 +698,13 @@ object SocialGroupSyncClient {
                     studyingNow = s.optBoolean("studyingNow", false),
                     studyingTaskName = s.optString("studyingTaskName", ""),
                     routineBestStreak = s.optInt("routineBestStreak", 0),
-                    hiddenFromUids = (0 until hiddenArr.length()).map { hiddenArr.getString(it) }.toSet()
+                    hiddenFromUids = (0 until hiddenArr.length()).map { hiddenArr.getString(it) }.toSet(),
+                    sharePlant = sharePlant,
+                    plantLevel = if (sharePlant) s.optInt("plantLevel", 1) else 1,
+                    plantTitle = if (sharePlant) s.optString("plantTitle", "") else "",
+                    plantTier = if (sharePlant) s.optInt("plantTier", 0) else 0,
+                    plantProgress = if (sharePlant) s.optDouble("plantProgress", 0.0).toFloat() else 0f,
+                    plantRebirthCount = if (sharePlant) s.optInt("plantRebirthCount", 0) else 0
                 )
             }
         }.getOrDefault(emptyList())
