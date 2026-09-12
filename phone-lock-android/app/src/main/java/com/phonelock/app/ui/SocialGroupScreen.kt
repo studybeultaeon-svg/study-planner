@@ -67,7 +67,9 @@ private data class ChatRow(
     val groupId: String? = null,
     val chatId: String? = null,
     val peerUid: String? = null,
-    val peerLabel: String? = null
+    val peerLabel: String? = null,
+    /** DM 상대의 레벨/칭호 배지(122차) — 모임 채팅방(isGroup=true)은 특정 한 사람이 아니라서 대상 없음. */
+    val plantBadge: com.phonelock.app.service.SocialGroupSyncClient.PlantBadge? = null
 )
 
 /** 소셜 화면 배경(사용자 지적으로 재디자인) — 처음엔 StudyLockActivity와 같은 `Brush.radialGradient`를
@@ -86,6 +88,14 @@ internal fun SectionPill(text: String, color: androidx.compose.ui.graphics.Color
     Surface(shape = RoundedCornerShape(50), color = color.copy(alpha = 0.12f)) {
         Text(text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp))
     }
+}
+
+/** 닉네임 왼쪽에 붙는 레벨/칭호 배지(122차, 사용자 요청) — 상대가 "홈" 공유를 켠 경우에만 값이 존재한다
+ *  ([SocialGroupSyncClient.MemberStats.plantLevel]/[SocialGroupSyncClient.findMemberPlantBadge] 참고),
+ *  값이 없으면 아예 호출하지 않고 이름만 보여주면 된다. */
+@Composable
+internal fun PlantLevelBadge(level: Int, title: String) {
+    SectionPill("Lv.$level $title", color = MaterialTheme.colorScheme.tertiary)
 }
 
 /** DM 상대 첫 글자를 원형 배지로(모임 [GroupAvatar]와 같은 패턴, 색만 secondary로 구분). */
@@ -173,7 +183,8 @@ fun SocialGroupScreen(
                     key = "dm_${dm.chatId}", title = dm.peerLabel, isGroup = false,
                     subtitle = latest?.text?.takeIf { it.isNotBlank() } ?: "대화를 시작해보세요",
                     atMillis = latest?.sentAtMillis ?: dm.updatedAtMillis,
-                    chatId = dm.chatId, peerUid = dm.peerUid, peerLabel = dm.peerLabel
+                    chatId = dm.chatId, peerUid = dm.peerUid, peerLabel = dm.peerLabel,
+                    plantBadge = repository.findSocialMemberPlantBadge(dm.peerUid)
                 )
             }
             val groupRows = groupIds.mapNotNull { id ->
@@ -443,6 +454,10 @@ fun SocialGroupScreen(
                                 Spacer(Modifier.width(Spacing.sm))
                                 Column(Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
+                                        row.plantBadge?.let { badge ->
+                                            PlantLevelBadge(badge.level, badge.title)
+                                            Spacer(Modifier.width(4.dp))
+                                        }
                                         Text(row.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                                         if (row.isGroup) {
                                             Spacer(Modifier.width(4.dp))

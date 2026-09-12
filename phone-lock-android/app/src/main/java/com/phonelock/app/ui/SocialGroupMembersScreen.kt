@@ -86,7 +86,9 @@ private data class MemberRow(
     val streak: Int?,
     val hasStats: Boolean,
     val shareRoutines: Boolean,
-    val profileImage: String? = null
+    val profileImage: String? = null,
+    val plantLevel: Int? = null,
+    val plantTitle: String? = null
 )
 
 /** 멤버 이름 첫 글자를 원형 배지로(데스크탑판 MemberAvatar와 대칭). 82차(§6 UX 폴리싱): 전원이 같은
@@ -220,7 +222,11 @@ fun SocialGroupMembersScreen(
                     val weekTasks = s.schedule?.filter { it.dateKey in weekAgoKey..todayKey } ?: emptyList()
                     if (weekTasks.isNotEmpty()) weekTasks.count { it.status == "O" } * 100 / weekTasks.size else null
                 } else null
-                MemberRow(m.uid, s?.displayName ?: m.displayName, rate, weekRate, if (s?.shareStreak == true) s.streak else null, s != null, s?.shareRoutines == true, s?.profileImage)
+                MemberRow(
+                    m.uid, s?.displayName ?: m.displayName, rate, weekRate,
+                    if (s?.shareStreak == true) s.streak else null, s != null, s?.shareRoutines == true, s?.profileImage,
+                    s?.plantLevel, s?.plantTitle
+                )
             }.sortedWith(compareBy { it.todayRate ?: -1 })
             groupGoalTodaySeconds = stats.values.filter { it.shareStudy }.sumOf { it.studyTodaySeconds ?: 0 }
             announcement = repository.readSocialGroupAnnouncement(groupId)
@@ -634,7 +640,13 @@ fun SocialGroupMembersScreen(
                             MemberAvatar(row.displayName, row.profileImage)
                             Spacer(Modifier.width(Spacing.sm))
                             Column(Modifier.weight(1f)) {
-                                Text(row.displayName + if (row.uid == myUid) " (나)" else "", style = MaterialTheme.typography.titleMedium)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (row.plantLevel != null && !row.plantTitle.isNullOrBlank()) {
+                                        PlantLevelBadge(row.plantLevel, row.plantTitle)
+                                        Spacer(Modifier.width(Spacing.xs))
+                                    }
+                                    Text(row.displayName + if (row.uid == myUid) " (나)" else "", style = MaterialTheme.typography.titleMedium)
+                                }
                                 if (row.streak != null && row.streak > 0) {
                                     Spacer(Modifier.height(2.dp))
                                     SectionPill("🔥 ${row.streak}일", color = androidx.compose.ui.graphics.Color(0xFFFF9800))

@@ -48,6 +48,10 @@ suspend fun PhoneLockRepository.regenerateSocialGroupInviteCode(groupId: String)
 suspend fun PhoneLockRepository.readSocialGroupStats(groupId: String) =
     com.phonelock.app.service.SocialGroupSyncClient.readGroupStats(fbDatabaseUrl, fbApiKey, groupId)
 
+/** 채팅 목록/DM/대화방 닉네임 옆 레벨·칭호 배지용(122차). [SocialGroupSyncClient.findMemberPlantBadge] 참고. */
+suspend fun PhoneLockRepository.findSocialMemberPlantBadge(targetUid: String) =
+    com.phonelock.app.service.SocialGroupSyncClient.findMemberPlantBadge(fbDatabaseUrl, fbApiKey, targetUid)
+
 /** "모임 랭킹"(82차, §11) — 내 회유 멘트 저항률을 이 모임에 올린다. */
 suspend fun PhoneLockRepository.pushMyQuoteStatToGroup(groupId: String) {
     val outcomes = getAllQuoteOutcomesOnce()

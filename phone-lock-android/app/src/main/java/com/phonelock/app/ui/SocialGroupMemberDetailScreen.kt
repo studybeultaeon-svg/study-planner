@@ -61,11 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -175,7 +171,7 @@ fun SocialGroupMemberDetailScreen(
                 return@Column
             }
 
-            MemberHeaderCard(displayName = displayName, updatedAt = s.updatedAt, profileImage = s.profileImage)
+            MemberHeaderCard(displayName = displayName, updatedAt = s.updatedAt, profileImage = s.profileImage, plantLevel = s.plantLevel, plantTitle = s.plantTitle)
             Spacer(Modifier.height(Spacing.md))
 
             if (targetUid != myUid) {
@@ -358,7 +354,7 @@ fun SocialGroupMemberDetailScreen(
 }
 
 @Composable
-private fun MemberHeaderCard(displayName: String, updatedAt: Long, profileImage: String? = null) {
+private fun MemberHeaderCard(displayName: String, updatedAt: Long, profileImage: String? = null, plantLevel: Int? = null, plantTitle: String? = null) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -386,7 +382,13 @@ private fun MemberHeaderCard(displayName: String, updatedAt: Long, profileImage:
             }
             Spacer(Modifier.width(Spacing.md))
             Column {
-                Text(displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (plantLevel != null && !plantTitle.isNullOrBlank()) {
+                        PlantLevelBadge(plantLevel, plantTitle)
+                        Spacer(Modifier.width(Spacing.xs))
+                    }
+                    Text(displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
                 Text(
                     formatRelativeTime(updatedAt),
                     style = MaterialTheme.typography.bodySmall,
@@ -495,31 +497,15 @@ private fun memberCalStageColor(stage: String): Color = when (stage) {
     else -> Color(0xFFAAAAAA)
 }
 
-@Composable
-private fun MemberCalTaskChip(name: String, stage: String, status: String?, modifier: Modifier = Modifier) {
-    val accent = memberCalStageColor(stage)
-    Text(
-        buildAnnotatedString {
-            if (status == "O") withStyle(SpanStyle(color = Color(0xFF34D399), fontWeight = FontWeight.Black)) { append("O ") }
-            else if (status == "X") withStyle(SpanStyle(color = Color(0xFFF87171), fontWeight = FontWeight.Black)) { append("X ") }
-            append(name)
-        },
-        modifier = modifier
-            .background(accent.copy(alpha = 0.15f), MaterialTheme.shapes.extraSmall)
-            .border(1.dp, accent, MaterialTheme.shapes.extraSmall)
-            .padding(horizontal = 4.dp, vertical = 1.dp),
-        style = MaterialTheme.typography.labelSmall,
-        color = accent,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
-    )
-}
-
 /**
  * "오늘 일정" 텍스트 목록이었던 걸 76차에 실제 캘린더 탭(CalendarScreen)과 같은 시각 언어(색상 배지)로
  * 그리는 읽기전용 미니 월 그리드로 바꿨다 — 편집 불가라는 점만 다르고 배지 스타일은 캘린더 탭과 동일하다.
  * 날짜 칸을 클릭하면 그 날의 일정 전체(이름/상태)와 그 날 공부시간을 아래에 펼쳐 보여준다(77차, 한 페이지에
  * 다 욱여넣지 말고 클릭해서 상세를 보게 해달라는 요청).
+ *
+ * 122차(사용자 요청): 날짜 칸 안에 일정 칩을 바로 나열하던 걸(데스크탑 [com.phonelock.desktop.ui.CalendarScreen]
+ * 스타일) 안드로이드 자체 [CalendarScreen.CalendarMonthGrid]와 같은 "완료 개수 배지"(전체완료=초록/일부=노랑/
+ * 미완료=빨강) 방식으로 바꿨다 — 개별 일정 이름은 안드로이드 원본과 동일하게 날짜를 클릭했을 때만 보여준다.
  */
 @Composable
 private fun ReadOnlyMiniCalendar(
@@ -546,7 +532,7 @@ private fun ReadOnlyMiniCalendar(
             }
         }
         for (row in 0 until rows) {
-            Row(Modifier.fillMaxWidth().height(64.dp)) {
+            Row(Modifier.fillMaxWidth().height(44.dp)) {
                 for (col in 0 until 7) {
                     val dayNum = row * 7 + col - firstDow + 1
                     if (dayNum in 1..daysInMonth) {
@@ -565,21 +551,34 @@ private fun ReadOnlyMiniCalendar(
                                 .padding(2.dp)
                         ) {
                             Column {
-                                Box(
-                                    Modifier.size(16.dp).background(if (isToday) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        "$dayNum",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (isToday) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                dayTasks.take(2).forEach { t ->
-                                    MemberCalTaskChip(name = t.name, stage = t.color, status = t.status, modifier = Modifier.fillMaxWidth().padding(top = 1.dp))
-                                }
-                                if (dayTasks.size > 2) {
-                                    Text("+${dayTasks.size - 2}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        Modifier.size(16.dp).background(if (isToday) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            "$dayNum",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isToday) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (dayTasks.isNotEmpty()) {
+                                        Spacer(Modifier.width(2.dp))
+                                        val doneCount = dayTasks.count { it.status == "O" }
+                                        val badgeColor = when {
+                                            doneCount == dayTasks.size -> Color(0xFF34D399)
+                                            doneCount > 0 -> Color(0xFFFBBF24)
+                                            else -> Color(0xFFF87171)
+                                        }
+                                        Text(
+                                            "${dayTasks.size}개",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = badgeColor,
+                                            modifier = Modifier
+                                                .background(badgeColor.copy(alpha = 0.18f), MaterialTheme.shapes.extraSmall)
+                                                .padding(horizontal = 3.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
