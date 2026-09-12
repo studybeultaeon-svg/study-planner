@@ -90,14 +90,26 @@ class WalkieTalkieService : Service() {
         }
     }
 
-    /** 채팅 알림(2026-09-10, 사용자 요청) — 내 1:1 DM 전부를 돌면서 마지막으로 확인한 시각 이후 온
-     *  메시지가 있으면 알린다. [ActiveChatTracker]에 지금 보고 있는 방이면 건너뛴다(화면이 이미 폴링
-     *  중이라 중복 알림이 된다). 대화방 개수만큼 요청이 늘어나는 구조라 무전기처럼 가벼운 "최신 메시지
-     *  1개만" 조회([ChatSyncClient.peekLatestDmMessage])로 비용을 줄였다. */
+    /** 채팅 알림(2026-09-10, 사용자 요청) — 내가 속한 모임 대화방 + 1:1 DM 전부를 돌면서 마지막으로
+     *  확인한 시각 이후 온 메시지가 있으면 알린다. [ActiveChatTracker]에 지금 보고 있는 방이면 건너뛴다
+     *  (화면이 이미 폴링 중이라 중복 알림이 된다). 대화방 개수만큼 요청이 늘어나는 구조라 무전기처럼
+     *  가벼운 "최신 메시지 1개만" 조회([ChatSyncClient.peekLatestGroupMessage]류)로 비용을 줄였다. */
     private suspend fun pollChatMessages(repository: PhoneLockRepository, prefs: AppPreferences) {
         if (StudyNotificationGate.isStudying(repository)) return
         val myUid = com.phonelock.app.service.AuthManager.currentUser?.uid ?: return
         val lastSeenByChat = prefs.chatLastSeenByChat()
+
+        val groupIds = runCatching { repository.readMySocialGroupIds() }.getOrDefault(emptyList())
+        groupIds.forEach { groupId ->
+            if (groupId == ActiveChatTracker.openChatId) return@forEach
+            val latest = repository.peekLatestGroupChatMessage(groupId) ?: return@forEach
+            if (latest.senderUid == myUid) return@forEach
+            val lastSeen = lastSeenByChat[groupId] ?: 0L
+            if (latest.sentAtMillis > lastSeen) {
+                notifyChatBanner("${latest.senderName}님 (모임)", latest.text)
+                prefs.setChatLastSeen(groupId, latest.sentAtMillis)
+            }
+        }
 
         val dmChats = runCatching { repository.readMyDmChats() }.getOrDefault(emptyList())
         dmChats.forEach { dm ->

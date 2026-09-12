@@ -52,10 +52,11 @@ object ActiveChatTracker {
 }
 
 /**
- * 1:1 DM(92차 소셜 개편 Phase 2, 안드로이드판 ChatThreadScreen.kt와 대칭)의 공용 메시지 스레드 UI —
- * 텍스트 + 이모지 리액션만. 실시간성은 "이 화면이 켜져있는 동안만"으로 확정돼 [POLL_INTERVAL_MS] 주기로
- * 폴링한다(CalendarScreen.DayDetailSection과 같은 패턴). 저장 경로(`dmChats`)는 콜백으로 주입한다.
- * [chatId]는 [ActiveChatTracker] 갱신용.
+ * "💬 대화" 채널의 공용 메시지 스레드 UI(92차 소셜 개편 Phase 1=모임 대화, Phase 2=1:1 DM이 함께 씀,
+ * 안드로이드판 ChatThreadScreen.kt와 대칭) — 텍스트 + 이모지 리액션만. 실시간성은 "이 화면이 켜져있는
+ * 동안만"으로 확정돼 [POLL_INTERVAL_MS] 주기로 폴링한다(CalendarScreen.DayDetailSection과 같은 패턴).
+ * 그룹 대화/DM은 저장 경로만 다르고 UI는 완전히 같아 콜백으로 차이를 흡수한다. [chatId]는
+ * [ActiveChatTracker] 갱신용.
  */
 @Composable
 fun ChatThreadScreen(

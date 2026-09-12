@@ -4,16 +4,6 @@
 
 ---
 
-## 모임 "💬 대화"(그룹 채팅 채널) 기능을 되살리지 않고 완전 삭제, 1:1 DM만 유지 (2026-09-13, 115차)
-
-사용자가 명시적으로 "모임 밑에 채팅 항목을 그냥 아예 삭제"하라고 요청 — 단, "같은 모임에 있는 사람끼리 DM할 수 있는 기능은 그대로 남겨놓을 것"이라는 조건을 붙였다. 92차에 `ChatThreadScreen`을 공용화해 그룹 대화(Phase 1)와 1:1 DM(Phase 2)이 콜백만 다르고 UI/폴링 로직을 그대로 공유하도록 설계해뒀던 게 이번 삭제 범위를 정확히 나눌 수 있게 해줬다 — `GroupChatScreen.kt`(그룹 전용 래퍼)만 지우고 `ChatThreadScreen`/`DmChatScreen`은 그대로 둬서 DM 기능이 전혀 영향받지 않는다. 백엔드도 같은 이유로 안전하게 나뉜다: `ChatSyncClient`의 그룹 메시지 함수(`sendGroupMessage`/`readGroupMessages`/`toggleGroupMessageReaction`/`peekLatestGroupMessage`)와 `groupChats` Firebase 경로만 삭제하고, DM 함수(`dmChats` 경로)는 손대지 않았다. 소셜탭 메인 화면의 "💬 채팅" 통합 목록에서도 그룹 행(`isGroup=true`)을 제거했는데, 그 그룹 항목은 클릭해도 어차피 "모임 상세" 화면으로만 이동했고(딥링크 없음, 112차 결정 참고) 그 모임은 이미 위 "👥 모임" 섹션에서도 접근 가능해 중복이었기 때문 — 기능 삭제로 이 중복 항목이 자연스럽게 사라진 것이지 별도 판단이 필요한 변경은 아니었다.
-
-Firebase 보안 규칙의 `groupChats` 노드는 일부러 그대로 뒀다 — 규칙 변경은 사용자가 직접 콘솔에 게시해야 하는 별도 승인 단계([[HANDOFF.md]] 참고, 과거 세션들도 항상 그렇게 처리)라 이번 코드 정리 범위를 넘어선다고 판단, 클라이언트가 더 이상 쓰지 않는 이상 당장 위험하지도 않다.
-
-**빌드/배포를 못 한 이유**: 이 세션 작업 환경에는 `phone-lock-android`/`phone-lock-desktop` 어느 쪽에도 gradle wrapper(jar 파일 없이 `gradle-wrapper.properties`만 존재)가 없고, PATH에서도 전역 `gradle` 명령을 찾을 수 없었다(과거 세션들의 `compileDebugKotlin`/`assembleRelease` 등은 이 환경과 다른 곳 — 사용자의 IDE나 별도 빌드 환경 — 에서 실행된 것으로 보인다). 코드 변경 후 중괄호 짝 수 대조 등 정적 점검만 했고, 실제 컴파일/빌드/배포/GitHub 릴리스는 다음 세션(또는 사용자의 빌드 환경)에서 처리해야 한다.
-
----
-
 ## 112차 데스크탑 이식 시 SunriseIcon 객체 이름을 그대로 유지 (2026-09-12, 112차 후속)
 
 안드로이드 9개 항목을 데스크탑에도 반영하면서 트레이/창 아이콘(`SunriseIcon.kt`)을 새싹 디자인으로 다시 그렸는데, 객체 이름(`SunriseIcon`)은 더 이상 실제 그림과 맞지 않지만 일부러 바꾸지 않았다 — `Main.kt`의 두 사용처(import + `icon = SunriseIcon` 2곳)까지 함께 바꿔야 해서 변경 범위가 늘어나는 데 비해 이름 자체는 외부에 노출되지 않는 내부 식별자라 얻는 이득이 적다고 판단했다(안드로이드판도 같은 이유로 `ic_launcher_foreground.xml` 파일명을 그대로 두고 내용만 바꿨음, [[CLAUDE.md]] "변경 범위 최소화" 원칙과 일관). 이름과 실제 그림이 어긋나 헷갈리면 다음에 리네임을 검토할 것 — [[IDEAS.md]] 참고.

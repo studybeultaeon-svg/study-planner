@@ -8,10 +8,13 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 /**
- * "소셜" 개편(92차~) Phase 2 — 1:1 DM. [SocialGroupSyncClient]와 같은 HttpClient 동기 호출 패턴
- * (안드로이드판과 달리 desktop은 suspend가 아니라 호출부에서 `Thread { }.start()`로 감싸는 방식)을
- * 그대로 따르며, `dmChats/{chatId}/messages/{msgId}`에 저장한다. 실시간성은 "앱이 켜져있는 동안만"
- * (사용자 확정 사항)이라 SSE/FCM 없이 화면이 보이는 동안 짧은 주기로 폴링한다.
+ * "소셜" 개편(92차~) Phase 1 — 모임 안의 "💬 대화" 채널. [SocialGroupSyncClient]와 같은 HttpClient
+ * 동기 호출 패턴(안드로이드판과 달리 desktop은 suspend가 아니라 호출부에서 `Thread { }.start()`로
+ * 감싸는 방식)을 그대로 따르되, 채팅은 `groups/{groupId}/...` 밑이 아니라 최상위
+ * `groupChats/{groupId}/messages/{msgId}`에 둔다 — 모임 멤버십(`groups/{groupId}/members`)을 그대로
+ * 참여자 판정에 재사용하면(보안 규칙에서 직접 참조) 별도 참여자 목록을 동기화할 필요가 없어진다.
+ * 실시간성은 "앱이 켜져있는 동안만"(사용자 확정 사항)이라 SSE/FCM 없이 화면이 보이는 동안 짧은 주기로
+ * 폴링한다. 1:1 DM은 Phase 2에서 추가 예정(IDEAS.md/HANDOFF.md 92차 참고).
  */
 object ChatSyncClient {
     private const val TIMEOUT_SECONDS = 5L
@@ -231,8 +234,109 @@ object ChatSyncClient {
         }.getOrDefault(fallback)
     }
 
+    /** 그룹 대화방 메시지 전송. */
+    fun sendGroupMessage(databaseUrl: String?, apiKey: String?, groupId: String, text: String): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        if (text.isBlank()) return Result.failure(IllegalStateException("빈 메시지는 보낼 수 없습니다."))
+        return runCatching {
+            val (token, uid) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+            val base = databaseUrl.trimEnd('/')
+            val senderName = myDisplayName(databaseUrl, apiKey)
+            val body = JSONObject().apply {
+                put("senderUid", uid)
+                put("senderName", senderName)
+                put("text", text.trim())
+                put("sentAtMillis", System.currentTimeMillis())
+            }
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("$base/groupChats/$groupId/messages.json?auth=$token"))
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            if (response.statusCode() !in 200..299) {
+                error("메시지 전송에 실패했습니다. (${response.statusCode()}: ${response.body()})")
+            }
+        }
+    }
+
+    /** 최근 메시지 최대 200개(시각순) — 화면이 열려있는 동안 짧은 주기로 다시 호출해 폴링한다.
+     *  98차: 실패를 삼켜 빈 목록으로 돌려주던 걸 [Result]로 바꿔 실패 사유를 드러낸다(위 참고). */
+    fun readGroupMessages(databaseUrl: String?, apiKey: String?, groupId: String): Result<List<ChatMessage>> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+            val base = databaseUrl.trimEnd('/')
+            val query = "orderBy=%22sentAtMillis%22&limitToLast=200"
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("$base/groupChats/$groupId/messages.json?auth=$token&$query"))
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .GET()
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            if (response.statusCode() !in 200..299) {
+                error("메시지 목록을 불러오지 못했습니다. (${response.statusCode()}: ${response.body()})")
+            }
+            val text = response.body()
+            if (text.isNullOrBlank() || text == "null") return@runCatching emptyList()
+            val json = JSONObject(text)
+            json.keys().asSequence().map { msgId ->
+                val m = json.getJSONObject(msgId)
+                val reactionsObj = m.optJSONObject("reactions")
+                val reactions = if (reactionsObj != null) {
+                    reactionsObj.keys().asSequence().associateWith { reactionsObj.optString(it, "") }
+                } else emptyMap()
+                ChatMessage(
+                    msgId = msgId,
+                    senderUid = m.optString("senderUid", ""),
+                    senderName = m.optString("senderName", "사용자"),
+                    text = m.optString("text", ""),
+                    sentAtMillis = m.optLong("sentAtMillis", 0L),
+                    reactions = reactions
+                )
+            }.sortedBy { it.sentAtMillis }.toList()
+        }
+    }
+
+    /** 이모지 리액션 토글 — 이미 같은 이모지를 남겼으면 지우고, 아니면 덮어쓴다(사람당 메시지 하나에 한 개만). */
+    fun toggleGroupMessageReaction(databaseUrl: String?, apiKey: String?, groupId: String, msgId: String, emoji: String, alreadySet: Boolean): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        return runCatching {
+            val (token, uid) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+            val base = databaseUrl.trimEnd('/')
+            val path = "groupChats/$groupId/messages/$msgId/reactions/$uid"
+            if (alreadySet) {
+                val request = HttpRequest.newBuilder()
+                    .uri(URI.create("$base/$path.json?auth=$token"))
+                    .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                    .DELETE()
+                    .build()
+                val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+                if (response.statusCode() !in 200..299) error("리액션 삭제에 실패했습니다.")
+            } else {
+                val request = HttpRequest.newBuilder()
+                    .uri(URI.create("$base/$path.json?auth=$token"))
+                    .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                    .PUT(HttpRequest.BodyPublishers.ofString(JSONObject.quote(emoji)))
+                    .build()
+                httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            }
+        }
+    }
+
     /** 최신 메시지 1개만 가볍게 조회 — [com.phonelock.desktop.routine.ChatNotifier]의 새 메시지 알림
      *  폴링 전용(안드로이드판과 대칭). */
+    fun peekLatestGroupMessage(databaseUrl: String?, apiKey: String?, groupId: String): ChatMessage? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: return null
+            val base = databaseUrl.trimEnd('/')
+            val text = get(base, "groupChats/$groupId/messages", token, extraQuery = "orderBy=%22sentAtMillis%22&limitToLast=1")
+            parseLatestMessage(text)
+        }.getOrNull()
+    }
+
+    /** [peekLatestGroupMessage]의 DM판. */
     fun peekLatestDmMessage(databaseUrl: String?, apiKey: String?, chatId: String): ChatMessage? {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
         return runCatching {
