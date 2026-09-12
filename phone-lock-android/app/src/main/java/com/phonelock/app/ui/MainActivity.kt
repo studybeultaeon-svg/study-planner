@@ -272,6 +272,10 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                     repository,
                     groupId,
                     onOpenMember = { uid -> navController.navigate("social_group_member/$groupId/$uid") },
+                    onOpenDm = { chatId, peerUid, peerLabel ->
+                        val encodedLabel = java.net.URLEncoder.encode(peerLabel, "UTF-8")
+                        navController.navigate("dm_chat/$chatId/$peerUid/$encodedLabel")
+                    },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -284,7 +288,14 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             ) { entry ->
                 val groupId = entry.arguments?.getString("groupId") ?: ""
                 val uid = entry.arguments?.getString("uid") ?: ""
-                SocialGroupMemberDetailScreen(repository, groupId, uid) { navController.popBackStack() }
+                SocialGroupMemberDetailScreen(
+                    repository, groupId, uid,
+                    onOpenDm = { chatId, peerUid, peerLabel ->
+                        val encodedLabel = java.net.URLEncoder.encode(peerLabel, "UTF-8")
+                        navController.navigate("dm_chat/$chatId/$peerUid/$encodedLabel")
+                    },
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(Tab.Settings.route) {
                 SettingsScreen(

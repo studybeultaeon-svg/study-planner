@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-09-12 (112차 세션, 안드로이드 전용) — 홈 화면 태양 위치/기본 테마/앱 아이콘 + 프로필 사진 + 소셜탭 통합 채팅 목록 + 모임 내 DM + 모임원 상세 홈 탭 + 업데이트 로그 제거 + 학습통계 항목 삭제
+
+사용자가 지정한 9개 항목을 한 세션에서 일괄 구현(안드로이드만 대상, 데스크탑/브라우저 확장은 이번 세션에서 변경 없음).
+
+- **홈 화면 태양 위치**: `PlantScreen.kt` `drawSky()` tier 0 분기의 태양 중심 x좌표를 `w*0.85`(화면 폭 비례, 우상단 근처)에서 `w*0.72`로 이동 — 이미 화면 폭 비례 좌표였으므로 화면 크기와 무관하게 왼쪽으로 이동한 효과가 유지된다. 같은 자리에 있던 설정 버튼(`HomeSettingsButton`, `Alignment.TopEnd`)과의 겹침을 완화.
+- **기본 테마 원복**: `AppPreferences.themeMode`의 기본값(SharedPreferences에 저장된 값이 없을 때 fallback)을 105차에 바뀐 `LIGHT_ORANGE`에서 `LIGHT_GREEN`으로 되돌림. 기존에 이미 테마를 저장해둔 사용자는 그 값을 그대로 읽으므로 영향 없음 — 신규 설치/미저장 사용자만 대상.
+- **앱 아이콘 교체**: "일출"(태양 원반+언덕) 컨셉의 `ic_launcher_foreground.xml`/`ic_launcher_background.xml`(둘 다 벡터, PNG mipmap 없음)을 "새싹"(흙 언덕+줄기+좌우 잎) 컨셉으로 전면 재작성. 배경 그라디언트도 하늘색→오렌지에서 하늘색→연두색으로 변경.
+- **프로필 사진(동물 이모지 프리셋)**: 신규 `com.phonelock.app.ui.components.AvatarCatalog`(cat/dog/rabbit/bear/fox/panda/koala/lion/tiger/penguin 10종, id-이모지 매핑). `AccountSyncClient.updateProfileImage()`가 `users/{uid}/profile.profileImage`에 프리셋 id 문자열만 PATCH(갤러리 업로드/Firebase Storage 없음). 설정 > 프로필에 "프로필 사진 선택" `SectionCard` 신규(닉네임 설정과 아이디 변경 사이). 모임에 전파하기 위해 `SocialGroupSyncClient.MemberStats`/`pushMyStats`/`readGroupStats`에 `profileImage` 필드 추가(공유 토글과 무관하게 항상 전송, displayName과 동일 취급), `PhoneLockRepository.pushMySocialStats()`가 `fetchMyProfile()`로 읽어서 실어보냄. `SocialGroupMembersScreen.MemberAvatar`/`SocialGroupMemberDetailScreen.MemberHeaderCard`가 이모지가 있으면 이니셜 대신 이모지를 표시.
+- **소셜탭 UI 통합**: `SocialGroupScreen.kt`에 신규 `ChatRow`(1:1 DM/모임 대화방 공통 표현) + `reloadChatRows()` — 각 DM의 최근 메시지(`peekLatestDmChatMessage`)와 각 모임의 최근 메시지(`peekLatestGroupChatMessage`)를 함께 모아 시각 내림차순으로 정렬한 "💬 채팅" 단일 목록으로 표시(기존엔 "💬 1:1 대화"/"👥 모임"이 각각 별도 섹션). 모임 진행률 카드 섹션은 "👥 모임 현황"으로 이름만 바꿔 그대로 유지(채팅을 찾는 것과 모임 현황을 보는 것은 다른 니즈라는 판단, [[DECISIONS.md]] 참고). 클릭 시 DM 행은 기존 `onOpenDm`, 모임 행은 `onOpenGroup`(모임 상세 화면으로 이동 후 거기서 "💬 대화" 탭 선택 — 대화 탭으로의 직접 딥링크는 이번 범위 밖).
+- **업데이트 로그(릴리스 노트 텍스트) 제거**: `UpdateBanner.kt`에서 "이번 업데이트 내용" 텍스트 블록과 그 소스였던 `releaseNotes` 읽기를 제거. 배너 자체("새 버전이 있습니다" 안내 + 다운로드/설치 버튼)와 다운로드/설치 로직은 그대로 유지. 연쇄적으로 `UpdateChecker.LatestRelease.releaseNotes` 필드, GitHub API 응답에서 `body`를 읽던 코드, `AppPreferences.updateAvailableReleaseNotes`, `PhoneLockRepository`의 두 저장 지점(`checkForUpdateIfNeeded`/`checkForUpdateNow`)을 전부 제거(더 이상 쓰는 곳이 없어짐).
+- **모임 내 1:1 DM 진입점**: `SocialGroupMembersScreen`의 멤버 행과 `SocialGroupMemberDetailScreen`의 상단바에 "💬"/"💬 DM" 버튼 추가 — 기존 `PhoneLockRepository.ensureDmChat(otherUid, otherLabel)`을 그대로 재사용해 DM 방을 만들고 `dm_chat/{chatId}/{peerUid}/{peerLabel}` 라우트로 이동(신규 대화 구조 없음). 새로 만든 DM은 `users/{uid}/dmChatIds`에 등록되므로 소셜탭 통합 채팅 목록(위 항목)에 자연히 나타난다. `MainActivity.kt`의 두 라우트(`social_group/{groupId}`, `social_group_member/{groupId}/{uid}`)에 `onOpenDm` 콜백을 새로 배선.
+- **모임원 상세 "🏠 홈" 탭 신규**: 탭 순서를 홈/루틴/공부로 변경(기존 루틴/공부 2탭 앞에 추가). 라이브 `PlantScreen`(애니메이션 전체)을 재사용하지 않고 — 다른 탭들과 같은 이유로 읽기전용 요약만 표시 — `MemberStats`에 `plantLevel`/`plantTitle`/`plantTier`/`plantProgress`/`plantRebirthCount`를 추가해 레벨/칭호/등급 배지/진행률 원형 게이지/환생 횟수 카드(`MemberHomeTab`)로 보여준다. 공유 여부는 다른 항목들과 동일한 패턴으로 신규 `AppPreferences.GroupShareSettings.sharePlant`(기본 true) + `GroupShareSettingsDialog`의 "홈" 토글로 모임별 on/off. `PhoneLockRepository.pushMySocialStats()`가 `GrowthSystem.levelForExp`/`stageForLevel`/`progressToNextLevel`로 스냅샷을 계산해 함께 전송.
+- **학습 통계 "복습 단계별 일정 수" 제거**: `SocialGroupMemberDetailScreen.MemberStudyStatsTab`에서 해당 UI 블록과 그 계산(`stageCounts = schedule.groupBy { it.color }...`)을 삭제. 나머지 통계(오늘 일정/완료/완료율/연속 완료일)는 그대로. `memberCalStageColor` 함수는 캘린더 미니 그리드 등 다른 곳에서 계속 쓰이므로 삭제하지 않음.
+- **빌드/배포**: `compileDebugKotlin`/`compileReleaseKotlin`/`assembleRelease` 전부 정상 통과(신규 컴파일 에러 없음, 기존 경고만 남음). versionCode `1789187642`로 안드로이드 릴리스 APK를 3위치(`AndroidBuilds\phone-lock-app-release.apk`, OneDrive 원본, `vm-build-output\android\app-release.apk`)에 배포. GitHub 릴리스/공개 저장소 동기화는 아직 미완료(문서 갱신 이후 진행 예정).
+
+---
+
 ## 2026-09-12 (111차 세션) — "식물"→"홈" 탭 승격 + 배경 침범 버그 수정 + "관리"→"규칙" 개명 + 설정 시스템 전면 재구성(홈 진입점+카테고리 구조) + 아이디 변경 기능 신규
 
 - **식물 탭 배경 침범 버그 수정**: 양 플랫폼 `PlantScreen.kt`의 `GroundScene`이 `Canvas(modifier)`에 `clipToBounds()`가 없어, tier2+ 장식/흔들림 효과가 자기 영역(데스크탑/태블릿 NavigationRail 옆 콘텐츠 영역)을 벗어나 탭 바를 가리던 문제를 `Canvas(modifier.clipToBounds())`로 수정. 그리기 좌표/디자인은 전혀 손대지 않았다.

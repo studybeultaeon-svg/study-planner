@@ -52,6 +52,24 @@ import kotlinx.coroutines.launch
 
 private data class GroupSummary(val id: String, val name: String, val memberCount: Int, val avgTodayRate: Int)
 
+/**
+ * "통합 채팅 목록"(119차, 소셜탭 UI 개편) — 1:1 대화와 모임 대화방을 카카오톡/인스타 DM처럼 하나의
+ * 목록에서 최근 활동순으로 섞어 보여준다. 모임 진행률 카드(아래 "모임" 섹션)와는 목적이 달라 그대로
+ * 남겨두되(대화방을 찾는 것과 모임 현황을 보는 것은 다른 니즈), "대화를 시작/이어가는" 진입점만 이
+ * 목록 하나로 합쳤다.
+ */
+private data class ChatRow(
+    val key: String,
+    val title: String,
+    val isGroup: Boolean,
+    val subtitle: String,
+    val atMillis: Long,
+    val groupId: String? = null,
+    val chatId: String? = null,
+    val peerUid: String? = null,
+    val peerLabel: String? = null
+)
+
 /** 소셜 화면 배경(사용자 지적으로 재디자인) — 처음엔 StudyLockActivity와 같은 `Brush.radialGradient`를
  *  그대로 썼는데, 중앙에 빛나는 원 모양은 잠금 화면의 원형 진행률 링과 짝을 이루는 디자인이라 링이 없는
  *  리스트 화면(소셜)에 그대로 가져오면 정체불명의 얼룩처럼 보인다는 지적을 받았다 — 잠금 화면 쪽은
@@ -119,8 +137,9 @@ fun SocialGroupScreen(
     var showJoinDialog by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     // 92차 소셜 개편 Phase 2: 1:1 DM — 커스텀 아이디 전역 검색으로 시작.
-    var dmChats by remember { mutableStateOf<List<com.phonelock.app.service.ChatSyncClient.DmChatPreview>>(emptyList()) }
     var showNewDmDialog by remember { mutableStateOf(false) }
+    var chatRows by remember { mutableStateOf<List<ChatRow>>(emptyList()) }
+    var chatRowsLoading by remember { mutableStateOf(true) }
 
     fun reload() {
         loading = true
@@ -142,11 +161,37 @@ fun SocialGroupScreen(
         }
     }
 
-    fun reloadDmChats() {
-        scope.launch { dmChats = repository.readMyDmChats() }
+    /** 1:1 대화 + 모임 대화방의 최근 메시지를 함께 모아 하나의 목록으로 정렬한다. */
+    fun reloadChatRows() {
+        chatRowsLoading = true
+        scope.launch {
+            val dms = repository.readMyDmChats()
+            val groupIds = repository.readMySocialGroupIds()
+            val dmRows = dms.map { dm ->
+                val latest = repository.peekLatestDmChatMessage(dm.chatId)
+                ChatRow(
+                    key = "dm_${dm.chatId}", title = dm.peerLabel, isGroup = false,
+                    subtitle = latest?.text?.takeIf { it.isNotBlank() } ?: "대화를 시작해보세요",
+                    atMillis = latest?.sentAtMillis ?: dm.updatedAtMillis,
+                    chatId = dm.chatId, peerUid = dm.peerUid, peerLabel = dm.peerLabel
+                )
+            }
+            val groupRows = groupIds.mapNotNull { id ->
+                val info = repository.readSocialGroupInfo(id) ?: return@mapNotNull null
+                val latest = repository.peekLatestGroupChatMessage(id)
+                ChatRow(
+                    key = "group_$id", title = info.name, isGroup = true,
+                    subtitle = latest?.let { "${it.senderName}: ${it.text}" } ?: "아직 대화가 없습니다",
+                    atMillis = latest?.sentAtMillis ?: info.createdAt,
+                    groupId = id
+                )
+            }
+            chatRows = (dmRows + groupRows).sortedByDescending { it.atMillis }
+            chatRowsLoading = false
+        }
     }
 
-    LaunchedEffect(Unit) { reload(); reloadDmChats() }
+    LaunchedEffect(Unit) { reload(); reloadChatRows() }
 
     if (showNewDmDialog) {
         var codeText by remember { mutableStateOf("") }
@@ -188,7 +233,7 @@ fun SocialGroupScreen(
                                 searching = false
                                 result.onSuccess { chatId ->
                                     showNewDmDialog = false
-                                    reloadDmChats()
+                                    reloadChatRows()
                                     onOpenDm(chatId, otherUid, otherLabel)
                                 }
                                 result.onFailure { e -> searchError = e.message ?: "시작에 실패했습니다." }
@@ -222,7 +267,7 @@ fun SocialGroupScreen(
                         scope.launch {
                             val result = repository.createSocialGroup(name)
                             result.onFailure { e -> errorMessage = e.message ?: "모임 생성에 실패했습니다." }
-                            result.onSuccess { reload() }
+                            result.onSuccess { reload(); reloadChatRows() }
                         }
                     }
                 }) { Text("만들기") }
@@ -252,7 +297,7 @@ fun SocialGroupScreen(
                         scope.launch {
                             val result = repository.joinSocialGroup(code)
                             result.onFailure { e -> errorMessage = e.message ?: "참여에 실패했습니다." }
-                            result.onSuccess { reload() }
+                            result.onSuccess { reload(); reloadChatRows() }
                         }
                     }
                 }) { Text("참여") }
@@ -265,7 +310,7 @@ fun SocialGroupScreen(
         // 98차(사용자 요청): 당겨서 새로고침 — 서버 최신 상태를 다시 받아온다.
         com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = {
             reload()
-            reloadDmChats()
+            reloadChatRows()
         }) {
         // 106차(사용자 요청): 소셜 탭 메인 화면 전체 스크롤 — 예전엔 아래 모임 목록만 LazyColumn으로
         // 자체 스크롤하고 위쪽(1:1 대화 목록+헤더)은 스크롤 밖이라, 모임/대화가 많으면 화면 위쪽이
@@ -275,36 +320,54 @@ fun SocialGroupScreen(
                 .verticalScroll(rememberScrollState()).padding(Spacing.md)
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                SectionPill("💬 1:1 대화")
+                SectionPill("💬 채팅")
                 TextButton(onClick = { showNewDmDialog = true }) { Text("+ 새 대화") }
             }
             Spacer(Modifier.height(Spacing.sm))
-            if (dmChats.isEmpty()) {
+            if (!chatRowsLoading && chatRows.isEmpty()) {
                 Text(
-                    "아직 시작한 대화가 없습니다.",
+                    "아직 대화나 모임이 없습니다. 1:1 대화를 시작하거나 모임에 참여해보세요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    dmChats.forEach { dm ->
+                    chatRows.forEach { row ->
                         Surface(
-                            modifier = Modifier.fillMaxWidth().clickable { onOpenDm(dm.chatId, dm.peerUid, dm.peerLabel) },
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                if (row.isGroup) onOpenGroup(row.groupId!!)
+                                else onOpenDm(row.chatId!!, row.peerUid!!, row.peerLabel!!)
+                            },
                             shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f))
+                            color = (if (row.isGroup) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary).copy(alpha = 0.06f),
+                            border = BorderStroke(1.dp, (if (row.isGroup) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary).copy(alpha = 0.25f))
                         ) {
                             Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                                DmAvatar(dm.peerLabel)
+                                if (row.isGroup) GroupAvatar(row.title) else DmAvatar(row.title)
                                 Spacer(Modifier.width(Spacing.sm))
-                                Text(dm.peerLabel, style = MaterialTheme.typography.bodyMedium)
+                                Column(Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(row.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                        if (row.isGroup) {
+                                            Spacer(Modifier.width(4.dp))
+                                            SectionPill("모임", color = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+                                    Text(
+                                        row.subtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
             Spacer(Modifier.height(Spacing.lg))
-            SectionPill("👥 모임")
+            SectionPill("👥 모임 현황")
             Spacer(Modifier.height(Spacing.sm))
             if (com.phonelock.app.ui.components.isTabletWidth()) {
                 // 84차: 데스크탑판 SocialGroupScreen.kt처럼 부제와 버튼을 한 줄에 SpaceBetween으로 —

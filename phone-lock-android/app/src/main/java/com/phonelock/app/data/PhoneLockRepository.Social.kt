@@ -84,6 +84,8 @@ suspend fun PhoneLockRepository.writeSocialGroupGoal(groupId: String, targetMinu
  */
 suspend fun PhoneLockRepository.pushMySocialStats(groupId: String) {
     val displayName = com.phonelock.app.service.AccountSyncClient.myDisplayName(fbDatabaseUrl, fbApiKey)
+    val myProfileImage = com.phonelock.app.service.AccountSyncClient.fetchMyProfile(fbDatabaseUrl, fbApiKey)
+        .getOrNull()?.optString("profileImage", "") ?: ""
     val today = LocalDate.now()
     val todayKey = today.toString()
     val routines = routineDao.getAll()
@@ -134,14 +136,22 @@ suspend fun PhoneLockRepository.pushMySocialStats(groupId: String) {
     val share = preferences.groupShareSettings(groupId)
     val hiddenFromUids = preferences.hiddenFromUidsFor(groupId)
 
+    val plantExpTotal = getGrowthExpTotal()
+    val plantLevel = com.phonelock.shared.GrowthSystem.levelForExp(plantExpTotal)
+    val plantStage = com.phonelock.shared.GrowthSystem.stageForLevel(plantLevel)
+    val plantProgress = com.phonelock.shared.GrowthSystem.progressToNextLevel(plantExpTotal)
+    val plantRebirthCount = getRebirthCount()
+
     runCatching {
         com.phonelock.app.service.SocialGroupSyncClient.pushMyStats(
             fbDatabaseUrl, fbApiKey, groupId, displayName,
+            myProfileImage,
             share.shareRoutines, share.shareStudy, share.shareStreak,
             share.shareSchedule, share.shareStudyingNow,
             routineStats, studySeconds, studyProgress, streak, routineBestStreak,
             scheduleStats, calcTaskStats, studySecondsByDate, studyingNow, studyingTaskName,
-            hiddenFromUids
+            hiddenFromUids,
+            share.sharePlant, plantLevel, plantStage.title, plantStage.tier, plantProgress, plantRebirthCount
         )
     }.onSuccess {
         preferences.recordSyncSuccess()

@@ -182,7 +182,6 @@ class PhoneLockRepository(context: Context) {
         if (latest != null && latest.versionCode > BuildConfig.VERSION_CODE) {
             preferences.updateAvailableVersionCode = latest.versionCode
             preferences.updateAvailableApkUrl = latest.apkUrl
-            preferences.updateAvailableReleaseNotes = latest.releaseNotes
         } else if (result.isSuccess) {
             // 확인엔 성공했고 정말 최신 버전일 때만 지워야 한다 — 확인 자체가 실패했으면(네트워크/요청
             // 한도 등) 이전에 남아있던 "업데이트 있음" 상태를 함부로 지우지 않는다.
@@ -247,7 +246,6 @@ class PhoneLockRepository(context: Context) {
         return if (latest != null && latest.versionCode > BuildConfig.VERSION_CODE) {
             preferences.updateAvailableVersionCode = latest.versionCode
             preferences.updateAvailableApkUrl = latest.apkUrl
-            preferences.updateAvailableReleaseNotes = latest.releaseNotes
             UpdateCheckOutcome.Available(latest.apkUrl)
         } else if (result.isSuccess) {
             preferences.updateAvailableVersionCode = 0L

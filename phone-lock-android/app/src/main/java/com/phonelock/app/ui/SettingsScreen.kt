@@ -361,6 +361,49 @@ fun SettingsScreen(
                     }
                     Spacer(Modifier.height(Spacing.md))
 
+                    SectionCard("프로필 사진 선택") {
+                        var selectedAvatar by remember { mutableStateOf<String?>(null) }
+                        var avatarSaving by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) {
+                            val profile = AccountSyncClient.fetchMyProfile(prefs.fbDatabaseUrl, prefs.fbApiKey).getOrNull()
+                            selectedAvatar = profile?.optString("profileImage", "")?.takeIf { it.isNotBlank() }
+                        }
+                        Text(
+                            "동물 프로필 사진 중 하나를 골라보세요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
+                            com.phonelock.app.ui.components.AvatarCatalog.PRESETS.forEach { (id, emoji) ->
+                                val selected = selectedAvatar == id
+                                Surface(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clickable(enabled = !avatarSaving) {
+                                            selectedAvatar = id
+                                            avatarSaving = true
+                                            scope.launch {
+                                                AccountSyncClient.updateProfileImage(prefs.fbDatabaseUrl, prefs.fbApiKey, id)
+                                                avatarSaving = false
+                                            }
+                                        },
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                    border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                        Text(emoji, style = MaterialTheme.typography.titleLarge)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
                     if (loginId != null) {
                         SectionCard("아이디 변경") {
                             val isAdminAccount = currentCustomId.equals(ADMIN_USERNAME, ignoreCase = true)

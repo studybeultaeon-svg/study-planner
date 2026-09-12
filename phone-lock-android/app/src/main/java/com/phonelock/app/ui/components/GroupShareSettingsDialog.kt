@@ -42,6 +42,7 @@ fun GroupShareSettingsDialog(
     var shareStreak by remember { mutableStateOf(initial.shareStreak) }
     var shareSchedule by remember { mutableStateOf(initial.shareSchedule) }
     var shareStudyingNow by remember { mutableStateOf(initial.shareStudyingNow) }
+    var sharePlant by remember { mutableStateOf(initial.sharePlant) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -59,13 +60,14 @@ fun GroupShareSettingsDialog(
                 ShareToggleRow("연속 기록", null, shareStreak) { shareStreak = it }
                 ShareToggleRow("오늘 일정", "오늘 캘린더 일정 목록과 완료 여부", shareSchedule) { shareSchedule = it }
                 ShareToggleRow("공부중 여부", "지금 공부(뽀모도로 포함) 중인지와 업무 이름", shareStudyingNow) { shareStudyingNow = it }
+                ShareToggleRow("홈", "식물 성장 레벨·칭호·등급", sharePlant) { sharePlant = it }
             }
         },
         confirmButton = {
             Button(onClick = {
                 onSave(
                     AppPreferences.GroupShareSettings(
-                        shareRoutines, shareStudy, shareStreak, shareSchedule, shareStudyingNow
+                        shareRoutines, shareStudy, shareStreak, shareSchedule, shareStudyingNow, sharePlant
                     )
                 )
             }) { Text("저장") }
