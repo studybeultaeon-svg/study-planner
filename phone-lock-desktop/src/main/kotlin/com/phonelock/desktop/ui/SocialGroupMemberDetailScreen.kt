@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -63,6 +64,7 @@ import com.phonelock.desktop.ui.components.TextMessageDialog
 import com.phonelock.desktop.ui.components.VoiceRecordDialog
 import com.phonelock.desktop.ui.components.WakeOptionsDialog
 import com.phonelock.desktop.ui.theme.Spacing
+import com.phonelock.shared.GrowthSystem
 
 private fun formatSeconds(seconds: Int): String {
     val h = seconds / 3600
@@ -179,7 +181,7 @@ fun SocialGroupMemberDetailScreen(
         var studySubTab by remember { mutableStateOf(0) }
 
         TabRow(selectedTabIndex = section, containerColor = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
-            Tab(selected = section == 0, onClick = { section = 0 }, text = { Text("🏠 홈") })
+            Tab(selected = section == 0, onClick = { section = 0 }, text = { Text("🌱 홈") })
             Tab(selected = section == 1, onClick = { section = 1 }, text = { Text("📋 루틴") })
             Tab(selected = section == 2, onClick = { section = 2 }, text = { Text("📘 공부") })
         }
@@ -318,53 +320,39 @@ private fun MemberHeaderCard(displayName: String, updatedAt: Long, modifier: Mod
     }
 }
 
-/** 등급(tier)별 톤 — [com.phonelock.shared.GrowthSystem.Stage.tier]와 같은 5단계 매핑
- *  (안드로이드판과 대칭). */
-private fun tierColor(tier: Int): Color = when (tier) {
-    0 -> Color(0xFF66BB6A)
-    1 -> Color(0xFF8FA08A)
-    2 -> Color(0xFF7846C8)
-    3 -> Color(0xFFC0392B)
-    4 -> Color(0xFF6A1B9A)
-    else -> Color(0xFF66BB6A)
-}
-
-private fun tierLabel(tier: Int): String = when (tier) {
-    0 -> "정상"
-    1 -> "이상함"
-    2 -> "초월급"
-    3 -> "종말급"
-    4 -> "최강자급"
-    else -> "정상"
-}
-
 /**
- * "홈" 탭(112차, 모임원 상세에 홈 화면 추가, 안드로이드판과 대칭) — 라이브 [PlantScreen]의 애니메이션
- * 전체를 그대로 재사용하지 않고(다른 탭들과 같은 이유: 읽기전용 요약), [SocialGroupSyncClient.MemberStats]에
- * 담긴 레벨/칭호/등급/진행률/환생 횟수 스냅샷만 카드 형태로 보여준다.
+ * "홈" 탭(112차 신설, 120차 개편, 안드로이드판과 대칭) — 처음엔 레벨/칭호/등급 카드 요약만 보여줬지만
+ * (사용자 피드백: 축약하지 말고 실제 홈 화면을 그대로 보여달라) 라이브 [PlantScreen]과 같은 [GroundScene]
+ * 렌더러를 그대로 재사용해 배경/나무 애니메이션까지 동일하게 그린다. 다만 이 값들은
+ * [SocialGroupSyncClient.MemberStats] 스냅샷(공유 시점 값)이라 실시간이 아니고, 설정/경험치 적용/환생 같은
+ * 조작 버튼은 내 계정 전용이라 여기선 뺐다(읽기전용).
  */
 @Composable
 private fun MemberHomeTab(member: SocialGroupSyncClient.MemberStats) {
-    val color = tierColor(member.plantTier)
-    Column(Modifier.fillMaxWidth()) {
-        Surface(shape = MaterialTheme.shapes.medium, color = color.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth().padding(Spacing.md), verticalAlignment = Alignment.CenterVertically) {
-                CircularPercentGauge(percent = (member.plantProgress * 100).toInt(), color = color)
-                Spacer(Modifier.width(Spacing.md))
-                Column {
-                    Text(
-                        "Lv.${member.plantLevel} · ${member.plantTitle.ifBlank { "씨앗" }}",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    SectionPill(tierLabel(member.plantTier), color = color)
+    val stage = GrowthSystem.stageForLevel(member.plantLevel)
+    val stageIndex = GrowthSystem.STAGES.indexOf(stage)
+
+    Box(Modifier.fillMaxWidth().height(420.dp).clip(RoundedCornerShape(20.dp))) {
+        GroundScene(stageIndex = stageIndex, stage = stage, rebirthCount = member.plantRebirthCount, modifier = Modifier.fillMaxSize())
+        Surface(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(Spacing.md),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(Spacing.md)) {
+                Text("Lv.${member.plantLevel}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text(stage.title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                Spacer(Modifier.height(Spacing.xs))
+                LinearProgressIndicator(
+                    progress = { member.plantProgress },
+                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
+                )
+                if (member.plantRebirthCount > 0) {
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text("🔁 환생 ${member.plantRebirthCount}회", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        }
-        Spacer(Modifier.height(Spacing.sm))
-        if (member.plantRebirthCount > 0) {
-            Text("🔁 환생 ${member.plantRebirthCount}회", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

@@ -347,56 +347,8 @@ fun SocialGroupScreen(
 
     Column(Modifier.fillMaxSize().background(socialGradientBackground()).verticalScroll(rememberScrollState()).padding(Spacing.md)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            SectionPill("💬 채팅")
-            TextButton(onClick = { showNewDmDialog = true }) { Text("+ 새 대화") }
-        }
-        Spacer(Modifier.height(Spacing.sm))
-        if (!chatRowsLoading && chatRows.isEmpty()) {
-            Text(
-                "아직 대화나 모임이 없습니다. 1:1 대화를 시작하거나 모임에 참여해보세요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            chatRows.forEach { row ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = (if (row.isGroup) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary).copy(alpha = 0.06f),
-                    border = BorderStroke(1.dp, (if (row.isGroup) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary).copy(alpha = 0.25f)),
-                    onClick = {
-                        if (row.isGroup) onSelectGroup(row.groupId!!)
-                        else onOpenDm(row.chatId!!, row.peerUid!!, row.peerLabel!!)
-                    }
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                        if (row.isGroup) GroupAvatar(row.title) else DmAvatar(row.title)
-                        Spacer(Modifier.width(Spacing.sm))
-                        Column(Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(row.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                if (row.isGroup) {
-                                    Spacer(Modifier.width(4.dp))
-                                    SectionPill("모임", color = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                            Text(
-                                row.subtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(Spacing.lg))
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
-                Text("👥 모임 현황", style = MaterialTheme.typography.headlineMedium)
+                Text("👥 모임", style = MaterialTheme.typography.headlineMedium)
                 Text(
                     "함께 갓생 사는 사람들과 서로 진행 상황을 확인해요",
                     style = MaterialTheme.typography.bodySmall,
@@ -412,12 +364,10 @@ fun SocialGroupScreen(
         }
         Spacer(Modifier.height(Spacing.lg))
 
-        errorMsg?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            return@Column
-        }
-
-        if (loading) {
+        val err = errorMsg
+        if (err != null) {
+            Text(err, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else if (loading) {
             Text("불러오는 중...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else if (summaries.isEmpty()) {
             Surface(
@@ -478,6 +428,54 @@ fun SocialGroupScreen(
                                 "오늘 루틴 평균",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(Spacing.lg))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            SectionPill("💬 채팅")
+            TextButton(onClick = { showNewDmDialog = true }) { Text("+ 새 대화") }
+        }
+        Spacer(Modifier.height(Spacing.sm))
+        if (!chatRowsLoading && chatRows.isEmpty()) {
+            Text(
+                "아직 대화나 모임이 없습니다. 1:1 대화를 시작하거나 모임에 참여해보세요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            chatRows.forEach { row ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = (if (row.isGroup) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary).copy(alpha = 0.06f),
+                    border = BorderStroke(1.dp, (if (row.isGroup) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary).copy(alpha = 0.25f)),
+                    onClick = {
+                        if (row.isGroup) onSelectGroup(row.groupId!!)
+                        else onOpenDm(row.chatId!!, row.peerUid!!, row.peerLabel!!)
+                    }
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                        if (row.isGroup) GroupAvatar(row.title) else DmAvatar(row.title)
+                        Spacer(Modifier.width(Spacing.sm))
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(row.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                if (row.isGroup) {
+                                    Spacer(Modifier.width(4.dp))
+                                    SectionPill("모임", color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                            Text(
+                                row.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }
                     }

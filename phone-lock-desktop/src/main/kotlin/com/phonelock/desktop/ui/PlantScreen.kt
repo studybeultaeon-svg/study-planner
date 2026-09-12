@@ -356,7 +356,7 @@ private fun growthAnimForTier(tier: Int, tMs: Float): GrowthAnim {
 }
 
 @Composable
-private fun GroundScene(stageIndex: Int, stage: GrowthSystem.Stage, rebirthCount: Int, modifier: Modifier = Modifier) {
+fun GroundScene(stageIndex: Int, stage: GrowthSystem.Stage, rebirthCount: Int, modifier: Modifier = Modifier) {
     val startTime = remember { System.nanoTime() }
     var nowMs by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {

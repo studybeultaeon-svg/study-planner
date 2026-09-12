@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-09-12 (113차) — 소셜탭 "모임" 섹션 순서 변경 + 모임원 상세 "홈" 탭을 실제 홈 화면으로 개편
+
+사용자 요청 2건, 양 플랫폼(안드로이드/데스크탑) 동일 적용:
+
+- **"모임 현황"→"모임" 개명 + 순서 변경**: `SocialGroupScreen.kt`(양 플랫폼)에서 "👥 모임 현황" 섹션을 "👥 모임"으로 개명하고, "💬 채팅" 통합 목록보다 위로 올렸다(사용자 요청: 모임이 채팅보다 위에 와야 함). desktop판은 `errorMsg?.let { ... return@Column }` 이던 조기 반환을 `val err = errorMsg; if (err != null) { ... } else if (...) { ... }` 형태로 바꿔서, 순서를 바꿔도 에러 상태에서 채팅 목록이 사라지지 않게 했다(기존 동작 유지).
+- **모임원 상세 "홈" 탭 전면 개편**: 기존엔 레벨/칭호/등급을 카드 하나로 축약해서 보여줬는데, 사용자 피드백은 "축약하지 말고 실제 사용자의 홈 화면을 그대로 보여달라"는 것이었다. `PlantScreen.kt`(양 플랫폼)의 배경/나무 렌더러 `GroundScene`을 `private`에서 공개 함수로 바꿔 그대로 재사용 — `SocialGroupMemberDetailScreen.kt`의 `MemberHomeTab`이 이제 `MemberStats` 스냅샷의 레벨/환생 횟수로 `GroundScene`을 직접 그려서 라이브 홈 화면과 동일한 배경/나무 애니메이션을 보여준다(값 자체는 공유 시점 스냅샷이라 실시간은 아님). 설정/경험치 적용/환생 버튼은 내 계정 전용 조작이라 제외(읽기전용 유지). 이제 안 쓰는 `tierColor`/`tierLabel` 헬퍼 함수는 삭제. 탭 아이콘도 🏠→🌱로 변경해 메인 홈 탭과 통일.
+- **빌드/배포**: 안드로이드 `compileDebugKotlin`+`assembleRelease`(versionCode `1789221647`), 데스크탑 `compileKotlin`+`packageMsi createDistributable`(BuildInfo `1789221770`) 둘 다 정상 통과. 안드로이드 APK 3위치(`AndroidBuilds`, OneDrive 원본, `vm-build-output`) 해시 일치 배포, 데스크탑 호스트(`PhoneLockDesktopApp`)+`vm-build-output` 배포 및 재기동 완료. GitHub 릴리스 게시(`android-1789221647`, `desktop-1789221770`), `sync-public-repo.ps1`로 공개 저장소 push까지 완료. **실사용 검증은 안 됨.**
+
+---
+
 ## 2026-09-12 (112차 후속 — 데스크탑 이식) — 같은 9개 항목을 phone-lock-desktop에도 동일하게 적용
 
 바로 위 112차 세션은 안드로이드만 대상으로 했는데, 사용자가 데스크탑에도 동일하게 반영해달라고 후속 요청 —
