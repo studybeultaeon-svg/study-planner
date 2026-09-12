@@ -38,23 +38,6 @@ object ChatSyncClient {
         return "dm_${sorted[0]}_${sorted[1]}"
     }
 
-    /** 커스텀 아이디로 상대를 찾는다(카카오톡 ID검색과 동일한 개념) — `usernames/{code}`가 이미 존재하는
-     *  로그인 시스템의 공개 인덱스라 재사용한다. 찾으면 (uid, 정규화된 코드), 없거나 나 자신이면 null. */
-    suspend fun searchUserByCode(databaseUrl: String?, apiKey: String?, code: String): Pair<String, String>? {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || code.isBlank()) return null
-        return withContext(Dispatchers.IO) {
-            runCatching {
-                val (token, myUid) = resolveIdentity(apiKey) ?: return@runCatching null
-                val base = databaseUrl.trimEnd('/')
-                val normalized = code.trim().uppercase()
-                val text = getRaw(URL("$base/usernames/$normalized.json?auth=$token"))
-                    ?.trim('"')?.takeIf { it.isNotBlank() && it != "null" } ?: return@runCatching null
-                if (text == myUid) return@runCatching null
-                text to normalized
-            }.getOrNull()
-        }
-    }
-
     /** DM방을 만들거나(없으면) 이미 있으면 그대로 chatId만 반환 — 양쪽 `users/{uid}/dmChatIds`에도
      *  서로를 등록해야 검색 없이도 대화 목록에서 다시 찾을 수 있다. */
     suspend fun ensureDmChat(databaseUrl: String?, apiKey: String?, otherUid: String, otherLabel: String): Result<String> {

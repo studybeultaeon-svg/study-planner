@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-09-13 (115차) — 소셜탭 메인 화면 "채팅" 목록에서 모임 항목 제거 + 모임 "💬 대화" 탭 on/off 설정
+
+사용자 요청: 소셜탭 메인 화면의 "👥 모임" 아래 있는 "💬 채팅"(통합 목록)을 없앨 것 — 단, 모임 상세의 "💬 대화" 탭 자체는 삭제하지 말고 모임 설정에서 켜고 끌 수 있게 할 것. (참고: 같은 세션 중 정반대로 — 모임 상세의 대화 탭을 삭제하는 걸로 — 잘못 구현했던 커밋이 있었는데 `git revert`로 되돌리고 이 내용으로 다시 작업함.) 양 플랫폼(안드로이드/데스크탑) 동일 적용:
+
+- **소셜탭 메인 화면**(`SocialGroupScreen.kt`): "💬 채팅" 통합 목록(1:1 DM + 모임 대화방을 최근 활동순으로 섞어 보여주던 것) 삭제 — 이제 "👥 모임" 목록만 남는다. 딸려있던 "+ 새 대화"(커스텀 아이디 전역 검색으로 DM 시작) 진입점도 함께 제거. DM은 모임 멤버 목록/상세의 "💬" 버튼으로만 시작 가능.
+- **모임 "💬 대화" 채널 on/off 설정 신규 추가**: `SocialGroupSyncClient.GroupInfo`에 `chatEnabled: Boolean = true` 필드, `setGroupChatEnabled()` 함수로 `groups/{id}/info/chatEnabled` 경로만 PUT. `SocialGroupMembersScreen.kt`의 "⚙" 드롭다운에 관리자 전용 "💬 모임 대화 끄기/켜기" 메뉴 추가 — 끄면 "멤버"/"💬 대화" `TabRow` 자체가 안 보이고 멤버 목록만 표시(모든 멤버 기준).
+- 정리: `ChatSyncClient.searchUserByCode`/`PhoneLockRepository.searchDmUserByCode`(전역 커스텀 아이디 DM 검색, 진입점 삭제로 orphan) 제거. `SocialGroupScreen`의 `onOpenDm` 파라미터도 더 이상 안 쓰여 제거, 호출부(`MainActivity.kt`/`MainScreen.kt`) 갱신.
+- **빌드/배포 미완료**: 이 세션 환경에 gradle/gradlew가 없어(양 프로젝트 다 wrapper jar 없음, PATH에도 없음) 컴파일조차 확인 못 했다. 중괄호 짝 수 등 정적 점검만 하고 코드만 커밋 — 컴파일 확인/빌드/배포/실사용 검증 전부 다음 세션 과제.
+
+---
+
 ## 2026-09-12 (114차) — 모임원 상세 캘린더를 안드로이드 자체 스타일로 교정 + 소셜탭 닉네임 옆 레벨/칭호 배지
 
 사용자 요청 2건, 양 플랫폼(안드로이드/데스크탑) 동일 적용(1번은 안드로이드 전용):

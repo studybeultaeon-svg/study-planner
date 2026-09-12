@@ -52,26 +52,6 @@ import kotlinx.coroutines.launch
 
 private data class GroupSummary(val id: String, val name: String, val memberCount: Int, val avgTodayRate: Int)
 
-/**
- * "통합 채팅 목록"(119차, 소셜탭 UI 개편) — 1:1 대화와 모임 대화방을 카카오톡/인스타 DM처럼 하나의
- * 목록에서 최근 활동순으로 섞어 보여준다. 모임 진행률 카드(아래 "모임" 섹션)와는 목적이 달라 그대로
- * 남겨두되(대화방을 찾는 것과 모임 현황을 보는 것은 다른 니즈), "대화를 시작/이어가는" 진입점만 이
- * 목록 하나로 합쳤다.
- */
-private data class ChatRow(
-    val key: String,
-    val title: String,
-    val isGroup: Boolean,
-    val subtitle: String,
-    val atMillis: Long,
-    val groupId: String? = null,
-    val chatId: String? = null,
-    val peerUid: String? = null,
-    val peerLabel: String? = null,
-    /** DM 상대의 레벨/칭호 배지(122차) — 모임 채팅방(isGroup=true)은 특정 한 사람이 아니라서 대상 없음. */
-    val plantBadge: com.phonelock.app.service.SocialGroupSyncClient.PlantBadge? = null
-)
-
 /** 소셜 화면 배경(사용자 지적으로 재디자인) — 처음엔 StudyLockActivity와 같은 `Brush.radialGradient`를
  *  그대로 썼는데, 중앙에 빛나는 원 모양은 잠금 화면의 원형 진행률 링과 짝을 이루는 디자인이라 링이 없는
  *  리스트 화면(소셜)에 그대로 가져오면 정체불명의 얼룩처럼 보인다는 지적을 받았다 — 잠금 화면 쪽은
@@ -98,21 +78,6 @@ internal fun PlantLevelBadge(level: Int, title: String) {
     SectionPill("Lv.$level $title", color = MaterialTheme.colorScheme.tertiary)
 }
 
-/** DM 상대 첫 글자를 원형 배지로(모임 [GroupAvatar]와 같은 패턴, 색만 secondary로 구분). */
-@Composable
-private fun DmAvatar(label: String) {
-    Box(
-        modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            label.trim().firstOrNull()?.uppercase() ?: "?",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-    }
-}
-
 /** 모임 이름 첫 글자를 원형 배지로(데스크탑판 GroupAvatar와 대칭). */
 @Composable
 private fun GroupAvatar(name: String) {
@@ -137,8 +102,7 @@ private fun GroupAvatar(name: String) {
 @Composable
 fun SocialGroupScreen(
     repository: PhoneLockRepository,
-    onOpenGroup: (String) -> Unit,
-    onOpenDm: (String, String, String) -> Unit
+    onOpenGroup: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var summaries by remember { mutableStateOf<List<GroupSummary>>(emptyList()) }
@@ -146,10 +110,6 @@ fun SocialGroupScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var showJoinDialog by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    // 92차 소셜 개편 Phase 2: 1:1 DM — 커스텀 아이디 전역 검색으로 시작.
-    var showNewDmDialog by remember { mutableStateOf(false) }
-    var chatRows by remember { mutableStateOf<List<ChatRow>>(emptyList()) }
-    var chatRowsLoading by remember { mutableStateOf(true) }
 
     fun reload() {
         loading = true
@@ -171,91 +131,7 @@ fun SocialGroupScreen(
         }
     }
 
-    /** 1:1 대화 + 모임 대화방의 최근 메시지를 함께 모아 하나의 목록으로 정렬한다. */
-    fun reloadChatRows() {
-        chatRowsLoading = true
-        scope.launch {
-            val dms = repository.readMyDmChats()
-            val groupIds = repository.readMySocialGroupIds()
-            val dmRows = dms.map { dm ->
-                val latest = repository.peekLatestDmChatMessage(dm.chatId)
-                ChatRow(
-                    key = "dm_${dm.chatId}", title = dm.peerLabel, isGroup = false,
-                    subtitle = latest?.text?.takeIf { it.isNotBlank() } ?: "대화를 시작해보세요",
-                    atMillis = latest?.sentAtMillis ?: dm.updatedAtMillis,
-                    chatId = dm.chatId, peerUid = dm.peerUid, peerLabel = dm.peerLabel,
-                    plantBadge = repository.findSocialMemberPlantBadge(dm.peerUid)
-                )
-            }
-            val groupRows = groupIds.mapNotNull { id ->
-                val info = repository.readSocialGroupInfo(id) ?: return@mapNotNull null
-                val latest = repository.peekLatestGroupChatMessage(id)
-                ChatRow(
-                    key = "group_$id", title = info.name, isGroup = true,
-                    subtitle = latest?.let { "${it.senderName}: ${it.text}" } ?: "아직 대화가 없습니다",
-                    atMillis = latest?.sentAtMillis ?: info.createdAt,
-                    groupId = id
-                )
-            }
-            chatRows = (dmRows + groupRows).sortedByDescending { it.atMillis }
-            chatRowsLoading = false
-        }
-    }
-
-    LaunchedEffect(Unit) { reload(); reloadChatRows() }
-
-    if (showNewDmDialog) {
-        var codeText by remember { mutableStateOf("") }
-        var searchError by remember { mutableStateOf<String?>(null) }
-        var searching by remember { mutableStateOf(false) }
-        AlertDialog(
-            onDismissRequest = { showNewDmDialog = false },
-            title = { Text("새 대화") },
-            text = {
-                Column {
-                    Text("상대의 커스텀 아이디를 입력하세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(Spacing.xs))
-                    OutlinedTextField(
-                        value = codeText,
-                        onValueChange = { codeText = it; searchError = null },
-                        label = { Text("커스텀 아이디") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    searchError?.let {
-                        Spacer(Modifier.height(Spacing.xs))
-                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = codeText.isNotBlank() && !searching,
-                    onClick = {
-                        searching = true
-                        scope.launch {
-                            val found = repository.searchDmUserByCode(codeText.trim())
-                            if (found == null) {
-                                searchError = "찾을 수 없습니다."
-                                searching = false
-                            } else {
-                                val (otherUid, otherLabel) = found
-                                val result = repository.ensureDmChat(otherUid, otherLabel)
-                                searching = false
-                                result.onSuccess { chatId ->
-                                    showNewDmDialog = false
-                                    reloadChatRows()
-                                    onOpenDm(chatId, otherUid, otherLabel)
-                                }
-                                result.onFailure { e -> searchError = e.message ?: "시작에 실패했습니다." }
-                            }
-                        }
-                    }
-                ) { Text("시작") }
-            },
-            dismissButton = { TextButton(onClick = { showNewDmDialog = false }) { Text("취소") } }
-        )
-    }
+    LaunchedEffect(Unit) { reload() }
 
     if (showCreateDialog) {
         var nameText by remember { mutableStateOf("") }
@@ -278,7 +154,7 @@ fun SocialGroupScreen(
                         scope.launch {
                             val result = repository.createSocialGroup(name)
                             result.onFailure { e -> errorMessage = e.message ?: "모임 생성에 실패했습니다." }
-                            result.onSuccess { reload(); reloadChatRows() }
+                            result.onSuccess { reload() }
                         }
                     }
                 }) { Text("만들기") }
@@ -308,7 +184,7 @@ fun SocialGroupScreen(
                         scope.launch {
                             val result = repository.joinSocialGroup(code)
                             result.onFailure { e -> errorMessage = e.message ?: "참여에 실패했습니다." }
-                            result.onSuccess { reload(); reloadChatRows() }
+                            result.onSuccess { reload() }
                         }
                     }
                 }) { Text("참여") }
@@ -319,10 +195,7 @@ fun SocialGroupScreen(
 
     Scaffold(topBar = { TopAppBar(title = { Text("👥 소셜") }) }) { padding ->
         // 98차(사용자 요청): 당겨서 새로고침 — 서버 최신 상태를 다시 받아온다.
-        com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = {
-            reload()
-            reloadChatRows()
-        }) {
+        com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = { reload() }) {
         // 106차(사용자 요청): 소셜 탭 메인 화면 전체 스크롤 — 예전엔 아래 모임 목록만 LazyColumn으로
         // 자체 스크롤하고 위쪽(1:1 대화 목록+헤더)은 스크롤 밖이라, 모임/대화가 많으면 화면 위쪽이
         // 잘려 안 보였다. 전체를 하나의 verticalScroll Column으로 통일.
@@ -418,58 +291,6 @@ fun SocialGroupScreen(
                                         "오늘 루틴 평균",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(Spacing.lg))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                SectionPill("💬 채팅")
-                TextButton(onClick = { showNewDmDialog = true }) { Text("+ 새 대화") }
-            }
-            Spacer(Modifier.height(Spacing.sm))
-            if (!chatRowsLoading && chatRows.isEmpty()) {
-                Text(
-                    "아직 대화나 모임이 없습니다. 1:1 대화를 시작하거나 모임에 참여해보세요.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    chatRows.forEach { row ->
-                        Surface(
-                            modifier = Modifier.fillMaxWidth().clickable {
-                                if (row.isGroup) onOpenGroup(row.groupId!!)
-                                else onOpenDm(row.chatId!!, row.peerUid!!, row.peerLabel!!)
-                            },
-                            shape = RoundedCornerShape(16.dp),
-                            color = (if (row.isGroup) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary).copy(alpha = 0.06f),
-                            border = BorderStroke(1.dp, (if (row.isGroup) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary).copy(alpha = 0.25f))
-                        ) {
-                            Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                                if (row.isGroup) GroupAvatar(row.title) else DmAvatar(row.title)
-                                Spacer(Modifier.width(Spacing.sm))
-                                Column(Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        row.plantBadge?.let { badge ->
-                                            PlantLevelBadge(badge.level, badge.title)
-                                            Spacer(Modifier.width(4.dp))
-                                        }
-                                        Text(row.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                        if (row.isGroup) {
-                                            Spacer(Modifier.width(4.dp))
-                                            SectionPill("모임", color = MaterialTheme.colorScheme.primary)
-                                        }
-                                    }
-                                    Text(
-                                        row.subtitle,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                     )
                                 }
                             }

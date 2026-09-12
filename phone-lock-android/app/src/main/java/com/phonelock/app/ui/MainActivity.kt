@@ -243,11 +243,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             composable(Tab.Group.route) {
                 SocialGroupScreen(
                     repository,
-                    onOpenGroup = { groupId -> navController.navigate("social_group/$groupId") },
-                    onOpenDm = { chatId, peerUid, peerLabel ->
-                        val encodedLabel = java.net.URLEncoder.encode(peerLabel, "UTF-8")
-                        navController.navigate("dm_chat/$chatId/$peerUid/$encodedLabel")
-                    }
+                    onOpenGroup = { groupId -> navController.navigate("social_group/$groupId") }
                 )
             }
             composable(

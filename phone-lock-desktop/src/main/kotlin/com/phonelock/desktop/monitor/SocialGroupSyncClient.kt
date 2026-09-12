@@ -29,7 +29,9 @@ object SocialGroupSyncClient {
 
     data class GroupInfo(
         val name: String, val ownerUid: String, val inviteCode: String, val createdAt: Long,
-        val description: String = ""
+        val description: String = "",
+        /** 모임 "💬 대화" 채널 on/off(115차, 안드로이드판과 대칭) — 기존 그룹은 필드가 없어 기본값 true. */
+        val chatEnabled: Boolean = true
     )
     data class MemberInfo(val uid: String, val displayName: String, val joinedAt: Long)
     data class RoutineStat(val title: String, val doneToday: Boolean, val icon: String = "", val timeSlot: String? = null)
@@ -351,6 +353,16 @@ object SocialGroupSyncClient {
         }
     }
 
+    /** 모임 "💬 대화" 채널 on/off(115차, 안드로이드판과 대칭, 관리자/모임장만 UI에서 gate). */
+    fun setGroupChatEnabled(databaseUrl: String?, apiKey: String?, groupId: String, enabled: Boolean): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        return runCatching {
+            val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+            val base = databaseUrl.trimEnd('/')
+            put(base, "groups/$groupId/info/chatEnabled", token, enabled.toString())
+        }
+    }
+
     /** "모임 랭킹"(82차, §11, 안드로이드판과 대칭) — 회유 멘트 저항률을 모임원끼리 비교. */
     data class QuoteStat(val uid: String, val displayName: String, val stopRatePercent: Int, val totalCount: Int)
 
@@ -483,7 +495,8 @@ object SocialGroupSyncClient {
                 ownerUid = json.optString("ownerUid", ""),
                 inviteCode = json.optString("inviteCode", ""),
                 createdAt = json.optLong("createdAt", 0L),
-                description = json.optString("description", "")
+                description = json.optString("description", ""),
+                chatEnabled = json.optBoolean("chatEnabled", true)
             )
         }.getOrNull()
     }

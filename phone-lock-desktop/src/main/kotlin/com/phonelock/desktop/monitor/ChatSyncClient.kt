@@ -61,20 +61,6 @@ object ChatSyncClient {
         if (body.isNullOrBlank() || body == "null") null else body
     }.getOrNull()
 
-    /** 커스텀 아이디로 상대를 찾는다(카카오톡 ID검색과 동일한 개념, 안드로이드판과 대칭) — `usernames/{code}`
-     *  공개 인덱스를 재사용. 찾으면 (uid, 정규화된 코드), 없거나 나 자신이면 null. */
-    fun searchUserByCode(databaseUrl: String?, apiKey: String?, code: String): Pair<String, String>? {
-        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || code.isBlank()) return null
-        return runCatching {
-            val (token, myUid) = resolveIdentity(apiKey) ?: return null
-            val base = databaseUrl.trimEnd('/')
-            val normalized = code.trim().uppercase()
-            val text = get(base, "usernames/$normalized", token)?.trim('"')?.takeIf { it.isNotBlank() && it != "null" } ?: return null
-            if (text == myUid) return null
-            text to normalized
-        }.getOrNull()
-    }
-
     /** DM방을 만들거나(없으면) 이미 있으면 그대로 chatId만 반환 — 양쪽 `users/{uid}/dmChatIds`에도
      *  서로를 등록한다(안드로이드판과 대칭). */
     fun ensureDmChat(databaseUrl: String?, apiKey: String?, otherUid: String, otherLabel: String): Result<String> {
