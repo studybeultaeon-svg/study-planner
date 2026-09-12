@@ -28,8 +28,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab as MaterialTab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -150,8 +148,6 @@ fun SocialGroupMembersScreen(
     // 😴 깨우기 대상 — wakeTarget이 있는 동안 wakeStep("options"/"voice"/"text")에 따라 다이얼로그가 뜬다.
     var wakeTarget by remember { mutableStateOf<Pair<String, String>?>(null) } // uid to 표시이름
     var wakeStep by remember { mutableStateOf<String?>(null) }
-    // 92차 소셜 개편 Phase 1: "멤버"/"💬 대화" 채널 전환(안드로이드판 SocialGroupMembersScreen.kt와 대칭).
-    var channelTab by remember { mutableStateOf(0) }
     fun cancelWakeFlow() { wakeTarget = null; wakeStep = null }
 
     val myUid = AuthManager.currentUid
@@ -349,18 +345,6 @@ fun SocialGroupMembersScreen(
                 )
             }
             Spacer(Modifier.height(Spacing.sm))
-
-            TabRow(selectedTabIndex = channelTab) {
-                MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
-                MaterialTab(selected = channelTab == 1, onClick = { channelTab = 1 }, text = { Text("💬 대화") })
-            }
-            Spacer(Modifier.height(Spacing.sm))
-
-            if (channelTab == 1) {
-                Box(Modifier.weight(1f).fillMaxWidth()) {
-                    GroupChatScreen(repository, groupId)
-                }
-            } else {
 
             if (voiceInbox.isNotEmpty()) {
                 Surface(
@@ -593,7 +577,6 @@ fun SocialGroupMembersScreen(
                         }
                     }
                 }
-            }
             }
         }
 

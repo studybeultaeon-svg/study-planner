@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-09-13 (115차) — 모임 내 "💬 대화"(그룹 채팅) 기능 삭제, 1:1 DM은 유지
+
+사용자 요청: 모임 상세 화면의 "채팅" 항목을 아예 삭제하되, 같은 모임 사람끼리 DM하는 기능은 그대로 둘 것. 양 플랫폼(안드로이드/데스크탑) 동일 적용:
+
+- **모임 상세 화면**: `SocialGroupMembersScreen.kt`의 "멤버"/"💬 대화" `TabRow`와 `channelTab` 상태 제거 — 이제 멤버 목록만 항상 보인다.
+- **`GroupChatScreen.kt` 삭제**(양 플랫폼) — 공용 `ChatThreadScreen`은 이제 `DmChatScreen`(1:1 DM)만 사용.
+- **소셜탭 메인 통합 목록**: `SocialGroupScreen.kt`의 `ChatRow`에서 `isGroup`/`groupId` 필드 제거, 목록엔 DM만 나열(모임 자체는 이미 위 "👥 모임" 섹션에서 접근 가능해 중복이었음).
+- **백엔드 정리**: `ChatSyncClient`(양 플랫폼)의 `sendGroupMessage`/`readGroupMessages`/`toggleGroupMessageReaction`/`peekLatestGroupMessage`와 안드로이드 `PhoneLockRepository.Chat.kt`의 대응 pass-through 삭제(`groupChats` Firebase 경로를 더 이상 클라이언트에서 쓰지 않음, `dmChats` 경로는 그대로).
+- **채팅 알림 폴링**: 안드로이드 `WalkieTalkieService`/데스크탑 `ChatNotifier`에서 그룹 채팅 알림 루프 제거, DM 알림만 유지.
+- Firebase 보안 규칙의 `groupChats` 노드 자체는 이번 범위에서 건드리지 않음(클라이언트만 정리).
+- **빌드/배포 미완료**: 이 세션에는 `phone-lock-android`/`phone-lock-desktop` 어느 쪽에도 gradle wrapper(jar)가 없고 PATH에 전역 `gradle`도 없어 컴파일조차 못 했다. 중괄호 짝 수 등 정적 점검만 하고 코드 변경만 커밋 — **컴파일 확인/빌드/배포/실사용 검증 전부 다음 세션 과제.**
+
+---
+
 ## 2026-09-12 (114차) — 모임원 상세 캘린더를 안드로이드 자체 스타일로 교정 + 소셜탭 닉네임 옆 레벨/칭호 배지
 
 사용자 요청 2건, 양 플랫폼(안드로이드/데스크탑) 동일 적용(1번은 안드로이드 전용):

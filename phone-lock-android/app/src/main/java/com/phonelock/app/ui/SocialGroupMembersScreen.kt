@@ -39,8 +39,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab as MaterialTab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -176,9 +174,6 @@ fun SocialGroupMembersScreen(
     // SocialGroupMemberDetailScreen을 그대로 내장) 마스터-디테일 — 폰은 기존처럼 onOpenMember로 별도
     // 화면 네비게이션.
     var selectedUid by remember { mutableStateOf<String?>(null) }
-    // 92차 소셜 개편 Phase 1: "멤버"/"💬 대화" 채널 전환 — 디스코드식 "서버=모임, 채널=용도별 공간"
-    // 구조의 첫 단계(대화 채널만 우선 추가, 공유/관리 채널은 이후 단계에서 검토).
-    var channelTab by remember { mutableStateOf(0) }
     val recordPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (granted) wakeStep = "voice" }
@@ -400,13 +395,6 @@ fun SocialGroupMembersScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.xs)
                 )
             }
-            TabRow(selectedTabIndex = channelTab) {
-                MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
-                MaterialTab(selected = channelTab == 1, onClick = { channelTab = 1 }, text = { Text("💬 대화") })
-            }
-            if (channelTab == 1) {
-                GroupChatScreen(repository, groupId)
-            } else {
             val displayRows = if (viewWeekly) rows.sortedWith(compareBy { it.weekRate ?: -1 }) else rows
             val membersListContent: @Composable (Modifier) -> Unit = { listModifier ->
             LazyColumn(
@@ -728,7 +716,6 @@ fun SocialGroupMembersScreen(
                 }
             } else {
                 membersListContent(Modifier.fillMaxSize().padding(Spacing.md))
-            }
             }
             }
             }

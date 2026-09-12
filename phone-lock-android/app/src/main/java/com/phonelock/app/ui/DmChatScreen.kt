@@ -29,8 +29,7 @@ import com.phonelock.app.data.toggleDmChatReaction
 import com.phonelock.app.service.AuthManager
 import com.phonelock.app.service.SocialGroupSyncClient
 
-/** 1:1 DM 채팅방(92차 소셜 개편 Phase 2) — [ChatThreadScreen]에 dmChats 경로 콜백만 연결
- *  (그룹 대화 [GroupChatScreen]과 UI는 완전히 같고 저장 경로만 다름). */
+/** 1:1 DM 채팅방(92차 소셜 개편 Phase 2) — [ChatThreadScreen]에 dmChats 경로 콜백만 연결. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DmChatScreen(repository: PhoneLockRepository, chatId: String, peerUid: String, peerLabel: String, onBack: () -> Unit) {

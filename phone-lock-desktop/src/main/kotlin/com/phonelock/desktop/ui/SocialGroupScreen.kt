@@ -92,21 +92,18 @@ private fun GroupAvatar(name: String) {
 private data class GroupSummary(val id: String, val name: String, val memberCount: Int, val avgTodayPercent: Int)
 
 /**
- * "통합 채팅 목록"(112차, 소셜탭 UI 개편, 안드로이드판과 대칭) — 1:1 대화와 모임 대화방을 카카오톡/
- * 인스타 DM처럼 하나의 목록에서 최근 활동순으로 섞어 보여준다. 모임 진행률 카드(아래 "모임 현황" 섹션)와는
- * 목적이 달라 그대로 남겨두되, "대화를 시작/이어가는" 진입점만 이 목록 하나로 합쳤다.
+ * "1:1 대화 목록"(112차 소셜탭 UI 개편, 안드로이드판과 대칭 — 모임 대화 채널 삭제 후 DM 전용으로 축소)
+ * — 내 1:1 대화를 최근 활동순으로 보여준다. 모임 자체는 위 "모임 현황" 섹션에서 접근한다.
  */
 private data class ChatRow(
     val key: String,
     val title: String,
-    val isGroup: Boolean,
     val subtitle: String,
     val atMillis: Long,
-    val groupId: String? = null,
     val chatId: String? = null,
     val peerUid: String? = null,
     val peerLabel: String? = null,
-    /** DM 상대의 레벨/칭호 배지(122차) — 모임 채팅방(isGroup=true)은 특정 한 사람이 아니라서 대상 없음. */
+    /** DM 상대의 레벨/칭호 배지(122차). */
     val plantBadge: com.phonelock.desktop.monitor.SocialGroupSyncClient.PlantBadge? = null
 )
 
@@ -156,34 +153,22 @@ fun SocialGroupScreen(
 
     fun refresh() { refreshTrigger++ }
 
-    /** 1:1 대화 + 모임 대화방의 최근 메시지를 함께 모아 하나의 목록으로 정렬한다. */
+    /** 내 1:1 대화 최근 메시지 순 목록. */
     fun reloadChatRows() {
         val url = repository.fbDatabaseUrl; val key = repository.fbApiKey
         chatRowsLoading = true
         Thread {
             val dms = com.phonelock.desktop.monitor.ChatSyncClient.readMyDmChats(url, key)
-            val dmRows = dms.map { dm ->
+            chatRows = dms.map { dm ->
                 val latest = com.phonelock.desktop.monitor.ChatSyncClient.peekLatestDmMessage(url, key, dm.chatId)
                 ChatRow(
-                    key = "dm_${dm.chatId}", title = dm.peerLabel, isGroup = false,
+                    key = "dm_${dm.chatId}", title = dm.peerLabel,
                     subtitle = latest?.text?.takeIf { it.isNotBlank() } ?: "대화를 시작해보세요",
                     atMillis = latest?.sentAtMillis ?: dm.updatedAtMillis,
                     chatId = dm.chatId, peerUid = dm.peerUid, peerLabel = dm.peerLabel,
                     plantBadge = SocialGroupSyncClient.findMemberPlantBadge(url, key, dm.peerUid)
                 )
-            }
-            val groupIds = SocialGroupSyncClient.readMyGroupIds(url, key)
-            val groupRows = groupIds.mapNotNull { id ->
-                val info = SocialGroupSyncClient.readGroupInfo(url, key, id) ?: return@mapNotNull null
-                val latest = com.phonelock.desktop.monitor.ChatSyncClient.peekLatestGroupMessage(url, key, id)
-                ChatRow(
-                    key = "group_$id", title = info.name, isGroup = true,
-                    subtitle = latest?.let { "${it.senderName}: ${it.text}" } ?: "아직 대화가 없습니다",
-                    atMillis = latest?.sentAtMillis ?: info.createdAt,
-                    groupId = id
-                )
-            }
-            chatRows = (dmRows + groupRows).sortedByDescending { it.atMillis }
+            }.sortedByDescending { it.atMillis }
             chatRowsLoading = false
         }.start()
     }
@@ -454,7 +439,7 @@ fun SocialGroupScreen(
         Spacer(Modifier.height(Spacing.sm))
         if (!chatRowsLoading && chatRows.isEmpty()) {
             Text(
-                "아직 대화나 모임이 없습니다. 1:1 대화를 시작하거나 모임에 참여해보세요.",
+                "아직 대화가 없습니다. 1:1 대화를 시작해보세요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -463,15 +448,12 @@ fun SocialGroupScreen(
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                     shape = RoundedCornerShape(16.dp),
-                    color = (if (row.isGroup) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary).copy(alpha = 0.06f),
-                    border = BorderStroke(1.dp, (if (row.isGroup) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary).copy(alpha = 0.25f)),
-                    onClick = {
-                        if (row.isGroup) onSelectGroup(row.groupId!!)
-                        else onOpenDm(row.chatId!!, row.peerUid!!, row.peerLabel!!)
-                    }
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.06f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f)),
+                    onClick = { onOpenDm(row.chatId!!, row.peerUid!!, row.peerLabel!!) }
                 ) {
                     Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                        if (row.isGroup) GroupAvatar(row.title) else DmAvatar(row.title)
+                        DmAvatar(row.title)
                         Spacer(Modifier.width(Spacing.sm))
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -480,10 +462,6 @@ fun SocialGroupScreen(
                                     Spacer(Modifier.width(4.dp))
                                 }
                                 Text(row.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                if (row.isGroup) {
-                                    Spacer(Modifier.width(4.dp))
-                                    SectionPill("모임", color = MaterialTheme.colorScheme.primary)
-                                }
                             }
                             Text(
                                 row.subtitle,

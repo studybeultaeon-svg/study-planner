@@ -28,7 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** 1:1 DM 채팅방(92차 소셜 개편 Phase 2, 안드로이드판과 대칭) — [ChatThreadScreen]에 dmChats 경로
- *  콜백만 연결(그룹 대화 [GroupChatScreen]과 UI는 완전히 같고 저장 경로만 다름). */
+ *  콜백만 연결. */
 @Composable
 fun DmChatScreen(repository: Repository, chatId: String, peerUid: String, peerLabel: String, onBack: () -> Unit) {
     val url = repository.fbDatabaseUrl

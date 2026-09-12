@@ -1,23 +1,11 @@
 package com.phonelock.app.data
 
 /**
- * "소셜" 개편 Phase 1 — 모임 "💬 대화" 채널의 [PhoneLockRepository] 얇은 pass-through.
+ * "소셜" 개편 Phase 2 — 1:1 DM의 [PhoneLockRepository] 얇은 pass-through.
  * [PhoneLockRepository.Social.kt]와 같은 패턴(로컬 캐싱 없이 화면 진입 시마다 Firebase 직접 조회).
  */
 
-suspend fun PhoneLockRepository.sendGroupChatMessage(groupId: String, text: String) =
-    com.phonelock.app.service.ChatSyncClient.sendGroupMessage(fbDatabaseUrl, fbApiKey, groupId, text)
-
-suspend fun PhoneLockRepository.readGroupChatMessages(groupId: String) =
-    com.phonelock.app.service.ChatSyncClient.readGroupMessages(fbDatabaseUrl, fbApiKey, groupId)
-
-suspend fun PhoneLockRepository.toggleGroupChatReaction(groupId: String, msgId: String, emoji: String, alreadySet: Boolean) =
-    com.phonelock.app.service.ChatSyncClient.toggleGroupMessageReaction(fbDatabaseUrl, fbApiKey, groupId, msgId, emoji, alreadySet)
-
 /** 채팅 알림(2026-09-10) — [WalkieTalkieService] 폴링에서 새 메시지 유무만 가볍게 확인하는 용도. */
-suspend fun PhoneLockRepository.peekLatestGroupChatMessage(groupId: String) =
-    com.phonelock.app.service.ChatSyncClient.peekLatestGroupMessage(fbDatabaseUrl, fbApiKey, groupId)
-
 suspend fun PhoneLockRepository.peekLatestDmChatMessage(chatId: String) =
     com.phonelock.app.service.ChatSyncClient.peekLatestDmMessage(fbDatabaseUrl, fbApiKey, chatId)
 
