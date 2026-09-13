@@ -480,14 +480,13 @@ object PomodoroSyncClient {
         }
     }
 
-    data class RoutineSyncResult(val modesJson: JSONArray, val routinesJson: JSONArray, val logsJson: JSONArray, val ts: Long)
+    data class RoutineSyncResult(val routinesJson: JSONArray, val logsJson: JSONArray, val ts: Long)
 
     /**
      * 루틴앱(51차 Firebase 동기화 추가) 전체 문서를 읽는다. `users/{user}/routines`에
-     * `{modes:[...], routines:[...], routineLogs:[...], _ts}` — 캘린더와 같은 문서 단위 LWW, 데스크탑판과
-     * 대칭. 기기별 로컬 id 충돌을 피하려고 routineLogs/routine.modeIndex는 실제 id 대신 routines/modes
-     * 배열 안에서의 인덱스로 소속을 가리킨다(호출부가 반입 시 새로 배정된 로컬 id로 다시 연결, 98차 루틴
-     * 모드부터 modes/modeIndex 추가).
+     * `{routines:[...], routineLogs:[...], _ts}` — 캘린더와 같은 문서 단위 LWW, 데스크탑판과 대칭.
+     * 기기별 로컬 id 충돌을 피하려고 routineLogs는 실제 id 대신 routines 배열 안에서의 인덱스로 소속을
+     * 가리킨다(호출부가 반입 시 새로 배정된 로컬 id로 다시 연결).
      */
     suspend fun readRoutines(databaseUrl: String?, apiKey: String?): RoutineSyncResult? {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
@@ -505,10 +504,9 @@ object PomodoroSyncClient {
                 val body = conn.inputStream.bufferedReader().use { it.readText() }
                 conn.disconnect()
                 // body == "null" = 원격에 이 uid용 문서가 아직 없다는 확정 응답(calendar와 동일 이유).
-                if (body.isBlank() || body == "null") return@runCatching RoutineSyncResult(JSONArray(), JSONArray(), JSONArray(), 0L)
+                if (body.isBlank() || body == "null") return@runCatching RoutineSyncResult(JSONArray(), JSONArray(), 0L)
                 val json = JSONObject(body)
                 RoutineSyncResult(
-                    json.optJSONArray("modes") ?: JSONArray(),
                     json.optJSONArray("routines") ?: JSONArray(),
                     json.optJSONArray("routineLogs") ?: JSONArray(),
                     json.optLong("_ts", 0L)
@@ -518,7 +516,7 @@ object PomodoroSyncClient {
     }
 
     /** 루틴 전체 문서를 덮어쓴다(문서 단위 LWW — 호출부가 이미 로컬이 더 최신임을 확인한 뒤 호출). */
-    suspend fun writeRoutines(databaseUrl: String?, apiKey: String?, modesJson: JSONArray, routinesJson: JSONArray, logsJson: JSONArray, ts: Long) {
+    suspend fun writeRoutines(databaseUrl: String?, apiKey: String?, routinesJson: JSONArray, logsJson: JSONArray, ts: Long) {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         withContext(Dispatchers.IO) {
             runCatching {
@@ -533,7 +531,6 @@ object PomodoroSyncClient {
                     setRequestProperty("Content-Type", "application/json")
                 }
                 val body = JSONObject().apply {
-                    put("modes", modesJson)
                     put("routines", routinesJson)
                     put("routineLogs", logsJson)
                     put("_ts", ts)

@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AppGroup::class, GroupMember::class, UsageRecord::class,
         GroupSite::class, ConfirmEscalation::class, StudyLogEntry::class, CalendarTask::class,
         CalcTask::class, CalcSavedItem::class, ConfirmCounter::class,
-        Routine::class, RoutineLog::class, QuoteOutcome::class, RoutineMode::class,
+        Routine::class, RoutineLog::class, QuoteOutcome::class,
         PointsLedgerEntry::class
     ],
     // 82차: v30(calc_task autoGenEnabled/autoGenBatchSize) / v31(study_log_entry tag) / v32(quote_outcome
@@ -34,7 +34,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // 101차: v39 — 포인트/보상 시스템(IDEAS.md 최우선 후보) 신규 points_ledger/reward 테이블(MIGRATION_38_39 참고).
     // 108차: v40 — 식물 탭 개편으로 "보상함" 기능 전체 삭제, reward 테이블 drop(MIGRATION_39_40 참고).
     // points_ledger(포인트 원장)는 EXP 계산에 계속 쓰여 그대로 유지.
-    version = 40,
+    // 120차: v41 — "루틴 모드" 기능 전체 삭제(사용자 요청) — routine_mode 테이블 drop + routine.modeId
+    // 컬럼 제거. SQLite는 컬럼 삭제를 직접 지원하지 않아(구버전 호환) 새 테이블 생성 후 복사하는 방식으로
+    // 처리한다(MIGRATION_40_41 참고).
+    version = 41,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -50,7 +53,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun confirmCounterDao(): ConfirmCounterDao
     abstract fun routineDao(): RoutineDao
     abstract fun routineLogDao(): RoutineLogDao
-    abstract fun routineModeDao(): RoutineModeDao
     abstract fun quoteOutcomeDao(): QuoteOutcomeDao
     abstract fun pointsLedgerDao(): PointsLedgerDao
 
@@ -158,6 +160,29 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("DROP TABLE IF EXISTS reward")
             }
         }
+        /** 120차: "루틴 모드" 기능 전체 삭제 — routine.modeId 컬럼을 없앤 새 테이블로 데이터를 옮기고
+         *  (SQLite는 컬럼 삭제를 직접 지원하지 않아 이 방식이 표준), routine_mode 테이블 자체도 drop한다. */
+        private val MIGRATION_40_41 = object : Migration(40, 41) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS routine_new (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "title TEXT NOT NULL, icon TEXT NOT NULL, timeSlot TEXT, daysMask INTEGER NOT NULL, " +
+                        "trackStreak INTEGER NOT NULL, defenseType TEXT NOT NULL, defenseCount INTEGER NOT NULL, " +
+                        "sortOrder INTEGER NOT NULL, archived INTEGER NOT NULL, notifyEnabled INTEGER NOT NULL, " +
+                        "startDate TEXT, endDate TEXT)"
+                )
+                db.execSQL(
+                    "INSERT INTO routine_new (id, title, icon, timeSlot, daysMask, trackStreak, defenseType, " +
+                        "defenseCount, sortOrder, archived, notifyEnabled, startDate, endDate) " +
+                        "SELECT id, title, icon, timeSlot, daysMask, trackStreak, defenseType, defenseCount, " +
+                        "sortOrder, archived, notifyEnabled, startDate, endDate FROM routine"
+                )
+                db.execSQL("DROP TABLE routine")
+                db.execSQL("ALTER TABLE routine_new RENAME TO routine")
+                db.execSQL("DROP TABLE IF EXISTS routine_mode")
+            }
+        }
 
         fun getInstance(context: Context): AppDatabase =
             instance ?: synchronized(this) {
@@ -168,7 +193,7 @@ abstract class AppDatabase : RoomDatabase() {
                 ).addMigrations(
                     MIGRATION_27_28, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
                     MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38,
-                    MIGRATION_38_39, MIGRATION_39_40
+                    MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41
                 )
                     .fallbackToDestructiveMigration().build().also { instance = it }
             }

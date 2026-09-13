@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-09-13 (120차) — 루틴 "모드" 기능 전체 삭제
+
+사용자 요청으로 98차에 추가했던 루틴 모드(모드 전환/추가/삭제/순서변경) 기능을 안드로이드+데스크탑 양쪽에서 완전히 되돌렸다. 루틴앱은 다시 단일 목록으로 동작한다.
+
+- **삭제 범위**: `RoutineMode` 엔티티/데이터클래스, `Routine.modeId` 필드, 관련 DAO/Repository CRUD 함수(`getRoutineModes`/`addRoutineMode`/`renameRoutineMode`/`deleteRoutineMode`/`swapRoutineModeOrder`/`ensureDefaultRoutineMode`), `AppPreferences.activeRoutineModeId`, 모드 전환 UI(칩 목록/추가·관리 다이얼로그)와 편집 다이얼로그의 모드 선택 드롭다운, 위젯의 모드 필터링, Firebase/JSON 동기화의 모드 관련 필드까지 양 플랫폼에서 전부 제거.
+- **안드로이드 DB 마이그레이션(v40→v41)**: SQLite는 컬럼 삭제를 직접 지원하지 않아 `routine` 테이블을 `modeId` 없는 스키마로 재생성(`routine_new` 생성 → 데이터 복사 → 기존 테이블 drop → rename) 후 `routine_mode` 테이블도 drop하는 표준 방식으로 처리(`MIGRATION_40_41`, `AppDatabase.kt`).
+- **빌드/배포**: 안드로이드 release APK 빌드 성공(3위치 배포, 해시 동일 확인), 데스크탑 `compileKotlin`/`createDistributable` 빌드 성공, 호스트(`PhoneLockDesktopApp`)와 `vm-build-output` 양쪽 app-image 교체 후 재기동 확인.
+
+---
+
 ## 2026-09-13 (119차) — 출시 감사 + 출시용 프로젝트 분리 (이 프로젝트 코드 변경 없음)
 
 Google Play 출시 및 부분 유료화를 전제로 전면 감사를 수행하고, 그 결과에 따라 출시용 프로젝트를 별도로 분리했다. **이 프로젝트의 코드·설정·데이터는 전혀 변경하지 않았다** — 문서(HANDOFF/CHANGELOG/DECISIONS)만 갱신.

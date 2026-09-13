@@ -231,9 +231,6 @@ data class CalcSavedItem(
  */
 data class Routine(
     val id: Long,
-    /** 이 루틴이 속한 모드(RoutineMode.id, 98차 루틴 모드). 레거시 데이터는 JsonStore 파싱 시 기본
-     *  모드(1L)로 자동 편입된다. */
-    val modeId: Long? = null,
     val title: String = "",
     /** 목록에서 표시할 이모지 1개(선택). 빈 문자열이면 아이콘 없이 제목만 표시. */
     val icon: String = "",
@@ -258,13 +255,6 @@ data class Routine(
 
 /** Routine의 날짜별 완료 기록 — 존재 자체가 "그날 완료"를 의미한다. */
 data class RoutineLog(val routineId: Long, val dateKey: String)
-
-/**
- * 루틴 모드(98차 설계) — 상황별(평일/주말/시험기간 등)로 별개 루틴 묶음을 만들어 전환하는 기능의 단위.
- * 안드로이드 RoutineMode(Room 엔티티)와 대칭. 항상 최소 1개 이상 존재해야 한다(마지막 모드 삭제 불가,
- * Repository.Routine.kt의 ensureDefaultRoutineMode() 참고).
- */
-data class RoutineMode(val id: Long, val name: String = "", val sortOrder: Int = 0)
 
 /**
  * 포인트/보상 시스템(101차+, IDEAS.md "최우선 후보") — 잔액은 저장하지 않고 이 원장(ledger) 전체를
@@ -353,9 +343,6 @@ data class AppData(
     /** 루틴앱 v1(47차) — Routine 목록과 다음 id 발급용 카운터. */
     val routines: MutableList<Routine> = mutableListOf(),
     var nextRoutineId: Long = 1,
-    /** 루틴 모드(98차) — RoutineMode 목록과 다음 id 발급용 카운터(routines와 동일 패턴). */
-    val routineModes: MutableList<RoutineMode> = mutableListOf(),
-    var nextRoutineModeId: Long = 1,
     /** 루틴 날짜별 완료 기록. */
     val routineLogs: MutableList<RoutineLog> = mutableListOf(),
     /** 루틴 전체 문서 단위 LWW 타임스탬프(51차, 캘린더의 calendarTs와 동일 패턴) — users/{user}/routines. */

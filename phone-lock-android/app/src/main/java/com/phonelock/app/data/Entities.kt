@@ -246,23 +246,9 @@ data class CalcSavedItem(
  * 저장 없음 — TimetableScreen이 CalcTask를 파생시키는 패턴과 동일), trackStreak이 true면 통계에서
  * 스트릭이 계산된다("체크리스트"와 "습관"은 이 플래그 하나 차이).
  */
-/**
- * 루틴 모드(96차 설계, 97차 이월 → 구현) — 상황별(평일/주말/시험기간 등)로 별개 루틴 묶음을 만들어
- * 전환하는 기능의 단위. 다른 모드의 루틴은 삭제되는 게 아니라 숨겨질 뿐이다(Routine.modeId 참고).
- * 항상 최소 1개 이상 존재해야 한다(마지막 모드는 삭제 불가, ensureDefaultRoutineMode() 참고).
- */
-@Entity(tableName = "routine_mode")
-data class RoutineMode(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String = "",
-    val sortOrder: Int = 0
-)
-
 @Entity(tableName = "routine")
 data class Routine(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    /** 이 루틴이 속한 모드(RoutineMode.id). 마이그레이션으로 기존 루틴은 전부 기본 모드(id=1)로 편입됨. */
-    val modeId: Long? = null,
     val title: String = "",
     /** 목록에서 표시할 이모지 1개(선택). 빈 문자열이면 아이콘 없이 제목만 표시. */
     val icon: String = "",

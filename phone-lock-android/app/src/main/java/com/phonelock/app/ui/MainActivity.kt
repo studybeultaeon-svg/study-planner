@@ -102,9 +102,6 @@ class MainActivity : ComponentActivity() {
             AppPreferences(applicationContext).resetSyncTimestamps()
         }
         val repository = PhoneLockRepository(applicationContext)
-        // 신규 설치 등으로 마이그레이션 없이 v38 스키마가 바로 생성된 경우를 위한 안전장치(98차,
-        // 루틴 모드) — 모드가 하나도 없으면 기본 모드를 만든다.
-        lifecycleScope.launch { repository.ensureDefaultRoutineMode() }
 
         val watchdogRequest = PeriodicWorkRequestBuilder<AccessibilityWatchdogWorker>(15, TimeUnit.MINUTES).build()
         WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(

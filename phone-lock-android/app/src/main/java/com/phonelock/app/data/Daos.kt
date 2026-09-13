@@ -216,12 +216,6 @@ interface RoutineDao {
     @Query("SELECT * FROM routine WHERE archived = 0 ORDER BY sortOrder")
     suspend fun getAll(): List<Routine>
 
-    @Query("SELECT * FROM routine WHERE archived = 0 AND modeId = :modeId ORDER BY sortOrder")
-    fun observeByMode(modeId: Long): Flow<List<Routine>>
-
-    @Query("SELECT * FROM routine WHERE archived = 0 AND modeId = :modeId ORDER BY sortOrder")
-    suspend fun getByMode(modeId: Long): List<Routine>
-
     @Query("SELECT * FROM routine WHERE id = :id")
     suspend fun getById(id: Long): Routine?
 
@@ -235,30 +229,6 @@ interface RoutineDao {
     suspend fun delete(routine: Routine)
 
     @Query("DELETE FROM routine")
-    suspend fun deleteAll()
-
-    @Query("UPDATE routine SET modeId = :newModeId WHERE modeId = :oldModeId")
-    suspend fun reassignMode(oldModeId: Long, newModeId: Long)
-}
-
-@Dao
-interface RoutineModeDao {
-    @Query("SELECT * FROM routine_mode ORDER BY sortOrder")
-    fun observeAll(): Flow<List<RoutineMode>>
-
-    @Query("SELECT * FROM routine_mode ORDER BY sortOrder")
-    suspend fun getAll(): List<RoutineMode>
-
-    @Insert
-    suspend fun insert(mode: RoutineMode): Long
-
-    @Update
-    suspend fun update(mode: RoutineMode)
-
-    @Delete
-    suspend fun delete(mode: RoutineMode)
-
-    @Query("DELETE FROM routine_mode")
     suspend fun deleteAll()
 }
 
