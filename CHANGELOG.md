@@ -15,6 +15,17 @@
 
 ---
 
+## 2026-09-13 (115차 후속) — 컴파일 확인 + 빌드/배포 완료(gradle 없는 환경 문제 해결)
+
+115차 코드 변경 직후 사용자가 "아직 구현 안 된 것 같다"고 지적 — 원인은 코드가 OneDrive 작업 복사본에만 있고, 실제로 빌드/배포에 쓰이는 `C:\Users\sunae\AndroidBuilds\phone-lock-android`/`C:\build\phone-lock-desktop`(별도 디렉터리)엔 동기화가 안 돼 있었던 것. 추가로 이번 세션 환경엔 `gradlew` 스크립트 자체가 어느 쪽에도 없어서(이전 세션들이 이걸 어떻게 실행했는지는 불명) 처음엔 컴파일조차 못 했었는데, `~/.gradle/wrapper/dists/gradle-8.7-bin`에 캐시돼 있던 gradle 8.7 배포판을 직접 찾아 실행하고 `JAVA_HOME`을 `C:\build\jdk-temurin21`의 JDK 21로 지정하는 방식으로 해결했다(다음 세션에서도 이 조합 재사용 가능).
+
+- 변경분을 두 빌드 디렉터리에 동기화 후 `compileDebugKotlin`/`assembleRelease`(안드로이드, versionCode `1789263480`), `compileKotlin`/`packageMsi createDistributable`(데스크탑, BuildInfo `1789263485`) 전부 정상 통과.
+- 안드로이드 APK 3위치(`AndroidBuilds`, OneDrive `phone-lock-android/app/build/outputs`, `vm-build-output/android`) 해시 일치하도록 배포.
+- 데스크탑: 실행 중이던 호스트 앱(`C:\Users\sunae\PhoneLockDesktopApp`) 프로세스를 종료하고 새 앱-이미지(`.exe`/`app`/`runtime`)로 전체 교체 후 재기동, `vm-build-output/PhoneLockDesktop`도 동일 교체.
+- GitHub 릴리스 게시는 이 시점까지 아직 안 함(다음에 처리).
+
+---
+
 ## 2026-09-12 (114차) — 모임원 상세 캘린더를 안드로이드 자체 스타일로 교정 + 소셜탭 닉네임 옆 레벨/칭호 배지
 
 사용자 요청 2건, 양 플랫폼(안드로이드/데스크탑) 동일 적용(1번은 안드로이드 전용):
