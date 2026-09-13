@@ -85,6 +85,37 @@ fun Repository.onCalendarTaskCompletionChanged(refId: String, dateKey: String, c
 }
 
 // ══════════════════════════════════════════════════════
+// 나무 주변 장식 아이템(116차) — 포인트로 구매해 홈 화면에 배치. 소유/장착 상태는 Firebase 동기화 없이
+// 기기별 로컬 보관(장식은 순수 꾸미기 요소라 그룹/루틴처럼 여러 기기 일치가 필요하지 않다고 판단).
+// ══════════════════════════════════════════════════════
+
+fun Repository.getOwnedDecorationIds(): Set<String> = synchronized(lock) { data.ownedDecorationIds.toSet() }
+
+fun Repository.getEquippedDecorationIds(): List<String> = synchronized(lock) { data.equippedDecorationIds.toList() }
+
+/** 이미 소유했거나 포인트가 모자라면 false. 성공하면 잔액에서 즉시 차감(음수 delta 원장 항목)하고 소유 목록에 추가한다. */
+fun Repository.purchaseDecoration(id: String, cost: Int): Boolean = synchronized(lock) {
+    if (id in data.ownedDecorationIds) return@synchronized false
+    if (getPointsBalance() < cost) return@synchronized false
+    data.pointsLedger.add(
+        PointsLedgerEntry(delta = -cost, reason = "DECORATION", refId = id, dateKey = java.time.LocalDate.now().toString(), timestampMillis = System.currentTimeMillis())
+    )
+    data.ownedDecorationIds.add(id)
+    persist()
+    pushPointsToFirebase()
+    true
+}
+
+/** 소유하지 않은 id는 무시하고, 최대 3개까지만 받는다(리스트 순서=배치 슬롯 순서). */
+fun Repository.setEquippedDecorationIds(ids: List<String>) {
+    synchronized(lock) {
+        data.equippedDecorationIds.clear()
+        data.equippedDecorationIds.addAll(ids.filter { it in data.ownedDecorationIds }.take(3))
+        persist()
+    }
+}
+
+// ══════════════════════════════════════════════════════
 // Firebase 동기화 — 캘린더/루틴과 동일한 "전체 문서 단위 LWW"(users/{user}/points).
 // ══════════════════════════════════════════════════════
 

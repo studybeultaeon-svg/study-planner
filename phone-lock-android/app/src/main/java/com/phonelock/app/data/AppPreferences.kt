@@ -304,6 +304,16 @@ class AppPreferences(context: Context) {
         get() = prefs.getString("growth_exp_pending", null)?.toDoubleOrNull() ?: 0.0
         set(value) = prefs.edit().putString("growth_exp_pending", value.toString()).apply()
 
+    /** 나무 주변 장식 아이템(116차, 포인트 소비처) — 구매한 장식 id들, 콤마 구분 문자열로 저장. */
+    var ownedDecorationIdsCsv: String
+        get() = prefs.getString("owned_decoration_ids", "") ?: ""
+        set(value) = prefs.edit().putString("owned_decoration_ids", value).apply()
+
+    /** 현재 홈 화면에 표시 중인 장식(최대 3개, 순서=배치 슬롯 순서), 콤마 구분 문자열. */
+    var equippedDecorationIdsCsv: String
+        get() = prefs.getString("equipped_decoration_ids", "") ?: ""
+        set(value) = prefs.edit().putString("equipped_decoration_ids", value).apply()
+
     /** 온라인/오프라인 모드(98차, 사용자 요청) — 사용자가 수동으로 강제 오프라인 전환. 기본 꺼짐(자동
      *  감지 우선) — 켜면 실제 네트워크 연결 여부와 무관하게 항상 오프라인으로 취급한다. */
     var offlineModeOverride: Boolean

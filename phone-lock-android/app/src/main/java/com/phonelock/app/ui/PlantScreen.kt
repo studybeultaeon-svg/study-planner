@@ -11,6 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,8 +19,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,11 +64,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.applyPendingGrowthExp
+import com.phonelock.app.data.equippedDecorationIds
+import com.phonelock.app.data.getAllRoutines
 import com.phonelock.app.data.getGrowthExpPending
 import com.phonelock.app.data.getGrowthExpTotal
+import com.phonelock.app.data.getPointsBalance
 import com.phonelock.app.data.getRebirthCount
+import com.phonelock.app.data.getRoutineCompletedDateKeys
 import com.phonelock.app.data.observePointsBalance
+import com.phonelock.app.data.ownedDecorationIds
+import com.phonelock.app.data.purchaseDecoration
 import com.phonelock.app.data.rebirth
+import com.phonelock.app.data.setEquippedDecorationIds
+import com.phonelock.app.routine.RoutineEngine
 import com.phonelock.app.service.GrowthSoundPlayer
 import com.phonelock.app.ui.theme.Spacing
 import com.phonelock.shared.GrowthSystem
@@ -87,6 +98,20 @@ import kotlin.math.sin
  * 버튼+확인 다이얼로그로 이미 수동이었다(자동 환생 로직 없음). 보상함(포인트→보상 교환) UI는 108차에
  * 완전히 삭제됨.
  */
+/** 나무 주변에 배치할 수 있는 장식 아이템(116차) — 포인트로 구매, 최대 3개 동시 배치, 데스크탑판과 대칭. */
+private data class DecorationItem(val id: String, val emoji: String, val label: String, val cost: Int)
+
+private val DECORATION_CATALOG = listOf(
+    DecorationItem("lamp", "🏮", "종이등", 30),
+    DecorationItem("bench", "🪑", "벤치", 40),
+    DecorationItem("flag", "🚩", "깃발", 20),
+    DecorationItem("mushroom", "🍄", "버섯", 15),
+    DecorationItem("butterfly_deco", "🦋", "나비 장식", 25),
+    DecorationItem("fountain", "⛲", "작은 분수", 60)
+)
+private const val MAX_EQUIPPED_DECORATIONS = 3
+private val DECORATION_SLOT_FRACTIONS = listOf(0.30f to 0.66f, 0.70f to 0.66f, 0.5f to 0.77f)
+
 @Composable
 fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOpenSettings: () -> Unit = {}) {
     if (!permPlant) {
@@ -110,6 +135,23 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
     val growthExpPending = remember(refreshTick) { repository.getGrowthExpPending() }
     val rebirthCount = remember(refreshTick) { repository.getRebirthCount() }
     fun refresh() { refreshTick++ }
+
+    // 홈 화면 좌상단 미니 요약(116차, 다른 탭 안 가고도 오늘 현황이 보이도록) — 루틴 전역 스트릭+오늘 완료 개수.
+    var routineStreak by remember { mutableIntStateOf(0) }
+    var routineDoneToday by remember { mutableIntStateOf(0) }
+    var routineScheduledToday by remember { mutableIntStateOf(0) }
+    LaunchedEffect(refreshTick) {
+        val today = java.time.LocalDate.now()
+        val dateKey = today.toString()
+        val routines = repository.getAllRoutines()
+        val completedByRoutine = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
+        val scheduledToday = routines.filter { RoutineEngine.isScheduledOn(it, today) }
+        routineDoneToday = scheduledToday.count { dateKey in (completedByRoutine[it.id] ?: emptySet()) }
+        routineScheduledToday = scheduledToday.size
+        routineStreak = RoutineEngine.currentStreak(routines, completedByRoutine, today)
+    }
+    var showDecorationShop by remember { mutableStateOf(false) }
+    val equippedDecorations = remember(refreshTick) { repository.equippedDecorationIds }
 
     var displayedExp by remember { mutableDoubleStateOf(repository.getGrowthExpTotal()) }
     var displayedLevel by remember { mutableIntStateOf(GrowthSystem.levelForExp(displayedExp)) }
@@ -155,10 +197,45 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         GroundScene(stageIndex = stageIndex, stage = stage, rebirthCount = rebirthCount, modifier = Modifier.fillMaxSize())
 
+        equippedDecorations.forEachIndexed { index, id ->
+            val deco = DECORATION_CATALOG.find { it.id == id } ?: return@forEachIndexed
+            val (fx, fy) = DECORATION_SLOT_FRACTIONS.getOrElse(index) { 0.5f to 0.7f }
+            Text(
+                deco.emoji,
+                fontSize = 26.sp,
+                modifier = Modifier.align(Alignment.TopStart).offset(x = maxWidth * fx - 14.dp, y = maxHeight * fy - 14.dp)
+            )
+        }
+
         HomeSettingsButton(onOpenSettings, Modifier.align(Alignment.TopEnd).padding(Spacing.lg))
+
+        // 좌상단 미니 요약(116차) — 홈 화면이 비어 보인다는 피드백에 다른 탭 안 가고도 오늘 현황이 보이게.
+        Surface(
+            Modifier.align(Alignment.TopStart).padding(Spacing.lg),
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+        ) {
+            Row(Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs), verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text(
+                        if (routineStreak > 0) "🔥 ${routineStreak}일 연속" else "오늘부터 시작해봐요",
+                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold
+                    )
+                    if (routineScheduledToday > 0) {
+                        Text(
+                            "오늘 루틴 $routineDoneToday/$routineScheduledToday",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(Modifier.width(Spacing.sm))
+                TextButton(onClick = { showDecorationShop = true }) { Text("🎨 꾸미기") }
+            }
+        }
 
         // 레벨/경험치 HUD — 108차부터 화면 아래쪽에 도킹(기존엔 위쪽), 위쪽은 전부 비워 식물이 잘 보이게 함.
         Surface(
@@ -256,6 +333,54 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
                 }) { Text("환생한다") }
             },
             dismissButton = { TextButton(onClick = { showRebirthDialog = false }) { Text("취소") } }
+        )
+    }
+
+    if (showDecorationShop) {
+        val ownedIds = remember(refreshTick) { repository.ownedDecorationIds }
+        val equippedIds = remember(refreshTick) { repository.equippedDecorationIds }
+        AlertDialog(
+            onDismissRequest = { showDecorationShop = false },
+            title = { Text("🎨 나무 꾸미기") },
+            text = {
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                    Text("보유 ${balance}P · 배치 ${equippedIds.size}/$MAX_EQUIPPED_DECORATIONS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(Spacing.sm))
+                    DECORATION_CATALOG.forEach { deco ->
+                        val owned = deco.id in ownedIds
+                        val equipped = deco.id in equippedIds
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = Spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(deco.emoji, fontSize = 20.sp)
+                                Spacer(Modifier.width(Spacing.xs))
+                                Text(deco.label, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            when {
+                                !owned -> TextButton(
+                                    enabled = balance >= deco.cost,
+                                    onClick = { scope.launch { if (repository.purchaseDecoration(deco.id, deco.cost)) refresh() } }
+                                ) { Text("${deco.cost}P 구매") }
+                                equipped -> TextButton(onClick = {
+                                    repository.setEquippedDecorationIds(equippedIds - deco.id)
+                                    refresh()
+                                }) { Text("배치 해제") }
+                                else -> TextButton(
+                                    enabled = equippedIds.size < MAX_EQUIPPED_DECORATIONS,
+                                    onClick = {
+                                        repository.setEquippedDecorationIds(equippedIds + deco.id)
+                                        refresh()
+                                    }
+                                ) { Text("배치") }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showDecorationShop = false }) { Text("닫기") } }
         )
     }
 }
@@ -450,6 +575,12 @@ private fun DrawScope.drawSky(tier: Int, w: Float, h: Float, horizonY: Float, sc
             val x2 = ((w * 0.55f + tMs * 0.004f * scale).mod(cloudSpan)) - 34f * scale
             drawCloudPuff(Offset(x1, h * 0.07f), scale)
             drawCloudPuff(Offset(x2, h * 0.13f), scale)
+
+            val birdSpan = w + 40f * scale
+            val bx1 = ((w * 0.1f + tMs * 0.03f * scale).mod(birdSpan)) - 20f * scale
+            val bx2 = ((w * 0.4f + tMs * 0.035f * scale).mod(birdSpan)) - 20f * scale
+            drawBird(Offset(bx1, h * 0.18f + sin(tMs * 0.002f) * 6f * scale), scale, tMs * 0.01f)
+            drawBird(Offset(bx2, h * 0.22f + sin(tMs * 0.002f + 1f) * 6f * scale), scale, tMs * 0.012f + 1f)
         }
         1 -> drawCircle(color = Color(0xFFC8C8BE).copy(alpha = 0.55f), radius = 18f * scale, center = Offset(w * 0.82f, h * 0.09f))
         2 -> {
@@ -492,6 +623,18 @@ private fun DrawScope.drawCloudPuff(center: Offset, scale: Float) {
     drawCircle(color = color, radius = 14f * scale, center = center)
     drawCircle(color = color, radius = 10f * scale, center = center + Offset(16f * scale, 3f * scale))
     drawCircle(color = color, radius = 10f * scale, center = center + Offset(-16f * scale, 3f * scale))
+}
+
+/** 정상 등급 하늘을 날아다니는 작은 새 실루엣 — wingPhase로 날갯짓하는 "V"자 곡선만 그리는 최소 표현. */
+private fun DrawScope.drawBird(center: Offset, scale: Float, wingPhase: Float) {
+    val wingSpan = 8f * scale
+    val wingLift = (3f + 2.5f * sin(wingPhase)) * scale
+    val path = Path().apply {
+        moveTo(center.x - wingSpan, center.y - wingLift)
+        quadraticBezierTo(center.x - wingSpan / 2, center.y, center.x, center.y - 1f * scale)
+        quadraticBezierTo(center.x + wingSpan / 2, center.y, center.x + wingSpan, center.y - wingLift)
+    }
+    drawPath(path, color = Color(0xFF5C5C5C).copy(alpha = 0.6f), style = Stroke(width = 1.6f * scale))
 }
 
 private fun DrawScope.drawGroundLayer(tier: Int, w: Float, h: Float, horizonY: Float, scale: Float, margin: Float) {

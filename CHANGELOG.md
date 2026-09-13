@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-09-13 (117차) — 홈 화면 빈 공간 채우기: 앰비언트 장식 + 미니 요약 칩 + 나무 꾸미기(포인트 소비처)
+
+사용자 요청: 116차에서 제시한 3가지 아이디어(앰비언트 장식/미니 요약 칩/포인트로 사는 장식 아이템)를 전부 진행하고, 정보를 표기하는 방향으로 아이디어를 더 탐색할 것. 양 플랫폼(`PlantScreen.kt`) 동일 적용:
+
+- **앰비언트 장식**: 정상 등급 하늘에 새 실루엣 2마리(`drawBird`, wingPhase로 날갯짓하는 최소 곡선 표현)가 구름과는 다른 속도/고도로 화면을 순환.
+- **좌상단 미니 요약 칩**: "🔥 N일 연속"(루틴 전역 스트릭, `RoutineEngine.currentStreak`)과 "오늘 루틴 M/N"(오늘 예정 대비 완료 개수)을 다른 탭 안 가고도 홈 화면에서 바로 확인. 안드로이드는 Room suspend 조회라 `LaunchedEffect(refreshTick)`로 계산, 데스크탑은 동기 Repository라 `remember(refreshTick)`로 계산.
+- **나무 꾸미기(포인트 소비처, IDEAS.md "보유 포인트 새 소비처 검토" 해소)**: 종이등/벤치/깃발/버섯/나비 장식/작은 분수 6종(`DECORATION_CATALOG`, 15~60P)을 포인트로 구매 → 최대 3개까지 나무 주변에 배치. 소유/장착 상태는 그룹/루틴과 달리 Firebase 동기화 없이 기기별 로컬 보관(데스크탑은 `AppData.ownedDecorationIds`/`equippedDecorationIds`+JsonStore, 안드로이드는 `AppPreferences`의 콤마 구분 문자열) — 순수 꾸미기 요소라 기기 간 일치가 꼭 필요하지 않다고 판단. 구매는 포인트 원장에 `DECORATION` reason의 음수 delta 항목을 추가하는 방식(기존 `awardPointsOnce`와 별개 경로라 성장 EXP에는 영향 없음). 안드로이드에서 `setEquippedDecorationIds` 프로퍼티 setter와 함수명이 JVM 시그니처 충돌(`Platform declaration clash`)을 일으켜, 소유/장착 프로퍼티를 읽기 전용(`val`)으로 바꾸고 쓰기는 별도 함수로만 노출하도록 수정.
+- **문서만 기록, 구현 안 함**: 추가 정보-표기 아이디어(캘린더 다음 일정 미리보기, 레벨업까지 남은 EXP %, 이번 주 완료율 미니 그래프 등)는 IDEAS.md에 기록 — 이번 세션 범위 밖.
+- **빌드/배포**: 컴파일 확인(안드로이드에서 프로퍼티/함수 시그니처 충돌 1건 발견·수정) → `assembleRelease`(versionCode `1789265997`)/`packageMsi createDistributable`(BuildInfo `1789266001`) 정상 통과. 안드로이드 APK 3위치 해시 일치 배포, 데스크탑 호스트(`PhoneLockDesktopApp`)+`vm-build-output` 재배포+재기동, GitHub 릴리스 게시(`android-1789265997`, `desktop-1789266001`), `sync-public-repo.ps1`로 공개 저장소 push까지 완료. **실사용 검증은 안 됨**(특히 미니 요약 칩의 데이터 정확성, 장식 배치가 나무/화분과 시각적으로 안 겹치는지, 포인트 부족 시 구매 버튼이 비활성화되는지 확인 필요).
+
+---
+
 ## 2026-09-13 (116차) — 홈 화면 구름 애니메이션
 
 사용자 요청: 홈 화면 구름이 자연스럽게 움직이도록. 정상 등급(tier 0) 하늘에 고정 좌표로 떠있던 구름 2개(`GroundScene`의 `drawSky` tier 0 분기)를, 이미 프레임마다 갱신되는 `nowMs` 시간값으로 x좌표를 계산해 화면 폭+여백 구간을 천천히 순환(modulo)하도록 변경 — 새 애니메이션 인프라 없이 기존 프레임 클록만 사용. 두 구름 속도를 다르게 줘서 시차감 추가. 양 플랫폼(`phone-lock-desktop`/`phone-lock-android`의 `PlantScreen.kt`) 동일 적용.

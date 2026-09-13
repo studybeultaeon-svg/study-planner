@@ -104,6 +104,32 @@ suspend fun PhoneLockRepository.onCalendarTaskCompletionChanged(taskId: Long, da
 }
 
 // ══════════════════════════════════════════════════════
+// 나무 주변 장식 아이템(116차) — 포인트로 구매해 홈 화면에 배치. 소유/장착 상태는 Firebase 동기화 없이
+// 기기별 로컬 보관(장식은 순수 꾸미기 요소라 그룹/루틴처럼 여러 기기 일치가 필요하지 않다고 판단).
+// ══════════════════════════════════════════════════════
+
+val PhoneLockRepository.ownedDecorationIds: Set<String>
+    get() = preferences.ownedDecorationIdsCsv.split(",").filter { it.isNotBlank() }.toSet()
+
+val PhoneLockRepository.equippedDecorationIds: List<String>
+    get() = preferences.equippedDecorationIdsCsv.split(",").filter { it.isNotBlank() }
+
+/** 이미 소유했거나 포인트가 모자라면 false. 성공하면 잔액에서 즉시 차감(음수 delta 원장 항목)하고 소유 목록에 추가한다. */
+suspend fun PhoneLockRepository.purchaseDecoration(id: String, cost: Int): Boolean {
+    if (id in ownedDecorationIds) return false
+    if (getPointsBalance() < cost) return false
+    pointsLedgerDao.insert(PointsLedgerEntry(delta = -cost, reason = "DECORATION", refId = id, dateKey = LocalDate.now().toString(), timestampMillis = System.currentTimeMillis()))
+    preferences.ownedDecorationIdsCsv = (ownedDecorationIds + id).joinToString(",")
+    pushPointsToFirebase()
+    return true
+}
+
+/** 소유하지 않은 id는 무시하고, 최대 3개까지만 받는다(리스트 순서=배치 슬롯 순서). */
+fun PhoneLockRepository.setEquippedDecorationIds(ids: List<String>) {
+    preferences.equippedDecorationIdsCsv = ids.filter { it in ownedDecorationIds }.take(3).joinToString(",")
+}
+
+// ══════════════════════════════════════════════════════
 // Firebase 동기화 — 캘린더/루틴과 동일한 "전체 문서 단위 LWW"(users/{user}/points).
 // ══════════════════════════════════════════════════════
 
