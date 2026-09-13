@@ -422,6 +422,12 @@ object JsonStore {
                 )
             )
         }
+
+        // 나무 주변 장식 아이템(116차).
+        val ownedDecorationsJson = json.optJSONArray("ownedDecorationIds") ?: JSONArray()
+        for (i in 0 until ownedDecorationsJson.length()) data.ownedDecorationIds.add(ownedDecorationsJson.getString(i))
+        val equippedDecorationsJson = json.optJSONArray("equippedDecorationIds") ?: JSONArray()
+        for (i in 0 until equippedDecorationsJson.length()) data.equippedDecorationIds.add(equippedDecorationsJson.getString(i))
         return data
     }
 
@@ -729,6 +735,8 @@ object JsonStore {
         json.put("growthSeasonYear", data.growthSeasonYear)
         json.put("lifetimeMaxLevel", data.lifetimeMaxLevel)
         json.put("lifetimeRebirthCount", data.lifetimeRebirthCount)
+        json.put("ownedDecorationIds", JSONArray(data.ownedDecorationIds.toList()))
+        json.put("equippedDecorationIds", JSONArray(data.equippedDecorationIds))
 
         val escalationsJson = JSONArray()
         data.confirmEscalations.forEach { e ->

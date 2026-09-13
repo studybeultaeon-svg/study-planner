@@ -435,5 +435,9 @@ data class AppData(
     /** 역대 최고 도달 레벨(영구 기록, 시즌이 바뀌어도 초기화 안 됨) — 시즌 초기화 직전 레벨과 비교해 갱신. */
     var lifetimeMaxLevel: Int = 0,
     /** 역대 누적 환생 횟수(영구 기록) — 시즌 초기화 시 그 시즌의 [rebirthCount]를 더해서 누적. */
-    var lifetimeRebirthCount: Int = 0
+    var lifetimeRebirthCount: Int = 0,
+    /** 나무 주변 장식 아이템(116차, 포인트 소비처 — IDEAS.md "보유 포인트 새 소비처 검토" 해소) — 구매한 장식 id 집합. */
+    val ownedDecorationIds: MutableSet<String> = mutableSetOf(),
+    /** 현재 홈 화면에 표시 중인 장식(최대 3개, 리스트 순서=배치 슬롯 순서). */
+    val equippedDecorationIds: MutableList<String> = mutableListOf()
 )
