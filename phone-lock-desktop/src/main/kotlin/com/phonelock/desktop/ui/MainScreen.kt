@@ -313,8 +313,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                             } else {
                                 SocialGroupScreen(
                                     repository,
-                                    onSelectGroup = { selectedSocialGroupId = it },
-                                    onOpenDm = { chatId, peerUid, peerLabel -> selectedDmChat = Triple(chatId, peerUid, peerLabel) }
+                                    onSelectGroup = { selectedSocialGroupId = it }
                                 )
                             }
                         }

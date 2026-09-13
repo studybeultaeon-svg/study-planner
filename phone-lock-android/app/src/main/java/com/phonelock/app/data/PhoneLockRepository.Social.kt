@@ -42,6 +42,8 @@ suspend fun PhoneLockRepository.transferSocialGroupOwnership(groupId: String, ne
     com.phonelock.app.service.SocialGroupSyncClient.transferOwnership(fbDatabaseUrl, fbApiKey, groupId, newOwnerUid)
 suspend fun PhoneLockRepository.updateSocialGroupName(groupId: String, newName: String, description: String) =
     com.phonelock.app.service.SocialGroupSyncClient.updateGroupName(fbDatabaseUrl, fbApiKey, groupId, newName, description)
+suspend fun PhoneLockRepository.setSocialGroupChatEnabled(groupId: String, enabled: Boolean) =
+    com.phonelock.app.service.SocialGroupSyncClient.setGroupChatEnabled(fbDatabaseUrl, fbApiKey, groupId, enabled)
 suspend fun PhoneLockRepository.regenerateSocialGroupInviteCode(groupId: String) =
     com.phonelock.app.service.SocialGroupSyncClient.regenerateInviteCode(fbDatabaseUrl, fbApiKey, groupId)
 

@@ -22,7 +22,10 @@ object SocialGroupSyncClient {
 
     data class GroupInfo(
         val id: String, val name: String, val ownerUid: String, val inviteCode: String, val createdAt: Long,
-        val description: String = ""
+        val description: String = "",
+        /** 모임 "💬 대화" 채널 on/off(115차, 사용자 요청) — 관리자가 설정에서 끄면 멤버 화면에 대화 탭 자체가
+         *  안 보인다. 기존 그룹은 필드가 없어 기본값 true(원래 켜져 있던 것과 동일하게 유지). */
+        val chatEnabled: Boolean = true
     )
 
     data class GroupMemberInfo(val uid: String, val displayName: String, val joinedAt: Long)
@@ -314,6 +317,21 @@ object SocialGroupSyncClient {
         }
     }
 
+    /** 모임 "💬 대화" 채널 on/off(115차, 관리자/모임장만 UI에서 gate) — info 전체를 덮어쓰지 않고
+     *  chatEnabled 하위 경로만 PUT한다(`updateGroupName`과 같은 이유). */
+    suspend fun setGroupChatEnabled(databaseUrl: String?, apiKey: String?, groupId: String, enabled: Boolean): Result<Unit> {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("Firebase 설정이 비어있습니다."))
+        }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, _) = resolveIdentity(apiKey) ?: error("먼저 로그인을 해야 합니다.")
+                val base = databaseUrl.trimEnd('/')
+                putJson(URL("$base/groups/$groupId/info/chatEnabled.json?auth=$token"), enabled.toString(), raw = true)
+            }
+        }
+    }
+
     /** "모임 랭킹"(82차, §11 창의적 기능) — 회유 멘트에 "중단"(저항)한 비율을 모임원끼리 비교. */
     data class QuoteStat(val uid: String, val displayName: String, val stopRatePercent: Int, val totalCount: Int)
 
@@ -472,7 +490,8 @@ object SocialGroupSyncClient {
                     ownerUid = json.optString("ownerUid", ""),
                     inviteCode = json.optString("inviteCode", ""),
                     createdAt = json.optLong("createdAt", 0L),
-                    description = json.optString("description", "")
+                    description = json.optString("description", ""),
+                    chatEnabled = json.optBoolean("chatEnabled", true)
                 )
             }.getOrNull()
         }

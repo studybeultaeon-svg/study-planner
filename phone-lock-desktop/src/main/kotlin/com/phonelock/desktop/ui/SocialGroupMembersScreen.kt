@@ -330,6 +330,21 @@ fun SocialGroupMembersScreen(
                                     text = { Text("👥 멤버 관리") },
                                     onClick = { showSettingsMenu = false; showMemberManageDialog = true }
                                 )
+                                // 115차(사용자 요청): 모임 "💬 대화" 채널 자체를 켜고 끌 수 있게(안드로이드판과 대칭).
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(if (info?.chatEnabled != false) "💬 모임 대화 끄기" else "💬 모임 대화 켜기") },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        val next = !(info?.chatEnabled ?: true)
+                                        val prev = info
+                                        info = info?.copy(chatEnabled = next)
+                                        if (!next) channelTab = 0
+                                        Thread {
+                                            val result = SocialGroupSyncClient.setGroupChatEnabled(url, key, groupId, next)
+                                            result.onFailure { info = prev }
+                                        }.start()
+                                    }
+                                )
                             }
                         }
                     }
@@ -350,13 +365,16 @@ fun SocialGroupMembersScreen(
             }
             Spacer(Modifier.height(Spacing.sm))
 
-            TabRow(selectedTabIndex = channelTab) {
-                MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
-                MaterialTab(selected = channelTab == 1, onClick = { channelTab = 1 }, text = { Text("💬 대화") })
+            val chatEnabled = info?.chatEnabled != false
+            if (chatEnabled) {
+                TabRow(selectedTabIndex = channelTab) {
+                    MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
+                    MaterialTab(selected = channelTab == 1, onClick = { channelTab = 1 }, text = { Text("💬 대화") })
+                }
+                Spacer(Modifier.height(Spacing.sm))
             }
-            Spacer(Modifier.height(Spacing.sm))
 
-            if (channelTab == 1) {
+            if (chatEnabled && channelTab == 1) {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     GroupChatScreen(repository, groupId)
                 }

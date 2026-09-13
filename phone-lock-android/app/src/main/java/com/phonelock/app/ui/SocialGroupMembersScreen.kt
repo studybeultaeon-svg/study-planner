@@ -139,6 +139,8 @@ fun SocialGroupMembersScreen(
     var groupDescription by remember { mutableStateOf("") }
     var inviteCode by remember { mutableStateOf("") }
     var ownerUid by remember { mutableStateOf("") }
+    // 115차(사용자 요청): 모임 "💬 대화" 채널 on/off 설정 — 꺼져 있으면 아래 채널 탭 자체를 숨긴다.
+    var chatEnabled by remember { mutableStateOf(true) }
     var rows by remember { mutableStateOf<List<MemberRow>>(emptyList()) }
     var viewWeekly by remember { mutableStateOf(false) }
     var announcement by remember { mutableStateOf<SocialGroupSyncClient.Announcement?>(null) }
@@ -206,6 +208,7 @@ fun SocialGroupMembersScreen(
             groupDescription = info?.description ?: ""
             inviteCode = info?.inviteCode ?: ""
             ownerUid = info?.ownerUid ?: ""
+            chatEnabled = info?.chatEnabled ?: true
             // 82차(§9 "모임 주간 리더보드"): schedule에 이미 담겨오는 ±7일 버퍼 캘린더 데이터로
             // "이번 주"(최근 7일) 완료율을 클라이언트에서 재집계 — 서버 집계/신규 API 없음.
             val today = java.time.LocalDate.now()
@@ -376,6 +379,23 @@ fun SocialGroupMembersScreen(
                                 text = { Text("👥 멤버 관리") },
                                 onClick = { showSettingsMenu = false; showMemberManageDialog = true }
                             )
+                            // 115차(사용자 요청): 모임 "💬 대화" 채널 자체를 켜고 끌 수 있게.
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(if (chatEnabled) "💬 모임 대화 끄기" else "💬 모임 대화 켜기") },
+                                onClick = {
+                                    showSettingsMenu = false
+                                    val next = !chatEnabled
+                                    chatEnabled = next
+                                    if (!next) channelTab = 0
+                                    scope.launch {
+                                        val result = repository.setSocialGroupChatEnabled(groupId, next)
+                                        result.onFailure { e ->
+                                            chatEnabled = !next
+                                            actionMessage = e.message ?: "설정 변경에 실패했습니다."
+                                        }
+                                    }
+                                }
+                            )
                         }
                     }
                 }
@@ -400,11 +420,13 @@ fun SocialGroupMembersScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.xs)
                 )
             }
-            TabRow(selectedTabIndex = channelTab) {
-                MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
-                MaterialTab(selected = channelTab == 1, onClick = { channelTab = 1 }, text = { Text("💬 대화") })
+            if (chatEnabled) {
+                TabRow(selectedTabIndex = channelTab) {
+                    MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
+                    MaterialTab(selected = channelTab == 1, onClick = { channelTab = 1 }, text = { Text("💬 대화") })
+                }
             }
-            if (channelTab == 1) {
+            if (chatEnabled && channelTab == 1) {
                 GroupChatScreen(repository, groupId)
             } else {
             val displayRows = if (viewWeekly) rows.sortedWith(compareBy { it.weekRate ?: -1 }) else rows

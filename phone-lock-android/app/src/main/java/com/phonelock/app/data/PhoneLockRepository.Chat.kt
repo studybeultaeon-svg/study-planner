@@ -21,10 +21,6 @@ suspend fun PhoneLockRepository.peekLatestGroupChatMessage(groupId: String) =
 suspend fun PhoneLockRepository.peekLatestDmChatMessage(chatId: String) =
     com.phonelock.app.service.ChatSyncClient.peekLatestDmMessage(fbDatabaseUrl, fbApiKey, chatId)
 
-/** "소셜" 개편 Phase 2 — 1:1 DM(커스텀 아이디 전역 검색). */
-suspend fun PhoneLockRepository.searchDmUserByCode(code: String) =
-    com.phonelock.app.service.ChatSyncClient.searchUserByCode(fbDatabaseUrl, fbApiKey, code)
-
 suspend fun PhoneLockRepository.ensureDmChat(otherUid: String, otherLabel: String) =
     com.phonelock.app.service.ChatSyncClient.ensureDmChat(fbDatabaseUrl, fbApiKey, otherUid, otherLabel)
 
