@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-09-13 (116차) — 홈 화면 구름 애니메이션
+
+사용자 요청: 홈 화면 구름이 자연스럽게 움직이도록. 정상 등급(tier 0) 하늘에 고정 좌표로 떠있던 구름 2개(`GroundScene`의 `drawSky` tier 0 분기)를, 이미 프레임마다 갱신되는 `nowMs` 시간값으로 x좌표를 계산해 화면 폭+여백 구간을 천천히 순환(modulo)하도록 변경 — 새 애니메이션 인프라 없이 기존 프레임 클록만 사용. 두 구름 속도를 다르게 줘서 시차감 추가. 양 플랫폼(`phone-lock-desktop`/`phone-lock-android`의 `PlantScreen.kt`) 동일 적용.
+
+- **빌드/배포**: 데스크탑 `compileKotlin`/안드로이드 `compileDebugKotlin` 확인 → `assembleRelease`(versionCode `1789265017`)/`packageMsi createDistributable`(BuildInfo `1789265022`) 정상 통과. 안드로이드 APK 3위치(`AndroidBuilds`, OneDrive 원본, `vm-build-output`) 해시 일치 배포, 데스크탑 호스트(`PhoneLockDesktopApp`, 프로세스 종료 후 교체+재기동)+`vm-build-output`(신규 생성) 배포 완료. GitHub 릴리스 게시(`android-1789265017`, `desktop-1789265022`), `sync-public-repo.ps1`로 공개 저장소 push까지 완료. **실사용 검증은 안 됨.**
+
+---
+
 ## 2026-09-13 (115차) — 소셜탭 메인 화면 "채팅" 목록에서 모임 항목 제거 + 모임 "💬 대화" 탭 on/off 설정
 
 사용자 요청: 소셜탭 메인 화면의 "👥 모임" 아래 있는 "💬 채팅"(통합 목록)을 없앨 것 — 단, 모임 상세의 "💬 대화" 탭 자체는 삭제하지 말고 모임 설정에서 켜고 끌 수 있게 할 것. (참고: 같은 세션 중 정반대로 — 모임 상세의 대화 탭을 삭제하는 걸로 — 잘못 구현했던 커밋이 있었는데 `git revert`로 되돌리고 이 내용으로 다시 작업함.) 양 플랫폼(안드로이드/데스크탑) 동일 적용:

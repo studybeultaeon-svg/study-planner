@@ -443,8 +443,11 @@ private fun DrawScope.drawSky(tier: Int, w: Float, h: Float, horizonY: Float, sc
     when (tier) {
         0 -> {
             drawCircle(color = Color(0xFFFFE17D), radius = 22f * scale, center = Offset(w * 0.72f, h * 0.08f))
-            drawCloudPuff(Offset(w * 0.2f, h * 0.07f), scale)
-            drawCloudPuff(Offset(w * 0.55f, h * 0.13f), scale)
+            val cloudSpan = w + 68f * scale
+            val x1 = ((w * 0.2f + tMs * 0.006f * scale).mod(cloudSpan)) - 34f * scale
+            val x2 = ((w * 0.55f + tMs * 0.004f * scale).mod(cloudSpan)) - 34f * scale
+            drawCloudPuff(Offset(x1, h * 0.07f), scale)
+            drawCloudPuff(Offset(x2, h * 0.13f), scale)
         }
         1 -> drawCircle(color = Color(0xFFC8C8BE).copy(alpha = 0.55f), radius = 18f * scale, center = Offset(w * 0.82f, h * 0.09f))
         2 -> {
