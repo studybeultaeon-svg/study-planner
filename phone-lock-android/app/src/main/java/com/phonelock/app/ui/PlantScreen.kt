@@ -8,6 +8,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,6 +66,7 @@ import androidx.compose.ui.unit.sp
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.applyPendingGrowthExp
 import com.phonelock.app.data.equippedDecorationIds
+import com.phonelock.app.data.getAllCalendarTasksOnce
 import com.phonelock.app.data.getAllRoutines
 import com.phonelock.app.data.getGrowthExpPending
 import com.phonelock.app.data.getGrowthExpTotal
@@ -140,6 +142,10 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
     var routineStreak by remember { mutableIntStateOf(0) }
     var routineDoneToday by remember { mutableIntStateOf(0) }
     var routineScheduledToday by remember { mutableIntStateOf(0) }
+    // 118차: 최근 7일(오늘 포함) 일별 루틴 완료율 미니 그래프용 — -1은 그날 예정된 루틴이 없었다는 뜻(회색 표시).
+    var weekCompletionRates by remember { mutableStateOf(List(7) { -1 }) }
+    // 118차: 다가오는 캘린더 일정 미리보기 — 완료 안 된 일정 중 오늘 이후로 가장 가까운 것 하나(제목, D-day 라벨).
+    var nextCalendarEvent by remember { mutableStateOf<Pair<String, String>?>(null) }
     LaunchedEffect(refreshTick) {
         val today = java.time.LocalDate.now()
         val dateKey = today.toString()
@@ -149,6 +155,20 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
         routineDoneToday = scheduledToday.count { dateKey in (completedByRoutine[it.id] ?: emptySet()) }
         routineScheduledToday = scheduledToday.size
         routineStreak = RoutineEngine.currentStreak(routines, completedByRoutine, today)
+        weekCompletionRates = (0..6).map { i ->
+            val d = today.minusDays((6 - i).toLong())
+            val scheduled = routines.filter { RoutineEngine.isScheduledOn(it, d) }
+            if (scheduled.isEmpty()) -1
+            else scheduled.count { d.toString() in (completedByRoutine[it.id] ?: emptySet()) } * 100 / scheduled.size
+        }
+        nextCalendarEvent = repository.getAllCalendarTasksOnce()
+            .filter { it.status != "O" && it.dateKey >= dateKey }
+            .minByOrNull { it.dateKey }
+            ?.let { task ->
+                val days = java.time.temporal.ChronoUnit.DAYS.between(today, java.time.LocalDate.parse(task.dateKey))
+                val ddayLabel = if (days == 0L) "D-day" else "D-$days"
+                task.name to ddayLabel
+            }
     }
     var showDecorationShop by remember { mutableStateOf(false) }
     val equippedDecorations = remember(refreshTick) { repository.equippedDecorationIds }
@@ -231,6 +251,29 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    nextCalendarEvent?.let { (title, ddayLabel) ->
+                        Text(
+                            "📅 $title ($ddayLabel)",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    // 118차: 최근 7일 완료율 미니 스파크라인 — 루틴 통계 탭 30일 막대그래프의 축소판.
+                    Spacer(Modifier.height(2.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+                        weekCompletionRates.forEach { pct ->
+                            val barColor = when {
+                                pct < 0 -> MaterialTheme.colorScheme.outlineVariant
+                                pct == 100 -> Color(0xFF34D399)
+                                pct > 0 -> Color(0xFFFBBF24)
+                                else -> Color(0xFFF87171)
+                            }
+                            val heightFrac = if (pct < 0) 0.15f else (pct / 100f).coerceAtLeast(0.15f)
+                            Box(
+                                Modifier.width(6.dp).height((14 * heightFrac).dp)
+                                    .background(barColor, RoundedCornerShape(1.dp))
+                            )
+                        }
+                    }
                 }
                 Spacer(Modifier.width(Spacing.sm))
                 TextButton(onClick = { showDecorationShop = true }) { Text("🎨 꾸미기") }
@@ -261,6 +304,13 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
                     progress = { levelProgress },
                     modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
                 )
+                if (!isMaxLevel) {
+                    Text(
+                        // 118차: 진행바만 있던 걸 텍스트로도 보강 — 다음 레벨까지 남은 퍼센트.
+                        "다음 레벨까지 ${Math.round((1f - levelProgress) * 100)}%",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(Modifier.height(Spacing.xs))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("보유 ${balance}P", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
