@@ -8,68 +8,13 @@ import org.json.JSONObject
  * 리팩토링으로 Repository.kt에서 분리했다(DECISIONS.md "82차 God Object 파일 분리" 참고, 안드로이드
  * PhoneLockRepository.Routine.kt와 대칭). 클래스 자체는 그대로이고 파일만 나눴다. 51차: 캘린더와
  * 동일한 "전체 문서 단위 LWW"로 Firebase 동기화(users/{user}/routines).
- * 98차: 루틴 모드(96차 설계) — 루틴 목록이 모드별로 분리된다. 모드도 id가 기기 간 다르므로 루틴/로그와
- * 같은 "배열 인덱스로 참조" 패턴(modeIndex)을 그대로 확장해서 동기화한다(안드로이드와 대칭).
  */
 
-/** data.routineModes가 비어있으면 기본 모드를 만들어 그 id를 반환, 있으면 그대로 첫 모드 id 반환. */
-fun Repository.ensureDefaultRoutineMode(): Long = synchronized(lock) {
-    val existing = data.routineModes
-    if (existing.isNotEmpty()) return@synchronized existing.first().id
-    val mode = RoutineMode(id = data.nextRoutineModeId, name = "기본", sortOrder = 0)
-    data.routineModes.add(mode)
-    data.nextRoutineModeId++
-    persist()
-    mode.id
+fun Repository.getRoutines(): List<Routine> = synchronized(lock) {
+    data.routines.filter { !it.archived }.sortedBy { it.sortOrder }
 }
 
-fun Repository.getRoutineModes(): List<RoutineMode> = synchronized(lock) { data.routineModes.sortedBy { it.sortOrder } }
-
-fun Repository.addRoutineMode(name: String): Long = synchronized(lock) {
-    val nextOrder = (data.routineModes.maxOfOrNull { it.sortOrder } ?: -1) + 1
-    val id = data.nextRoutineModeId
-    data.routineModes.add(RoutineMode(id = id, name = name, sortOrder = nextOrder))
-    data.nextRoutineModeId++
-    persist()
-    pushRoutinesToFirebase()
-    id
-}
-
-fun Repository.renameRoutineMode(id: Long, name: String) = synchronized(lock) {
-    val idx = data.routineModes.indexOfFirst { it.id == id }
-    if (idx !in data.routineModes.indices) return@synchronized
-    data.routineModes[idx] = data.routineModes[idx].copy(name = name)
-    persist()
-    pushRoutinesToFirebase()
-}
-
-/** 마지막 남은 모드는 삭제할 수 없다(루틴 모드는 항상 최소 1개). 삭제 시 그 모드의 루틴은 남은 첫
- *  모드(sortOrder 최소)로 자동 재배정된다 — 루틴 자체가 사라지진 않는다. */
-fun Repository.deleteRoutineMode(id: Long) = synchronized(lock) {
-    if (data.routineModes.size <= 1) return@synchronized
-    val fallback = data.routineModes.filter { it.id != id }.minByOrNull { it.sortOrder } ?: return@synchronized
-    data.routines.forEachIndexed { idx, r -> if (r.modeId == id) data.routines[idx] = r.copy(modeId = fallback.id) }
-    data.routineModes.removeAll { it.id == id }
-    persist()
-    pushRoutinesToFirebase()
-}
-
-fun Repository.swapRoutineModeOrder(idA: Long, idB: Long) = synchronized(lock) {
-    val aIdx = data.routineModes.indexOfFirst { it.id == idA }
-    val bIdx = data.routineModes.indexOfFirst { it.id == idB }
-    if (aIdx < 0 || bIdx < 0) return@synchronized
-    val a = data.routineModes[aIdx]; val b = data.routineModes[bIdx]
-    data.routineModes[aIdx] = a.copy(sortOrder = b.sortOrder)
-    data.routineModes[bIdx] = b.copy(sortOrder = a.sortOrder)
-    persist()
-    pushRoutinesToFirebase()
-}
-
-fun Repository.getRoutines(modeId: Long): List<Routine> = synchronized(lock) {
-    data.routines.filter { !it.archived && it.modeId == modeId }.sortedBy { it.sortOrder }
-}
-
-/** 모드 구분 없이 전체 루틴(보관 제외) — 알림/요약 등 모드와 무관하게 전체를 대상으로 하는 기능용. */
+/** 전체 루틴(보관 제외) — 알림/요약 등에서 쓴다(getRoutines와 동일하지만 의도를 드러내는 별칭). */
 fun Repository.getAllRoutines(): List<Routine> = synchronized(lock) { data.routines.filter { !it.archived }.sortedBy { it.sortOrder } }
 
 fun Repository.addRoutine(routine: Routine) = synchronized(lock) {
@@ -159,25 +104,15 @@ fun Repository.getRoutineCompletedDateKeys(routineId: Long): Set<String> = synch
     data.routineLogs.filter { it.routineId == routineId }.map { it.dateKey }.toSet()
 }
 
-/** modes/routines/routineLogs 3종 JSON 배열을 한 번에 담는 결과. */
-data class RoutineExportJson(val modesArr: JSONArray, val routinesArr: JSONArray, val logsArr: JSONArray)
+/** routines/routineLogs 2종 JSON 배열을 한 번에 담는 결과. */
+data class RoutineExportJson(val routinesArr: JSONArray, val logsArr: JSONArray)
 
 /**
- * 모드/루틴/로그를 Firebase JSON 배열 3개로 변환한다. 기기별 로컬 id를 그대로 실어보내면 다른 기기의
- * id 체계와 충돌하므로(캘린더가 dateKey+배열순서로 식별하는 것과 같은 이유), modes/routines 배열 안에서의
- * 인덱스를 각각 routine.modeIndex/log.routineIndex로 쓴다 — 실제 id는 반입하는 쪽에서 새로 배정한다.
+ * 루틴/로그를 Firebase JSON 배열 2개로 변환한다. 기기별 로컬 id를 그대로 실어보내면 다른 기기의
+ * id 체계와 충돌하므로(캘린더가 dateKey+배열순서로 식별하는 것과 같은 이유), routines 배열 안에서의
+ * 인덱스를 log.routineIndex로 쓴다 — 실제 id는 반입하는 쪽에서 새로 배정한다.
  */
 fun Repository.routinesToJsonArrays(): RoutineExportJson {
-    val sortedModes = data.routineModes.sortedBy { it.sortOrder }
-    val modeIndexById = sortedModes.mapIndexed { idx, m -> m.id to idx }.toMap()
-    val modesArr = JSONArray()
-    sortedModes.forEach { m ->
-        modesArr.put(JSONObject().apply {
-            put("name", m.name)
-            put("sortOrder", m.sortOrder)
-        })
-    }
-
     val sorted = data.routines.sortedBy { it.sortOrder }
     val indexById = sorted.mapIndexed { idx, r -> r.id to idx }.toMap()
     val routinesArr = JSONArray()
@@ -195,7 +130,6 @@ fun Repository.routinesToJsonArrays(): RoutineExportJson {
             put("notifyEnabled", r.notifyEnabled)
             put("startDate", r.startDate ?: JSONObject.NULL)
             put("endDate", r.endDate ?: JSONObject.NULL)
-            put("modeIndex", r.modeId?.let { modeIndexById[it] } ?: JSONObject.NULL)
         })
     }
     val logsArr = JSONArray()
@@ -206,24 +140,15 @@ fun Repository.routinesToJsonArrays(): RoutineExportJson {
             put("dateKey", log.dateKey)
         })
     }
-    return RoutineExportJson(modesArr, routinesArr, logsArr)
+    return RoutineExportJson(routinesArr, logsArr)
 }
 
-/** 반입된 모드/루틴을 담는 결과(안드로이드판과 대칭) — routines는 이미 새 로컬 id가 배정된 상태이고,
- *  routineModeIndexes[i]는 routines[i]가 속할 모드의 modes 배열 안 인덱스(없으면 null=기본 모드). */
-data class RoutineImportResult(val modes: MutableList<RoutineMode>, val routines: MutableList<Routine>, val routineModeIndexes: List<Int?>, val logs: MutableList<RoutineLog>)
+/** 반입된 루틴/로그를 담는 결과(안드로이드판과 대칭) — routines는 이미 새 로컬 id가 배정된 상태. */
+data class RoutineImportResult(val routines: MutableList<Routine>, val logs: MutableList<RoutineLog>)
 
-/** JSON 배열 3개(modes, routines, routineLogs)를 로컬 RoutineMode/Routine/RoutineLog로 되돌린다 — 새
- *  로컬 id를 배열 순서대로 새로 배정. modes/modeIndex가 없는 레거시 데이터는 모드 없이(null) 반환되고,
- *  호출부가 기본 모드로 채운다. */
-fun Repository.routinesFromJsonArrays(modesJson: JSONArray, routinesJson: JSONArray, logsJson: JSONArray): RoutineImportResult {
-    val newModes = mutableListOf<RoutineMode>()
-    for (i in 0 until modesJson.length()) {
-        val m = modesJson.getJSONObject(i)
-        newModes.add(RoutineMode(id = (i + 1).toLong(), name = m.optString("name", "기본"), sortOrder = m.optInt("sortOrder", i)))
-    }
+/** JSON 배열 2개(routines, routineLogs)를 로컬 Routine/RoutineLog로 되돌린다 — 새 로컬 id를 배열 순서대로 새로 배정. */
+fun Repository.routinesFromJsonArrays(routinesJson: JSONArray, logsJson: JSONArray): RoutineImportResult {
     val newRoutines = mutableListOf<Routine>()
-    val modeIndexes = mutableListOf<Int?>()
     for (i in 0 until routinesJson.length()) {
         val r = routinesJson.getJSONObject(i)
         newRoutines.add(
@@ -243,7 +168,6 @@ fun Repository.routinesFromJsonArrays(modesJson: JSONArray, routinesJson: JSONAr
                 endDate = if (r.isNull("endDate")) null else r.optString("endDate", null)
             )
         )
-        modeIndexes.add(if (r.has("modeIndex") && !r.isNull("modeIndex")) r.optInt("modeIndex", -1).takeIf { it >= 0 } else null)
     }
     val newLogs = mutableListOf<RoutineLog>()
     for (i in 0 until logsJson.length()) {
@@ -252,62 +176,46 @@ fun Repository.routinesFromJsonArrays(modesJson: JSONArray, routinesJson: JSONAr
         if (idx !in newRoutines.indices) continue
         newLogs.add(RoutineLog(newRoutines[idx].id, l.optString("dateKey", "")))
     }
-    return RoutineImportResult(newModes, newRoutines, modeIndexes, newLogs)
+    return RoutineImportResult(newRoutines, newLogs)
 }
 
-/** 반입된 모드/루틴을 실제 로컬 상태(data.routineModes/data.routines)에 적용한다 — modeIndex를 새로
- *  배정된 모드 id로 다시 연결(모드가 없으면 기본 모드로 편입). import/sync 양쪽에서 공용. */
+/** 반입된 루틴을 실제 로컬 상태(data.routines)에 적용한다 — import/sync 양쪽에서 공용. */
 private fun Repository.applyRoutineImport(result: RoutineImportResult) {
-    data.routineModes.clear(); data.routineModes.addAll(result.modes)
-    data.nextRoutineModeId = (result.modes.maxOfOrNull { it.id } ?: 0L) + 1
-    val defaultModeId = if (result.modes.isNotEmpty()) result.modes.first().id else {
-        val id = data.nextRoutineModeId
-        data.routineModes.add(RoutineMode(id = id, name = "기본", sortOrder = 0))
-        data.nextRoutineModeId++
-        id
-    }
-    val routinesWithMode = result.routines.mapIndexed { i, r ->
-        val modeId = result.routineModeIndexes[i]?.let { idx -> result.modes.getOrNull(idx)?.id } ?: defaultModeId
-        r.copy(modeId = modeId)
-    }.toMutableList()
-    data.routines.clear(); data.routines.addAll(routinesWithMode)
+    data.routines.clear(); data.routines.addAll(result.routines)
     data.routineLogs.clear(); data.routineLogs.addAll(result.logs)
-    data.nextRoutineId = (routinesWithMode.maxOfOrNull { it.id } ?: 0L) + 1
+    data.nextRoutineId = (result.routines.maxOfOrNull { it.id } ?: 0L) + 1
 }
 
-/** 루틴 파일 내보내기(사용자 요청, 2026-08-14) — Firebase 동기화 문서와 동일한 스키마를 그대로 재사용.
- *  98차: 모드도 함께 내보낸다(요구사항 "내보내기/불러오기는 전체 모드+루틴을 한 번에"). */
+/** 루틴 파일 내보내기(사용자 요청, 2026-08-14) — Firebase 동기화 문서와 동일한 스키마를 그대로 재사용. */
 fun Repository.exportRoutinesBackupJson(): String = synchronized(lock) {
     val export = routinesToJsonArrays()
     val root = JSONObject()
-    root.put("modes", export.modesArr)
     root.put("routines", export.routinesArr)
     root.put("routineLogs", export.logsArr)
     root.toString(2)
 }
 
-/** 루틴 파일 가져오기 — 현재 모드/루틴/로그를 파일 내용으로 전체 대체한다(syncRoutinesFromFirebase의 반입 로직과 동일). */
+/** 루틴 파일 가져오기 — 현재 루틴/로그를 파일 내용으로 전체 대체한다(syncRoutinesFromFirebase의 반입 로직과 동일). */
 fun Repository.importRoutinesBackupJson(json: String) {
     val root = JSONObject(json)
-    val modesJson = root.optJSONArray("modes") ?: JSONArray()
     val routinesJson = root.optJSONArray("routines") ?: JSONArray()
     val logsJson = root.optJSONArray("routineLogs") ?: JSONArray()
     synchronized(lock) {
-        val result = routinesFromJsonArrays(modesJson, routinesJson, logsJson)
+        val result = routinesFromJsonArrays(routinesJson, logsJson)
         applyRoutineImport(result)
         persist()
         pushRoutinesToFirebase()
     }
 }
 
-/** 변경 직후 fire-and-forget으로 Firebase에 전체 루틴 문서(모드 포함)를 올린다(호출부는 이미 lock을 쥐고 있음). */
+/** 변경 직후 fire-and-forget으로 Firebase에 전체 루틴 문서를 올린다(호출부는 이미 lock을 쥐고 있음). */
 fun Repository.pushRoutinesToFirebase() {
     val ts = System.currentTimeMillis()
     data.routinesTs = ts
     val export = routinesToJsonArrays()
     val url = data.fbDatabaseUrl; val key = data.fbApiKey
     Thread {
-        com.phonelock.desktop.monitor.PomodoroSyncClient.writeRoutines(url, key, export.modesArr, export.routinesArr, export.logsArr, ts)
+        com.phonelock.desktop.monitor.PomodoroSyncClient.writeRoutines(url, key, export.routinesArr, export.logsArr, ts)
     }.start()
 }
 
@@ -320,7 +228,7 @@ fun Repository.syncRoutinesFromFirebase() {
     val result = com.phonelock.desktop.monitor.PomodoroSyncClient.readRoutines(url, key) ?: return
     synchronized(lock) {
         if (result.ts > data.routinesTs) {
-            val parsed = routinesFromJsonArrays(result.modesJson, result.routinesJson, result.logsJson)
+            val parsed = routinesFromJsonArrays(result.routinesJson, result.logsJson)
             applyRoutineImport(parsed)
             data.routinesTs = result.ts
             persist()

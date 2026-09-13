@@ -79,13 +79,8 @@ private fun isScheduledOn(routine: Routine, date: LocalDate): Boolean {
  */
 @Composable
 fun RoutineScreen(repository: PhoneLockRepository) {
-    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     var subTab by remember { mutableIntStateOf(0) }
-    var modes by remember { mutableStateOf<List<RoutineMode>>(emptyList()) }
-    var activeModeId by remember { mutableStateOf<Long?>(null) }
-    var showAddModeDialog by remember { mutableStateOf(false) }
-    var showManageModesDialog by remember { mutableStateOf(false) }
     var routines by remember { mutableStateOf<List<Routine>>(emptyList()) }
     var completedByRoutine by remember { mutableStateOf<Map<Long, Set<String>>>(emptyMap()) }
     var editing by remember { mutableStateOf<Routine?>(null) }
@@ -103,33 +98,16 @@ fun RoutineScreen(repository: PhoneLockRepository) {
             repository.syncRoutinesFromFirebase()
             repository.syncPointsFromFirebase()
         }
-        repository.ensureDefaultRoutineMode()
-        val loadedModes = repository.getRoutineModes()
-        modes = loadedModes
-        val saved = AppPreferences(context).activeRoutineModeId
-        activeModeId = loadedModes.find { it.id == saved }?.id ?: loadedModes.firstOrNull()?.id
         refreshTick++
     }
 
     LaunchedEffect(refreshTick) {
-        val modeId = activeModeId ?: return@LaunchedEffect
-        val list = repository.getRoutines(modeId)
+        val list = repository.getRoutines()
         routines = list
         completedByRoutine = list.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
     }
 
     fun refresh() { refreshTick++ }
-    fun refreshModes() {
-        scope.launch {
-            modes = repository.getRoutineModes()
-            refresh()
-        }
-    }
-    fun selectMode(id: Long) {
-        activeModeId = id
-        AppPreferences(context).activeRoutineModeId = id
-        refresh()
-    }
     fun toggle(routineId: Long, forDateKey: String) {
         scope.launch { repository.toggleRoutineLog(routineId, forDateKey); refresh() }
     }
@@ -137,7 +115,6 @@ fun RoutineScreen(repository: PhoneLockRepository) {
     // 98차(사용자 요청): 당겨서 새로고침 — 서버 최신 상태를 다시 받아온다.
     com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = {
         if (!repository.isEffectivelyOffline()) repository.syncRoutinesFromFirebase()
-        modes = repository.getRoutineModes()
         refresh()
     }) {
     Column(Modifier.fillMaxSize().padding(Spacing.md)) {
@@ -147,44 +124,6 @@ fun RoutineScreen(repository: PhoneLockRepository) {
                 Text("반복 할 일 · 통계", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             OutlinedButton(onClick = { showAddDialog = true }) { Text("+ 추가") }
-        }
-        Spacer(Modifier.height(Spacing.sm))
-
-        // 루틴 모드(98차) — 상황별로 별개 루틴 묶음을 전환한다. 다른 모드의 루틴은 숨겨질 뿐 삭제되지 않는다.
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
-        ) {
-            modes.forEach { mode ->
-                val selected = mode.id == activeModeId
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.clickable { selectMode(mode.id) }
-                ) {
-                    Text(
-                        mode.name,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs)
-                    )
-                }
-            }
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.clickable { showAddModeDialog = true }
-            ) {
-                Text("+", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs))
-            }
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.clickable { showManageModesDialog = true }
-            ) {
-                Text("⚙", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs))
-            }
         }
         Spacer(Modifier.height(Spacing.sm))
 
@@ -277,8 +216,6 @@ fun RoutineScreen(repository: PhoneLockRepository) {
     if (showAddDialog) {
         RoutineEditDialog(
             routine = null,
-            modes = modes,
-            initialModeId = activeModeId ?: modes.firstOrNull()?.id ?: 0L,
             onDismiss = { showAddDialog = false },
             onSave = { r -> scope.launch { repository.addRoutine(r); showAddDialog = false; refresh() } }
         )
@@ -286,114 +223,12 @@ fun RoutineScreen(repository: PhoneLockRepository) {
     editing?.let { r ->
         RoutineEditDialog(
             routine = r,
-            modes = modes,
-            initialModeId = r.modeId ?: activeModeId ?: modes.firstOrNull()?.id ?: 0L,
             onDismiss = { editing = null },
             onSave = { updated -> scope.launch { repository.updateRoutine(updated); editing = null; refresh() } },
             onDelete = { scope.launch { repository.deleteRoutine(r); editing = null; refresh() } },
             onCopy = { scope.launch { repository.copyRoutine(r); editing = null; refresh() } }
         )
     }
-    if (showAddModeDialog) {
-        RoutineModeAddDialog(
-            onDismiss = { showAddModeDialog = false },
-            onSave = { name ->
-                scope.launch {
-                    val newId = repository.addRoutineMode(name)
-                    showAddModeDialog = false
-                    modes = repository.getRoutineModes()
-                    selectMode(newId)
-                }
-            }
-        )
-    }
-    if (showManageModesDialog) {
-        RoutineModeManageDialog(
-            modes = modes,
-            onDismiss = { showManageModesDialog = false },
-            onRename = { id, name -> scope.launch { repository.renameRoutineMode(id, name); refreshModes() } },
-            onDelete = { id ->
-                scope.launch {
-                    repository.deleteRoutineMode(id)
-                    val newModes = repository.getRoutineModes()
-                    modes = newModes
-                    if (activeModeId == id) selectMode(newModes.firstOrNull()?.id ?: 0L) else refresh()
-                }
-            },
-            onSwap = { a, b -> scope.launch { repository.swapRoutineModeOrder(a, b); refreshModes() } }
-        )
-    }
-}
-
-@Composable
-private fun RoutineModeAddDialog(onDismiss: () -> Unit, onSave: (String) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("모드 추가") },
-        text = {
-            androidx.compose.material3.OutlinedTextField(
-                value = name, onValueChange = { name = it },
-                label = { Text("모드 이름") }, modifier = Modifier.fillMaxWidth()
-            )
-        },
-        confirmButton = {
-            androidx.compose.material3.TextButton(onClick = { onSave(name.trim()) }, enabled = name.isNotBlank()) { Text("추가") }
-        },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("취소") } }
-    )
-}
-
-@Composable
-private fun RoutineModeManageDialog(
-    modes: List<RoutineMode>,
-    onDismiss: () -> Unit,
-    onRename: (Long, String) -> Unit,
-    onDelete: (Long) -> Unit,
-    onSwap: (Long, Long) -> Unit
-) {
-    var renamingId by remember { mutableStateOf<Long?>(null) }
-    var renameText by remember { mutableStateOf("") }
-    val sorted = modes.sortedBy { it.sortOrder }
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("모드 관리") },
-        text = {
-            Column {
-                sorted.forEachIndexed { idx, mode ->
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(mode.name, modifier = Modifier.weight(1f))
-                        com.phonelock.app.ui.components.IconChip(
-                            Icons.Filled.KeyboardArrowUp, enabled = idx > 0,
-                            contentDescription = "위로", onClick = { onSwap(mode.id, sorted[idx - 1].id) }
-                        )
-                        com.phonelock.app.ui.components.IconChip(
-                            Icons.Filled.KeyboardArrowDown, enabled = idx < sorted.lastIndex,
-                            contentDescription = "아래로", onClick = { onSwap(mode.id, sorted[idx + 1].id) }
-                        )
-                        IconButton(onClick = { renamingId = mode.id; renameText = mode.name }) { Text("✏️") }
-                        IconButton(onClick = { onDelete(mode.id) }, enabled = sorted.size > 1) {
-                            Text("🗑", color = if (sorted.size > 1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                renamingId?.let { id ->
-                    Spacer(Modifier.height(Spacing.sm))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.OutlinedTextField(
-                            value = renameText, onValueChange = { renameText = it },
-                            modifier = Modifier.weight(1f)
-                        )
-                        androidx.compose.material3.TextButton(onClick = {
-                            if (renameText.isNotBlank()) onRename(id, renameText.trim())
-                            renamingId = null
-                        }) { Text("저장") }
-                    }
-                }
-            }
-        },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("닫기") } }
-    )
 }
 
 @Composable

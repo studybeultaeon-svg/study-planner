@@ -29,7 +29,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.phonelock.app.data.Routine
-import com.phonelock.app.data.RoutineMode
 import com.phonelock.app.ui.theme.Spacing
 import java.time.LocalDate
 
@@ -69,12 +68,10 @@ private fun isValidTimeSlot(text: String): Boolean {
  * ResponsiveSplit 등 좌우 분할이 없다 — 애초에 필드가 적어 다이얼로그로 처리한다는 설계 자체가
  * 폭에 따라 레이아웃을 바꿀 이유를 없앤다.
  */
-@OptIn(ExperimentalLayoutApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RoutineEditDialog(
     routine: Routine?,
-    modes: List<RoutineMode> = emptyList(),
-    initialModeId: Long = 0L,
     onDismiss: () -> Unit,
     onSave: (Routine) -> Unit,
     onDelete: (() -> Unit)? = null,
@@ -89,8 +86,6 @@ fun RoutineEditDialog(
     var periodEnabled by remember { mutableStateOf(routine?.startDate != null || routine?.endDate != null) }
     var startDateText by remember { mutableStateOf(routine?.startDate ?: "") }
     var endDateText by remember { mutableStateOf(routine?.endDate ?: "") }
-    var selectedModeId by remember { mutableStateOf(routine?.modeId ?: initialModeId) }
-    var modeMenuExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -148,33 +143,6 @@ fun RoutineEditDialog(
                 Text("적용 요일", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 RoutineDayMaskRow(daysMask) { daysMask = it }
                 Spacer(Modifier.height(Spacing.sm))
-
-                if (modes.size > 1) {
-                    Text("모드", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    androidx.compose.material3.ExposedDropdownMenuBox(
-                        expanded = modeMenuExpanded,
-                        onExpandedChange = { modeMenuExpanded = it }
-                    ) {
-                        OutlinedTextField(
-                            value = modes.find { it.id == selectedModeId }?.name ?: "",
-                            onValueChange = {},
-                            readOnly = true,
-                            modifier = Modifier.fillMaxWidth().menuAnchor()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = modeMenuExpanded,
-                            onDismissRequest = { modeMenuExpanded = false }
-                        ) {
-                            modes.sortedBy { it.sortOrder }.forEach { m ->
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text(m.name) },
-                                    onClick = { selectedModeId = m.id; modeMenuExpanded = false }
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(Spacing.sm))
-                }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = periodEnabled, onCheckedChange = { periodEnabled = it })
@@ -240,8 +208,7 @@ fun RoutineEditDialog(
                             daysMask = daysMask,
                             notifyEnabled = timeSlot != null && notifyEnabled,
                             startDate = startDate,
-                            endDate = endDate,
-                            modeId = selectedModeId
+                            endDate = endDate
                         )
                     )
                 },

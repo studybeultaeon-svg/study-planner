@@ -406,14 +406,13 @@ object PomodoroSyncClient {
         }
     }
 
-    data class RoutineSyncResult(val modesJson: org.json.JSONArray, val routinesJson: org.json.JSONArray, val logsJson: org.json.JSONArray, val ts: Long)
+    data class RoutineSyncResult(val routinesJson: org.json.JSONArray, val logsJson: org.json.JSONArray, val ts: Long)
 
     /**
      * 루틴앱(51차 Firebase 동기화 추가) 전체 문서를 읽는다. `users/{user}/routines`에
-     * `{modes:[...], routines:[...], routineLogs:[...], _ts}` — 캘린더와 같은 문서 단위 LWW. 기기별 로컬
-     * id를 그대로 실어보내면 다른 기기의 id 체계와 충돌하므로, routineLogs/routine.modeIndex는 실제 id
-     * 대신 routines/modes 배열 안에서의 인덱스로 소속을 가리킨다(호출부가 반입 시 새로 배정된 로컬 id로
-     * 다시 연결, 98차 루틴 모드부터 modes/modeIndex 추가). 설정 누락/오류 시 null.
+     * `{routines:[...], routineLogs:[...], _ts}` — 캘린더와 같은 문서 단위 LWW. 기기별 로컬 id를 그대로
+     * 실어보내면 다른 기기의 id 체계와 충돌하므로, routineLogs는 실제 id 대신 routines 배열 안에서의
+     * 인덱스로 소속을 가리킨다(호출부가 반입 시 새로 배정된 로컬 id로 다시 연결). 설정 누락/오류 시 null.
      */
     fun readRoutines(databaseUrl: String?, apiKey: String?): RoutineSyncResult? {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
@@ -431,10 +430,9 @@ object PomodoroSyncClient {
             // body == "null"은 네트워크 오류가 아니라 "이 uid엔 아직 원격 문서가 없다"는 확정 응답이다 —
             // 새 계정의 첫 동기화처럼 원격이 진짜 비어있는 경우, 여기서 null을 반환하면 호출부가 오류와
             // 구분 못 해 로컬 데이터를 원격에 올리지도 못하고 그냥 포기해버린다(첫 동기화 무한 실패 버그).
-            if (body.isNullOrBlank() || body == "null") return@runCatching RoutineSyncResult(org.json.JSONArray(), org.json.JSONArray(), org.json.JSONArray(), 0L)
+            if (body.isNullOrBlank() || body == "null") return@runCatching RoutineSyncResult(org.json.JSONArray(), org.json.JSONArray(), 0L)
             val json = JSONObject(body)
             RoutineSyncResult(
-                json.optJSONArray("modes") ?: org.json.JSONArray(),
                 json.optJSONArray("routines") ?: org.json.JSONArray(),
                 json.optJSONArray("routineLogs") ?: org.json.JSONArray(),
                 json.optLong("_ts", 0L)
@@ -443,13 +441,12 @@ object PomodoroSyncClient {
     }
 
     /** 루틴 전체 문서를 덮어쓴다(문서 단위 LWW — 호출부가 이미 로컬이 더 최신임을 확인한 뒤 호출). */
-    fun writeRoutines(databaseUrl: String?, apiKey: String?, modesJson: org.json.JSONArray, routinesJson: org.json.JSONArray, logsJson: org.json.JSONArray, ts: Long) {
+    fun writeRoutines(databaseUrl: String?, apiKey: String?, routinesJson: org.json.JSONArray, logsJson: org.json.JSONArray, ts: Long) {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         runCatching {
             val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
             val base = databaseUrl.trimEnd('/')
             val body = JSONObject().apply {
-                put("modes", modesJson)
                 put("routines", routinesJson)
                 put("routineLogs", logsJson)
                 put("_ts", ts)
