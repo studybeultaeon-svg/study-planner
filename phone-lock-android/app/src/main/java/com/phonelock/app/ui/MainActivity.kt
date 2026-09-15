@@ -49,6 +49,7 @@ import com.phonelock.app.routine.GroupNudgeWorker
 import com.phonelock.app.routine.RoutineAlarmScheduler
 import com.phonelock.app.service.AccessibilityWatchdogWorker
 import com.phonelock.app.ui.theme.PhoneLockTheme
+import com.phonelock.app.ui.theme.applyThemeWindowBackground
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
@@ -59,7 +60,7 @@ private sealed class Tab(val route: String, val label: String, val emoji: String
     object Routine : Tab("routine", "루틴", "📋")
     object Study : Tab("study", "공부", "📘")
     object Manage : Tab("manage", "규칙", "🗂️")
-    object Group : Tab("group", "소셜", "👥")
+    object Group : Tab("group", "모임", "👥")
     // 118차부터 설정은 탭이 아니라 홈 화면 우상단 버튼으로만 들어가는 독립 라우트 — visibleTabs()엔
     // 포함하지 않지만 NavHost 등록/네비게이션 대상으로는 그대로 쓴다.
     object Settings : Tab("settings", "설정", "⚙️")
@@ -144,6 +145,9 @@ class MainActivity : ComponentActivity() {
                 RoutineAlarmScheduler.cleanupLeakedAlarmsIfNeeded(applicationContext, AppPreferences(applicationContext))
             }
             repository.syncRoutinesFromFirebase()
+            // 121차: 성장(레벨/EXP/장식)도 시작할 때 한 번 받아온다 — 이 기기가 원격 상태를 모르는 채로
+            // 먼저 EXP를 적립해 올려버리면 다른 기기가 쌓아둔 레벨을 덮어쓸 수 있다.
+            repository.syncGrowthFromFirebase()
             RoutineAlarmScheduler.rescheduleAll(applicationContext, repository)
             if (AppPreferences(applicationContext).routineStreakNotifyEnabled) {
                 RoutineAlarmScheduler.scheduleStreakCheck(applicationContext)
@@ -162,6 +166,9 @@ class MainActivity : ComponentActivity() {
             // 카운터로 강제 재계산(데스크탑판 Main.kt와 동일 패턴).
             var themeRefreshTick by remember { mutableStateOf(0) }
             val prefs = remember(themeRefreshTick) { AppPreferences(applicationContext) }
+            // 121차: 창 배경도 테마가 바뀔 때마다 같이 갈아준다 — 안 그러면 화면 전환/첫 프레임에
+            // Theme.PhoneLock(=Material.Light)의 흰 바탕이 그대로 비친다.
+            LaunchedEffect(themeMode, themeRefreshTick) { applyThemeWindowBackground(prefs) }
             var showOnboarding by remember { mutableStateOf(!AppPreferences(applicationContext).onboardingShown) }
             PhoneLockTheme(themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
                 Surface(modifier = Modifier) {

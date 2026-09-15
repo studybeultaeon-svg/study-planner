@@ -57,17 +57,23 @@ object AccountSyncClient {
         return token to uid
     }
 
-    private fun get(base: String, path: String, token: String): String? = runCatching {
+    /**
+     * GET 원문 — **네트워크 오류와 비-2xx 응답은 예외로 던진다**(121차, 안드로이드판과 대칭).
+     * 예전엔 모두 조용히 null을 돌려줘서 [fetchMyProfile]이 "프로필 없음"과 "인터넷 끊김"을 구분하지
+     * 못했고, 106차에 고친 것은 `onFailure` 경로뿐이라 정작 대부분의 네트워크 장애가 `onSuccess(null)`로
+     * 들어와 그대로 "가입 신청" 화면으로 떨어졌다. 이제 null은 "서버가 2xx로 빈 값을 돌려줬다" 뿐이다.
+     */
+    private fun get(base: String, path: String, token: String): String? {
         val request = HttpRequest.newBuilder()
             .uri(URI.create("$base/$path.json?auth=$token"))
             .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
             .GET()
             .build()
         val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-        if (response.statusCode() !in 200..299) return null
+        if (response.statusCode() !in 200..299) error("서버 응답 오류 (HTTP ${response.statusCode()})")
         val body = response.body()
-        if (body.isNullOrBlank() || body == "null") null else body
-    }.getOrNull()
+        return if (body.isNullOrBlank() || body == "null") null else body
+    }
 
     /** PUT 실패 시 응답 본문(에러 메시지)을 담아 예외로 던진다 — 권한거부(permission denied) 판정용. */
     private fun putOrThrow(base: String, path: String, token: String, bodyJson: String) {

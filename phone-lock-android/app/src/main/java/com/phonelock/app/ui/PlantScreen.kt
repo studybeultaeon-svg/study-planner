@@ -12,7 +12,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -72,7 +70,10 @@ import com.phonelock.app.data.getGrowthExpPending
 import com.phonelock.app.data.getGrowthExpTotal
 import com.phonelock.app.data.getPointsBalance
 import com.phonelock.app.data.getRebirthCount
+import com.phonelock.app.data.MAX_EQUIPPED_DECORATIONS
 import com.phonelock.app.data.getRoutineCompletedDateKeys
+import com.phonelock.app.data.syncGrowthFromFirebase
+import com.phonelock.app.data.syncPointsFromFirebase
 import com.phonelock.app.data.observePointsBalance
 import com.phonelock.app.data.ownedDecorationIds
 import com.phonelock.app.data.purchaseDecoration
@@ -90,6 +91,10 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
+/** 홈(식물) 화면이 저장값을 다시 읽는 주기(121차) — EXP는 이 화면 밖(공부 타이머·루틴 체크·다른 기기
+ *  동기화)에서도 쌓이므로, 화면이 떠 있는 동안 이 간격으로 다시 읽어 표시가 실제 값과 벌어지지 않게 한다. */
+private const val GROWTH_POLL_INTERVAL_MS = 2_000L
+
 /**
  * "식물" 탭(105차 신설, 108차 게임성 강화 개편, 109차 500레벨/등급 체계 개편, 데스크탑판과 대칭) —
  * 레벨/칭호는 `shared/GrowthSystem.kt` 하나로 계산한다. 108차부터 EXP는 적립 즉시 레벨에 반영되지 않고
@@ -100,20 +105,6 @@ import kotlin.math.sin
  * 버튼+확인 다이얼로그로 이미 수동이었다(자동 환생 로직 없음). 보상함(포인트→보상 교환) UI는 108차에
  * 완전히 삭제됨.
  */
-/** 나무 주변에 배치할 수 있는 장식 아이템(116차) — 포인트로 구매, 최대 3개 동시 배치, 데스크탑판과 대칭. */
-private data class DecorationItem(val id: String, val emoji: String, val label: String, val cost: Int)
-
-private val DECORATION_CATALOG = listOf(
-    DecorationItem("lamp", "🏮", "종이등", 30),
-    DecorationItem("bench", "🪑", "벤치", 40),
-    DecorationItem("flag", "🚩", "깃발", 20),
-    DecorationItem("mushroom", "🍄", "버섯", 15),
-    DecorationItem("butterfly_deco", "🦋", "나비 장식", 25),
-    DecorationItem("fountain", "⛲", "작은 분수", 60)
-)
-private const val MAX_EQUIPPED_DECORATIONS = 3
-private val DECORATION_SLOT_FRACTIONS = listOf(0.30f to 0.66f, 0.70f to 0.66f, 0.5f to 0.77f)
-
 @Composable
 fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOpenSettings: () -> Unit = {}) {
     if (!permPlant) {
@@ -132,11 +123,22 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
     }
     val scope = rememberCoroutineScope()
     val balance by repository.observePointsBalance().collectAsState(initial = 0)
-    // growthExpPending/rebirthCount는 Room Flow가 아니라 AppPreferences 스칼라값이라 refreshTick으로 재조회.
+    // growthExpPending/rebirthCount는 Room Flow가 아니라 AppPreferences 스칼라값이라 tick으로 재조회한다.
+    // 121차: 무거운 재조회(루틴/캘린더 전체 훑기)와 가벼운 재조회(성장 스칼라 몇 개)를 서로 다른 tick으로
+    // 분리했다 — 성장 값은 공부 타이머/루틴 체크 같은 다른 경로에서 수시로 바뀌므로 자주 다시 읽어야 하는데,
+    // 그때마다 루틴 통계까지 다시 계산하면 홈 화면이 불필요하게 바빠진다.
     var refreshTick by remember { mutableIntStateOf(0) }
-    val growthExpPending = remember(refreshTick) { repository.getGrowthExpPending() }
-    val rebirthCount = remember(refreshTick) { repository.getRebirthCount() }
-    fun refresh() { refreshTick++ }
+    var growthTick by remember { mutableIntStateOf(0) }
+    val growthExpPending = remember(growthTick) { repository.getGrowthExpPending() }
+    val rebirthCount = remember(growthTick) { repository.getRebirthCount() }
+    fun refresh() { refreshTick++; growthTick++ }
+
+    // 진입 시 원격과 맞춰본다 — 성장 값(레벨/EXP/장식)은 포인트 원장에서 파생되므로 둘을 같이 당겨와야
+    // "포인트는 최신인데 나무만 옛날"이 생기지 않는다.
+    LaunchedEffect(Unit) {
+        repository.syncPointsFromFirebase()
+        if (repository.syncGrowthFromFirebase()) refresh()
+    }
 
     // 홈 화면 좌상단 미니 요약(116차, 다른 탭 안 가고도 오늘 현황이 보이도록) — 루틴 전역 스트릭+오늘 완료 개수.
     var routineStreak by remember { mutableIntStateOf(0) }
@@ -171,7 +173,7 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
             }
     }
     var showDecorationShop by remember { mutableStateOf(false) }
-    val equippedDecorations = remember(refreshTick) { repository.equippedDecorationIds }
+    val equippedDecorations = remember(growthTick) { repository.equippedDecorationIds }
 
     var displayedExp by remember { mutableDoubleStateOf(repository.getGrowthExpTotal()) }
     var displayedLevel by remember { mutableIntStateOf(GrowthSystem.levelForExp(displayedExp)) }
@@ -180,10 +182,20 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
     var showRebirthDialog by remember { mutableStateOf(false) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(refreshTick) {
+    LaunchedEffect(growthTick) {
         if (!isApplying) {
             displayedExp = repository.getGrowthExpTotal()
             displayedLevel = GrowthSystem.levelForExp(displayedExp)
+        }
+    }
+
+    // 121차(사용자 지적 "홈 탭 값이 실제 데이터와 다르다") — 이 화면이 떠 있는 동안 저장값을 주기적으로
+    // 다시 읽는다. 백그라운드에 있다 돌아왔을 때, 그리고 공부 타이머/루틴 체크처럼 이 화면 밖에서 EXP가
+    // 쌓였을 때도 별도 배선 없이 따라잡는다(경험치 적용 애니메이션 중에는 표시가 튀지 않게 쉰다).
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(GROWTH_POLL_INTERVAL_MS)
+            if (!isApplying) growthTick++
         }
     }
 
@@ -217,18 +229,14 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
         }
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        GroundScene(stageIndex = stageIndex, stage = stage, rebirthCount = rebirthCount, modifier = Modifier.fillMaxSize())
-
-        equippedDecorations.forEachIndexed { index, id ->
-            val deco = DECORATION_CATALOG.find { it.id == id } ?: return@forEachIndexed
-            val (fx, fy) = DECORATION_SLOT_FRACTIONS.getOrElse(index) { 0.5f to 0.7f }
-            Text(
-                deco.emoji,
-                fontSize = 26.sp,
-                modifier = Modifier.align(Alignment.TopStart).offset(x = maxWidth * fx - 14.dp, y = maxHeight * fy - 14.dp)
-            )
-        }
+    Box(Modifier.fillMaxSize()) {
+        GroundScene(
+            stageIndex = stageIndex,
+            stage = stage,
+            rebirthCount = rebirthCount,
+            decorationIds = equippedDecorations,
+            modifier = Modifier.fillMaxSize()
+        )
 
         HomeSettingsButton(onOpenSettings, Modifier.align(Alignment.TopEnd).padding(Spacing.lg))
 
@@ -387,13 +395,13 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
     }
 
     if (showDecorationShop) {
-        val ownedIds = remember(refreshTick) { repository.ownedDecorationIds }
-        val equippedIds = remember(refreshTick) { repository.equippedDecorationIds }
+        val ownedIds = remember(growthTick) { repository.ownedDecorationIds }
+        val equippedIds = remember(growthTick) { repository.equippedDecorationIds }
         AlertDialog(
             onDismissRequest = { showDecorationShop = false },
             title = { Text("🎨 나무 꾸미기") },
             text = {
-                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
                     Text("보유 ${balance}P · 배치 ${equippedIds.size}/$MAX_EQUIPPED_DECORATIONS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(Spacing.sm))
                     DECORATION_CATALOG.forEach { deco ->
@@ -404,10 +412,28 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(deco.emoji, fontSize = 20.sp)
-                                Spacer(Modifier.width(Spacing.xs))
-                                Text(deco.label, style = MaterialTheme.typography.bodyMedium)
+                            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                // 121차: 이모지 대신 실제로 홈 화면에 그려질 그림 그대로를 미리보기로 보여준다.
+                                DecorationPreview(deco)
+                                Spacer(Modifier.width(Spacing.sm))
+                                Column(Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(deco.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                        if (deco.kind == DecorationKind.SCENERY) {
+                                            Spacer(Modifier.width(Spacing.xs))
+                                            Text(
+                                                "배경",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.tertiary
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        deco.description,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                             when {
                                 !owned -> TextButton(
@@ -533,7 +559,13 @@ private fun growthAnimForTier(tier: Int, tMs: Float): GrowthAnim {
 }
 
 @Composable
-fun GroundScene(stageIndex: Int, stage: GrowthSystem.Stage, rebirthCount: Int, modifier: Modifier = Modifier) {
+fun GroundScene(
+    stageIndex: Int,
+    stage: GrowthSystem.Stage,
+    rebirthCount: Int,
+    decorationIds: List<String> = emptyList(),
+    modifier: Modifier = Modifier
+) {
     val startTime = remember { System.nanoTime() }
     var nowMs by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
@@ -565,6 +597,15 @@ fun GroundScene(stageIndex: Int, stage: GrowthSystem.Stage, rebirthCount: Int, m
             val potH = 46f * scale
             val potLeft = w / 2f - potW / 2f
             val potTop = h * 0.62f
+
+            // 꾸미기 아이템(121차) — 화분 바닥선을 "땅"으로 삼아 나무와 같은 Canvas에 그린다.
+            val decoScene = DecorationScene(
+                w = w, h = h, scale = scale,
+                groundY = potTop + potH,
+                tMs = nowMs
+            )
+            drawSceneryDecorations(decorationIds, decoScene)
+
             val potPath = Path().apply {
                 moveTo(potLeft, potTop)
                 lineTo(potLeft + potW, potTop)
@@ -597,6 +638,7 @@ fun GroundScene(stageIndex: Int, stage: GrowthSystem.Stage, rebirthCount: Int, m
             if (rebirthCount > 0) drawRebirthAura(cx, potTop - h * 0.1f, scale, rebirthCount)
 
             drawGrowthIllustration(stage.illustrationId, cx, potTop, anchor, w, h, scale, anim)
+            drawPropDecorations(decorationIds, decoScene)
             if (tier == 3) drawEmberOverlay(w, h, scale, anim, nowMs)
             if (tier == 4) drawTranscendentOverlay(w, h, scale, anim, nowMs)
         }
@@ -1301,5 +1343,393 @@ private fun DrawScope.drawGodRaysFx(cx: Float, cy: Float, scale: Float, count: I
             start = Offset(cx, cy),
             end = Offset(cx + (cos(rad) * 100f * scale).toFloat(), cy + (sin(rad) * 100f * scale).toFloat())
         )
+    }
+}
+
+// ══════════════════════════════════════════════════════
+// 꾸미기 아이템 일러스트(121차, 사용자 요청: "포인트를 써서 산 게 이모지 하나만 뜬다") — 116차엔 장식이
+// 씬 위에 Text로 이모지를 얹는 방식이었다. 그래서 ① 나무/땅 일러스트(전부 Canvas 벡터)와 화풍이 따로 놀고
+// ② 크기가 작아 "샀는데 뭐가 달라졌는지" 잘 안 보였다. 이제 장식도 나무와 같은 Canvas 위에 같은 방식(도형
+// 조합 + 등급별 애니메이션 파라미터 공유)으로 그린다.
+//
+// 종류는 두 가지다.
+// - [DecorationKind.PROP]: 화분 주변 땅에 놓이는 소품(등/벤치/버섯/분수…). 배치 순서대로 [DECORATION_PROP_SLOTS]
+//   자리에 하나씩 놓인다.
+// - [DecorationKind.SCENERY]: 장면 전체에 깔리는 배경 요소(울타리/조약돌길/연못/반딧불이). 슬롯을 쓰지 않아
+//   소품과 겹치지 않고, "배경까지 바꾸는" 확장 축을 열어둔다.
+// 새 장식을 추가할 땐 [DECORATION_CATALOG]에 한 줄 + [DrawScope.drawDecoration]에 그리기 분기 하나만 더하면 된다.
+// ══════════════════════════════════════════════════════
+
+internal enum class DecorationKind { PROP, SCENERY }
+
+internal data class DecorationItem(
+    val id: String,
+    val label: String,
+    val description: String,
+    val cost: Int,
+    val kind: DecorationKind
+)
+
+internal val DECORATION_CATALOG = listOf(
+    DecorationItem("mushroom", "버섯 무리", "화분 옆에 돋아난 빨간 버섯 세 송이", 15, DecorationKind.PROP),
+    DecorationItem("flag", "깃발", "바람에 나부끼는 삼각 깃발", 20, DecorationKind.PROP),
+    DecorationItem("butterfly_deco", "나비들", "나무 주위를 맴도는 나비 세 마리", 25, DecorationKind.PROP),
+    DecorationItem("lamp", "종이등", "따뜻한 빛이 번지는 등불 기둥", 30, DecorationKind.PROP),
+    DecorationItem("path", "조약돌 길", "화분 앞으로 이어지는 징검돌", 35, DecorationKind.SCENERY),
+    DecorationItem("bench", "벤치", "앉아서 쉬어갈 수 있는 나무 벤치", 40, DecorationKind.PROP),
+    DecorationItem("fence", "나무 울타리", "장면 전체를 감싸는 말뚝 울타리", 50, DecorationKind.SCENERY),
+    DecorationItem("fountain", "작은 분수", "물줄기가 솟는 돌 분수", 60, DecorationKind.PROP),
+    DecorationItem("pond", "작은 연못", "잔물결이 이는 연못과 수련잎", 70, DecorationKind.SCENERY),
+    DecorationItem("fireflies", "반딧불이", "허공을 천천히 떠다니는 빛무리", 80, DecorationKind.SCENERY)
+)
+
+internal fun decorationById(id: String): DecorationItem? = DECORATION_CATALOG.find { it.id == id }
+
+/** 소품이 놓이는 자리(화면 가로 비율) — 가운데 화분을 피해 좌우로 번갈아 놓는다. 배치 상한
+ *  ([MAX_EQUIPPED_DECORATIONS], 5)만큼 자리가 있어야 소품만 가득 채워도 서로 겹치지 않는다. */
+private val DECORATION_PROP_SLOTS = listOf(0.18f, 0.82f, 0.30f, 0.70f, 0.09f)
+
+/** 소품은 씬 기본 배율보다 조금 크게 그린다 — 기본 배율 그대로면 실제 홈 화면 비율에서 너무 작아
+ *  "포인트를 썼는데 뭐가 달라졌는지 모르겠다"가 된다(브라우저에 같은 기하를 옮겨 그려 확인한 값). */
+private const val DECORATION_PROP_SCALE = 1.45f
+
+/** 장식 그리기에 필요한 씬 기하 정보 — [GroundScene]이 이미 계산해둔 값을 그대로 넘겨 재계산을 막는다. */
+internal data class DecorationScene(
+    val w: Float,
+    val h: Float,
+    val scale: Float,
+    val groundY: Float,
+    val tMs: Float
+)
+
+/** 배경 장식 — 땅 위, 화분/나무 아래 레이어. 화분이 앞에 있는 것처럼 보이게 하려고 따로 분리했다. */
+internal fun DrawScope.drawSceneryDecorations(ids: List<String>, scene: DecorationScene) {
+    ids.mapNotNull { decorationById(it) }
+        .filter { it.kind == DecorationKind.SCENERY }
+        .forEach { drawDecoration(it, scene, null) }
+}
+
+/** 소품 장식 — 나무 그림이 다 끝난 뒤. 등불의 빛 번짐 같은 게 나무에 가려지지 않게 맨 위에 올린다. */
+internal fun DrawScope.drawPropDecorations(ids: List<String>, scene: DecorationScene) {
+    ids.mapNotNull { decorationById(it) }
+        .filter { it.kind == DecorationKind.PROP }
+        .forEachIndexed { index, item ->
+            drawDecoration(item, scene, DECORATION_PROP_SLOTS[index % DECORATION_PROP_SLOTS.size])
+        }
+}
+
+/** 장식 하나를 그린다. [slotFraction]은 소품일 때만(가로 위치), 배경이면 null. */
+private fun DrawScope.drawDecoration(item: DecorationItem, scene: DecorationScene, slotFraction: Float?) {
+    val x = scene.w * (slotFraction ?: 0.5f)
+    val s = scene.scale * DECORATION_PROP_SCALE
+    when (item.id) {
+        "mushroom" -> drawMushroomCluster(x, scene.groundY, s)
+        "flag" -> drawFlagProp(x, scene.groundY, s, scene.tMs)
+        "butterfly_deco" -> drawButterflyProp(x, scene.groundY, s, scene.tMs)
+        "lamp" -> drawLampProp(x, scene.groundY, s, scene.tMs)
+        "bench" -> drawBenchProp(x, scene.groundY, s)
+        "fountain" -> drawFountainProp(x, scene.groundY, s, scene.tMs)
+        "path" -> drawStonePathScenery(scene)
+        "fence" -> drawFenceScenery(scene)
+        "pond" -> drawPondScenery(scene)
+        "fireflies" -> drawFirefliesScenery(scene)
+    }
+}
+
+/** 소품 밑에 항상 깔아주는 타원 그림자 — 땅에 "놓여 있다"는 접지감을 준다. */
+private fun DrawScope.drawPropShadow(x: Float, groundY: Float, scale: Float, widthUnits: Float) {
+    drawOval(
+        color = Color.Black.copy(alpha = 0.16f),
+        topLeft = Offset(x - widthUnits * scale, groundY - 3f * scale),
+        size = Size(widthUnits * 2f * scale, 6f * scale)
+    )
+}
+
+private fun DrawScope.drawMushroomCluster(x: Float, groundY: Float, scale: Float) {
+    drawPropShadow(x, groundY, scale, 16f)
+    // 큰 것 하나 + 작은 것 둘. 갓은 반원, 기둥은 둥근 사각형, 갓 위 흰 점으로 "버섯"임을 분명히.
+    data class Cap(val dx: Float, val capR: Float, val stemH: Float)
+    listOf(Cap(0f, 11f, 13f), Cap(-12f, 7f, 8f), Cap(11f, 6f, 7f)).forEach { m ->
+        val mx = x + m.dx * scale
+        val stemTop = groundY - m.stemH * scale
+        drawRoundRect(
+            color = Color(0xFFF5EDDC),
+            topLeft = Offset(mx - 2.6f * scale, stemTop),
+            size = Size(5.2f * scale, m.stemH * scale),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.4f * scale, 2.4f * scale)
+        )
+        val capPath = Path().apply {
+            moveTo(mx - m.capR * scale, stemTop + 1f * scale)
+            quadraticTo(mx, stemTop - m.capR * 1.5f * scale, mx + m.capR * scale, stemTop + 1f * scale)
+            close()
+        }
+        drawPath(capPath, color = Color(0xFFD7453C))
+        drawCircle(color = Color(0xFFFFF3E0), radius = m.capR * 0.2f * scale, center = Offset(mx - m.capR * 0.35f * scale, stemTop - m.capR * 0.45f * scale))
+        drawCircle(color = Color(0xFFFFF3E0), radius = m.capR * 0.16f * scale, center = Offset(mx + m.capR * 0.4f * scale, stemTop - m.capR * 0.25f * scale))
+    }
+}
+
+private fun DrawScope.drawFlagProp(x: Float, groundY: Float, scale: Float, tMs: Float) {
+    drawPropShadow(x, groundY, scale, 8f)
+    val poleH = 46f * scale
+    val top = groundY - poleH
+    drawLine(color = Color(0xFF8D6E63), start = Offset(x, groundY), end = Offset(x, top), strokeWidth = 3f * scale, cap = StrokeCap.Round)
+    drawCircle(color = Color(0xFFFFD54F), radius = 3f * scale, center = Offset(x, top - 1f * scale))
+    // 삼각 페넌트 — 끝점만 사인파로 흔들어 "펄럭임"을 만든다.
+    val wave = sin(tMs / 260f) * 4f * scale
+    val flagPath = Path().apply {
+        moveTo(x + 1.5f * scale, top + 2f * scale)
+        quadraticTo(x + 18f * scale, top + 6f * scale + wave, x + 30f * scale, top + 11f * scale + wave)
+        quadraticTo(x + 16f * scale, top + 15f * scale, x + 1.5f * scale, top + 20f * scale)
+        close()
+    }
+    drawPath(flagPath, color = Color(0xFFE2574C))
+    drawPath(flagPath, color = Color(0xFF9E3A32).copy(alpha = 0.45f), style = Stroke(width = 1f * scale))
+}
+
+private fun DrawScope.drawButterflyProp(x: Float, groundY: Float, scale: Float, tMs: Float) {
+    // 땅에 놓이는 물건이 아니라 "떠다니는" 장식 — 그림자 없이 타원 궤도를 돈다. 날개는 위/아래 두 장씩
+    // 색을 달리해 겹치고, flap 비율로 가로만 눌러 정면에서 본 날갯짓처럼 보이게 한다.
+    val colors = listOf(
+        Color(0xFFFFB74D) to Color(0xFFF57C00),
+        Color(0xFF9C89E8) to Color(0xFF6A4FC4),
+        Color(0xFF5FCFC4) to Color(0xFF2E9E93)
+    )
+    val body = Color(0xFF3E2723)
+    for (i in 0 until 3) {
+        val phase = tMs / 1000f * (0.7f + i * 0.13f) + i * 2.1f
+        val bx = x + cos(phase) * 24f * scale
+        val by = groundY - (36f + i * 11f) * scale + sin(phase * 1.7f) * 8f * scale
+        val flap = 0.3f + abs(sin(tMs / 110f + i)) * 0.7f
+        val wingW = 9f * scale
+        val wingH = 11f * scale
+        val (upper, lower) = colors[i]
+        listOf(-1f, 1f).forEach { dir ->
+            val upperLeft = if (dir < 0f) bx - wingW * flap else bx
+            drawOval(color = upper, topLeft = Offset(upperLeft, by - wingH * 0.55f), size = Size(wingW * flap, wingH * 0.9f))
+            val lowerLeft = if (dir < 0f) bx - wingW * 0.72f * flap else bx
+            drawOval(color = lower, topLeft = Offset(lowerLeft, by - wingH * 0.05f), size = Size(wingW * 0.72f * flap, wingH * 0.62f))
+        }
+        drawOval(color = body, topLeft = Offset(bx - 1.5f * scale, by - wingH * 0.6f), size = Size(3f * scale, wingH * 1.15f))
+        listOf(-1f, 1f).forEach { dir ->
+            drawLine(
+                color = body,
+                start = Offset(bx, by - wingH * 0.6f),
+                end = Offset(bx + dir * 2.6f * scale, by - wingH * 1.05f),
+                strokeWidth = 1f * scale, cap = StrokeCap.Round
+            )
+        }
+    }
+}
+
+private fun DrawScope.drawLampProp(x: Float, groundY: Float, scale: Float, tMs: Float) {
+    drawPropShadow(x, groundY, scale, 10f)
+    val postH = 54f * scale
+    val top = groundY - postH
+    drawLine(color = Color(0xFF6D4C41), start = Offset(x, groundY), end = Offset(x, top), strokeWidth = 4f * scale, cap = StrokeCap.Round)
+    drawLine(color = Color(0xFF6D4C41), start = Offset(x, top), end = Offset(x + 15f * scale, top), strokeWidth = 3f * scale, cap = StrokeCap.Round)
+    val lx = x + 15f * scale
+    val ly = top + 16f * scale
+    val glow = 0.6f + 0.2f * sin(tMs / 700f)
+    // 빛 번짐 → 매다는 줄 → 위 뚜껑 → 등 몸통 → 속 불빛 → 살 → 아래 뚜껑 → 술 순서로 겹쳐 종이등을 만든다.
+    drawCircle(
+        brush = Brush.radialGradient(
+            listOf(Color(0xFFFFC460).copy(alpha = glow * 0.6f), Color(0xFFFFC460).copy(alpha = 0f)),
+            center = Offset(lx, ly), radius = (36f * scale).coerceAtLeast(1f)
+        ),
+        radius = 36f * scale, center = Offset(lx, ly)
+    )
+    drawLine(color = Color(0xFF4E342E), start = Offset(lx, top), end = Offset(lx, ly - 13f * scale), strokeWidth = 1.2f * scale)
+    drawOval(color = Color(0xFF8D3B2E), topLeft = Offset(lx - 7f * scale, ly - 15f * scale), size = Size(14f * scale, 4f * scale))
+    drawOval(color = Color(0xFFE05B4B), topLeft = Offset(lx - 11f * scale, ly - 13f * scale), size = Size(22f * scale, 26f * scale))
+    drawOval(color = Color(0xFFFFD696).copy(alpha = 0.8f), topLeft = Offset(lx - 7.5f * scale, ly - 10f * scale), size = Size(15f * scale, 20f * scale))
+    listOf(-4.5f, 0f, 4.5f).forEach { dx ->
+        drawLine(
+            color = Color(0xFFB03B2E).copy(alpha = 0.55f),
+            start = Offset(lx + dx * scale, ly - 11.5f * scale), end = Offset(lx + dx * scale, ly + 11f * scale),
+            strokeWidth = 0.9f * scale
+        )
+    }
+    drawOval(color = Color(0xFF8D3B2E), topLeft = Offset(lx - 7f * scale, ly + 10f * scale), size = Size(14f * scale, 4f * scale))
+    drawLine(color = Color(0xFFC9463A), start = Offset(lx, ly + 12f * scale), end = Offset(lx, ly + 19f * scale), strokeWidth = 2f * scale, cap = StrokeCap.Round)
+    drawCircle(color = Color(0xFFC9463A), radius = 2f * scale, center = Offset(lx, ly + 20f * scale))
+}
+
+private fun DrawScope.drawBenchProp(x: Float, groundY: Float, scale: Float) {
+    drawPropShadow(x, groundY, scale, 22f)
+    val seatY = groundY - 14f * scale
+    val halfW = 20f * scale
+    val wood = Color(0xFFB07B4F)
+    val woodDark = Color(0xFF8B5E3C)
+    // 다리 2개 → 앉는 판 → 등받이 살 2줄 순서.
+    listOf(-halfW + 4f * scale, halfW - 8f * scale).forEach { dx ->
+        drawRect(color = woodDark, topLeft = Offset(x + dx, seatY), size = Size(4f * scale, 14f * scale))
+    }
+    drawRoundRect(
+        color = wood, topLeft = Offset(x - halfW, seatY - 4f * scale), size = Size(halfW * 2f, 5f * scale),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f * scale, 2f * scale)
+    )
+    listOf(-halfW + 3f * scale, halfW - 6f * scale).forEach { dx ->
+        drawRect(color = woodDark, topLeft = Offset(x + dx, seatY - 20f * scale), size = Size(3f * scale, 17f * scale))
+    }
+    listOf(20f, 14f).forEach { dy ->
+        drawRoundRect(
+            color = wood, topLeft = Offset(x - halfW + 2f * scale, seatY - dy * scale), size = Size(halfW * 2f - 4f * scale, 4f * scale),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.5f * scale, 1.5f * scale)
+        )
+    }
+}
+
+private fun DrawScope.drawFountainProp(x: Float, groundY: Float, scale: Float, tMs: Float) {
+    drawPropShadow(x, groundY, scale, 20f)
+    val basinTop = groundY - 12f * scale
+    val halfW = 18f * scale
+    drawOval(color = Color(0xFF9E9E93), topLeft = Offset(x - halfW, basinTop - 4f * scale), size = Size(halfW * 2f, 16f * scale))
+    drawOval(color = Color(0xFF6FB6D8), topLeft = Offset(x - halfW + 3f * scale, basinTop - 1.5f * scale), size = Size(halfW * 2f - 6f * scale, 10f * scale))
+    drawRect(color = Color(0xFFB0AFA4), topLeft = Offset(x - 3f * scale, basinTop - 20f * scale), size = Size(6f * scale, 20f * scale))
+    drawOval(color = Color(0xFF9E9E93), topLeft = Offset(x - 8f * scale, basinTop - 24f * scale), size = Size(16f * scale, 6f * scale))
+    // 좌우 대칭 물줄기 + 수면 잔물결(시간에 따라 반지름이 커지며 옅어짐).
+    val spoutY = basinTop - 22f * scale
+    listOf(-1f, 1f).forEach { dir ->
+        val jet = Path().apply {
+            moveTo(x, spoutY)
+            quadraticTo(x + dir * 12f * scale, spoutY - 12f * scale, x + dir * 15f * scale, basinTop + 1f * scale)
+        }
+        drawPath(jet, color = Color(0xFF9CD6EE).copy(alpha = 0.85f), style = Stroke(width = 2.2f * scale, cap = StrokeCap.Round))
+    }
+    val ripple = (tMs / 900f) % 1f
+    drawOval(
+        color = Color.White.copy(alpha = 0.35f * (1f - ripple)),
+        topLeft = Offset(x - halfW * 0.7f * ripple, basinTop + 2f * scale - 3f * scale * ripple),
+        size = Size(halfW * 1.4f * ripple, 6f * scale * ripple),
+        style = Stroke(width = 1.2f * scale)
+    )
+}
+
+private fun DrawScope.drawStonePathScenery(scene: DecorationScene) {
+    // 화면 아래에서 화분 쪽으로 좁아지며 이어지는 징검돌 — 원근감을 주려 아래일수록 크고 넓게.
+    val steps = 5
+    for (i in 0 until steps) {
+        val t = i / (steps - 1f)
+        val y = scene.groundY + (scene.h - scene.groundY) * (0.18f + t * 0.62f)
+        val rx = (7f + t * 9f) * scene.scale
+        val spread = (10f + t * 26f) * scene.scale
+        listOf(-1f, 1f).forEach { dir ->
+            drawOval(
+                color = Color(0xFFBCB7A8).copy(alpha = 0.9f),
+                topLeft = Offset(scene.w / 2f + dir * spread - rx, y - rx * 0.45f),
+                size = Size(rx * 2f, rx * 0.9f)
+            )
+            drawOval(
+                color = Color(0xFF8D897C).copy(alpha = 0.5f),
+                topLeft = Offset(scene.w / 2f + dir * spread - rx, y - rx * 0.45f),
+                size = Size(rx * 2f, rx * 0.9f),
+                style = Stroke(width = 1f * scene.scale)
+            )
+        }
+    }
+}
+
+private fun DrawScope.drawFenceScenery(scene: DecorationScene) {
+    // 지평선 바로 아래를 가로지르는 말뚝 울타리 — 가로대 2줄 + 뾰족한 말뚝.
+    val y = scene.groundY - 6f * scene.scale
+    val postH = 26f * scene.scale
+    val step = 30f * scene.scale
+    val wood = Color(0xFFC8A87C)
+    val woodDark = Color(0xFF9C7B52)
+    listOf(10f, 18f).forEach { dy ->
+        drawRect(
+            color = wood,
+            topLeft = Offset(-scene.scale * 4f, y - dy * scene.scale),
+            size = Size(scene.w + scene.scale * 8f, 4f * scene.scale)
+        )
+    }
+    var px = step / 2f
+    while (px < scene.w + step) {
+        drawRect(color = wood, topLeft = Offset(px - 3f * scene.scale, y - postH), size = Size(6f * scene.scale, postH))
+        val tip = Path().apply {
+            moveTo(px - 3f * scene.scale, y - postH)
+            lineTo(px, y - postH - 5f * scene.scale)
+            lineTo(px + 3f * scene.scale, y - postH)
+            close()
+        }
+        drawPath(tip, color = woodDark)
+        px += step
+    }
+}
+
+private fun DrawScope.drawPondScenery(scene: DecorationScene) {
+    // 화분 왼쪽 앞 땅에 놓이는 작은 연못 — 물 타원 + 퍼지는 잔물결 + 수련잎.
+    val cx = scene.w * 0.24f
+    val cy = scene.groundY + (scene.h - scene.groundY) * 0.42f
+    val rx = 42f * scene.scale
+    val ry = 16f * scene.scale
+    drawOval(color = Color(0xFF6E8A6A).copy(alpha = 0.5f), topLeft = Offset(cx - rx - 3f * scene.scale, cy - ry - 3f * scene.scale), size = Size((rx + 3f * scene.scale) * 2f, (ry + 3f * scene.scale) * 2f))
+    drawOval(
+        brush = Brush.verticalGradient(listOf(Color(0xFF7FC4E0), Color(0xFF3F7EA6)), startY = cy - ry, endY = cy + ry),
+        topLeft = Offset(cx - rx, cy - ry), size = Size(rx * 2f, ry * 2f)
+    )
+    for (i in 0 until 2) {
+        val t = ((scene.tMs / 1400f) + i * 0.5f) % 1f
+        drawOval(
+            color = Color.White.copy(alpha = 0.3f * (1f - t)),
+            topLeft = Offset(cx - rx * t, cy - ry * t), size = Size(rx * 2f * t, ry * 2f * t),
+            style = Stroke(width = 1.2f * scene.scale)
+        )
+    }
+    listOf(-0.45f to -0.3f, 0.35f to 0.25f).forEach { (fx, fy) ->
+        val lx = cx + rx * fx
+        val ly = cy + ry * fy
+        drawOval(color = Color(0xFF4E9B54), topLeft = Offset(lx - 8f * scene.scale, ly - 4f * scene.scale), size = Size(16f * scene.scale, 8f * scene.scale))
+        drawLine(color = Color(0xFF2F6B36), start = Offset(lx, ly), end = Offset(lx + 7f * scene.scale, ly - 1f * scene.scale), strokeWidth = 1f * scene.scale)
+    }
+}
+
+private fun DrawScope.drawFirefliesScenery(scene: DecorationScene) {
+    // 씬 전체를 천천히 떠다니는 빛무리 — 밝기가 제각기 다른 주기로 깜빡여 "살아있는" 느낌을 준다.
+    for (i in 0 until 12) {
+        val seed = i * 1.37f
+        val phase = scene.tMs / 1000f * (0.16f + (i % 4) * 0.05f) + seed
+        val fx = ((sin(phase) * 0.5f + 0.5f) * 0.9f + 0.05f) * scene.w
+        val fy = scene.groundY * 0.55f + (sin(phase * 1.6f + seed) * 0.5f + 0.5f) * (scene.h * 0.55f)
+        val blink = (0.25f + 0.75f * abs(sin(scene.tMs / 620f + seed))).coerceIn(0f, 1f)
+        drawCircle(
+            brush = Brush.radialGradient(
+                listOf(Color(0xFFFFF59D).copy(alpha = 0.55f * blink), Color(0xFFFFF59D).copy(alpha = 0f)),
+                center = Offset(fx, fy), radius = (9f * scene.scale).coerceAtLeast(1f)
+            ),
+            radius = 9f * scene.scale, center = Offset(fx, fy)
+        )
+        drawCircle(color = Color(0xFFFFFDE7).copy(alpha = 0.9f * blink), radius = 1.8f * scene.scale, center = Offset(fx, fy))
+    }
+}
+
+/**
+ * 꾸미기 상점의 아이템 미리보기 — 목록에서도 실제 홈 화면에 그려질 모양 그대로 보여준다(이모지 목록으로는
+ * "사면 뭐가 나오는지"를 알 수 없어 구매 판단이 안 된다는 지적). 같은 [drawDecoration]을 작은 씬 기하로
+ * 한 번 더 부르는 것이라 미리보기와 실제 모습이 어긋날 수 없다.
+ */
+@Composable
+internal fun DecorationPreview(item: DecorationItem, modifier: Modifier = Modifier) {
+    val startTime = remember { System.nanoTime() }
+    var nowMs by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(item.id) {
+        while (true) {
+            withFrameNanos { t -> nowMs = (t - startTime) / 1_000_000f }
+        }
+    }
+    Canvas(modifier.size(56.dp).clip(RoundedCornerShape(10.dp))) {
+        val groundY = size.height * 0.72f
+        drawRect(
+            brush = Brush.verticalGradient(listOf(Color(0xFFDCEBF5), Color(0xFFEFF5E6)), startY = 0f, endY = groundY),
+            size = Size(size.width, groundY)
+        )
+        drawRect(color = Color(0xFF9CC46B), topLeft = Offset(0f, groundY), size = Size(size.width, size.height - groundY))
+        val scene = DecorationScene(
+            w = size.width, h = size.height,
+            scale = (min(size.width, size.height) / 130f).coerceIn(0.3f, 1.0f),
+            groundY = groundY, tMs = nowMs
+        )
+        drawDecoration(item, scene, if (item.kind == DecorationKind.PROP) 0.5f else null)
     }
 }

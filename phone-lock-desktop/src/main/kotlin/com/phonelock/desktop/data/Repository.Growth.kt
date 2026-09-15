@@ -1,6 +1,8 @@
 package com.phonelock.desktop.data
 
 import com.phonelock.shared.GrowthSystem
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * "식물 성장" EXP/환생(105차 후속) — [GrowthSystem]의 순수 로직을 실제 저장값([AppData.growthExpTotal]/
@@ -19,6 +21,7 @@ internal fun Repository.awardGrowthExp(rawAmount: Double) {
     if (rawAmount <= 0.0) return
     data.growthExpPending += rawAmount * GrowthSystem.expMultiplier(data.rebirthCount)
     persist()
+    pushGrowthToFirebase()
 }
 
 fun Repository.getGrowthExpTotal(): Double = synchronized(lock) { data.growthExpTotal }
@@ -37,7 +40,9 @@ fun Repository.applyPendingGrowthExp(): GrowthSystem.ApplyResult? = synchronized
     val after = before + pending
     data.growthExpTotal = after
     data.growthExpPending = 0.0
+    data.lifetimeMaxLevel = maxOf(data.lifetimeMaxLevel, GrowthSystem.levelForExp(after))
     persist()
+    pushGrowthToFirebase()
     GrowthSystem.ApplyResult(before, after, levelBefore, GrowthSystem.levelForExp(after))
 }
 
@@ -50,6 +55,7 @@ fun Repository.rebirth(): Boolean = synchronized(lock) {
     data.growthExpPending = 0.0
     data.rebirthCount += 1
     persist()
+    pushGrowthToFirebase()
     true
 }
 
@@ -77,4 +83,83 @@ fun Repository.checkAndResetGrowthSeasonIfNeeded() = synchronized(lock) {
     }
     data.growthSeasonYear = currentYear
     persist()
+    pushGrowthToFirebase()
+}
+
+// ════════════════════════════════════════════════════
+// Firebase 동기화(121차, 안드로이드판과 대칭) — 포인트/루틴/캘린더와 동일한 "전체 문서 단위 LWW"
+// (users/{user}/growth). 116차까지 성장 EXP와 장식은 기기 로컬 전용이었는데, 그 EXP는 정작 동기화되는
+// 포인트 적립 이벤트에서 파생되기 때문에 기기를 오가면 "포인트는 맞는데 나무만 Lv.1"이 돼 홈 화면과 실제
+// 데이터가 어긋난다(사용자 지적). 적립의 원천과 같은 방식을 써야 둘이 항상 같은 시점을 가리킨다([[DECISIONS.md]] 121차).
+// ════════════════════════════════════════════════════
+
+/** 지금 성장 상태 전체를 한 문서로 묶는다 — 호출부가 이미 lock을 쥐고 있어야 한다. */
+private fun Repository.growthStateToJson(): JSONObject = JSONObject().apply {
+    put("expTotal", data.growthExpTotal)
+    put("expPending", data.growthExpPending)
+    put("rebirthCount", data.rebirthCount)
+    put("seasonYear", data.growthSeasonYear)
+    put("lifetimeMaxLevel", data.lifetimeMaxLevel)
+    put("lifetimeRebirthCount", data.lifetimeRebirthCount)
+    put("ownedDecorations", JSONArray(data.ownedDecorationIds.toList()))
+    put("equippedDecorations", JSONArray(data.equippedDecorationIds.toList()))
+}
+
+/**
+ * 성장 값이 바뀔 때마다 fire-and-forget으로 올린다(pushPointsToFirebase와 같은 패턴).
+ *
+ * 문서 단위 LWW의 유일한 위험은 "아직 원격을 한 번도 안 읽은 기기가 빈 값으로 덮어쓰는 것"이다 —
+ * 예를 들어 재설치 직후의 기기에서 루틴 하나를 체크하면 EXP 0.x짜리 문서가 올라가 다른 기기의 레벨을
+ * 통째로 날릴 수 있다. 그래서 ① 앱 시작과 홈 탭 진입 때 [syncGrowthFromFirebase]로 먼저 받아오고,
+ * ② 아직 한 번도 동기화한 적 없고(growthTs == 0) 로컬에 쌓인 성장도 전혀 없는 상태에서는 아예 올리지
+ * 않는다(올려봐야 남에게 줄 정보가 없고, 덮어쓰기 위험만 있다).
+ *
+ *  호출부는 이미 lock을 쥐고 있어야 한다.
+ */
+internal fun Repository.pushGrowthToFirebase() {
+    val neverSynced = data.growthTs == 0L
+    val nothingToShare = data.growthExpTotal <= 0.0 && data.growthExpPending <= 0.0 &&
+        data.rebirthCount == 0 && data.ownedDecorationIds.isEmpty()
+    if (neverSynced && nothingToShare) return
+    val ts = System.currentTimeMillis()
+    data.growthTs = ts
+    val json = growthStateToJson()
+    val url = data.fbDatabaseUrl; val key = data.fbApiKey
+    Thread {
+        com.phonelock.desktop.monitor.PomodoroSyncClient.writeGrowth(url, key, json, ts)
+    }.start()
+}
+
+/**
+ * 홈(식물) 화면 진입 시 호출 — 원격이 더 최신이면 로컬을 덮어쓰고, 로컬이 더 최신이면 원격에 푸시한다.
+ * 네트워크 호출을 포함하므로 호출부(UI)에서 백그라운드 스레드로 실행할 것. 로컬이 바뀌었으면 true.
+ */
+fun Repository.syncGrowthFromFirebase(): Boolean {
+    val (url, key) = synchronized(lock) { data.fbDatabaseUrl to data.fbApiKey }
+    val result = com.phonelock.desktop.monitor.PomodoroSyncClient.readGrowth(url, key) ?: return false
+    return synchronized(lock) {
+        if (result.ts > data.growthTs) {
+            val json = result.json
+            data.growthExpTotal = json.optDouble("expTotal", data.growthExpTotal)
+            data.growthExpPending = json.optDouble("expPending", data.growthExpPending)
+            data.rebirthCount = json.optInt("rebirthCount", data.rebirthCount)
+            data.growthSeasonYear = json.optInt("seasonYear", data.growthSeasonYear)
+            data.lifetimeMaxLevel = maxOf(data.lifetimeMaxLevel, json.optInt("lifetimeMaxLevel", 0))
+            data.lifetimeRebirthCount = maxOf(data.lifetimeRebirthCount, json.optInt("lifetimeRebirthCount", 0))
+            json.optJSONArray("ownedDecorations")?.let { arr ->
+                data.ownedDecorationIds.clear()
+                for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { data.ownedDecorationIds.add(it) }
+            }
+            json.optJSONArray("equippedDecorations")?.let { arr ->
+                data.equippedDecorationIds.clear()
+                for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { data.equippedDecorationIds.add(it) }
+            }
+            data.growthTs = result.ts
+            persist()
+            true
+        } else {
+            if (data.growthTs > result.ts) pushGrowthToFirebase()
+            false
+        }
+    }
 }

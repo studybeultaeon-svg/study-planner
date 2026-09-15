@@ -570,13 +570,11 @@ fun SocialGroupMembersScreen(
                             MemberAvatar(m.displayName, highlighted = isSelected, profileImage = m.profileImage)
                             Spacer(Modifier.width(Spacing.sm))
                             Column(Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    if (m.sharePlant && m.plantTitle.isNotBlank()) {
-                                        PlantLevelBadge(m.plantLevel, m.plantTitle)
-                                        Spacer(Modifier.width(Spacing.xs))
-                                    }
-                                    Text(m.displayName + if (isSelfRow) " (나)" else "", style = MaterialTheme.typography.bodyLarge)
-                                }
+                                MemberDisplayName(
+                                    title = m.plantTitle.takeIf { m.sharePlant },
+                                    name = m.displayName + if (isSelfRow) " (나)" else "",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
                                 if (m.shareStreak && m.streak > 0) {
                                     Spacer(Modifier.height(2.dp))
                                     SectionPill("🔥 ${m.streak}일", color = androidx.compose.ui.graphics.Color(0xFFFF9800))

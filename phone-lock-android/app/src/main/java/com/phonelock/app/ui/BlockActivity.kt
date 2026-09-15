@@ -13,6 +13,7 @@ import com.phonelock.app.service.IntentExtras
 import com.phonelock.app.service.LockReason
 import com.phonelock.app.ui.components.InterstitialScreen
 import com.phonelock.app.ui.theme.PhoneLockTheme
+import com.phonelock.app.ui.theme.applyThemeWindowBackground
 
 class BlockActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,8 +34,9 @@ class BlockActivity : ComponentActivity() {
         // 실행확인 대기화면(ConfirmOpenActivity)과 같은 톤으로 통일. 여기선 "확인"이라는 탈출구를
         // 주지 않기 위해 "진행"(primaryLabel) 버튼은 눌러도 아무 동작을 하지 않는 장식용 버튼이고,
         // 실제로 화면을 벗어나는 동작은 "중단"(secondaryLabel, goHome)에만 걸려있다.
+        val prefs = AppPreferences(applicationContext)
+        applyThemeWindowBackground(prefs)
         setContent {
-            val prefs = AppPreferences(applicationContext)
             PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
                 val title = remember { quoteForTier(blockQuoteTier(blockAttempts)) }
                 InterstitialScreen(

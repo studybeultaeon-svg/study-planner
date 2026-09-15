@@ -65,6 +65,9 @@ fun AccountGate(repository: Repository, content: @Composable () -> Unit) {
         Thread {
             val result = AccountSyncClient.fetchMyProfile(databaseUrl, apiKey)
             result.onSuccess { profile ->
+                // 121차: AccountSyncClient.get()이 네트워크 오류를 예외로 던지게 바뀌면서, 여기로 들어왔다는
+                // 것 자체가 "서버가 실제로 돌려준 값"임을 보장한다 — 그전까지는 통신 실패도 status=null로
+                // 둘갑해 승인 캐시를 지우고 가입 신청 화면으로 떨어뜨렸다(사실상 강제 로그아웃).
                 val status = profile?.optString("status", null)
                 serverStatus = status
                 serverChecked = true

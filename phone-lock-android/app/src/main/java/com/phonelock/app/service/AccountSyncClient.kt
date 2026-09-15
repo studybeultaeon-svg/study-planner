@@ -388,17 +388,28 @@ object AccountSyncClient {
             ?: user?.email?.takeIf { it.isNotBlank() } ?: user?.uid ?: "사용자"
     }
 
-    private fun getRaw(url: URL): String? = runCatching {
+    /**
+     * GET 원문 — **네트워크 오류와 비-2xx 응답은 예외로 던진다**(121차, 사용자 지적 "Wi-Fi가 끊기면
+     * 로그아웃된다"). 예전엔 모두 조용히 null을 돌려줘서 [fetchMyProfile]이 "프로필이 아직 없음(=가입 신청
+     * 필요)"과 "지금 인터넷이 끊겼음"을 구분하지 못했고, 그 결과 잠시 끊긴 것만으로 승인된 사용자가
+     * 가입 신청 화면으로 떨어지고(사실상 강제 로그아웃) 캐시된 승인 상태까지 지워졌다. 이제 null은
+     * "서버가 2xx로 빈 값(null)을 돌려줬다" 한 가지 뜻뿐이다.
+     */
+    private fun getRaw(url: URL): String? {
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = TIMEOUT_MS
             readTimeout = TIMEOUT_MS
         }
-        if (conn.responseCode !in 200..299) { conn.disconnect(); return null }
-        val body = conn.inputStream.bufferedReader().use { it.readText() }
-        conn.disconnect()
-        body
-    }.getOrNull()
+        try {
+            val code = conn.responseCode
+            if (code !in 200..299) error("서버 응답 오류 (HTTP $code)")
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            return if (body.isBlank() || body == "null") null else body
+        } finally {
+            conn.disconnect()
+        }
+    }
 
     /** PUT — 성공(2xx) 여부를 돌려준다(claimUsername에서 규칙 위반을 감지하는 데 필요). */
     private fun putJson(url: URL, body: JSONObject): Boolean {

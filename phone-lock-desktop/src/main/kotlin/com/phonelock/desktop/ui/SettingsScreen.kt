@@ -79,7 +79,7 @@ private enum class SettingsCategory(val label: String, val emoji: String) {
     RULES("규칙", "🗂️"),
     STUDY("공부", "📘"),
     ROUTINE("루틴", "📋"),
-    SOCIAL("소셜", "👥"),
+    SOCIAL("모임", "👥"),
     DATA("데이터", "💾"),
     SYSTEM("시스템", "⚙️"),
     ADMIN("관리자 패널", "🛡️")
@@ -588,7 +588,7 @@ fun SettingsScreen(
                                 var offlineOverride by remember { mutableStateOf(repository.offlineModeOverride) }
                                 ToggleRow(
                                     title = "오프라인 모드로 강제 전환",
-                                    description = "켜면 인터넷이 연결돼 있어도 동기화/로그인/소셜 등 네트워크 기능을 쓰지 않고 이 " +
+                                    description = "켜면 인터넷이 연결돼 있어도 동기화/로그인/모임 등 네트워크 기능을 쓰지 않고 이 " +
                                         "기기에서만 로컬로 사용합니다. 꺼둬도 실제로 인터넷이 끊기면 자동으로 오프라인 처리됩니다.",
                                     checked = offlineOverride,
                                     onCheckedChange = { offlineOverride = it; repository.offlineModeOverride = it }

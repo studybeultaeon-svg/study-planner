@@ -168,6 +168,16 @@ fun paletteFor(themeMode: String): PhoneLockPalette = when (themeMode) {
     else -> LightGreenPalette
 }
 
+/**
+ * 커스텀 테마까지 포함해 "지금 선택된 테마의 완성된 팔레트"를 돌려주는 유일한 창구(121차) — Compose
+ * 밖(위젯 RemoteViews, 접근성 오버레이, 액티비티 창 배경)에서도 테마 색을 써야 하는데, 그동안
+ * [paletteFor] 한 인자 버전만 부르는 자리들이 CUSTOM을 `else ->` 로 흘려 라이트+그린 기본 팔레트를
+ * 보여주고 있었다(사용자 지적: "위젯·오버레이에만 초록 기본 테마가 남아있다"). 앞으로 테마 색이 필요한
+ * 코드는 반드시 이 함수(또는 이걸 부르는 `AppPreferences.currentPalette()`)를 쓴다.
+ */
+fun paletteFor(themeMode: String, customBackgroundHex: String, customAccentHex: String): PhoneLockPalette =
+    if (themeMode == ThemeMode.CUSTOM) buildCustomPalette(customBackgroundHex, customAccentHex) else paletteFor(themeMode)
+
 /** 설정 화면 테마 선택 UI가 순서대로 나열할 때 쓰는 표시 이름 매핑. */
 val THEME_DISPLAY_NAMES: List<Pair<String, String>> = listOf(
     ThemeMode.LIGHT_GREEN to "라이트 · 그린",
