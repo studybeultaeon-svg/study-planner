@@ -4,6 +4,62 @@
 
 ---
 
+## 2026-09-16 (121차) — 사용자 지적 6건 일괄 수정(커스텀 테마 일관성 / 홈 데이터 동기화 / 네트워크 오인 로그아웃 / 모임 탭 명칭 / 칭호+닉네임 표기 / 꾸미기 일러스트)
+
+### 1. 커스텀 테마가 위젯·오버레이·창 배경에 적용되지 않던 문제 (버그 수정, 안드로이드)
+
+원인: `ui/theme/Color.kt`의 `paletteFor(themeMode: String)`가 `when`의 `else -> LightGreenPalette`로 `ThemeMode.CUSTOM`까지 삼키고 있었다. Compose 화면은 `PhoneLockTheme(themeMode, customBg, customAccent, ...)`로 커스텀을 따로 계산해 넘기고 있었지만, Compose 밖에서 이 함수를 직접 부르던 두 자리(홈스크린 위젯 `RemoteViews`, 접근성 서비스 오버레이)는 무조건 기본 라이트+그린 팔레트를 받고 있었다.
+
+- `Color.kt`: 커스텀까지 해석하는 오버로드 `paletteFor(themeMode, customBackgroundHex, customAccentHex)` 추가.
+- `AppPreferences.currentPalette()` 추가(데스크탑 `Repository.currentPalette()`와 대칭) — Compose 밖에서 테마 색이 필요할 때의 **유일한 창구**.
+- `Theme.kt`의 `PhoneLockTheme`, `AppMonitorAccessibilityService`의 오버레이 배경/타이머 색, `RoutineWidgetProvider`/`RoutineWidgetFactory`를 전부 새 창구로 교체.
+- 위젯: 커스텀 색은 드로어블 리소스로 만들 수 없으므로 기본 3종 테마는 기존 드로어블을 그대로 두고 `CUSTOM`만 따로 칠한다 — 배경은 `setColorStateList("setBackgroundTintList")`(API 31+) 또는 `setBackgroundColor`(그 아래), 체크 아이콘은 "포인트색 박스 + onPrimary 체크" 두 색이라 색 필터로는 안 돼서 `themedCheckBitmap()`으로 런타임에 그려 `setImageViewBitmap`. 기본 테마로 되돌아갈 때 이전 틴트를 `null`로 지우는 처리 포함(호스트 프로세스의 View가 재사용되므로 필수).
+- `Theme.kt`에 `Activity.applyThemeWindowBackground(prefs)` 추가 — `Theme.PhoneLock`/`Theme.PhoneLock.Overlay`가 `android:Theme.Material.Light`를 상속해 창 바탕이 늘 흰색이라 어두운 테마에서 첫 프레임/화면 전환에 흰색이 비쳤다. `MainActivity`(테마 변경 시마다)/`BlockActivity`/`ConfirmOpenActivity`/`StudyLockActivity`에서 호출.
+- 데스크탑 `ui/theme/Theme.kt`의 `PhoneLockTheme(themeMode)` 오버로드에 "이건 CUSTOM을 표현 못 한다"는 경고 주석 추가(같은 함정 재발 방지). 브라우저 확장은 이미 `/theme` API로 커스텀 색을 받아 쓰고 있어 변경 없음.
+
+### 2. 홈(식물) 탭 데이터 동기화 (버그 수정 + 기능, 양 플랫폼)
+
+- **화면 내 갱신**: `PlantScreen`의 재조회 tick을 둘로 분리 — 무거운 것(루틴/캘린더 전체 훑기)은 `refreshTick`, 가벼운 성장 스칼라값(누적/대기 EXP·환생·장식)은 `growthTick`. `growthTick`은 2초 주기(`GROWTH_POLL_INTERVAL_MS`)로 자동 증가해서, 공부 타이머·루틴 체크·백그라운드 복귀 등 이 화면 밖에서 바뀐 값을 별도 배선 없이 따라잡는다(경험치 적용 애니메이션 중에는 표시가 튀지 않게 쉼).
+- **기기 간 동기화 신설**: `users/{uid}/growth` 전체 문서 단위 LWW(`PomodoroSyncClient.readGrowth`/`writeGrowth`). 담는 값은 `expTotal`/`expPending`/`rebirthCount`/`seasonYear`/`lifetimeMaxLevel`/`lifetimeRebirthCount`/`ownedDecorations`/`equippedDecorations`. 타임스탬프는 `AppPreferences.growthTs`(안드로이드) / `AppData.growthTs`(데스크탑, JsonStore 읽기·쓰기 포함).
+  - 푸시: `awardGrowthExp`/`applyPendingGrowthExp`/`rebirth`/`checkAndResetGrowthSeasonIfNeeded`/`purchaseDecoration`/`setEquippedDecorationIds` 직후 fire-and-forget.
+  - 풀: 앱 시작 시 1회(`MainActivity` 시작 블록 / 데스크탑 `MainScreen`), 홈 탭 진입 시 1회(포인트 원장과 함께).
+  - 덮어쓰기 방지: 아직 한 번도 동기화한 적 없고(`growthTs == 0`) 로컬에 쌓인 성장도 전혀 없으면 아예 올리지 않는다(재설치 직후 기기가 빈 문서로 다른 기기의 레벨을 날리는 것을 막음).
+- `applyPendingGrowthExp`가 `lifetimeMaxLevel`도 함께 갱신하도록 수정(그전엔 시즌 초기화 때만 갱신돼 실제 최고 기록보다 낮게 남을 수 있었음).
+- 장식 소유/배치 상태를 로컬 전용에서 동기화 대상으로 변경(116차 판단 뒤집음) — 구매 재화인 포인트가 이미 동기화되는데 구매 결과만 한 기기에 갇히면 "포인트를 썼는데 이 기기엔 아무것도 없다"가 된다.
+
+### 3. Wi-Fi/인터넷 일시 단절로 인한 강제 로그아웃 (버그 수정, 양 플랫폼)
+
+- 진짜 원인: `AccountSyncClient.getRaw`(안드로이드) / `get`(데스크탑)이 네트워크 예외와 비-2xx 응답을 **전부 조용히 `null`로** 돌려줬다. 그래서 `fetchMyProfile`이 "프로필이 아직 없음(=가입 신청 필요)"과 "지금 인터넷이 끊김"을 구분하지 못했고, 호출부는 `onSuccess(null)` → `else -> ID_SETUP`을 타고 **가입 신청 화면으로 떨어지면서 캐시된 승인 상태(`cachedApprovalStatus`)까지 지웠다**. 106차에 고친 건 `onFailure` 경로뿐이라 정작 대부분의 장애가 이 경로로 빠져나가고 있었다.
+- 두 클라이언트 모두 통신 실패/비-2xx에서 예외를 던지도록 수정 → `Result.failure`로 갈라진다. 이제 `null`은 "서버가 2xx로 빈 값을 돌려줬다" 한 가지 뜻뿐.
+- 안드로이드 `AccountGate`: ① 실패 시 인증 세션을 건드리지 않고(로그인 자체가 풀린 경우만 로그인 화면), 캐시가 "approved"면 낙관적 표시로 전환 ② 오프라인이면 재확인 시도 자체를 건너뜀 ③ `NetworkMonitor.isOnline`(Compose 상태)이 돌아오는 순간 자동 재동기화 ④ 확인 대기 화면에 오프라인 안내 문구 + 5초 백업 재시도.
+- 데스크탑 `AccountGate`: `get()` 수정으로 `onSuccess`가 서버 실제 응답임이 보장된다는 주석 보강(106차 `onFailure` 가드는 그대로 유지).
+
+### 4. '소셜' 탭 → '모임' 탭 (사용자 요청, 양 플랫폼)
+
+안드로이드 하단 탭 라벨(`Tab.Group`), 데스크탑 좌측 레일 라벨, 설정 카테고리(`SettingsCategory.SOCIAL`), 모임 목록 상단바("👥 모임"), 오프라인 모드 설명 문구까지 통일. 내부 식별자/파일명(`SocialGroup*`)은 그대로 둠.
+
+### 5. 모임 칭호+닉네임 표기 (사용자 요청, 양 플랫폼)
+
+알약 배지 `PlantLevelBadge`(칭호를 별도 `Surface` 박스로) 제거 → 하나의 `Text`(AnnotatedString)로 "새싹 홍길동"처럼 합치는 `MemberDisplayName`으로 교체. 칭호 부분만 tertiary 색 + Bold로 구분, `maxLines`+`Ellipsis`로 길이가 얼마든 겹치거나 잘리지 않는다(안드로이드에서 긴 닉네임+긴 칭호가 같은 Row 안에서 서로 밀어내며 뭉개지던 문제). 적용 4곳 × 양 플랫폼: 모임 멤버 목록 / 멤버 상세 헤더 / 그룹 대화 발신자 / DM 헤더. 레벨 숫자는 이름 줄을 길게 만들어 결합 표기에서 빼고, 이미 "Lv.N"을 크게 보여주는 멤버 상세 성장 카드에만 남겼다(그에 따라 쓰이지 않게 된 `MemberRow.plantLevel`/`MemberHeaderCard(plantLevel=)` 정리).
+
+### 6. 꾸미기 아이템 일러스트화 (사용자 요청, 양 플랫폼)
+
+- 116차의 "씬 위에 이모지 `Text`를 얹는" 방식을 버리고, 나무/땅과 **같은 Canvas에 벡터로** 그린다(`drawSceneryDecorations`/`drawPropDecorations`).
+- 종류를 둘로 나눔: `PROP`(화분 옆 땅 슬롯 5자리) / `SCENERY`(장면 전체, 슬롯 소모 없음).
+- 카탈로그 10종 — 소품: 버섯 무리(15P)/깃발(20P, 펄럭임)/나비들(25P, 궤도+날갯짓)/종이등(30P, 빛 번짐+살+술)/벤치(40P)/작은 분수(60P, 물줄기+잔물결). 배경: 조약돌 길(35P)/나무 울타리(50P)/작은 연못(70P, 잔물결+수련잎)/반딧불이(80P, 깜빡임). 기존 6종은 id와 가격을 그대로 유지해 이미 산 사람이 잃는 게 없다.
+- 상점 목록에 `DecorationPreview`(같은 그리기 함수를 작은 씬 기하로 재호출) + 한 줄 설명 + "배경" 배지 표시 — 이모지 목록으로는 뭘 사는지 알 수 없어 구매 판단이 안 됐다.
+- 구매 시 자리가 남아 있으면 즉시 배치(구매 → 홈 화면 변화가 한 동작으로 이어지게), 동시 배치 상한 3 → 5(`MAX_EQUIPPED_DECORATIONS`를 저장 계층으로 옮겨 UI와 공유).
+- 소품은 씬 기본 배율의 1.45배로 그린다(`DECORATION_PROP_SCALE`) — 같은 기하를 브라우저 캔버스에 옮겨 실제 홈 화면 비율로 렌더해보고 정한 값. 종이등/나비는 그 검증에서 "정체불명 도형"으로 보여 모양 자체를 다시 그렸다.
+- 정리: `BoxWithConstraints` → `Box`(더 이상 `maxWidth/maxHeight`를 안 씀), 쓰이지 않는 `offset` import 제거.
+
+### 빌드/배포
+
+- 안드로이드 `assembleRelease` versionCode `1789503467` → 3위치 배포 + GitHub 릴리스 `android-1789503467`
+- 데스크탑 `packageMsi createDistributable` BuildInfo `1789503606` → 호스트(`C:\Users\sunae\PhoneLockDesktopApp`) + `vm-build-output` 교체 + 재기동, GitHub 릴리스 `desktop-1789503606`
+- 실사용 검증 전(HANDOFF.md "다음 작업 우선순위" 최상단 참고)
+
+---
+
 ## 2026-09-13 (120차 후속) — 누적된 "실사용 검증" 대기 항목 일괄 확인 처리
 
 사용자 요청으로 `HANDOFF.md`의 "다음 작업 우선순위"에 96~120차에 걸쳐 쌓여있던 미확인 실사용 검증 체크박스(약 30여 건)를 전부 확인 완료로 표시했다. 사용자가 명시적으로 보류/미결정 상태로 남긴 항목(Firebase 콘솔 확인, 재가입 안내, 뽀모도로 연동 복구 여부, IDEAS.md 검토 항목)은 검증이 아니라 별개 결정 사항이라 그대로 두었다.

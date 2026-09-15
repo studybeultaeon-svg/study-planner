@@ -9,7 +9,6 @@ import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.*
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.Routine
-import com.phonelock.app.ui.theme.paletteFor
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.runBlocking
 import java.time.LocalDate
@@ -55,16 +54,14 @@ class RoutineWidgetFactory(private val context: Context) : RemoteViewsService.Re
 
     override fun getViewAt(position: Int): RemoteViews {
         val (routine, done) = items[position]
-        val themeMode = AppPreferences(context).themeMode
-        val palette = paletteFor(themeMode)
+        val prefs = AppPreferences(context)
+        val themeMode = prefs.themeMode
+        val palette = prefs.currentPalette()
         val views = RemoteViews(context.packageName, R.layout.routine_widget_item)
-        views.setInt(R.id.item_row, "setBackgroundResource", widgetItemRowRes(themeMode))
+        views.applyThemedItemRowBackground(R.id.item_row, themeMode, palette)
         views.setTextColor(R.id.item_title, palette.onBackground.toArgb())
         views.setTextViewText(R.id.item_title, if (routine.icon.isNotBlank()) "${routine.icon} ${routine.title}" else routine.title)
-        views.setImageViewResource(
-            R.id.item_check,
-            if (done) widgetCheckedRes(themeMode) else widgetUncheckedRes(themeMode)
-        )
+        views.applyThemedCheckIcon(R.id.item_check, themeMode, palette, done)
         val fillInIntent = Intent().apply {
             putExtra(EXTRA_ROUTINE_ID, routine.id)
         }

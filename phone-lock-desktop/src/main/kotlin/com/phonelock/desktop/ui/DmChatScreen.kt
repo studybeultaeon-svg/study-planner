@@ -42,11 +42,13 @@ fun DmChatScreen(repository: Repository, chatId: String, peerUid: String, peerLa
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(Spacing.md), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("< 목록") }
-            peerBadge?.let { badge ->
-                PlantLevelBadge(badge.level, badge.title)
-                Spacer(Modifier.width(4.dp))
-            }
-            Text(peerLabel, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = Spacing.sm))
+            MemberDisplayName(
+                title = peerBadge?.title,
+                name = peerLabel,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                modifier = Modifier.padding(start = Spacing.sm)
+            )
         }
         ChatThreadScreen(
             chatId = chatId,

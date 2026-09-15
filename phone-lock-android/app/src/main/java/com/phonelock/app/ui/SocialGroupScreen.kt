@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phonelock.app.data.PhoneLockRepository
@@ -70,12 +71,47 @@ internal fun SectionPill(text: String, color: androidx.compose.ui.graphics.Color
     }
 }
 
-/** 닉네임 왼쪽에 붙는 레벨/칭호 배지(122차, 사용자 요청) — 상대가 "홈" 공유를 켠 경우에만 값이 존재한다
- *  ([SocialGroupSyncClient.MemberStats.plantLevel]/[SocialGroupSyncClient.findMemberPlantBadge] 참고),
- *  값이 없으면 아예 호출하지 않고 이름만 보여주면 된다. */
+/**
+ * 칭호 + 닉네임을 "새싹 홍길동"처럼 **한 덩어리의 텍스트**로 보여준다(121차, 사용자 요청).
+ *
+ * 그전까지는 칭호를 [SectionPill] 알약 배지로 따로 띄우고 그 옆에 닉네임 Text를 두는 2박스 구조였는데,
+ * 안드로이드에서 칭호·닉네임이 둘 다 길면 같은 Row 안에서 서로 밀어내며 뭉개져 읽을 수 없었다. 배지를
+ * 없애고 하나의 [Text]로 합치면 줄바꿈/말줄임을 Compose 텍스트 레이아웃이 통째로 계산하므로 길이가
+ * 얼마든 겹치거나 잘리지 않는다. 칭호 부분만 색/굵기를 달리해 여전히 구분된다.
+ *
+ * 칭호 값은 상대가 "홈" 공유를 켠 경우에만 존재하고([SocialGroupSyncClient.MemberStats.plantTitle]),
+ * 없으면 닉네임만 그대로 나온다. 레벨 숫자는 이름 줄을 길게 만들어 이 결합 표기에서는 빼고,
+ * 멤버 상세 화면의 성장 카드(이미 "Lv.N"을 크게 보여주는 자리)에만 남긴다.
+ */
 @Composable
-internal fun PlantLevelBadge(level: Int, title: String) {
-    SectionPill("Lv.$level $title", color = MaterialTheme.colorScheme.tertiary)
+internal fun MemberDisplayName(
+    title: String?,
+    name: String,
+    style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.titleMedium,
+    fontWeight: FontWeight? = null,
+    color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified,
+    titleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.tertiary,
+    maxLines: Int = 2,
+    modifier: Modifier = Modifier
+) {
+    val text = androidx.compose.ui.text.buildAnnotatedString {
+        if (!title.isNullOrBlank()) {
+            withStyle(androidx.compose.ui.text.SpanStyle(color = titleColor, fontWeight = FontWeight.Bold)) {
+                append(title.trim())
+            }
+            append(" ")
+        }
+        append(name)
+    }
+    Text(
+        text,
+        style = style,
+        fontWeight = fontWeight,
+        color = color,
+        maxLines = maxLines,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        modifier = modifier
+    )
 }
 
 /** 모임 이름 첫 글자를 원형 배지로(데스크탑판 GroupAvatar와 대칭). */
@@ -193,7 +229,7 @@ fun SocialGroupScreen(
         )
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("👥 소셜") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("👥 모임") }) }) { padding ->
         // 98차(사용자 요청): 당겨서 새로고침 — 서버 최신 상태를 다시 받아온다.
         com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = { reload() }) {
         // 106차(사용자 요청): 소셜 탭 메인 화면 전체 스크롤 — 예전엔 아래 모임 목록만 LazyColumn으로

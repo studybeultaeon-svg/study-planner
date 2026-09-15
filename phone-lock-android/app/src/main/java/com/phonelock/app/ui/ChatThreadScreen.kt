@@ -150,20 +150,14 @@ fun ChatThreadScreen(
                         horizontalAlignment = if (mine) Alignment.End else Alignment.Start
                     ) {
                         if (!mine) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
+                            MemberDisplayName(
+                                title = senderBadges[msg.senderUid]?.title,
+                                name = msg.senderName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
                                 modifier = Modifier.padding(start = Spacing.xs, bottom = 2.dp)
-                            ) {
-                                senderBadges[msg.senderUid]?.let { badge ->
-                                    PlantLevelBadge(badge.level, badge.title)
-                                    Spacer(Modifier.width(4.dp))
-                                }
-                                Text(
-                                    msg.senderName,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            )
                         }
                         Surface(
                             modifier = Modifier

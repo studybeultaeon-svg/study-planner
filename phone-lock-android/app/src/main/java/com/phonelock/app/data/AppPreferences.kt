@@ -204,6 +204,12 @@ class AppPreferences(context: Context) {
         get() = prefs.getString("custom_theme_accent", "#8BC34A") ?: "#8BC34A"
         set(value) = prefs.edit().putString("custom_theme_accent", value).apply()
 
+    /** 지금 선택된 테마의 완성된 팔레트(121차, 데스크탑판 `Repository.currentPalette()`와 대칭) —
+     *  Compose 밖(위젯/오버레이/액티비티 창 배경)에서 테마 색이 필요할 때 쓰는 유일한 창구. CUSTOM이면
+     *  배경/포인트 두 색으로부터 나머지를 자동 계산한다. */
+    fun currentPalette(): com.phonelock.app.ui.theme.PhoneLockPalette =
+        com.phonelock.app.ui.theme.paletteFor(themeMode, customThemeBackground, customThemeAccent)
+
     /** 그룹 자동 재활성화를 마지막으로 적용한 날짜(effectiveDate 기준) — 데스크탑판 lastGroupAutoResetDate와 동일 역할. */
     var lastGroupAutoResetDate: String?
         get() = prefs.getString("last_group_auto_reset_date", null)
@@ -267,6 +273,12 @@ class AppPreferences(context: Context) {
     var pointsTs: Long
         get() = prefs.getLong("points_ts", 0L)
         set(value) = prefs.edit().putLong("points_ts", value).apply()
+
+    /** "식물 성장"(레벨/EXP/환생/장식) 전체 문서 단위 Firebase LWW 타임스탬프(121차) —
+     *  pointsTs와 동일 패턴. [PhoneLockRepository.pushGrowthToFirebase] 참고. */
+    var growthTs: Long
+        get() = prefs.getLong("growth_ts", 0L)
+        set(value) = prefs.edit().putLong("growth_ts", value).apply()
 
     /** "식물 성장" 시스템(105차 후속) — 현재 환생 사이클의 누적 EXP. Float 대신 문자열로 저장해 Double
      *  정밀도를 그대로 보존(SharedPreferences에 Double 전용 메서드가 없음). */

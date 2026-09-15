@@ -85,15 +85,23 @@ fun Repository.onCalendarTaskCompletionChanged(refId: String, dateKey: String, c
 }
 
 // ══════════════════════════════════════════════════════
-// 나무 주변 장식 아이템(116차) — 포인트로 구매해 홈 화면에 배치. 소유/장착 상태는 Firebase 동기화 없이
-// 기기별 로컬 보관(장식은 순수 꾸미기 요소라 그룹/루틴처럼 여러 기기 일치가 필요하지 않다고 판단).
+// 나무 주변 장식 아이템(116차) — 포인트로 구매해 홈 화면에 배치. 121차부터 소유/장착 상태도 성장
+// 문서(users/{user}/growth)에 같이 실려 기기 간에 따라간다 — 구매 재화(포인트)가 이미 동기화되는데
+// 구매 결과만 한 기기에 갇혀 있으면 "포인트를 썼는데 이 기기엔 아무것도 없다"가 되기 때문(116차 판단 변경).
 // ══════════════════════════════════════════════════════
+
+/** 홈 화면에 동시에 배치할 수 있는 장식 개수 — UI(PlantScreen)와 저장 계층이 같은 상한을 보게 공유한다.
+ *  121차에 3 → 5로 올렸다: 장식이 "소품"과 "배경" 두 종류로 나뉘면서 배경 하나만 걸어도 소품 자리가 두 개밖에
+ *  안 남아, 사서 배치할 수 있는 양이 구매 만족감에 비해 너무 적었다. */
+const val MAX_EQUIPPED_DECORATIONS = 5
 
 fun Repository.getOwnedDecorationIds(): Set<String> = synchronized(lock) { data.ownedDecorationIds.toSet() }
 
 fun Repository.getEquippedDecorationIds(): List<String> = synchronized(lock) { data.equippedDecorationIds.toList() }
 
-/** 이미 소유했거나 포인트가 모자라면 false. 성공하면 잔액에서 즉시 차감(음수 delta 원장 항목)하고 소유 목록에 추가한다. */
+/** 이미 소유했거나 포인트가 모자라면 false. 성공하면 잔액에서 즉시 차감(음수 delta 원장 항목)하고 소유 목록에
+ *  추가한다. 121차: 자리가 남아 있으면 곧바로 배치까지 해준다 — "구매 → 홈 화면에 눈에 띄는 변화"가 한 번의
+ *  동작으로 이어져야 포인트를 쓴 보람이 느껴진다는 사용자 요청. 자리가 없으면 소유만 하고 배치는 사용자가 고른다. */
 fun Repository.purchaseDecoration(id: String, cost: Int): Boolean = synchronized(lock) {
     if (id in data.ownedDecorationIds) return@synchronized false
     if (getPointsBalance() < cost) return@synchronized false
@@ -101,8 +109,10 @@ fun Repository.purchaseDecoration(id: String, cost: Int): Boolean = synchronized
         PointsLedgerEntry(delta = -cost, reason = "DECORATION", refId = id, dateKey = java.time.LocalDate.now().toString(), timestampMillis = System.currentTimeMillis())
     )
     data.ownedDecorationIds.add(id)
+    if (data.equippedDecorationIds.size < MAX_EQUIPPED_DECORATIONS) data.equippedDecorationIds.add(id)
     persist()
     pushPointsToFirebase()
+    pushGrowthToFirebase()
     true
 }
 
@@ -110,8 +120,9 @@ fun Repository.purchaseDecoration(id: String, cost: Int): Boolean = synchronized
 fun Repository.setEquippedDecorationIds(ids: List<String>) {
     synchronized(lock) {
         data.equippedDecorationIds.clear()
-        data.equippedDecorationIds.addAll(ids.filter { it in data.ownedDecorationIds }.take(3))
+        data.equippedDecorationIds.addAll(ids.filter { it in data.ownedDecorationIds }.take(MAX_EQUIPPED_DECORATIONS))
         persist()
+        pushGrowthToFirebase()
     }
 }
 

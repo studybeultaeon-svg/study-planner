@@ -55,6 +55,7 @@ import com.phonelock.app.data.TimerRunState
 import com.phonelock.app.service.IntentExtras
 import com.phonelock.app.service.PomodoroSyncClient
 import com.phonelock.app.ui.theme.PhoneLockTheme
+import com.phonelock.app.ui.theme.applyThemeWindowBackground
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -85,8 +86,9 @@ class StudyLockActivity : ComponentActivity() {
         val isRemote = intent.getBooleanExtra(IntentExtras.EXTRA_STUDY_LOCK_IS_REMOTE, false)
         val repository = PhoneLockRepository(applicationContext)
 
+        val prefs = AppPreferences(applicationContext)
+        applyThemeWindowBackground(prefs)
         setContent {
-            val prefs = AppPreferences(applicationContext)
             PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
                 StudyLockScreen(
                     allowedPackages = allowedPackages,

@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.data.isEffectivelyOffline
 import com.phonelock.desktop.data.syncGroupSettingsFromFirebase
+import com.phonelock.desktop.data.syncGrowthFromFirebase
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -87,6 +88,14 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                 delay(1000)
                 refresh()
             }
+        }
+    }
+
+    // 121차: 성장(레벨/EXP/장식)을 시작할 때 한 번 받아온다 — 이 기기가 원격 상태를 모르는 채로 먼저
+    // EXP를 적립해 올려버리면 다른 기기가 쌓아둔 레벨을 덮어쓸 수 있다(안드로이드판 MainActivity와 대칭).
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            if (!repository.isEffectivelyOffline()) repository.syncGrowthFromFirebase()
         }
     }
 
@@ -172,7 +181,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                         selected = !settingsOpen && section == TopSection.SOCIAL_GROUP,
                         onClick = { section = TopSection.SOCIAL_GROUP; settingsOpen = false },
                         icon = { Text("👥") },
-                        label = { Text("소셜") },
+                        label = { Text("모임") },
                         colors = railColors
                     )
                 }

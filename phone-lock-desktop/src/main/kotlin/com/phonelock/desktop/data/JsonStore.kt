@@ -67,6 +67,7 @@ object JsonStore {
             dailyResetHour = json.optInt("dailyResetHour", 0),
             routinesTs = json.optLong("routinesTs", 0L),
             pointsTs = json.optLong("pointsTs", 0L),
+            growthTs = json.optLong("growthTs", 0L),
             growthExpTotal = json.optDouble("growthExpTotal", 0.0),
             growthExpPending = json.optDouble("growthExpPending", 0.0),
             rebirthCount = json.optInt("rebirthCount", 0),
@@ -702,6 +703,7 @@ object JsonStore {
         }
         json.put("pointsLedger", pointsLedgerJson)
         json.put("pointsTs", data.pointsTs)
+        json.put("growthTs", data.growthTs)
         json.put("growthExpTotal", data.growthExpTotal)
         json.put("growthExpPending", data.growthExpPending)
         json.put("rebirthCount", data.rebirthCount)

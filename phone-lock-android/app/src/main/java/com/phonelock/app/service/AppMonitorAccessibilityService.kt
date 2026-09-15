@@ -13,7 +13,6 @@ import com.phonelock.app.ui.BlockActivity
 import com.phonelock.app.ui.ConfirmOpenActivity
 import com.phonelock.shared.MOTIVATIONAL_QUOTES
 import com.phonelock.app.ui.StudyLockActivity
-import com.phonelock.app.ui.theme.paletteFor
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -636,12 +635,12 @@ class AppMonitorAccessibilityService : AccessibilityService() {
 
     /** 사용 중 오버레이(실행확인 통과 후 유예시간/뽀모도로 임시해제) 색상 — 설정된 테마 팔레트를 그대로 따른다. */
     private fun overlayPrimaryArgb(alpha: Int): Int {
-        val rgb = paletteFor(preferences.themeMode).primary.toArgb()
+        val rgb = preferences.currentPalette().primary.toArgb()
         return android.graphics.Color.argb(alpha, android.graphics.Color.red(rgb), android.graphics.Color.green(rgb), android.graphics.Color.blue(rgb))
     }
 
     private fun overlayBackgroundArgb(alpha: Int): Int {
-        val rgb = paletteFor(preferences.themeMode).background.toArgb()
+        val rgb = preferences.currentPalette().background.toArgb()
         return android.graphics.Color.argb(alpha, android.graphics.Color.red(rgb), android.graphics.Color.green(rgb), android.graphics.Color.blue(rgb))
     }
 

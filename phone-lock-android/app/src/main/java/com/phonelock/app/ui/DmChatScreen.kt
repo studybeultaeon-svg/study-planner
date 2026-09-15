@@ -42,13 +42,12 @@ fun DmChatScreen(repository: PhoneLockRepository, chatId: String, peerUid: Strin
     Scaffold(topBar = {
         TopAppBar(
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    peerBadge?.let { badge ->
-                        PlantLevelBadge(badge.level, badge.title)
-                        Spacer(Modifier.width(4.dp))
-                    }
-                    Text(peerLabel)
-                }
+                MemberDisplayName(
+                    title = peerBadge?.title,
+                    name = peerLabel,
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1
+                )
             },
             navigationIcon = { IconButton(onClick = onBack) { Text("<") } }
         )

@@ -40,6 +40,14 @@ import kotlinx.coroutines.launch
  * "approved")는 네트워크 확인이 끝나기 전에도 즉시 content()를 보여주고, 백그라운드에서 실제 상태를
  * 재확인한다. 재확인이 "성공했는데 승인 상태가 아님"으로 나온 경우에만 게이트 화면으로 전환한다 — 단순
  * 네트워크 실패로 낙관적 표시를 취소하면 오프라인에서 앱을 못 여는 문제가 생기므로 그 경우는 무시한다.
+ *
+ * 121차: 위 "단순 네트워크 실패는 무시"가 실제로는 동작하지 않고 있었다.
+ * [AccountSyncClient.fetchMyProfile]이 통신 실패까지 `success(null)`("프로필 없음")로 뭉개서 돌려줬기
+ * 때문에, Wi-Fi가 잠깐 끊긴 것만으로 `onSuccess` 가지의 `else -> ID_SETUP`을 타고 가입 신청 화면으로
+ * 떨어졌고 승인 캐시까지 지워졌다(사실상 강제 로그아웃). `getRaw`가 네트워크 오류를 예외로 던지도록
+ * 고쳐서 두 경우가 갈라졌고, 여기서는 그 위에 ① 오프라인이면 재확인 자체를 시도하지 않고 ② 연결이
+ * 복구되면([NetworkMonitor.isOnline] 변화) 자동으로 다시 확인하는 두 가지를 더했다. 어느 경로에서도
+ * 실제 로그인 세션([AuthManager])은 건드리지 않는다 — 로그아웃은 토큰이 실제로 무효일 때뿐이다.
  */
 @Composable
 fun AccountGate(repository: PhoneLockRepository, content: @Composable () -> Unit) {
@@ -97,22 +105,34 @@ fun AccountGate(repository: PhoneLockRepository, content: @Composable () -> Unit
                 else -> GateState.ID_SETUP
             }
         }.onFailure {
-            // 네트워크 오류 등 — 이미 낙관적으로 승인 화면을 보여주고 있었다면 그대로 유지한다.
-            if (state != GateState.OPTIMISTIC_APPROVED) {
-                state = GateState.LOGIN.takeIf { AuthManager.currentUser == null } ?: state
+            // 네트워크 오류 등 — 인증 세션은 전혀 건드리지 않는다(121차). 로그인 자체가 풀렸을 때만
+            // 로그인 화면으로 돌리고, 이전에 승인이 확인됐던 사용자라면 확인을 못 했어도 그냥 앱을 쓰게 둔다
+            // (연결이 돌아오면 아래 LaunchedEffect(online)이 자동으로 다시 확인한다).
+            state = when {
+                AuthManager.currentUser == null -> GateState.LOGIN
+                state == GateState.CHECKING && prefs.cachedApprovalStatus == "approved" -> GateState.OPTIMISTIC_APPROVED
+                else -> state
             }
         }
     }
 
-    LaunchedEffect(Unit) {
-        if (state == GateState.CHECKING) {
+    // 121차(사용자 요청 "Wi-Fi가 끊겼다고 로그아웃되지 않게") — 확인이 아직 안 끝난 상태(CHECKING)로
+    // 멈춰 있으면 연결이 있는 동안 주기적으로 다시 시도한다. NetworkMonitor.isOnline은 Compose 상태라
+    // 인터넷이 돌아오는 순간 이 이펙트가 통째로 다시 돌면서 재동기화가 바로 걸린다.
+    val online = com.phonelock.app.service.NetworkMonitor.isOnline
+    LaunchedEffect(online, state == GateState.CHECKING) {
+        if (!online) return@LaunchedEffect
+        while (isActive && state == GateState.CHECKING) {
             refreshFromServer()
+            if (state != GateState.CHECKING) break
+            delay(RECHECK_RETRY_MS)
         }
     }
 
-    // 낙관적 승인 표시 중에도 백그라운드로 실제 상태를 재확인한다.
-    LaunchedEffect(state == GateState.OPTIMISTIC_APPROVED) {
-        if (state == GateState.OPTIMISTIC_APPROVED) {
+    // 낙관적 승인 표시 중에도 백그라운드로 실제 상태를 재확인한다 — 오프라인이면 시도 자체를 건너뛰고,
+    // 연결이 복구되면(online 변화) 그때 다시 돌면서 확인한다.
+    LaunchedEffect(state == GateState.OPTIMISTIC_APPROVED, online) {
+        if (state == GateState.OPTIMISTIC_APPROVED && online) {
             val result = AccountSyncClient.fetchMyProfile(repository.fbDatabaseUrl, repository.fbApiKey)
             result.onSuccess { profile ->
                 val status = profile?.optString("status")
@@ -122,6 +142,8 @@ fun AccountGate(repository: PhoneLockRepository, content: @Composable () -> Unit
                     state = GateState.APPROVED
                 } else {
                     // 성공적으로 확인했는데 승인 상태가 아님 — 실제로 취소/거절된 것이므로 게이트로 전환.
+                    // (121차에 AccountSyncClient.getRaw가 네트워크 오류를 예외로 던지게 바뀌면서, 여기 onSuccess는
+                    //  서버가 실제로 돌려준 값이라는 것이 보장된다 — 그전까지는 단순 통신 실패도 여기로 들어왔다.)
                     profileStatus = status
                     prefs.cachedApprovalStatus = null
                     state = when (status) {
@@ -148,7 +170,9 @@ fun AccountGate(repository: PhoneLockRepository, content: @Composable () -> Unit
 
     when (state) {
         GateState.OPTIMISTIC_APPROVED, GateState.APPROVED -> content()
-        GateState.CHECKING -> LoadingScreen()
+        GateState.CHECKING -> LoadingScreen(
+            message = if (online) null else "인터넷 연결을 기다리는 중입니다… 연결이 돌아오면 자동으로 다시 확인합니다."
+        )
         GateState.LOGIN -> LoginScreen(
             loading = loading,
             errorMessage = errorMessage,
@@ -243,10 +267,24 @@ private enum class GateState {
     CHECKING, OPTIMISTIC_APPROVED, LOGIN, ID_SETUP, ID_SETUP_REJECTED, PENDING, APPROVED
 }
 
+/** 재시도 간격 — 인터넷이 연결된 채로 서버만 응답하지 않는 경우를 위한 백업 주기
+ *  (대부분은 NetworkMonitor.isOnline 변화로 그보다 먼저 반응한다). */
+private const val RECHECK_RETRY_MS = 5_000L
+
 @Composable
-private fun LoadingScreen() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
+private fun LoadingScreen(message: String? = null) {
+    Box(Modifier.fillMaxSize().padding(Spacing.lg), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            CircularProgressIndicator()
+            message?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
     }
 }
 

@@ -599,6 +599,62 @@ object PomodoroSyncClient {
         }
     }
 
+    data class GrowthSyncResult(val json: JSONObject, val ts: Long)
+
+    /**
+     * "식물 성장"(레벨/EXP/환생/장식) 전체 문서(121차). `users/{user}/growth`에
+     * `{expTotal, expPending, rebirthCount, lifetimeMaxLevel, lifetimeRebirthCount, seasonYear,
+     *   ownedDecorations, equippedDecorations, _ts}` — 포인트/루틴/캘린더와 같은 문서 단위 LWW.
+     *
+     * 왜 필요했나: EXP는 포인트 적립 이벤트에 편승해 계산되는데(Repository.Points.kt), 정작 그 결과값은
+     * 기기 로컬(SharedPreferences / data.json)에만 남아 있었다. 그래서 포인트 원장만 동기화된 다른 기기나
+     * 재설치 직후에는 "포인트는 돌아왔는데 나무는 Lv.1"이 되어 홈 화면과 실제 데이터가 어긋난다(사용자 지적).
+     */
+    suspend fun readGrowth(databaseUrl: String?, apiKey: String?): GrowthSyncResult? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
+                val base = databaseUrl.trimEnd('/')
+                val url = URL("$base/users/$user/growth.json?auth=$token")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = TIMEOUT_MS
+                    readTimeout = TIMEOUT_MS
+                }
+                if (conn.responseCode !in 200..299) { conn.disconnect(); return@runCatching null }
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                if (body.isBlank() || body == "null") return@runCatching GrowthSyncResult(JSONObject(), 0L)
+                val json = JSONObject(body)
+                GrowthSyncResult(json, json.optLong("_ts", 0L))
+            }.getOrNull()
+        }
+    }
+
+    /** 성장 전체 문서를 덮어쓴다(문서 단위 LWW — 호출부가 이미 로컬이 더 최신임을 확인한 뒤 호출). */
+    suspend fun writeGrowth(databaseUrl: String?, apiKey: String?, growthJson: JSONObject, ts: Long) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
+                val base = databaseUrl.trimEnd('/')
+                val url = URL("$base/users/$user/growth.json?auth=$token")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"
+                    connectTimeout = TIMEOUT_MS
+                    readTimeout = TIMEOUT_MS
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                }
+                val body = JSONObject(growthJson.toString()).apply { put("_ts", ts) }
+                conn.outputStream.use { it.write(body.toString().toByteArray()) }
+                conn.responseCode
+                conn.disconnect()
+            }
+        }
+    }
+
     data class GroupSettingsSyncResult(val groupsJson: JSONObject, val ts: Long)
 
     /**
