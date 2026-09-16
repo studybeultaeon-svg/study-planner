@@ -2,6 +2,7 @@
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,7 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phonelock.desktop.data.Repository
@@ -67,36 +67,84 @@ internal fun SectionPill(text: String, color: androidx.compose.ui.graphics.Color
     }
 }
 
+/** [MemberDisplayName] 배지 알약의 안쪽 여백 — 배지 자리를 InlineTextContent로 미리 잡아줘야 해서
+ *  글자 폭을 잰 뒤 이 값을 더한 크기를 Placeholder로 넘긴다. */
+private val BADGE_H_PADDING = 8.dp
+private val BADGE_V_PADDING = 2.dp
+private const val BADGE_INLINE_ID = "levelTitleBadge"
+
+/** 배지에 넣는 칭호의 글자 상한 — 고레벨 칭호는 "종말조차 외경하는 푸게의 존재"처럼 20자를 넘기도 해서
+ *  ([com.phonelock.shared.GrowthSystem.STAGES]), 그대로 넣으면 배지 하나가 한 줄을 다 삼킨다. 배지는 생략해서
+ *  보여주고, 칭호 전부는 모임원 상세 화면의 성장 카드가 그대로 보여준다. */
+private const val BADGE_TITLE_MAX_CHARS = 10
+
 /**
- * 칭호 + 닉네임을 "새싹 홍길동"처럼 **한 덩어리의 텍스트**로 보여준다(121차, 사용자 요청).
+ * 레벨·칭호 배지와 닉네임을 **하나의 텍스트 흐름 안에** 함께 배치한다(122차, 사용자 요청).
  *
- * 그전까지는 칭호를 [SectionPill] 알약 배지로 따로 띄우고 그 옆에 닉네임 Text를 두는 2박스 구조였는데,
- * 안드로이드에서 칭호·닉네임이 둘 다 길면 같은 Row 안에서 서로 밀어내며 뭉개져 읽을 수 없었다. 배지를
- * 없애고 하나의 [Text]로 합치면 줄바꿈/말줄임을 Compose 텍스트 레이아웃이 통째로 계산하므로 길이가
- * 얼마든 겹치거나 잘리지 않는다. 칭호 부분만 색/굵기를 달리해 여전히 구분된다.
+ * - 120차 이전: `Row { SectionPill("Lv.12 새싹"); Text(name) }` — 배지와 이름이 각자 고정 영역을 차지해서
+ *   이름에 남는 폭이 좁아지고, 긴 닉네임이 "홍/길동/입니다"처럼 3~4줄로 쪼개졌다.
+ * - 121차: 배지를 아예 없애고 칭호까지 전부 평범한 한 줄 텍스트로 합쳤다 — 줄바꿈 문제는 사라졌지만
+ *   사용자가 원한 건 버튼형 배지를 유지하는 것이었다.
+ * - 122차(지금): 배지는 알약 박스 그대로 두되, 그 박스를 닉네임과 **같은 [Text]** 안에
+ *   [androidx.compose.foundation.text.InlineTextContent]로 끼워 넣는다. 줄바꿈/말줄임 계산을 Compose
+ *   텍스트 레이아웃이 배지와 이름을 통째로 한 흐름으로 처리하므로 둘 사이에 고정 영역 분할도, 세로
+ *   구분선도 없다 — "스타일은 분리하되 레이아웃 영역은 분리하지 않는다".
  *
- * 칭호 값은 상대가 "홈" 공유를 켠 경우에만 존재하고([SocialGroupSyncClient.MemberStats.plantTitle]),
- * 없으면 닉네임만 그대로 나온다. 레벨 숫자는 이름 줄을 길게 만들어 이 결합 표기에서는 빼고,
- * 멤버 상세 화면의 성장 카드(이미 "Lv.N"을 크게 보여주는 자리)에만 남긴다.
+ * 레벨/칭호 값은 상대가 "홈" 공유를 켠 경우에만 존재하고([SocialGroupSyncClient.MemberStats.plantLevel]/
+ * [SocialGroupSyncClient.MemberStats.plantTitle]), 둘 다 없으면 배지 없이 닉네임만 그대로 나온다.
  */
 @Composable
 internal fun MemberDisplayName(
     title: String?,
     name: String,
+    level: Int? = null,
     style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.titleMedium,
     fontWeight: FontWeight? = null,
     color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified,
-    titleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.tertiary,
+    badgeColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.tertiary,
     maxLines: Int = 2,
     modifier: Modifier = Modifier
 ) {
-    val text = androidx.compose.ui.text.buildAnnotatedString {
-        if (!title.isNullOrBlank()) {
-            withStyle(androidx.compose.ui.text.SpanStyle(color = titleColor, fontWeight = FontWeight.Bold)) {
-                append(title.trim())
-            }
-            append(" ")
+    val shortTitle = title?.trim()?.takeIf { it.isNotEmpty() }?.let {
+        if (it.length > BADGE_TITLE_MAX_CHARS) it.take(BADGE_TITLE_MAX_CHARS - 1) + "…" else it
+    }
+    val badgeLabel = when {
+        level != null && shortTitle != null -> "Lv.$level $shortTitle"
+        level != null -> "Lv.$level"
+        shortTitle != null -> shortTitle
+        else -> null
+    }
+    if (badgeLabel == null) {
+        Text(
+            name,
+            style = style,
+            fontWeight = fontWeight,
+            color = color,
+            maxLines = maxLines,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = modifier
+        )
+        return
+    }
+
+    val badgeTextStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = badgeColor)
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // Placeholder 크기는 sp 단위(글자 크기 배율을 따라감)로 미리 알려줘야 하므로 배지 글자를 실제로 재서
+    // 좌우/상하 여백을 더한 값을 넘긴다 — 글자 폭에 딱 맞으므로 긴 칭호에도 배지가 잘리지 않는다.
+    val badgeSize = remember(badgeLabel, badgeTextStyle, density) {
+        val measured = measurer.measure(badgeLabel, badgeTextStyle)
+        with(density) {
+            (measured.size.width + (BADGE_H_PADDING * 2).toPx()).toSp() to
+                (measured.size.height + (BADGE_V_PADDING * 2).toPx()).toSp()
         }
+    }
+
+    val text = androidx.compose.ui.text.buildAnnotatedString {
+        // 두 번째 인자는 InlineTextContent를 못 찾았을 때의 대체 텍스트 — 배지 문구 그대로 두면
+        // 최악의 경우에도 레벨/칭호 정보 자체는 남는다.
+        appendInlineContent(BADGE_INLINE_ID, badgeLabel)
+        append(" ")
         append(name)
     }
     Text(
@@ -106,6 +154,22 @@ internal fun MemberDisplayName(
         color = color,
         maxLines = maxLines,
         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        inlineContent = mapOf(
+            BADGE_INLINE_ID to androidx.compose.foundation.text.InlineTextContent(
+                androidx.compose.ui.text.Placeholder(
+                    width = badgeSize.first,
+                    height = badgeSize.second,
+                    placeholderVerticalAlign = androidx.compose.ui.text.PlaceholderVerticalAlign.Center
+                )
+            ) {
+                Box(
+                    Modifier.fillMaxSize().clip(RoundedCornerShape(50)).background(badgeColor.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(badgeLabel, style = badgeTextStyle, maxLines = 1)
+                }
+            }
+        ),
         modifier = modifier
     )
 }

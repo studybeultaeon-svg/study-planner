@@ -45,6 +45,7 @@ fun DmChatScreen(repository: PhoneLockRepository, chatId: String, peerUid: Strin
                 MemberDisplayName(
                     title = peerBadge?.title,
                     name = peerLabel,
+                    level = peerBadge?.level,
                     style = MaterialTheme.typography.titleLarge,
                     maxLines = 1
                 )

@@ -65,6 +65,7 @@ import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.*
 import com.phonelock.app.data.PreMigrationBackup
 import com.phonelock.app.routine.RoutineAlarmScheduler
+import com.phonelock.app.routine.StudyAlertChecker
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.service.AccessibilityServiceChecker
 import com.phonelock.app.service.ADMIN_USERNAME
@@ -156,6 +157,15 @@ fun SettingsScreen(
     var blockReels by remember { mutableStateOf(prefs.blockReels) }
     var blockShorts by remember { mutableStateOf(prefs.blockShorts) }
     var routineStreakNotifyEnabled by remember { mutableStateOf(prefs.routineStreakNotifyEnabled) }
+    // 공부 알림(122차) — 값은 전부 AppPreferences(기기 로컬)에 즉시 저장된다.
+    var studyAlertEnabled by remember { mutableStateOf(prefs.studyAlertEnabled) }
+    var studyAlertVibrate by remember { mutableStateOf(prefs.studyAlertVibrate) }
+    var studyAlertNotStarted by remember { mutableStateOf(prefs.studyAlertNotStartedEnabled) }
+    var studyAlertPace by remember { mutableStateOf(prefs.studyAlertPaceEnabled) }
+    var studyAlertSchedule by remember { mutableStateOf(prefs.studyAlertScheduleEnabled) }
+    var studyAlertStartHour by remember { mutableStateOf(prefs.studyAlertStartHour) }
+    var studyAlertEndHour by remember { mutableStateOf(prefs.studyAlertEndHour) }
+    var studyAlertTestResult by remember { mutableStateOf<String?>(null) }
     var defaultMultiPassEnabled by remember { mutableStateOf(prefs.defaultMultiPassEnabled) }
     var defaultPassCount by remember { mutableStateOf(prefs.defaultPassCount) }
     var defaultPassIntervals by remember {
@@ -908,6 +918,123 @@ fun SettingsScreen(
                     }
                     Spacer(Modifier.height(Spacing.md))
 
+                    // 공부 알림(122차, 사용자 요청) — 캘린더/계산기/일정표 데이터를 보고 "계획보다 늦어질 때만"
+                    // 알린다. 설정값은 전부 이 기기 로컬(SharedPreferences)이라 통신이 끊겨도 초기화되지 않는다.
+                    SectionCard("🔔 공부 알림") {
+                        Text(
+                            "캘린더·일정표에 예정된 공부와 실제 진행 상황을 비교해서, 계획보다 늦어질 때만 알림을 보냅니다. " +
+                                "일정한 간격으로 무조건 보내지 않으며 같은 종류의 알림은 하루에 한 번만 옵니다. " +
+                                "이 설정은 기기별로 저장되고 동기화하지 않으므로 인터넷이 끊겨도 초기화되지 않습니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        ToggleRow(
+                            title = "공부 알림 받기",
+                            checked = studyAlertEnabled,
+                            onCheckedChange = { checked ->
+                                studyAlertEnabled = checked
+                                prefs.studyAlertEnabled = checked
+                                if (checked) {
+                                    RoutineAlarmScheduler.scheduleStudyAlertCheck(context)
+                                } else {
+                                    RoutineAlarmScheduler.cancelStudyAlertCheck(context)
+                                }
+                            }
+                        )
+                        if (studyAlertEnabled) {
+                            ToggleRow(
+                                title = "진동",
+                                description = "끄면 소리·진동 없이 알림만 표시됩니다.",
+                                checked = studyAlertVibrate,
+                                onCheckedChange = { checked ->
+                                    studyAlertVibrate = checked
+                                    prefs.studyAlertVibrate = checked
+                                }
+                            )
+                            ToggleRow(
+                                title = "공부 미실행 알림",
+                                description = "오늘 예정된 공부가 있는데 아직 아무것도 하지 않았을 때.",
+                                checked = studyAlertNotStarted,
+                                onCheckedChange = { checked ->
+                                    studyAlertNotStarted = checked
+                                    prefs.studyAlertNotStartedEnabled = checked
+                                }
+                            )
+                            ToggleRow(
+                                title = "학습 페이스 지연 알림",
+                                description = "진행량이 계획(기간 경과율)보다 뒤처졌을 때.",
+                                checked = studyAlertPace,
+                                onCheckedChange = { checked ->
+                                    studyAlertPace = checked
+                                    prefs.studyAlertPaceEnabled = checked
+                                }
+                            )
+                            ToggleRow(
+                                title = "일정 지연 알림",
+                                description = "마감이 지났거나, 지금 페이스면 목표 일정을 못 맞출 때.",
+                                checked = studyAlertSchedule,
+                                onCheckedChange = { checked ->
+                                    studyAlertSchedule = checked
+                                    prefs.studyAlertScheduleEnabled = checked
+                                }
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            Text("알림 가능 시간대", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(Spacing.xs))
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                com.phonelock.app.ui.components.NumberStepperField(
+                                    label = "시작(시)",
+                                    value = studyAlertStartHour.toString(),
+                                    onValueChange = { text ->
+                                        val hour = (text.toIntOrNull() ?: studyAlertStartHour).coerceIn(0, 23)
+                                        studyAlertStartHour = hour
+                                        prefs.studyAlertStartHour = hour
+                                    },
+                                    min = 0,
+                                    max = 23,
+                                    modifier = Modifier.width(140.dp)
+                                )
+                                com.phonelock.app.ui.components.NumberStepperField(
+                                    label = "종료(시)",
+                                    value = studyAlertEndHour.toString(),
+                                    onValueChange = { text ->
+                                        val hour = (text.toIntOrNull() ?: studyAlertEndHour).coerceIn(0, 23)
+                                        studyAlertEndHour = hour
+                                        prefs.studyAlertEndHour = hour
+                                    },
+                                    min = 0,
+                                    max = 23,
+                                    modifier = Modifier.width(140.dp)
+                                )
+                            }
+                            Text(
+                                "이 시간대 밖에서는 알림을 보내지 않습니다(시작이 종료보다 늦으면 자정을 넘기는 구간으로 봅니다).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        studyAlertTestResult = StudyAlertChecker.checkAndNotify(context, force = true)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("지금 한 번 확인") }
+                            Text(
+                                "지금 조건을 검사해서 보낼 알림이 있으면 바로 보냅니다(시간대·하루 1회 제한은 무시).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            studyAlertTestResult?.let {
+                                Spacer(Modifier.height(Spacing.xs))
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
                     // 90차(사용자 요청): 타이머 탭 안에 있던 "공부 잠금 허용 앱/사이트"를 여기로 옮겼다 —
                     // 매번 보는 화면이 아니라 한 번 정해두는 설정이라 설정 탭이 제자리다.
                     AllowedAppsCollapsibleSection(onOpenFullScreen = onNavigateToStudyLockApps)
@@ -1434,7 +1561,7 @@ private fun AllowedAppsCollapsibleSection(onOpenFullScreen: () -> Unit) {
     }
 }
 
-/** 관리자 패널에서 사용자별 기능 범위(루틴/공부/관리/모임/식물)를 고르는 칩 5개 — 눌린 것만 허용. */
+/** 관리자 패널에서 사용자별 기능 범위(홈/루틴/공부/규칙/모임)를 고르는 칩 5개 — 눌린 것만 허용. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun PermissionChipsRow(
@@ -1444,6 +1571,12 @@ private fun PermissionChipsRow(
     androidx.compose.foundation.layout.FlowRow(
         horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
+        // 122차(사용자 요청): 라벨을 "홈(식물)" → "홈"으로 통일하고, 앱의 첫 탭인 만큼 가장 왼쪽으로 옮겼다.
+        FilterChip(
+            selected = permissions.plant,
+            onClick = { onChange(permissions.copy(plant = !permissions.plant)) },
+            label = { Text("홈") }
+        )
         FilterChip(
             selected = permissions.routine,
             onClick = { onChange(permissions.copy(routine = !permissions.routine)) },
@@ -1463,11 +1596,6 @@ private fun PermissionChipsRow(
             selected = permissions.social,
             onClick = { onChange(permissions.copy(social = !permissions.social)) },
             label = { Text("모임") }
-        )
-        FilterChip(
-            selected = permissions.plant,
-            onClick = { onChange(permissions.copy(plant = !permissions.plant)) },
-            label = { Text("홈(식물)") }
         )
     }
 }

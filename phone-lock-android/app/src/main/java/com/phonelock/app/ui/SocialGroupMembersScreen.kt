@@ -87,6 +87,7 @@ private data class MemberRow(
     val hasStats: Boolean,
     val shareRoutines: Boolean,
     val profileImage: String? = null,
+    val plantLevel: Int? = null,
     val plantTitle: String? = null
 )
 
@@ -227,7 +228,7 @@ fun SocialGroupMembersScreen(
                 MemberRow(
                     m.uid, s?.displayName ?: m.displayName, rate, weekRate,
                     if (s?.shareStreak == true) s.streak else null, s != null, s?.shareRoutines == true, s?.profileImage,
-                    s?.plantTitle
+                    s?.plantLevel, s?.plantTitle
                 )
             }.sortedWith(compareBy { it.todayRate ?: -1 })
             groupGoalTodaySeconds = stats.values.filter { it.shareStudy }.sumOf { it.studyTodaySeconds ?: 0 }
@@ -663,7 +664,8 @@ fun SocialGroupMembersScreen(
                             Column(Modifier.weight(1f)) {
                                 MemberDisplayName(
                                     title = row.plantTitle,
-                                    name = row.displayName + if (row.uid == myUid) " (나)" else ""
+                                    name = row.displayName + if (row.uid == myUid) " (나)" else "",
+                                    level = row.plantLevel
                                 )
                                 if (row.streak != null && row.streak > 0) {
                                     Spacer(Modifier.height(2.dp))

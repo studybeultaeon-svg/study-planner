@@ -111,7 +111,7 @@ fun SocialGroupMemberDetailScreen(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             MemberHeaderCard(
                 member.displayName, member.updatedAt, Modifier.weight(1f), profileImage = member.profileImage,
-                sharePlant = member.sharePlant, plantTitle = member.plantTitle
+                sharePlant = member.sharePlant, plantLevel = member.plantLevel, plantTitle = member.plantTitle
             )
             if (!isSelf) {
                 Spacer(Modifier.width(Spacing.sm))
@@ -286,7 +286,7 @@ fun SocialGroupMemberDetailScreen(
 @Composable
 private fun MemberHeaderCard(
     displayName: String, updatedAt: Long, modifier: Modifier = Modifier, profileImage: String? = null,
-    sharePlant: Boolean = false, plantTitle: String = ""
+    sharePlant: Boolean = false, plantLevel: Int = 1, plantTitle: String = ""
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -318,6 +318,7 @@ private fun MemberHeaderCard(
                 MemberDisplayName(
                     title = plantTitle.takeIf { sharePlant },
                     name = displayName,
+                    level = plantLevel.takeIf { sharePlant },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )

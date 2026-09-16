@@ -171,7 +171,7 @@ fun SocialGroupMemberDetailScreen(
                 return@Column
             }
 
-            MemberHeaderCard(displayName = displayName, updatedAt = s.updatedAt, profileImage = s.profileImage, plantTitle = s.plantTitle)
+            MemberHeaderCard(displayName = displayName, updatedAt = s.updatedAt, profileImage = s.profileImage, plantLevel = s.plantLevel, plantTitle = s.plantTitle)
             Spacer(Modifier.height(Spacing.md))
 
             if (targetUid != myUid) {
@@ -354,7 +354,7 @@ fun SocialGroupMemberDetailScreen(
 }
 
 @Composable
-private fun MemberHeaderCard(displayName: String, updatedAt: Long, profileImage: String? = null, plantTitle: String? = null) {
+private fun MemberHeaderCard(displayName: String, updatedAt: Long, profileImage: String? = null, plantLevel: Int? = null, plantTitle: String? = null) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -385,6 +385,7 @@ private fun MemberHeaderCard(displayName: String, updatedAt: Long, profileImage:
                 MemberDisplayName(
                     title = plantTitle,
                     name = displayName,
+                    level = plantLevel,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )

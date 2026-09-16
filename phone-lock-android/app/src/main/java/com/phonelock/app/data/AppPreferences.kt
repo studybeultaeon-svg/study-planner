@@ -220,6 +220,53 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("routine_streak_notify_enabled", false)
         set(value) = prefs.edit().putBoolean("routine_streak_notify_enabled", value).apply()
 
+    // ---- 공부 알림(122차, 사용자 요청) ----
+    // 캐린더/계산기/일정표 데이터를 보고 "필요할 때만" 보내는 알림의 사용자 설정.
+    // 판정 규칙 자체는 [com.phonelock.shared.study.StudyAlertEngine], 실제 검사/발송은
+    // [com.phonelock.app.routine.StudyAlertChecker] 참고. **이 값들은 전부 기기별 로컬 설정이고
+    // Firebase 동기화 대상이 아니다** — 기기마다 알림 여부가 다를 수 있고, 무엇보다 통신이
+    // 끊겨도 설정이 초기화될 경로 자체가 없어야 하기 때문이다(`PhoneLockRepository.Settings.kt` 참고).
+    var studyAlertEnabled: Boolean
+        get() = prefs.getBoolean("study_alert_enabled", false)
+        set(value) = prefs.edit().putBoolean("study_alert_enabled", value).apply()
+
+    /** 진동 on/off — 안드로이드는 채널을 만든 뒤엔 진동 설정을 바눴 수 없어서(앱이 아니라 사용자만
+     *  바꿀 수 있음), 진동 켜진 채널과 꺼진 채널을 둘 다 만들어두고 이 값으로 골라 쓴다. */
+    var studyAlertVibrate: Boolean
+        get() = prefs.getBoolean("study_alert_vibrate", true)
+        set(value) = prefs.edit().putBoolean("study_alert_vibrate", value).apply()
+
+    /** 공부 미실행 알림(오늘 예정된 공부가 있는데 아무것도 안 함). */
+    var studyAlertNotStartedEnabled: Boolean
+        get() = prefs.getBoolean("study_alert_not_started", true)
+        set(value) = prefs.edit().putBoolean("study_alert_not_started", value).apply()
+
+    /** 학습 페이스 지연 알림(진행률이 기간 경과율보다 뒤처짐). */
+    var studyAlertPaceEnabled: Boolean
+        get() = prefs.getBoolean("study_alert_pace", true)
+        set(value) = prefs.edit().putBoolean("study_alert_pace", value).apply()
+
+    /** 일정 지연 알림(마감을 넘겼거나 현재 페이스로는 마감을 못 맞춤). */
+    var studyAlertScheduleEnabled: Boolean
+        get() = prefs.getBoolean("study_alert_schedule", true)
+        set(value) = prefs.edit().putBoolean("study_alert_schedule", value).apply()
+
+    /** 알림 가능 시간대 — 시작 시각이 끝 시각보다 크면 자정을 넘기는 구간으로 해석한다. */
+    var studyAlertStartHour: Int
+        get() = prefs.getInt("study_alert_start_hour", 9)
+        set(value) = prefs.edit().putInt("study_alert_start_hour", value.coerceIn(0, 23)).apply()
+
+    var studyAlertEndHour: Int
+        get() = prefs.getInt("study_alert_end_hour", 22)
+        set(value) = prefs.edit().putInt("study_alert_end_hour", value.coerceIn(0, 23)).apply()
+
+    /** 알림 종류별 마지막 발송 날짜 — 같은 종류는 하루에 한 번만 보낸다(과다 반복 방지). */
+    fun lastStudyAlertDate(kind: String): String = prefs.getString("study_alert_last_$kind", "") ?: ""
+
+    fun setLastStudyAlertDate(kind: String, dateKey: String) {
+        prefs.edit().putString("study_alert_last_$kind", dateKey).apply()
+    }
+
     /** 루틴 동기화 알람 누수 버그(2026-08-30)로 이미 쌓인 예약 알람을 한 번 정리했는지 — 앱 실행마다
      *  반복할 필요 없어 [RoutineAlarmScheduler.cleanupLeakedAlarmsIfNeeded]가 이 값으로 1회만 수행한다. */
     var leakedAlarmsCleaned: Boolean
