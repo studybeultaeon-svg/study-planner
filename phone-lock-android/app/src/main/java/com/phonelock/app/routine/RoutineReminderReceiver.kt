@@ -55,6 +55,9 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                     }
                     RoutineAlarmScheduler.scheduleGroupNudgeCheck(appContext)
                     RoutineAlarmScheduler.scheduleWeeklySummary(appContext)
+                    if (AppPreferences(appContext).studyAlertEnabled) {
+                        RoutineAlarmScheduler.scheduleStudyAlertCheck(appContext)
+                    }
                 }
             }
             RoutineAlarmScheduler.ACTION_ROUTINE_REMINDER -> {
@@ -114,6 +117,13 @@ class RoutineReminderReceiver : BroadcastReceiver() {
             RoutineAlarmScheduler.ACTION_WEEKLY_SUMMARY -> runAsync {
                 runCatching { sendWeeklySummary(appContext) }
                 RoutineAlarmScheduler.scheduleWeeklySummary(appContext)
+            }
+            // 공부 알림(122차) — 보낼지 말지는 [StudyAlertChecker]가 실제 일정/진행 데이터를 보고 정한다.
+            RoutineAlarmScheduler.ACTION_STUDY_ALERT_CHECK -> runAsync {
+                runCatching { StudyAlertChecker.checkAndNotify(appContext) }
+                if (AppPreferences(appContext).studyAlertEnabled) {
+                    RoutineAlarmScheduler.scheduleStudyAlertCheck(appContext)
+                }
             }
         }
     }

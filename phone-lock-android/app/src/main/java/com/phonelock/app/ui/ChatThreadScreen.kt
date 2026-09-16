@@ -153,6 +153,7 @@ fun ChatThreadScreen(
                             MemberDisplayName(
                                 title = senderBadges[msg.senderUid]?.title,
                                 name = msg.senderName,
+                                level = senderBadges[msg.senderUid]?.level,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,

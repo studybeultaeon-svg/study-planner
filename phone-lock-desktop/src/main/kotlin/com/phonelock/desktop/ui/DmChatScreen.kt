@@ -45,6 +45,7 @@ fun DmChatScreen(repository: Repository, chatId: String, peerUid: String, peerLa
             MemberDisplayName(
                 title = peerBadge?.title,
                 name = peerLabel,
+                level = peerBadge?.level,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 modifier = Modifier.padding(start = Spacing.sm)

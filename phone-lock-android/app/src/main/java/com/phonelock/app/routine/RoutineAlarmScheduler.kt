@@ -25,10 +25,16 @@ object RoutineAlarmScheduler {
     const val ACTION_STREAK_CHECK = "com.phonelock.app.ACTION_STREAK_CHECK"
     const val ACTION_GROUP_NUDGE_CHECK = "com.phonelock.app.ACTION_GROUP_NUDGE_CHECK"
     const val ACTION_WEEKLY_SUMMARY = "com.phonelock.app.ACTION_WEEKLY_SUMMARY"
+    const val ACTION_STUDY_ALERT_CHECK = "com.phonelock.app.ACTION_STUDY_ALERT_CHECK"
     const val EXTRA_ROUTINE_ID = "routineId"
     private const val STREAK_REQUEST_CODE = -1
     private const val GROUP_NUDGE_REQUEST_CODE = -2
     private const val WEEKLY_SUMMARY_REQUEST_CODE = -3
+    private const val STUDY_ALERT_REQUEST_CODE = -4
+
+    /** 공부 알림 검사 주기(시간, 122차) — 조건 기반 알림이라 정확한 시각에 붙을 이유가 없고,
+     *  하루에 몇 번 상황을 다시 보는 정도면 충분하다(같은 종류는 어차피 하루 한 번만 발송된다). */
+    private const val STUDY_ALERT_INTERVAL_HOURS = 3L
 
     private fun alarmManager(context: Context) = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
@@ -152,5 +158,16 @@ object RoutineAlarmScheduler {
 
     fun cancelWeeklySummary(context: Context) {
         alarmManager(context).cancel(pendingIntentFor(context, WEEKLY_SUMMARY_REQUEST_CODE, ACTION_WEEKLY_SUMMARY))
+    }
+
+    /** 공부 알림 검사(122차) — 지금으로부터 [STUDY_ALERT_INTERVAL_HOURS] 뒤에 한 번 예약하고,
+     *  발화할 때마다 [RoutineReminderReceiver]가 다시 예약해 스스로 이어간다. */
+    fun scheduleStudyAlertCheck(context: Context) {
+        val triggerAtMillis = System.currentTimeMillis() + STUDY_ALERT_INTERVAL_HOURS * 60 * 60 * 1000
+        scheduleAlarm(context, triggerAtMillis, pendingIntentFor(context, STUDY_ALERT_REQUEST_CODE, ACTION_STUDY_ALERT_CHECK))
+    }
+
+    fun cancelStudyAlertCheck(context: Context) {
+        alarmManager(context).cancel(pendingIntentFor(context, STUDY_ALERT_REQUEST_CODE, ACTION_STUDY_ALERT_CHECK))
     }
 }

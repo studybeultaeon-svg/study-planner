@@ -158,6 +158,10 @@ class MainActivity : ComponentActivity() {
             RoutineAlarmScheduler.scheduleGroupNudgeCheck(applicationContext)
             // 주간 요약 알림(82차) — 스트릭/무작위 알림과 같은 비용으로 매주 일요일 20시 한 번만 돈다.
             RoutineAlarmScheduler.scheduleWeeklySummary(applicationContext)
+            // 공부 알림(122차) — 켜둔 경우에만 예약한다(예약은 발화할 때마다 스스로 이어진다).
+            if (AppPreferences(applicationContext).studyAlertEnabled) {
+                RoutineAlarmScheduler.scheduleStudyAlertCheck(applicationContext)
+            }
         }
 
         setContent {

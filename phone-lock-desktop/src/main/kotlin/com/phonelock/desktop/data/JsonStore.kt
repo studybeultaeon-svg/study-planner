@@ -88,6 +88,12 @@ object JsonStore {
             blockReels = json.optBoolean("blockReels", false),
             blockShorts = json.optBoolean("blockShorts", false),
             routineStreakNotifyEnabled = json.optBoolean("routineStreakNotifyEnabled", false),
+            studyAlertEnabled = json.optBoolean("studyAlertEnabled", false),
+            studyAlertNotStartedEnabled = json.optBoolean("studyAlertNotStartedEnabled", true),
+            studyAlertPaceEnabled = json.optBoolean("studyAlertPaceEnabled", true),
+            studyAlertScheduleEnabled = json.optBoolean("studyAlertScheduleEnabled", true),
+            studyAlertStartHour = json.optInt("studyAlertStartHour", 9),
+            studyAlertEndHour = json.optInt("studyAlertEndHour", 22),
             lastRoutineStreak = json.optInt("lastRoutineStreak", -1),
             zeroStreakDays = json.optInt("zeroStreakDays", 0),
             fbDatabaseUrl = (if (json.isNull("fbDatabaseUrl")) null else json.optString("fbDatabaseUrl", null))
@@ -140,6 +146,9 @@ object JsonStore {
 
         val nudgeLastSeenJson = json.optJSONObject("nudgeLastSeenByGroup") ?: JSONObject()
         nudgeLastSeenJson.keys().forEach { key -> data.nudgeLastSeenByGroup[key] = nudgeLastSeenJson.optLong(key, 0L) }
+
+        val studyAlertLastJson = json.optJSONObject("studyAlertLastDates") ?: JSONObject()
+        studyAlertLastJson.keys().forEach { key -> data.studyAlertLastDates[key] = studyAlertLastJson.optString(key, "") }
 
         val chatLastSeenJson = json.optJSONObject("chatLastSeenByChat") ?: JSONObject()
         chatLastSeenJson.keys().forEach { key -> data.chatLastSeenByChat[key] = chatLastSeenJson.optLong(key, 0L) }
@@ -460,6 +469,12 @@ object JsonStore {
         json.put("blockReels", data.blockReels)
         json.put("blockShorts", data.blockShorts)
         json.put("routineStreakNotifyEnabled", data.routineStreakNotifyEnabled)
+        json.put("studyAlertEnabled", data.studyAlertEnabled)
+        json.put("studyAlertNotStartedEnabled", data.studyAlertNotStartedEnabled)
+        json.put("studyAlertPaceEnabled", data.studyAlertPaceEnabled)
+        json.put("studyAlertScheduleEnabled", data.studyAlertScheduleEnabled)
+        json.put("studyAlertStartHour", data.studyAlertStartHour)
+        json.put("studyAlertEndHour", data.studyAlertEndHour)
         json.put("lastRoutineStreak", data.lastRoutineStreak)
         json.put("zeroStreakDays", data.zeroStreakDays)
         json.put("fbDatabaseUrl", data.fbDatabaseUrl ?: JSONObject.NULL)
@@ -483,6 +498,9 @@ object JsonStore {
         val nudgeLastSeenJson = JSONObject()
         data.nudgeLastSeenByGroup.forEach { (key, millis) -> nudgeLastSeenJson.put(key, millis) }
         json.put("nudgeLastSeenByGroup", nudgeLastSeenJson)
+        val studyAlertLastJson = JSONObject()
+        data.studyAlertLastDates.forEach { (kind, dateKey) -> studyAlertLastJson.put(kind, dateKey) }
+        json.put("studyAlertLastDates", studyAlertLastJson)
         val chatLastSeenJson = JSONObject()
         data.chatLastSeenByChat.forEach { (key, millis) -> chatLastSeenJson.put(key, millis) }
         json.put("chatLastSeenByChat", chatLastSeenJson)

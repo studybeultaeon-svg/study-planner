@@ -34,6 +34,7 @@ import com.phonelock.desktop.routine.ChatNotifier
 import com.phonelock.desktop.routine.DesktopNotifier
 import com.phonelock.desktop.routine.RoutineNotifier
 import com.phonelock.desktop.routine.SocialGroupNotifier
+import com.phonelock.desktop.routine.StudyAlertNotifier
 import com.phonelock.desktop.routine.VoiceMessageNotifier
 import com.phonelock.desktop.routine.WeeklySummaryNotifier
 import com.sun.jna.Native
@@ -207,6 +208,7 @@ private fun startApp() = application {
                 RoutineNotifier.tick(repository)
                 SocialGroupNotifier.tick(repository)
                 runCatching { WeeklySummaryNotifier.tick(repository) } // 82차: 매주 일요일 20시, 내부적으로 날짜 가드됨
+                runCatching { StudyAlertNotifier.tick(repository) } // 122차: 공부 알림, 내부적으로 1시간 간격+종류별 하루 1회 가드됨
                 runCatching { repository.runDailyMaintenanceIfNeeded() } // 82차: 12개월 정리+클라우드 백업 자동화, 내부적으로 날짜 가드됨
             }
             delay(7_000L)

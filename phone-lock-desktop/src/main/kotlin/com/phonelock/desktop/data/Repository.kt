@@ -679,6 +679,38 @@ class Repository {
             persist()
         }
 
+    // ---- 공부 알림(122차) — 전부 로컬 설정, [com.phonelock.desktop.routine.StudyAlertNotifier] 참고 ----
+    var studyAlertEnabled: Boolean
+        get() = synchronized(lock) { data.studyAlertEnabled }
+        set(value) = synchronized(lock) { data.studyAlertEnabled = value; persist() }
+
+    var studyAlertNotStartedEnabled: Boolean
+        get() = synchronized(lock) { data.studyAlertNotStartedEnabled }
+        set(value) = synchronized(lock) { data.studyAlertNotStartedEnabled = value; persist() }
+
+    var studyAlertPaceEnabled: Boolean
+        get() = synchronized(lock) { data.studyAlertPaceEnabled }
+        set(value) = synchronized(lock) { data.studyAlertPaceEnabled = value; persist() }
+
+    var studyAlertScheduleEnabled: Boolean
+        get() = synchronized(lock) { data.studyAlertScheduleEnabled }
+        set(value) = synchronized(lock) { data.studyAlertScheduleEnabled = value; persist() }
+
+    var studyAlertStartHour: Int
+        get() = synchronized(lock) { data.studyAlertStartHour }
+        set(value) = synchronized(lock) { data.studyAlertStartHour = value.coerceIn(0, 23); persist() }
+
+    var studyAlertEndHour: Int
+        get() = synchronized(lock) { data.studyAlertEndHour }
+        set(value) = synchronized(lock) { data.studyAlertEndHour = value.coerceIn(0, 23); persist() }
+
+    fun lastStudyAlertDate(kind: String): String = synchronized(lock) { data.studyAlertLastDates[kind] ?: "" }
+
+    fun setLastStudyAlertDate(kind: String, dateKey: String) = synchronized(lock) {
+        data.studyAlertLastDates[kind] = dateKey
+        persist()
+    }
+
     var lastRoutineStreak: Int
         get() = synchronized(lock) { data.lastRoutineStreak }
         set(value) = synchronized(lock) {

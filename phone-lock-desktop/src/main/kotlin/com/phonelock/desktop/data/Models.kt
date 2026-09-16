@@ -283,6 +283,15 @@ data class AppData(
     var blockShorts: Boolean = false,
     /** 스트릭 기반 응원/비판/조롱 알림(52차) 전체 on/off. */
     var routineStreakNotifyEnabled: Boolean = false,
+    /** 공부 알림(122차, 안드로이드판 AppPreferences.studyAlert*와 대칭) — 캘린더/계산기/일정표를 보고
+     *  계획보다 늦어질 때만 알린다. 전부 이 기기 로컬 값(data.json)이고 동기화 대상이 아니다. 진동은
+     *  데스크탑에 해당 개념이 없어 안드로이드에만 있다. */
+    var studyAlertEnabled: Boolean = false,
+    var studyAlertNotStartedEnabled: Boolean = true,
+    var studyAlertPaceEnabled: Boolean = true,
+    var studyAlertScheduleEnabled: Boolean = true,
+    var studyAlertStartHour: Int = 9,
+    var studyAlertEndHour: Int = 22,
     /** 직전에 확인했던 루틴 스트릭 값 — 다음 체크 때 이 값보다 0으로 떨어졌으면 "끊김"으로 판단(안드로이드판과 대칭). */
     var lastRoutineStreak: Int = -1,
     /** 스트릭이 0으로 끊긴 날 이후 며칠째 0을 유지 중인지(58차, 응원→조롱→팩폭 단계 판단용, 안드로이드판과 대칭). */
@@ -380,6 +389,8 @@ data class AppData(
     val groupRandomNudgeEnabled: MutableMap<String, Boolean> = mutableMapOf(),
     /** 모임별 마지막으로 확인한 넛지 시각(epoch millis) — groupId -> millis. 새 넛지 도착 판정용. */
     val nudgeLastSeenByGroup: MutableMap<String, Long> = mutableMapOf(),
+    /** 공부 알림 종류(StudyAlertEngine.Kind 이름)별 마지막 발송 날짜 — 같은 종류는 하루 한 번만(122차). */
+    val studyAlertLastDates: MutableMap<String, String> = mutableMapOf(),
     /** 채팅방(groupId 또는 dmChatId)별 마지막으로 확인한 메시지 시각(epoch millis) — 채팅 알림
      *  신규(2026-09-10), nudgeLastSeenByGroup과 동일 패턴. */
     val chatLastSeenByChat: MutableMap<String, Long> = mutableMapOf(),

@@ -573,6 +573,7 @@ fun SocialGroupMembersScreen(
                                 MemberDisplayName(
                                     title = m.plantTitle.takeIf { m.sharePlant },
                                     name = m.displayName + if (isSelfRow) " (나)" else "",
+                                    level = m.plantLevel.takeIf { m.sharePlant },
                                     style = MaterialTheme.typography.bodyLarge
                                 )
                                 if (m.shareStreak && m.streak > 0) {

@@ -4,6 +4,60 @@
 
 ---
 
+## 2026-09-16 (122차) — 모임 레벨·칭호 배지 복원 / 공부 알림 신설 / 홈 디자인·새로고침·태블릿 레이아웃 / 관리자 패널 "홈" 명칭
+
+### 1. 모임 탭 레벨·칭호·닉네임 표기 (수정, 양 플랫폼)
+
+121차에 칭호 배지를 없애고 "칭호 닉네임" 평문으로 합쳤는데, 사용자 의도는 "배지 스타일은 유지하고 **레이아웃 영역 분리만** 없애기"였다(레벨 숫자도 목록에서 사라졌다).
+
+- `SocialGroupScreen.kt`의 `MemberDisplayName(title, name, level, ...)` — `[Lv.N 칭호]` 알약 배지를 `InlineTextContent`로 닉네임과 **같은 `Text`** 안에 넣는다. 배지 크기는 `rememberTextMeasurer`로 글자 폭을 재서 Placeholder(sp)로 넘김. 배지와 닉네임 사이에 고정 폭 영역/세로 구분선이 없고, 줄바꿈은 한 흐름으로 계산돼 긴 닉네임이 좁은 칸에 갇혀 3~4줄로 쪼개지지 않는다.
+- 칭호가 10자를 넘으면 배지 안에서 `…`로 줄인다(`BADGE_TITLE_MAX_CHARS`) — Lv.350+ 칭호는 20자대라 그대로 넣으면 배지 하나가 한 줄을 다 먹는다. 전체 칭호는 멤버 상세 성장 카드에 그대로 나온다.
+- 레벨 전달 복원: 안드로이드 `MemberRow.plantLevel`, `MemberHeaderCard(plantLevel)`, 그룹 대화 발신자(`senderBadges[..].level`), DM 헤더(`peerBadge.level`) / 데스크탑 `m.plantLevel`, `MemberHeaderCard(plantLevel)`, 대화·DM 동일.
+
+### 2. 공부 알림 (기능 추가, 양 플랫폼)
+
+- `shared/study/StudyAlertEngine.kt`(신규, 순수 로직) — 스냅샷(오늘 공부 시간, 오늘 캘린더 일정 수/완료 수, 날짜 지난 미완료 일정 수, 계산기 업무별 총량·진행량·경과/남은 일수·오늘 할당량·달성 여부)과 설정으로 보낼 알림을 우선순위 순으로 반환.
+  - 미실행(`NOT_STARTED`): 오늘 캘린더 일정 또는 일정표 할당량이 있는데 공부 기록 0초 + 완료 일정 0개.
+  - 일정 지연(`SCHEDULE_DELAYED`): 마감 지난 미완료 업무 > 지금까지 평균 속도로는 마감에 모자라는 업무 > 날짜 지난 미완료 캘린더 일정.
+  - 페이스 지연(`PACE_BEHIND`): 진행률이 기간 경과율보다 10%p 이상 뒤처진 업무(남은 일수 동안 하루 필요량 안내).
+  - 알림 가능 시간대(시작>종료면 자정 넘김, 시작=종료면 하루 종일).
+- 안드로이드 `routine/StudyAlertChecker.kt`(신규) — 검사 1회 최대 1건, 종류별 하루 1회(`dailyResetHour` 기준), 시간대 밖/공부 중이면 건너뜀. 진동은 채널을 만든 뒤 앱이 바꿀 수 없어서 `study_alert_v1`(진동)·`study_alert_silent_v1`(무진동) 두 채널 중 골라 발송. `RoutineAlarmScheduler.scheduleStudyAlertCheck/cancelStudyAlertCheck`(3시간 뒤 1회, 발화 시 재예약, requestCode -4), `RoutineReminderReceiver`의 `ACTION_STUDY_ALERT_CHECK` 처리 + 부팅 재예약, `MainActivity` 시작 시 예약(켜져 있을 때만).
+- 안드로이드 `AppPreferences` — `studyAlertEnabled`(기본 꺼짐)/`studyAlertVibrate`/`studyAlertNotStartedEnabled`/`studyAlertPaceEnabled`/`studyAlertScheduleEnabled`/`studyAlertStartHour`(9)/`studyAlertEndHour`(22)/`lastStudyAlertDate(kind)`.
+- 데스크탑 `routine/StudyAlertNotifier.kt`(신규) — `Main.kt` 30초 루프에서 1시간 간격 검사, 트레이 알림, 종류별 마지막 발송일을 `AppData.studyAlertLastDates`(data.json)에 저장해 재시작해도 하루 1회 유지. 로컬 타이머가 돌면 건너뜀. `Models`/`JsonStore`/`Repository`에 같은 설정 필드 추가(진동 제외).
+- 설정 → 공부 → "🔔 공부 알림" 카드(양 플랫폼): 전체 on/off, 진동(안드로이드), 종류별 3토글, 시작/종료 시각, "지금 한 번 확인"(시간대·하루 1회 제한 무시하고 즉시 판정·발송, 결과 문구 표시).
+- 네트워크 단절과 설정 초기화: 새 설정은 전부 기기 로컬(SharedPreferences / data.json)이고 Firebase 동기화 대상이 아니다. 기존 설정 동기화(`syncSettingsFromFirebase`)도 읽기 실패 시 즉시 반환 + 키별 `has()` 가드라 통신 실패로 값이 덮이지 않음을 확인.
+- 테스트: `phone-lock-android/app/src/test/.../routine/StudyAlertEngineTest.kt` 14개(무발송/미실행/일정표 포함/공부 기록 있으면 억제/페이스 허용오차/일정 지연 3경로/우선순위/개별 토글/전체 끔/시간대/자정 넘김).
+
+### 3. 홈 탭 디자인 정돈 (양 플랫폼)
+
+- 홈 전용 공통 컴포넌트 신설: `HomeCard`(모서리 20dp·표면 93%·옅은 테마 테두리), `HomeIconButton`(설정/새로고침 공통), `HomePillButton`, `HomeTodayLine`, `HomeStatTile`, `HomeTodayCard`, `HomeGrowthPanel`, `LevelUpFlash`, `HomeSceneArea`.
+- 성장 HUD 정보 계층: 레벨 배지(큰 숫자) → 칭호 + 등급 라벨(정상/이상함/초월급/종말급/최강자급, `tierLabel`) → "경험치 NN%" + 10dp 경험치바(`animateFloatAsState`로 부드럽게) + "다음 레벨까지" → 포인트/대기 경험치/환생 수치 타일 3개 → "✨ 경험치 적용"(+ 가능할 때 "🔁 환생") 버튼. 최대 레벨 안내 문구 유지.
+- 환생 EXP 배율 표기를 `formatMultiplier`로 만/억 단위 축약(예: 37,780,000 → "3,778만") — 후반 회차에서 타일이 잘리던 것.
+- "오늘" 카드: 머리말("오늘" + 🎨 꾸미기 알약) → 연속 기록(대표 수치) → ✅ 루틴/📅 다음 일정 줄(말줄임) → "최근 7일" 막대(같은 높이 트랙 위에 세워 기준선 정렬).
+
+### 4. 홈 탭 새로고침 (기능 추가, 양 플랫폼)
+
+- 상단 🔄 버튼(`HomeRefreshButton`, 진행 중엔 스피너·중복 클릭 방지) — `syncPointsFromFirebase` + `syncGrowthFromFirebase`(데스크탑은 IO 디스패처) 후 `refreshTick`/`growthTick` 증가로 레벨·EXP·식물·포인트·꾸미기·루틴/캘린더 요약 전체 재조회. 실패해도 `finally`에서 로컬 재조회는 수행.
+- 안드로이드는 다른 탭과 같은 `PullToRefreshBox`로도 감쌌다(스크롤되는 HUD 위에서 당기면 동작).
+
+### 5. 홈 탭 태블릿/반응형 레이아웃 (수정, 양 플랫폼)
+
+- `BoxWithConstraints`의 실제 폭 기준 3단: 840dp+ → 씬 | 오른쪽 패널(버튼 → HUD → 오늘 카드, 옅은 테마 그라디언트 배경, 폭은 가용 폭 30%를 320~420dp로 제한), 600dp+ → 씬(위) / HUD 카드(아래, 최대 340dp), 그 미만 → 전면 씬 + 하단 HUD 오버레이.
+- `GroundScene(contentBottomInset)` 추가 — 콘텐츠(하늘 장식/화분/나무/소품) 배치 높이를 인셋만큼 줄이고 땅 배경만 캔버스 끝까지 칠한다. 폰은 HUD 높이를 `onSizeChanged`로 재서 넘기므로 새 HUD가 화분·소품을 가리지 않는다(첫 측정 전 280dp 근사).
+- `HomeSceneArea`에서 오늘 카드와 상단 버튼을 한 `Row`(SpaceBetween, 카드 최대 260dp)로 배치 — 좁은 폰에서 카드가 버튼 밑으로 파고들던 것.
+
+### 6. 관리자 패널 권한 칩 (수정, 양 플랫폼)
+
+- `PermissionChipsRow`: `홈(식물)` → `홈`, 순서 `홈 / 루틴 / 공부 / 규칙 / 모임`(홈이 맨 왼쪽). 권한 필드(`Permissions.plant`)·승인/권한 변경 로직은 그대로.
+
+### 빌드/배포
+
+- 안드로이드 `assembleRelease`(versionCode `1789547435`) → 3위치 복사 + SHA-256 일치 확인.
+- 데스크탑 `packageMsi createDistributable`(BuildInfo `1789547578`) → 앱 종료 → `PhoneLockDesktopApp`·`vm-build-output/PhoneLockDesktop` robocopy(210개, 실패 0) + jar 해시 일치 → 재기동.
+- 검증용 임시 테스트(데스크탑 `ImageComposeScene` 렌더링, 실제 `Repository` 기반 알림 흐름)는 빌드 사본에서만 APPDATA 격리로 실행 후 제거.
+
+---
+
 ## 2026-09-16 (121차) — 사용자 지적 6건 일괄 수정(커스텀 테마 일관성 / 홈 데이터 동기화 / 네트워크 오인 로그아웃 / 모임 탭 명칭 / 칭호+닉네임 표기 / 꾸미기 일러스트)
 
 ### 1. 커스텀 테마가 위젯·오버레이·창 배경에 적용되지 않던 문제 (버그 수정, 안드로이드)
