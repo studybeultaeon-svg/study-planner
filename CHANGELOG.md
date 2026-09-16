@@ -54,6 +54,7 @@
 
 - 안드로이드 `assembleRelease`(versionCode `1789547435`) → 3위치 복사 + SHA-256 일치 확인.
 - 데스크탑 `packageMsi createDistributable`(BuildInfo `1789547578`) → 앱 종료 → `PhoneLockDesktopApp`·`vm-build-output/PhoneLockDesktop` robocopy(210개, 실패 0) + jar 해시 일치 → 재기동.
+- 공개 저장소 동기화(`sync-public-repo.ps1`, clean-main → origin/main) + GitHub 릴리스 `android-1789547435` / `desktop-1789547578` 게시.
 - 검증용 임시 테스트(데스크탑 `ImageComposeScene` 렌더링, 실제 `Repository` 기반 알림 흐름)는 빌드 사본에서만 APPDATA 격리로 실행 후 제거.
 
 ---
