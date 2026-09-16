@@ -104,7 +104,7 @@ class SiteEnforcement(private val repository: Repository) {
      */
     fun overlayStatus(hostname: String): OverlayStatus? {
         val groups = repository.findGroupsForDomain(hostname)
-        val candidate = groups.firstOrNull { evaluator.isConfirmActiveNow(it) }
+        val candidate = groups.firstOrNull { evaluator.isConfirmActiveNow(it) && it.usageOverlayEnabled }
         if (candidate != null) {
             val remaining = effectiveRemainingCooldownSeconds(candidate)
             if (remaining <= 0) {
@@ -119,7 +119,7 @@ class SiteEnforcement(private val repository: Repository) {
             )
         }
 
-        val hasPomodoroUnlock = groups.any { it.pomodoroUnlockEnabled && evaluator.isPomodoroUnlockActive(it) }
+        val hasPomodoroUnlock = groups.any { it.pomodoroUnlockEnabled && it.usageOverlayEnabled && evaluator.isPomodoroUnlockActive(it) }
         if (!hasPomodoroUnlock) return null
         val phaseEndAt = PomodoroSyncClient.currentPhaseEndAt(repository.fbDatabaseUrl, repository.fbApiKey)
         val remainingBreakSeconds = ((phaseEndAt - System.currentTimeMillis()) / 1000L).toInt()

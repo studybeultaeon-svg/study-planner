@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-09-16 (123차) — 브라우저 확장 오버레이가 "사용 중 남은 시간 표시" 끔 설정을 무시하는 버그 수정
+
+### 사용자 제보
+"웹 브라우저에서 차단 규칙 설정에 오버레이는 키지 않기로 했는데 오버레이가 뜸" — 그룹 편집 화면의 "사용 중 남은 시간 표시"(`usageOverlayEnabled`) 토글을 꺼도 브라우저 확장(`overlay.js`)엔 반영되지 않았다.
+
+- **원인**: 브라우저 확장이 호출하는 데스크탑 로컬 API `/overlay-status`가 쓰는 `SiteEnforcement.overlayStatus(hostname)`이 실행확인 활성 후보 선택과 뽀모도로 임시해제 조건 어디에도 `usageOverlayEnabled`를 확인하지 않았다. 데스크탑 자체 코너 위젯 로직(`EnforcementService.overlayStatusFor`)은 이미 이 필드를 확인하고 있어 데스크탑에서만 정상, 브라우저 확장만 새는 구조였다.
+- **해결**: `phone-lock-desktop/src/main/kotlin/com/phonelock/desktop/monitor/SiteEnforcement.kt`의 `overlayStatus()` — 실행확인 후보(`candidate`)와 뽀모도로 임시해제(`hasPomodoroUnlock`) 조건 둘 다에 `&& it.usageOverlayEnabled` 추가.
+- **검증**: 컴파일 확인(빌드 성공). 데스크탑 빌드(BuildInfo `1789549507`) → 호스트 2곳(`PhoneLockDesktopApp`/`vm-build-output`) jar 해시 일치 배포 + 재기동 완료. 공개 저장소 push + GitHub 릴리스(`desktop-1789549507`) 게시 완료. **브라우저 확장에서 실제로 오버레이가 안 뜨는지 실사용 검증은 아직.**
+- **영향 범위**: 데스크탑 앱만 수정(안드로이드는 별개 코드 경로라 이 버그 없음 — 안드로이드는 애초에 `usageOverlayEnabled`를 확인하고 있었음).
+
+---
+
 ## 2026-09-16 (122차) — 모임 레벨·칭호 배지 복원 / 공부 알림 신설 / 홈 디자인·새로고침·태블릿 레이아웃 / 관리자 패널 "홈" 명칭
 
 ### 1. 모임 탭 레벨·칭호·닉네임 표기 (수정, 양 플랫폼)
