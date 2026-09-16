@@ -34,7 +34,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -243,15 +242,12 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
     // 당겨온 뒤 화면이 쓰는 값(레벨/EXP/식물/포인트/꾸미기/루틴·캘린더 요약)을 전부 재조회한다. 이미
     // 최신이어도 동작은 동일하고(동기화가 "변경 없음"을 돌려줄 뿐 화면은 다시 그려진다), 경험치 적용
     // 애니메이션 중이면 표시가 튀지 않게 값 반영을 LaunchedEffect(growthTick)의 isApplying 가드에 맡긴다.
-    var refreshing by remember { mutableStateOf(false) }
     val doRefresh: suspend () -> Unit = {
-        refreshing = true
         try {
             repository.syncPointsFromFirebase()
             repository.syncGrowthFromFirebase()
         } finally {
             refresh()
-            refreshing = false
         }
     }
 
@@ -292,22 +288,22 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
             modifier = m
         )
     }
-    val controls: @Composable () -> Unit = {
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            HomeRefreshButton(refreshing = refreshing, onClick = { scope.launch { doRefresh() } })
-            HomeSettingsButton(onOpenSettings)
-        }
-    }
+    val controls: @Composable () -> Unit = { HomeSettingsButton(onOpenSettings) }
 
-    // 당겨서 새로고침(98차부터 다른 탭들이 쓰는 것과 같은 컴포넌트) — 홈의 본문은 스크롤되지 않는
-    // 캔버스라 제스처가 잡히는 건 스크롤되는 성장 패널 위에서지만, 상단 새로고침 버튼이 항상 있으므로
-    // 어느 쪽으로든 새로고침할 수 있다.
+    // 당겨서 새로고침(124차, 사용자 요청 "다른 탭들처럼 화면 쓸어내리면 새로고침") — 다른 탭과 같은
+    // 컴포넌트를 쓰고 🔄 버튼은 없앴다. 홈 본문은 스크롤되지 않는 캔버스라 그대로 두면 당기는 제스처가
+    // 성장 패널 위에서만 잡혔다. 그래서 화면 전체를 "스크롤 범위 0"인 세로 스크롤 컨테이너로 한 번 감싸
+    // 캔버스 어디를 당겨도 끌기 이벤트가 PullToRefreshBox까지 전달되게 한다(안쪽 높이는 화면 높이로 고정 —
+    // 그래야 안쪽 성장 패널의 자체 스크롤이 무한 높이 제약을 받지 않는다).
     com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = { doRefresh() }) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             // Row/Column 스코프 안에서는 BoxWithConstraintsScope의 maxWidth가 가려지므로 여기서 받아둔다.
             val availableWidth = maxWidth
+            val availableHeight = maxHeight
             val wideLayout = availableWidth >= 840.dp
             val tabletLayout = availableWidth >= 600.dp
+            Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Box(Modifier.fillMaxWidth().height(availableHeight)) {
             when {
                 wideLayout -> Row(Modifier.fillMaxSize()) {
                     HomeSceneArea(
@@ -367,6 +363,8 @@ fun PlantScreen(repository: PhoneLockRepository, permPlant: Boolean = true, onOp
                         ) { growthPanel(Modifier.padding(Spacing.md)) }
                     }
                 }
+            }
+            }
             }
         }
     }
@@ -533,16 +531,15 @@ private fun HomeCard(modifier: Modifier = Modifier, content: @Composable () -> U
     )
 }
 
-/** 홈 화면 상단에 떠 있는 원형 아이콘 버튼(설정/새로고침 공통 외형). */
+/** 홈 화면 상단에 떠 있는 원형 아이콘 버튼(설정 버튼 외형). */
 @Composable
 private fun HomeIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
     Surface(
-        modifier = modifier.size(44.dp).clickable(enabled = enabled, onClick = onClick),
+        modifier = modifier.size(44.dp).clickable(onClick = onClick),
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
@@ -555,19 +552,6 @@ private fun HomeIconButton(
 @Composable
 private fun HomeSettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     HomeIconButton(onClick, modifier) { Text("⚙️", fontSize = 20.sp) }
-}
-
-/** 홈 화면 새로고침 버튼(122차, 사용자 요청) — 진행 중에는 버튼 자리에 그대로 스피너를 띄워서
- *  "지금 다시 불러오는 중"이라는 게 화면 어디서든 보이게 한다. */
-@Composable
-private fun HomeRefreshButton(refreshing: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    HomeIconButton(onClick, modifier, enabled = !refreshing) {
-        if (refreshing) {
-            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-        } else {
-            Text("🔄", fontSize = 18.sp)
-        }
-    }
 }
 
 /** 홈 카드 안에서 쓰는 작은 알약 버튼(꾸미기 진입) — Material 기본 Button보다 작고 카드 톤에 맞는다. */

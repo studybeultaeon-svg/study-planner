@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -22,7 +23,16 @@ import kotlinx.coroutines.launch
  * 라이브러리 자체 버그였음([[BUGS.md]] 99차에서 원인 미확정으로 남겨뒀던 항목). compose-bom을
  * 2024.09.00으로 올려 material3 1.3.0의 안정화된(비-실험적) `PullToRefreshBox` API로 교체 —
  * 이 API는 `isRefreshing`/`onRefresh`만 넘기면 인디케이터 표시/수축을 내부에서 전부 관리한다.
+ *
+ * 124차: 그래도 인디케이터가 멈춰 남는 경우가 에뮬레이터에서 재현됨 — 원인은 라이브러리가 임계값을 넘겨 손을
+ * 떼면 인디케이터를 새로고침 위치에 세워두고, `isRefreshing`이 true→false로 "바뀌는 것을 재구성에서 봐야"
+ * 숨긴다는 점이다(material3 1.3.0 `PullToRefreshModifierNode.onRelease`/`update`). 오프라인이거나 계정이
+ * 없어 [onRefresh]가 일시 중단 없이 바로 끝나면 true→false가 한 프레임 안에 일어나 변화 자체가 관찰되지
+ * 않고 인디케이터가 영원히 남았다. 새로고침 표시를 최소 [MIN_REFRESH_INDICATOR_MS] 동안 유지해 해결 —
+ * 사용자에게도 "새로고침했다"는 피드백이 보인다.
  */
+private const val MIN_REFRESH_INDICATOR_MS = 500L
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PullToRefreshBox(
@@ -37,9 +47,12 @@ fun PullToRefreshBox(
         onRefresh = {
             isRefreshing = true
             scope.launch {
+                val startedAt = System.currentTimeMillis()
                 try {
                     onRefresh()
                 } finally {
+                    val remaining = MIN_REFRESH_INDICATOR_MS - (System.currentTimeMillis() - startedAt)
+                    if (remaining > 0) delay(remaining)
                     isRefreshing = false
                 }
             }

@@ -4,6 +4,27 @@
 
 ---
 
+## 2026-09-16 (124차) — 안드로이드 홈 탭 새로고침을 "화면 쓸어내리기"로 통일
+
+### 사용자 요청
+"안드로이드 새로고침은 다른 탭들처럼 화면 쓸어내리면 새로고침 되게" — 122차에 넣은 홈 탭 🔄 버튼 대신 다른 탭(루틴/캘린더/계산기/그룹 등)과 같은 당겨서 새로고침으로.
+
+- **원인(당기기가 사실상 안 되던 이유)**: 홈 탭도 122차부터 `PullToRefreshBox`로 감싸져 있었지만, 본문 대부분이 스크롤되지 않는 캔버스(`GroundScene`)라 끌기 제스처가 `PullToRefreshBox`까지 전달되지 않았다(스크롤되는 성장 패널 위에서만 동작).
+- **수정**: `phone-lock-android/.../ui/PlantScreen.kt` — `BoxWithConstraints` 안쪽을 "스크롤 범위 0"인 `verticalScroll` 컨테이너로 한 번 감싸고, 안쪽 높이를 화면 높이(`maxHeight`)로 고정. 캔버스 어디를 당겨도 중첩 스크롤 이벤트가 `PullToRefreshBox`에 도달하고, 안쪽 성장 패널의 자체 스크롤은 무한 높이 제약을 받지 않는다. 🔄 버튼(`HomeRefreshButton`)과 `refreshing` 상태 제거, `HomeIconButton`의 쓰이지 않게 된 `enabled` 파라미터와 `CircularProgressIndicator` import 정리. 새로고침 동작 자체(`syncPointsFromFirebase` + `syncGrowthFromFirebase` 후 전체 재조회)는 그대로.
+- **데스크탑**: 스와이프 제스처가 없어 🔄 버튼 유지(변경 없음).
+
+### 버그 수정 — 당겨서 새로고침 표시가 사라지지 않고 남음 (모든 탭 공통)
+- **발견 경위**: 같은 코드를 이식한 출시용 앱을 Android 16 에뮬레이터에서 돌려보니, 홈 캔버스를 당겼다 놓으면 새로고침 표시(화살표 원)가 몇 초가 지나도 그대로 남았다(106차에 "라이브러리 버그"로 보고 고쳤던 증상과 같은 모습).
+- **원인**: material3 1.3.0 `PullToRefreshBox`는 임계값을 넘겨 손을 떼면 표시를 새로고침 위치에 세워두고, `isRefreshing`이 true→false로 **바뀌는 것을 재구성에서 관찰해야** 숨긴다(`PullToRefreshModifierNode.onRelease`/`update`, 라이브러리 소스로 확인). 오프라인이거나 동기화할 게 없어 `onRefresh`가 일시 중단 없이 바로 끝나면 true→false가 한 프레임 안에 일어나 변화가 관찰되지 않고 표시가 영원히 남는다. 홈 탭뿐 아니라 이 래퍼를 쓰는 모든 탭에서 오프라인일 때 같은 일이 생길 수 있었다.
+- **수정**: `ui/components/PullToRefreshBox.kt` — 새로고침 표시를 최소 500ms(`MIN_REFRESH_INDICATOR_MS`) 유지. 사용자에게도 "새로고침했다"는 피드백이 보인다.
+- **검증(출시용 앱, Android 16 에뮬레이터)**: 수정 전 — 놓은 뒤 4초 넘게 표시 잔존 재현 / 수정 후 — 당기는 중 표시 → 놓으면 회전 → 사라짐, 두 번 연달아 당겨도 잔존 없음. 개인용 앱은 로그인 승인 게이트 때문에 에뮬레이터에서 홈까지 진입할 수 없어 같은 코드를 쓰는 출시용으로 확인했다.
+
+### 빌드/배포
+- 1차(버튼 제거+당기기 영역): `assembleRelease`(versionCode `1789552291`), APK 3곳 배포, 공개 저장소 push, GitHub 릴리스 `android-1789552291`.
+- 2차(표시 잔존 수정 포함): `assembleRelease`(versionCode `1789554677`), APK 3곳 해시 일치 배포, 공개 저장소 push, GitHub 릴리스 `android-1789554677`. **실기기(폰/태블릿) 확인은 아직.**
+
+---
+
 ## 2026-09-16 (123차) — 브라우저 확장 오버레이가 "사용 중 남은 시간 표시" 끔 설정을 무시하는 버그 수정
 
 ### 사용자 제보
