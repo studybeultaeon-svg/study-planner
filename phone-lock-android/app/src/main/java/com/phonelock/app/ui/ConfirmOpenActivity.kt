@@ -4,12 +4,14 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import com.phonelock.shared.confirmQuoteTier
 import com.phonelock.shared.quoteForTier
 import com.phonelock.app.data.AppPreferences
@@ -17,7 +19,9 @@ import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.service.ConfirmationGate
 import com.phonelock.app.service.IntentExtras
 import com.phonelock.app.ui.components.InterstitialScreen
+import com.phonelock.app.ui.components.MediaControlCard
 import com.phonelock.app.ui.theme.PhoneLockTheme
+import com.phonelock.app.ui.theme.Spacing
 import com.phonelock.app.ui.theme.applyThemeWindowBackground
 
 private const val DEFAULT_WAIT_SECONDS = 5
@@ -79,6 +83,7 @@ class ConfirmOpenActivity : ComponentActivity() {
             return
         }
 
+        val packageName = intent.getStringExtra(IntentExtras.EXTRA_PACKAGE_NAME)
         setContent {
             // 96차 버그 수정: 이 경로(앱 실행 확인)만 themeMode만 넘기고 커스텀 배경/강조색·글자
             // 크기를 안 넘겨서, 커스텀 테마를 쓰는 사용자에게는 이 화면만 기본 프리셋 팔레트로
@@ -110,6 +115,12 @@ class ConfirmOpenActivity : ComponentActivity() {
                     onSecondary = {
                         repository.recordQuoteOutcomeFireAndForget(confirmQuoteTier(level), title, proceeded = false)
                         goHome()
+                    },
+                    // 125차(사용자 요청): 대기 중인 앱이 음악 앱이면 앱을 열지 않고도 재생을 제어할 수 있게 한다.
+                    // 재생 제어 버튼은 화면을 벗어나지 않아 대기시간에 영향이 없다("알림 접근 켜기"는 설정 화면으로
+                    // 나가므로 기존 규칙대로 대기시간이 처음부터 다시 시작된다).
+                    extraContent = packageName?.let { pkg ->
+                        { MediaControlCard(targetPackage = pkg, modifier = Modifier.padding(top = Spacing.lg)) }
                     }
                 )
             }
@@ -121,6 +132,18 @@ class ConfirmOpenActivity : ComponentActivity() {
         homeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(homeIntent)
         finish()
+    }
+
+    // 125차(기존 버그): singleInstance라 이 화면이 홈 제스처 등으로 남아 있으면 다음 확인 요청이 onNewIntent로만
+    // 와서 이전 요청의 그룹/앱으로 화면이 남았고, "진행"을 누르면 이전 그룹이 확인 처리될 수 있었다. 다른 요청이면
+    // 새 요청 기준으로 다시 그리고, 같은 요청이 겹쳐 오면 화면(문구 등)을 그대로 둔다. 어느 쪽이든 새 인텐트 전달
+    // 전후의 일시정지로 대기시간은 기존 규칙대로 처음부터 다시 시작된다. 확인 기록(ConfirmationGate 등)은 그대로.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (!IntentExtras.isSameLockRequest(intent, this.intent)) {
+            setIntent(intent)
+            recreate()
+        }
     }
 
     override fun onBackPressed() {
