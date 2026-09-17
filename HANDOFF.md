@@ -35,7 +35,8 @@
 - **공부 잠금 + 네이티브 타이머**: 공부앱 타이머가 "공부" 페이즈로 진행 중일 때 데스크탑/안드로이드에 전체화면 잠금 + 허용 프로그램(플랫폼별)·사이트(기기별 개별 입력, Firebase 공유 아님) 예외. 타이머 자체가 양 플랫폼 "타이머" 탭(`StudyTimerScreen`)에서 완전 네이티브로 동작(로컬 상태 직접 읽고 씀, 네트워크·웹뷰 불필요), Firebase `pomodoro` 노드는 다른 기기에 신호만 주는 부가 채널. 이 기기 로컬 타이머가 꺼져 있어도 같은 계정의 다른 기기가 공부 페이즈 실행 중이라는 신호(`PomodoroSyncClient.isStudyTimerActive`)가 있으면 이 기기도 실제로 공부 잠금(전체화면+사이트 차단)이 걸림 — 허용 목록은 각 기기 로컬 값을 쓰고, 원격 신호로 잠긴 경우 정지/전환 버튼은 숨기고 안내 문구만 표시(원격 제어는 하지 않음). 신호가 20분 넘게 갱신 안 되면 유령 신호로 보고 무시(영구 잠김 방지)
 - **네이티브 캘린더**: 양 플랫폼 "캘린더" 탭 — 월 그리드 + 선택 날짜 상세, 회독(8단계 무지개, 간격 1,3,7,14,30,60,120일) 완료 시 자동 다음 회독 생성, 미완료 시 다음날로 자동 이월(`applyIncompleteCarryOver`), 순서변경/이름수정/이동/복사/삭제, 6개월 이전 정리. Firebase `users/{user}/calendar` 경로로 공유(전체 문서 LWW). 타이머 탭 업무 선택은 "오늘 캘린더 일정" 드롭다운. 계산기 업무를 연결하면(`LinkedCalcSection`) 완료 시 진행량 자동 차감/복원
 - **네이티브 계산기**: 양 플랫폼 "계산기" 탭 — 업무 입력 카드(요일별 목표+휴일 제외) → `CalcEngine`으로 계산 → 진척도/요일별 페이스 비교표/완료 예상일 결과 → 저장(하위 폴더 트리, 폴더 접기 영속화·개별/전체 접기, 항목 폴더 이동). Firebase `users/{user}/calculator` 경로 공유(draft/저장됨/폴더트리 3구간 독립 LWW)
-- **네이티브 일정표**: 양 플랫폼 "공부" 섹션 서브탭 — 계산기 draft 업무를 요일별 목표량 표로 보여주는 읽기 전용 파생 뷰(데스크탑은 이번 주 고정 테이블, 안드로이드는 일 단위 리스트+◀/▶ 이동). 계산기 연동 업무는 그날 목표 달성 시 ✅+초록, 미달성이면 빨강 표시(모임 멤버 상세 "일정표" 탭에도 동일 판정 재현)
+- **네이티브 일정표**: 양 플랫폼 "공부" 섹션 서브탭 — 계산기 draft 업무를 요일별 목표량 표로 보여주는 읽기 전용 파생 뷰(데스크탑·안드로이드 태블릿/가로 모드는 이번 주 표, 안드로이드 폰은 일 단위 리스트+◀/▶ 이동). 표/목록은 테두리 영역(`TimetableScrollArea`) 안에서만 스크롤·클리핑되고, 주간 표는 상하좌우 스크롤+요일 행 고정(데스크탑은 드래그 가능한 스크롤바, 안드로이드는 위치 표시줄). 계산기 연동 업무는 그날 목표 달성 시 ✅+초록, 미달성이면 빨강 표시(모임 멤버 상세 "일정표" 탭에도 동일 판정 재현)
+- **백그라운드 음악 제어(양 플랫폼)**: 잠김(스케줄/일일한도)·실행확인 화면은 막힌 앱이 음악 앱일 때 그 앱의, 공부 잠금 화면은 허용 앱이 아닌 재생 중 앱의 이전 곡/재생·일시정지/다음 곡 카드를 보여준다(`MediaControlCard`). 안드로이드는 선택 권한 "알림 접근"이 있으면 `MediaSessionManager`로 그 앱만 제어+곡 정보, 없으면 시스템 미디어 키로 대체+한계 안내. 데스크탑은 Windows 시스템 미디어 세션(GSMTC)을 카드가 보이는 동안만 도는 PowerShell 헬퍼로 제어(`MediaSessionBridge`)
 - **네이티브 통계**: 양 플랫폼 "공부" 섹션 서브탭 — 캘린더 일정 전체를 집계해 전체/완료/완료율/연속 완료일(스트릭)/회독 단계별 완료 현황/최근 30일 완료 추이 막대그래프
 - **2단 탭 구조**: 홈(🌱, 구 "식물", 항상 첫 번째 탭)/루틴(📋)/공부(타이머·캘린더·계산기·일정표·통계)/규칙(구 "관리", 차단규칙·사용기록)/모임(👥) 5섹션 — 설정은 탭이 아니라 홈 화면 우상단 원형 버튼으로만 진입(카테고리 9분류, 111차). 데스크탑은 왼쪽 `NavigationRail`+섹션별 `TabRow`, 안드로이드는 하단 `NavigationBar`(태블릿은 좌측 `NavigationRail`)+섹션별 `TabRow`. 테마는 라이트+그린/다크+파랑/화이트+오렌지 3종 중 설정에서 선택(`ThemeMode`+`PhoneLockPalette`), **기본값은 112차부터 양 플랫폼 공통 라이트+그린**
 - **프로필 사진(112차, 양 플랫폼)**: 설정 > 프로필에서 동물 이모지 프리셋 10종(`AvatarCatalog`) 중 하나를 선택 — 갤러리 업로드/Firebase Storage 없이 `users/{uid}/profile.profileImage`에 프리셋 id만 저장, 모임 멤버 목록/상세 아바타에 반영.
@@ -63,12 +64,13 @@
 
 # 현재 진행 중인 작업
 
-**124차 세션(2026-09-16) — 안드로이드 홈 탭 새로고침을 "화면 쓸어내리기"로 통일 + 새로고침 표시 잔존 버그 수정.** (같은 세션에 출시용 프로젝트 `C:\Projects\godsaeng-release`도 함께 진행 — 그쪽 기록은 그 프로젝트 문서에 있음)
+**125차 세션(2026-09-17~18) — 차단·공부 잠금 화면의 백그라운드 음악 제어 + 일정표 상하좌우 스크롤.**
 
-1. 사용자 요청 "안드로이드 새로고침은 다른 탭들처럼 화면 쓸어내리면 새로고침": 홈 탭의 🔄 버튼을 없애고, 캔버스 어디를 당겨도 새로고침되게 했다(`PlantScreen.kt` — 화면 전체를 스크롤 범위 0인 세로 스크롤 컨테이너로 감싸 제스처가 `PullToRefreshBox`까지 전달되게 함). 데스크탑은 🔄 버튼 유지.
-2. 출시용 앱(같은 코드)을 Android 16 에뮬레이터에서 돌리다 **새로고침 표시가 손을 뗀 뒤에도 남는 버그**를 재현 — 새로고침이 즉시 끝나면 material3가 `isRefreshing` 변화를 못 봐서 생기는 문제였다. 공용 래퍼 `ui/components/PullToRefreshBox.kt`가 표시를 최소 500ms 유지하도록 수정(모든 탭 적용). [[BUGS.md]] 124차 참고.
+1. 음악 제어: 위 "현재 구현된 주요 기능"의 "백그라운드 음악 제어" 참고. 배치 위치·대상 앱 규칙·알림 접근 선택 여부는 사용자가 질문에 답해 확정([[DECISIONS.md]] 125차).
+2. 일정표: 안드로이드 주간 표는 가로 스크롤만 있어 낮은 화면에서 아래가 잘리고 다른 UI 위로 넘쳤음 → 테두리 영역 안 상하좌우 스크롤+요일 행 고정. 데스크탑은 스크롤바·경계를 추가.
+3. 기존 버그 수정(사용자 승인): 안드로이드 잠김·실행확인 화면(`singleInstance`)이 홈 제스처로 남아 있으면 다음 요청에도 이전 앱/그룹 내용을 보여주던 문제 → 다른 요청이면 `recreate()`. [[BUGS.md]] 125차.
 
-검증: 릴리스 빌드(versionCode `1789554677`) APK 3곳 해시 일치 배포, 공개 저장소 push, GitHub 릴리스 `android-1789554677` 게시. 제스처/표시 동작은 출시용 앱으로 에뮬레이터 확인(개인용은 로그인 승인 게이트 때문에 에뮬레이터에서 홈까지 못 들어감). **실기기 확인은 아직.**
+검증: 에뮬레이터(스크래치 테스트 빌드+대역 음악 앱 2개)와 데스크탑 렌더 테스트(무음 대역 플레이어)로 명령 전달·앱 지정·표시 규칙·스크롤을 확인(상세는 [[CHANGELOG.md]] 125차). 릴리스 android `1789659057`(3곳 해시 일치)·desktop `1789659171`(호스트 교체·재실행), 공개 저장소 push, GitHub 릴리스 2건 게시. **실제 Spotify·실기기 확인은 아직.**
 
 사용자가 요청했다가 취소한 것(79차): "캘린더에 실제 공휴일 표시"(data.go.kr 인증키 발급이 번거롭다는 이유로 중단) — 다시 요청받기 전까진 손대지 말 것.
 
@@ -76,6 +78,7 @@
 
 # 다음 작업 우선순위
 
+- [ ] **125차 실사용 검증(실제 Spotify, 안드로이드 폰·태블릿 + 데스크탑)**: ① Spotify를 차단 그룹에 넣고 재생 중에 열어 잠김/실행확인 화면에 카드가 뜨고 재생·일시정지·곡 넘김이 되는지 ② 공부 타이머 중(Spotify는 허용 앱 아님) 공부 잠금 화면 카드 ③ 안드로이드 설정 > 권한 설정 가이드 > "알림 접근" 켜기(사이드로드라 "제한된 설정 허용" 필요할 수 있음) 전후로 곡 제목 표시/다른 음악 앱이 있을 때 Spotify만 제어되는지 ④ 데스크탑 Spotify(스토어판)가 카드에 잡히는지 ⑤ 일정표를 폰 가로·태블릿에서 상하좌우로 스크롤 ⑥ 잠김 화면을 홈 제스처로 벗어난 뒤 다른 앱이 막히면 새 앱 기준으로 보이는지.
 - [ ] **124차 실사용 검증(안드로이드 폰·태블릿)**: 홈 탭 캔버스(식물 영역) 어디를 당겨도 새로고침 표시가 나오고 손을 떼면 잠깐 돌다 사라지는지, 🔄 버튼이 없는지, Wi-Fi를 끈 상태에서 다른 탭(루틴/캘린더 등)을 당겨도 표시가 남지 않는지.
 - [ ] **123차 실사용 검증**: 그룹 편집에서 "사용 중 남은 시간 표시"를 끈 그룹의 차단 사이트를 브라우저에서 열어 실행확인 통과 후 오버레이가 더 이상 안 뜨는지, 반대로 켠 그룹은 여전히 뜨는지 확인.
 - [ ] **121·122차 실사용 검증(안드로이드 폰·태블릿 + 데스크탑)** — 코드/테스트/릴리스 빌드/호스트 배포 완료(안드로이드 versionCode `1789547435`, 데스크탑 BuildInfo `1789547578`). 검증 항목:
@@ -192,13 +195,15 @@
 | `ui/CalendarScreen.kt` | 캘린더 탭(월그리드+날짜상세, 완료 배지, `LinkedCalcSection`, 공부기록 5초 주기 동기화) |
 | `calc/CalcEngine.kt` | 계산기 순수 계산 로직(웹앱 calculate() 이식) |
 | `ui/CalculatorScreen.kt` | 계산기 탭 — 웹앱과 동일한 좌(2):우(8) 사이드바 구조(왼쪽 업무입력/저장됨 서브탭, 오른쪽 항상 결과), 폴더 접기 영속화·전체 저장·재귀 폴더 트리 |
-| `ui/TimetableScreen.kt` | 일정표 탭 — 계산기 draft 업무 기준 이번 주 고정 테이블(주 이동 가능), 계산기-캘린더 연동 목표 달성 시 ✅+초록 강조 |
+| `ui/TimetableScreen.kt` | 일정표 탭 — 계산기 draft 업무 기준 이번 주 표(주 이동 가능), `TimetableScrollArea`(테두리·스크롤바·요일 행 고정), 계산기-캘린더 연동 목표 달성 시 ✅+초록 강조 |
+| `monitor/MediaSessionBridge.kt` | 백그라운드 음악 제어 — GSMTC PowerShell 헬퍼(`media_sessions.ps1`, 참조 카운트로 카드가 보일 때만 실행) 세션 목록 `StateFlow`+명령 전송, 프로세스 이름↔세션 id 매칭 |
+| `ui/components/MediaControlCard.kt`(desktop) | 음악 제어 카드 — `targetProcess`(잠김/실행확인) 또는 허용 프로그램 제외(공부 잠금) |
 | `ui/StudyStatsScreen.kt` | 통계 탭 — 캘린더 일정 전체 기준 완료율/스트릭/30일 추이 |
 | `ui/GroupListScreen.kt` | 그룹 목록 — 선택된 그룹 accent 강조(좌우 분할용), "😴 스누즈" 버튼 |
 | `ui/StatsScreen.kt` | 사용 통계 — 왼쪽 그룹별 요약/오른쪽 선택한 그룹 상세로 좌우 분할 |
 | `ui/StudyLockScreen.kt` | 공부 잠금 전체화면 UI(위: 타이머, 아래: 허용 프로그램 실행 버튼) — 원격 신호로 잠긴 경우(`isRemote`) 정지/전환 버튼 숨기고 안내 문구만 표시 |
 | `ui/components/SectionCard.kt` | 공용 카드(`accentColor` 옵션, 기본은 무채색) |
-| `ui/components/WatchAndWaitScreen.kt` | 차단/실행확인/종료확인 공용 카운트다운 셸(title=조롱 문구 자리, quote 슬롯은 미사용) |
+| `ui/components/WatchAndWaitScreen.kt` | 차단/실행확인/종료확인 공용 카운트다운 셸(title=조롱 문구 자리, quote 슬롯은 미사용, 버튼 아래 `extraContent` 슬롯=음악 카드) |
 | `ui/MotivationalQuotes.kt` | 조롱조 문구 5단계(순한~극한, 149개)와 `confirmQuoteTier(level)`/`blockQuoteTier(attempts)` 매핑 — 안드로이드/`quotes.js`와 내용 동일 유지할 것 |
 | `ui/GroupEditScreen.kt` | 그룹 생성/수정 화면 — 실행확인/스누즈/기간지정 `SectionCard`, "복사" 버튼(**안드로이드 허용앱 선택 버그 조사 시 이 화면의 앱 목록 구현을 참고할 것** — 정상 작동 확인된 기준 구현) |
 | `ui/SettingsScreen.kt` | 설정 화면 — 공통/루틴/공부/관리 4개 `TabRow` 서브탭, "업데이트"/"테마"(3종)/"내보내기·가져오기"/"루틴 스트릭 알림"/"모임 공유 설정"/"무전기" 카드 |
@@ -248,7 +253,9 @@
 | `ui/AccountGateScreen.kt` | `AccountGate(repository, content)` 4단계 게이트, `MainActivity.kt`가 최상위에서 감쌈 |
 | `service/UpdateChecker.kt` | GitHub Releases API 조회(`android-<versionCode>` 태그 중 최신, fail-safe) — 데스크탑판과 대칭, 15분 주기로 호출됨 |
 | `ui/UpdateBanner.kt`(android) | 업데이트 배너 Composable + 앱 내부 직접 HTTP 다운로드/설치 유도(시스템 DownloadManager 아님) |
-| `service/IntentExtras.kt` | Activity 간 전달 extra 키 모음(`EXTRA_STUDY_LOCK_IS_REMOTE` 포함) |
+| `service/IntentExtras.kt` | Activity 간 전달 extra 키 모음(`EXTRA_STUDY_LOCK_IS_REMOTE` 포함), `isSameLockRequest()`(차단/실행확인 화면 `onNewIntent` 재생성 판단) |
+| `service/MediaControlClient.kt` | 백그라운드 음악 제어 — 알림 접근 시 `MediaSessionManager`로 앱 지정 제어, 없으면 시스템 미디어 키, `isMediaApp()`. 같은 파일에 알림 접근용 빈 `MediaListenerService` |
+| `ui/components/MediaControlCard.kt`(android) | 음악 제어 카드 — `targetPackage`(잠김/실행확인) 또는 허용 앱 제외(공부 잠금), 권한 없을 때 안내 |
 | `service/SocialGroupSyncClient.kt` | "소셜" Firebase REST 클라이언트(데스크탑판과 대칭) — 모임/멤버/통계/무전기/계산기 일정 통계/공유설정 전체 |
 | `service/VoiceRecorder.kt` / `VoicePlayer.kt` | 무전기 녹음/재생 — `AudioRecord`로 8kHz mono 16-bit PCM 캡처(WAV 헤더 직접 부착, 데스크탑과 상호 재생 가능), `MediaPlayer`로 재생 |
 | `service/TtsPlayer.kt` | 무전기 TTS — `TextToSpeech`(매 재생마다 새 인스턴스), "MALE"이면 `setPitch(0.78f)`로 톤을 낮춰 남성처럼 들리게 함 |
@@ -261,7 +268,7 @@
 | `service/GrowthSoundPlayer.kt` | "식물" 탭 경험치 적용/레벨업 효과음 재생(데스크탑판과 대칭) — `AudioTrack` STATIC 모드로 `shared/GrowthSoundEffects.kt` PCM 재생 |
 | `ui/components/GroupWalkieSettingsDialog.kt` | 모임별 무전기 수신 설정 다이얼로그(데스크탑판과 대칭, TTS 성별 미리듣기) |
 | `ui/SettingsScreen.kt` | 설정 화면 — 공통/루틴/공부/관리 서브탭(권한 있는 섹션만 필터링), 업데이트/테마/무전기 카드, "모임 공유 설정"은 안내 문구만(실제 토글은 각 모임 화면), "권한/백그라운드 보호" 섹션에 정확한 알람 상태 표시 |
-| `ui/components/InterstitialScreen.kt` | 차단/실행확인 공용 카운트다운 셸(title=조롱 문구, quote 슬롯 미사용) — 제목이 한 줄에 안 들어가면 최소 55%까지 자동 축소(`maxLines=1`+`didOverflowWidth`), 태블릿(`screenWidthDp>=600`)은 축소 로직 제외하고 자연스럽게 2줄 허용 |
+| `ui/components/InterstitialScreen.kt` | 차단/실행확인 공용 카운트다운 셸(title=조롱 문구, quote 슬롯 미사용, 버튼 아래 `extraContent` 슬롯=음악 카드, 세로 스크롤) — 제목이 한 줄에 안 들어가면 최소 55%까지 자동 축소(`maxLines=1`+`didOverflowWidth`), 태블릿(`screenWidthDp>=600`)은 축소 로직 제외하고 자연스럽게 2줄 허용 |
 | `ui/MotivationalQuotes.kt` | 조롱조 문구 5단계(149개)와 `confirmQuoteTier`/`blockQuoteTier` — 데스크탑판과 내용 동일 유지 |
 | `data/Entities.kt` / `data/AppDatabase.kt` / `data/AppPreferences.kt` | Room 엔티티(`StudyLogEntry`/`CalendarTask`/`CalcTask`+`CalcSavedItem`/`AppGroup`(스누즈·기간지정·오버레이·블록시도횟수 필드 포함)/`Routine`+`RoutineLog`(아이콘/알림/기간 포함))/Room DB(버전은 아래 "현재 주의사항" 참고, v28부터 명시적 마이그레이션)/SharedPreferences(허용앱·사이트, 타이머 상태, 각종 동기화 타임스탬프, `themeMode`, 루틴 스트릭 알림 설정, 무전기 설정, `groupShareSettingsJson`/`hiddenFromUidsByGroupJson`/`hiddenPeerUidsByGroupJson`, `resetSyncTimestamps()`) |
 | `data/PreMigrationBackup.kt` | 앱 버전 변경 감지 시 Room 열기 전에 raw SQLite를 JSON으로 백업(`backupIfVersionChanged`), `listBackups()`(설정 화면 그룹 복구 카드용) — 성공 시 `AppPreferences.resetSyncTimestamps()`도 함께 호출 |
@@ -271,7 +278,7 @@
 | `ui/CalendarScreen.kt` | 캘린더 탭(데스크탑판과 대칭) — 날짜 상세 시간 표시+5초 주기 동기화, `LinkedCalcSection`, 8단계 무지개 색상 선택 |
 | `calc/CalcEngine.kt` | 계산기 순수 계산 로직(데스크탑판과 동일 로직, 플랫폼 공유 모듈 없어 대칭 복제) |
 | `ui/CalculatorScreen.kt` | 계산기 탭(데스크탑판과 대칭) — 폴더접기 영속화·카드접기·전체저장, 저장됨 폴더 `DropdownMenu` 팝오버 |
-| `ui/TimetableScreen.kt` | 일정표 탭 — 계산기 draft 업무 기준 일 단위 뷰(◀/▶ 날짜 이동), 계산기-캘린더 연동 목표 달성 시 ✅ 표시 |
+| `ui/TimetableScreen.kt` | 일정표 탭 — 폰은 일 단위 뷰(◀/▶ 날짜 이동), 태블릿/가로 모드는 주간 표, 둘 다 `TimetableScrollArea`(테두리·위치 표시줄, 주간 표는 상하좌우+요일 행 고정), 계산기-캘린더 연동 목표 달성 시 ✅ 표시 |
 | `ui/StudyStatsScreen.kt` | 통계 탭(데스크탑판과 동일 로직 대칭 복제) — 30일 완료 추이 그래프는 `horizontalScroll`+고정폭 |
 | `ui/StudyLockActivity.kt` / `ui/StudyLockAppsScreen.kt` | 공부 잠금 전체화면(정지/전환이 로컬 `PhoneLockRepository` 직접 호출, 비활성화되면 스스로 `finish()`, 원격 잠금이면 버튼 숨김) / 허용 앱 선택 화면(`AllowedAppsPickerBody`를 타이머 탭과 공유) |
 | `ui/MainActivity.kt` | 하단 `NavigationBar`(루틴/공부/관리/소셜/식물/설정)+섹션별 `TabRow` 서브탭, 공부 섹션 서브탭 5개, 최상단 자체 업데이트 배너, 앱 시작 시 `syncRoutinesFromFirebase()` 후 알림 재예약 |
@@ -279,7 +286,7 @@
 | `app/build.gradle.kts` | `buildFeatures.buildConfig = true`(자체 업데이트 버전 비교용) |
 | `phone-lock-desktop/build.gradle.kts` | `compose.desktop.application.buildTypes.release.proguard`에 ProGuard 7.4.2+`proguard-rules.pro` 지정 |
 | `phone-lock-desktop/proguard-rules.pro` | `-dontwarn kotlinx.serialization.**`(kotlinx-datetime이 참조만 하고 안 쓰는 클래스, ProGuard 7.4.2 미해결참조 검사 무시용) |
-| `AndroidManifest.xml` | `INTERNET`/`REQUEST_INSTALL_PACKAGES`(자체 업데이트)/`RECORD_AUDIO`+`FOREGROUND_SERVICE_MEDIA_PLAYBACK`(무전기) 퍼미션, 홈스크린 위젯 `<receiver>`/`<service>`, `WalkieTalkieService` `<service>` 엔트리 |
+| `AndroidManifest.xml` | `INTERNET`/`REQUEST_INSTALL_PACKAGES`(자체 업데이트)/`RECORD_AUDIO`+`FOREGROUND_SERVICE_MEDIA_PLAYBACK`(무전기) 퍼미션, 홈스크린 위젯 `<receiver>`/`<service>`, `WalkieTalkieService`·`MediaListenerService`(알림 접근) `<service>`, `<queries>`에 MEDIA_BUTTON/MediaBrowserService |
 | `res/values/strings.xml` / `res/drawable/ic_launcher_background.xml` / `ic_launcher_foreground.xml` | `app_name`="갓생살기종합세트", 런처 아이콘(하늘 그라데이션+원형 태양+베지어 곡선 언덕, 데스크탑 `SunriseIcon.kt`/`generate_icon.ps1`과 디자인 통일) |
 
 ---
@@ -376,11 +383,11 @@ curl -s "http://127.0.0.1:47882/overlay-status?domain=youtube.com"
 17. **새 순수 로직/계산 함수는 먼저 `:shared`에 넣을 자리인지 검토할 것(82차 도입, 103차 재확인)**: Room 엔티티나 플랫폼 데이터클래스에 결합되지 않는 순수 함수(포인트 계산, 문구, 스트릭 등)는 안드로이드/데스크탑 양쪽에 복붙하지 말고 `shared/src/main/kotlin/com/phonelock/shared/`에 한 번만 작성 — 두 앱 모두 `implementation("com.phonelock:shared")`로 이미 연결돼 있어 import만 추가하면 된다. 안드로이드에서 컴파일 확인 시 `AndroidBuilds/phone-lock-android`의 **형제 디렉터리**로 `AndroidBuilds/shared`도 함께 robocopy해야 한다(`../shared` composite build 참조, 안 하면 "Unresolved reference" 오류).
 18. **Compose 밖(위젯 RemoteViews·접근성 오버레이·액티비티 창 배경)에서 테마 색이 필요하면 반드시 `AppPreferences.currentPalette()`(안드로이드) / `Repository.currentPalette()`(데스크탑)를 쓸 것** — 인자 하나짜리 `paletteFor(themeMode)`는 `CUSTOM`을 기본 팔레트로 흘려보내서, 커스텀 테마 사용자에게 그 자리만 초록색으로 남는다(121차에 위젯/오버레이가 정확히 이 함정에 걸려 있었음).
 19. **네트워크 헬퍼가 통신 실패를 `null`로 뭉개지 않게 할 것** — `AccountSyncClient.getRaw`/`get`이 비-2xx와 예외를 전부 null로 돌려주는 바람에 `fetchMyProfile`이 "프로필 없음"과 "인터넷 끊김"을 구분하지 못했고, Wi-Fi가 잠깐 끊긴 것만으로 승인된 사용자가 가입 신청 화면으로 떨어졌다(사실상 강제 로그아웃, 106차에 고친 건 `onFailure` 경로뿐이라 재발). 같은 패턴의 헬퍼를 새로 쓸 때 "값이 없다"와 "물어보지 못했다"를 반드시 다른 타입으로 표현할 것.
-20. **Compose 화면 레이아웃은 데스크탑 `ImageComposeScene`으로 PNG를 떠서 눈으로 확인할 수 있다(122차)** — 빌드 사본(`C:\build\phone-lock-desktop`)에만 임시 테스트를 두고, `build.gradle.kts`의 `tasks.test`에 `environment("APPDATA", <스크래치 폴더>)`를 넣어 **실제 data.json과 격리**한 뒤 `Repository()`로 화면을 렌더링하면 된다(폰/태블릿 크기별 확인 가능). 원본 저장소엔 넣지 않고, 다음 robocopy /MIR이 자동으로 지운다.
+20. **Compose 화면 레이아웃은 데스크탑 `ImageComposeScene`으로 PNG를 떠서 눈으로 확인할 수 있다(122차)** — 빌드 사본(`C:\build\phone-lock-desktop`)에만 임시 테스트를 두고, `build.gradle.kts`의 `tasks.test`에 `environment("APPDATA", <스크래치 폴더>)`를 넣어 **실제 data.json과 격리**한 뒤 `Repository()`로 화면을 렌더링하면 된다(폰/태블릿 크기별 확인 가능). 원본 저장소엔 넣지 않고, 다음 robocopy /MIR이 자동으로 지운다. **125차 주의**: 마우스 휠처럼 애니메이션이 도는 입력을 보내면 기본 `Dispatchers.Unconfined`에서 프레임 락 교착이 난다 — `ImageComposeScene(..., coroutineContext = Dispatchers.Swing)` + 테스트 본문 `runBlocking(Dispatchers.Swing)`, 프레임 사이엔 `delay()`. 실제 창은 Shift+휠을 가로 델타로 바꿔 주므로 테스트에선 `scrollDelta = Offset(dx, 0)`을 직접 보낸다.
 
-21. **이 호스트에 Android 16(API 36) 에뮬레이터가 있다(124차, 출시용 프로젝트 작업 중 설치)**: AVD `studyloop_api36`(Pixel 7, WHPX 가속, `C:\Users\sunae\AppData\Local\Android\Sdk/emulator/emulator.exe -avd studyloop_api36 -no-window -no-audio -gpu swiftshader_indirect`), `adb root` 가능. Git Bash에서 adb에 `/sdcard/...` 같은 경로를 넘길 땐 `MSYS_NO_PATHCONV=1`을 줄 것(안 주면 Git 설치 경로로 바뀜). 제스처 테스트는 `input motionevent`(명령마다 제스처 시각이 달라 손 뗌이 제대로 전달 안 됨) 대신 `input swipe`를 쓸 것. **개인용 앱은 로그인 승인 게이트 때문에 에뮬레이터에서 본 화면까지 못 들어간다** — 계정 입력은 대신 하지 않으므로, 공통 코드는 출시용 앱(게이트 없음)으로 확인하는 방법이 있다.
+21. **이 호스트에 Android 16(API 36) 에뮬레이터가 있다(124차, 출시용 프로젝트 작업 중 설치)**: AVD `studyloop_api36`(Pixel 7, WHPX 가속, `C:\Users\sunae\AppData\Local\Android\Sdk/emulator/emulator.exe -avd studyloop_api36 -no-window -no-audio -gpu swiftshader_indirect`), `adb root` 가능. Git Bash에서 adb에 `/sdcard/...` 같은 경로를 넘길 땐 `MSYS_NO_PATHCONV=1`을 줄 것(안 주면 Git 설치 경로로 바뀜). 제스처 테스트는 `input motionevent`(명령마다 제스처 시각이 달라 손 뗌이 제대로 전달 안 됨) 대신 `input swipe`를 쓸 것. **개인용 앱은 로그인 승인 게이트 때문에 에뮬레이터에서 본 화면까지 못 들어간다** — 계정 입력은 대신 하지 않는다. 125차 방법: 원본에 넣지 않는 스크래치 사본(`C:\build\phonelock-android-uitest`, 형제 `C:\build\shared`)에 테스트 전용 exported `UiTestActivity`를 두고 화면을 직접 띄우며(로그인 안 된 새 설치라 Firebase로 아무것도 올라가지 않음, 데이터는 DAO로 직접 넣음), `uiautomator dump`로 요소를 찾아 `input tap`/`swipe`. 음악 제어는 `C:\build\mediatest-player`(MediaSession+무음 재생 대역 앱, logcat 태그 `MediaTestPlayer`, applicationId만 바꿔 두 번째 앱도 빌드 가능), 알림 접근은 `adb shell cmd notification allow_listener com.phonelock.app/com.phonelock.app.service.MediaListenerService`. 둘 다 스크래치라 지워도 된다.
 22. **개인용 앱의 targetSdk를 35/36으로 올리게 되면 먼저 확인할 것(124차에 출시용에서 처리한 내용)**: ① `BlockActivity`/`ConfirmOpenActivity`/`StudyLockActivity`의 `onBackPressed()` 재정의는 targetSdk 36에서 호출되지 않아 뒤로 제스처로 차단 화면을 닫을 수 있다 → `onBackPressedDispatcher.addCallback`으로 옮길 것 ② edge-to-edge 강제 → 루트에서 `safeDrawingPadding()` + 앱 테마 기준 시스템 바 아이콘 색 ③ AGP 8.10+/Gradle 8.11.1+ 필요(`C:\Users\sunae\tools\gradle-8.11.1`에 받아둠). 출시용 커밋 `4e84e00`과 그 다음 커밋이 참고 구현이다. 개인용은 지금 targetSdk 34라 해당 없음.
 
 ---
 
-*마지막 업데이트: 2026-09-16 (124차 세션. 안드로이드 홈 탭 새로고침을 당겨서 새로고침으로 통일(🔄 버튼 제거, 캔버스 전체에서 제스처 인식) + 공용 `PullToRefreshBox`의 새로고침 표시 잔존 버그 수정(최소 500ms 표시). android `assembleRelease`(versionCode `1789554677`, 3위치 배포)+공개 저장소 push+GitHub 릴리스 `android-1789554677`. 같은 세션에 출시용 프로젝트도 진행. **다음 세션 최우선: 121~124차 실기기 실사용 검증.**)*
+*마지막 업데이트: 2026-09-18 (125차 세션. 차단·공부 잠금 화면에서 백그라운드 음악 앱 제어(안드로이드 MediaSession+선택 알림 접근, 데스크탑 GSMTC) + 일정표 상하좌우 스크롤·경계·고정 요일 행 + 안드로이드 잠김/실행확인 화면 이전 내용 잔존 버그 수정. android `1789659057`·desktop `1789659171` 배포·릴리스. **다음 세션 최우선: 실제 Spotify로 125차 실사용 검증, 이어서 121~124차 검증.**)*

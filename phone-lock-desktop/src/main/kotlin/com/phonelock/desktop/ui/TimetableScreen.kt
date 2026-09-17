@@ -1,5 +1,8 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.ScrollbarStyle
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -7,9 +10,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,6 +23,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -144,58 +152,66 @@ fun TimetableScreen(repository: Repository) {
             leftWeight = 3f,
             rightWeight = 1f,
             left = {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState())) {
-            // 헤더 — 웹앱과 동일하게 일요일은 빨강, 토요일은 파랑으로 강조(.weekday-label.sun/.sat)
-            Row(Modifier.border(1.dp, border)) {
-                TtCell("업무", nameColWidth, header = true)
-                weekDates.forEachIndexed { i, d ->
-                    val isToday = d == today
-                    val weekdayColor = when (i) { 0 -> Color(0xFFF87171); 6 -> Color(0xFF6B9FFF); else -> null }
-                    TtCell("${WEEKDAYS_KO[i]}\n${d.monthValue}/${d.dayOfMonth}", dayColWidth, header = true, highlight = isToday, textColor = weekdayColor)
-                }
-                TtCell("합계", totalColWidth, header = true)
-            }
-            // 업무별 행
-            rows.forEach { row ->
-                var rowTotal = 0.0
-                Row(Modifier.border(1.dp, border)) {
-                    TtCell(row.task.name, nameColWidth)
-                    weekDates.forEachIndexed { i, d ->
-                        val isToday = d == today
-                        if (d < row.start || d > row.dday) {
-                            TtCell("", dayColWidth, highlight = isToday)
-                        } else {
-                            val v = dayValue(row.task, i).toDoubleOrNull() ?: 0.0
-                            if (v > 0) {
-                                rowTotal += v
-                                dayTotals[i] += v
-                                // 계산기 연동(51차, 웹앱 isCalTaskLinkedDone 이식) — 그날 연결된 일정이
-                                // 목표량만큼 완료됐으면 ✅로 "달성" 표시.
-                                val achieved = repository.isLinkedGoalAchieved(d.toString(), row.task.name, v)
-                                val label = "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✅" else ""
-                                // 웹앱 .tt-val.tt-today-val — 오늘 칸 값은 빨강으로 강조(마감 임박 신호), 달성 시엔 초록.
-                                val cellColor = when {
-                                    achieved -> Color(0xFF34D399)
-                                    isToday -> Color(0xFFF87171)
-                                    else -> null
-                                }
-                                TtCell(label, dayColWidth, highlight = isToday, textColor = cellColor)
-                            } else {
-                                TtCell("—", dayColWidth, highlight = isToday)
+                // 125차(사용자 요청): 스크롤은 있었지만 스크롤바가 없어 가로로 넘친 칸이 있는지 알 수 없었고, 표와
+                // 오른쪽 패널의 경계도 흐렸다 — 테두리 안에서만 스크롤되게 하고 넘치는 방향에 스크롤바를 두며,
+                // 요일 행은 세로 스크롤해도 위에 고정한다.
+                TimetableScrollArea(
+                    header = {
+                        // 헤더 — 웹앱과 동일하게 일요일은 빨강, 토요일은 파랑으로 강조(.weekday-label.sun/.sat)
+                        Row(Modifier.border(1.dp, border)) {
+                            TtCell("업무", nameColWidth, header = true)
+                            weekDates.forEachIndexed { i, d ->
+                                val isToday = d == today
+                                val weekdayColor = when (i) { 0 -> Color(0xFFF87171); 6 -> Color(0xFF6B9FFF); else -> null }
+                                TtCell("${WEEKDAYS_KO[i]}\n${d.monthValue}/${d.dayOfMonth}", dayColWidth, header = true, highlight = isToday, textColor = weekdayColor)
                             }
+                            TtCell("합계", totalColWidth, header = true)
                         }
                     }
-                    // 웹앱 .tt-total — 합계 열은 항상 accent 파랑
-                    TtCell("${fmtDec(rowTotal)}${row.task.unit}", totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Column {
+                        // 업무별 행
+                        rows.forEach { row ->
+                            var rowTotal = 0.0
+                            Row(Modifier.border(1.dp, border)) {
+                                TtCell(row.task.name, nameColWidth)
+                                weekDates.forEachIndexed { i, d ->
+                                    val isToday = d == today
+                                    if (d < row.start || d > row.dday) {
+                                        TtCell("", dayColWidth, highlight = isToday)
+                                    } else {
+                                        val v = dayValue(row.task, i).toDoubleOrNull() ?: 0.0
+                                        if (v > 0) {
+                                            rowTotal += v
+                                            dayTotals[i] += v
+                                            // 계산기 연동(51차, 웹앱 isCalTaskLinkedDone 이식) — 그날 연결된 일정이
+                                            // 목표량만큼 완료됐으면 ✅로 "달성" 표시.
+                                            val achieved = repository.isLinkedGoalAchieved(d.toString(), row.task.name, v)
+                                            val label = "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✅" else ""
+                                            // 웹앱 .tt-val.tt-today-val — 오늘 칸 값은 빨강으로 강조(마감 임박 신호), 달성 시엔 초록.
+                                            val cellColor = when {
+                                                achieved -> Color(0xFF34D399)
+                                                isToday -> Color(0xFFF87171)
+                                                else -> null
+                                            }
+                                            TtCell(label, dayColWidth, highlight = isToday, textColor = cellColor)
+                                        } else {
+                                            TtCell("—", dayColWidth, highlight = isToday)
+                                        }
+                                    }
+                                }
+                                // 웹앱 .tt-total — 합계 열은 항상 accent 파랑
+                                TtCell("${fmtDec(rowTotal)}${row.task.unit}", totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        // 합계 행
+                        Row(Modifier.border(1.dp, border)) {
+                            TtCell("합계", nameColWidth, bold = true)
+                            dayTotals.forEach { v -> TtCell(fmtDec(v), dayColWidth, bold = true) }
+                            TtCell(fmtDec(dayTotals.sum()), totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
+                        }
+                    }
                 }
-            }
-            // 합계 행
-            Row(Modifier.border(1.dp, border)) {
-                TtCell("합계", nameColWidth, bold = true)
-                dayTotals.forEach { v -> TtCell(fmtDec(v), dayColWidth, bold = true) }
-                TtCell(fmtDec(dayTotals.sum()), totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
-            }
-        }
             },
             right = {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -249,6 +265,62 @@ fun TimetableScreen(repository: Repository) {
                 }
             }
         )
+    }
+}
+
+/** 스크롤바가 차지하는 폭 — 스크롤바가 마지막 열/행을 가리지 않도록 그만큼 본문 끝에 여백을 둔다. */
+private val SCROLLBAR_LANE = 10.dp
+
+/**
+ * 일정표 표를 담는 스크롤 영역(125차, 사용자 요청, 안드로이드판과 대칭). 테두리 안쪽에서만 스크롤되고 넘친 내용은
+ * 테두리 밖으로 그려지지 않는다. 크기는 표에 맞추되 부모 영역을 넘지 않고, 넘치는 방향에만 스크롤바(드래그 가능)를
+ * 보여준다. 마우스 휠은 세로, Shift+휠은 가로로 스크롤된다. [header]는 세로로는 고정되고 가로로는 본문과 같은
+ * 스크롤 상태를 공유해 함께 움직인다.
+ */
+@Composable
+private fun TimetableScrollArea(
+    header: @Composable () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val vScroll = rememberScrollState()
+    val hScroll = rememberScrollState()
+    val showV = vScroll.maxValue in 1 until Int.MAX_VALUE
+    val showH = hScroll.maxValue in 1 until Int.MAX_VALUE
+    val shape = RoundedCornerShape(12.dp)
+    // 기본 스타일은 검정 반투명이라 다크 테마에서 안 보인다 — 테마 글자색 기준으로 칠한다.
+    val scrollbarStyle = ScrollbarStyle(
+        minimalHeight = 24.dp,
+        thickness = 8.dp,
+        shape = RoundedCornerShape(4.dp),
+        hoverDurationMillis = 300,
+        unhoverColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f),
+        hoverColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+    )
+    val endLane = if (showV) SCROLLBAR_LANE else 0.dp
+    Column(Modifier.clip(shape).border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)) {
+        Box(Modifier.horizontalScroll(hScroll).padding(end = endLane)) { header() }
+        Box(Modifier.weight(1f, fill = false)) {
+            Box(
+                Modifier
+                    .verticalScroll(vScroll)
+                    .horizontalScroll(hScroll)
+                    .padding(end = endLane, bottom = if (showH) SCROLLBAR_LANE else 0.dp)
+            ) { content() }
+            if (showV) {
+                VerticalScrollbar(
+                    rememberScrollbarAdapter(vScroll),
+                    Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(vertical = 2.dp),
+                    style = scrollbarStyle
+                )
+            }
+            if (showH) {
+                HorizontalScrollbar(
+                    rememberScrollbarAdapter(hScroll),
+                    Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 2.dp, end = endLane),
+                    style = scrollbarStyle
+                )
+            }
+        }
     }
 }
 

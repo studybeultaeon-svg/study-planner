@@ -1,12 +1,16 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import com.phonelock.shared.confirmQuoteTier
 import com.phonelock.shared.quoteForTier
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.ui.components.MediaControlCard
 import com.phonelock.desktop.ui.components.WatchAndWaitScreen
+import com.phonelock.desktop.ui.theme.Spacing
 
 @Composable
 fun ConfirmScreen(processName: String, waitSeconds: Int, level: Int = 0, repository: Repository? = null, groupId: Long = -1L, onYes: () -> Unit, onNo: () -> Unit) {
@@ -32,6 +36,9 @@ fun ConfirmScreen(processName: String, waitSeconds: Int, level: Int = 0, reposit
         onSecondary = {
             repository?.recordQuoteOutcome(confirmQuoteTier(level), title, proceeded = false)
             onNo()
-        }
+        },
+        // 125차(사용자 요청): 대기 중인 프로그램이 음악 앱이면 창을 열지 않고도 재생을 제어할 수 있게 한다.
+        // 카드 버튼은 이 창 안에서 눌리므로 포커스를 잃지 않아 대기시간에 영향이 없다.
+        extraContent = { MediaControlCard(targetProcess = processName, modifier = Modifier.padding(top = Spacing.lg)) }
     )
 }

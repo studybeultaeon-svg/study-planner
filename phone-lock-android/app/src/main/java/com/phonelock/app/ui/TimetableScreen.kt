@@ -1,9 +1,11 @@
 package com.phonelock.app.ui
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +34,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.phonelock.app.data.CalcTask
@@ -177,49 +186,58 @@ private fun TimetableContent(
             val totalColWidth = 92.dp
             val border = MaterialTheme.colorScheme.outlineVariant
 
-            Column(Modifier.horizontalScroll(rememberScrollState())) {
-                Row(Modifier.border(1.dp, border)) {
-                    TtCell("업무", nameColWidth, header = true)
-                    weekDates.forEachIndexed { i, d ->
-                        val isTodayCol = d == today
-                        val weekdayColor2 = when (i) { 0 -> Color(0xFFF87171); 6 -> Color(0xFF6B9FFF); else -> null }
-                        TtCell("${WEEKDAYS_KO[i]}\n${d.monthValue}/${d.dayOfMonth}", dayColWidth, header = true, highlight = isTodayCol, textColor = weekdayColor2)
-                    }
-                    TtCell("합계", totalColWidth, header = true)
-                }
-                rows.forEach { row ->
-                    var rowTotal = 0.0
+            // 125차(사용자 요청): 예전엔 가로 스크롤만 있어서 업무가 많거나 화면이 낮으면(가로 모드 폰 등) 아래 행이
+            // 잘리고 다른 UI 위로 넘쳐 그려졌다 — 남은 높이 안에서 상하/좌우 모두 스크롤되게 하고, 요일 행은 고정한다.
+            TimetableScrollArea(
+                modifier = Modifier.weight(1f, fill = false),
+                horizontal = true,
+                header = {
                     Row(Modifier.border(1.dp, border)) {
-                        TtCell(row.task.name, nameColWidth)
+                        TtCell("업무", nameColWidth, header = true)
                         weekDates.forEachIndexed { i, d ->
                             val isTodayCol = d == today
-                            if (d < row.start || d > row.dday) {
-                                TtCell("", dayColWidth, highlight = isTodayCol)
-                            } else {
-                                val v = dayValue(row.task, i).toDoubleOrNull() ?: 0.0
-                                if (v > 0) {
-                                    rowTotal += v
-                                    dayTotals[i] += v
-                                    val achieved = weekAchievedMap["${d}|${row.task.name}"] == true
-                                    val label = "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✅" else ""
-                                    val cellColor = when {
-                                        achieved -> Color(0xFF34D399)
-                                        isTodayCol -> Color(0xFFF87171)
-                                        else -> null
-                                    }
-                                    TtCell(label, dayColWidth, highlight = isTodayCol, textColor = cellColor)
-                                } else {
-                                    TtCell("—", dayColWidth, highlight = isTodayCol)
-                                }
-                            }
+                            val weekdayColor2 = when (i) { 0 -> Color(0xFFF87171); 6 -> Color(0xFF6B9FFF); else -> null }
+                            TtCell("${WEEKDAYS_KO[i]}\n${d.monthValue}/${d.dayOfMonth}", dayColWidth, header = true, highlight = isTodayCol, textColor = weekdayColor2)
                         }
-                        TtCell("${fmtDec(rowTotal)}${row.task.unit}", totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
+                        TtCell("합계", totalColWidth, header = true)
                     }
                 }
-                Row(Modifier.border(1.dp, border)) {
-                    TtCell("합계", nameColWidth, bold = true)
-                    dayTotals.forEach { v -> TtCell(fmtDec(v), dayColWidth, bold = true) }
-                    TtCell(fmtDec(dayTotals.sum()), totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Column {
+                    rows.forEach { row ->
+                        var rowTotal = 0.0
+                        Row(Modifier.border(1.dp, border)) {
+                            TtCell(row.task.name, nameColWidth)
+                            weekDates.forEachIndexed { i, d ->
+                                val isTodayCol = d == today
+                                if (d < row.start || d > row.dday) {
+                                    TtCell("", dayColWidth, highlight = isTodayCol)
+                                } else {
+                                    val v = dayValue(row.task, i).toDoubleOrNull() ?: 0.0
+                                    if (v > 0) {
+                                        rowTotal += v
+                                        dayTotals[i] += v
+                                        val achieved = weekAchievedMap["${d}|${row.task.name}"] == true
+                                        val label = "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✅" else ""
+                                        val cellColor = when {
+                                            achieved -> Color(0xFF34D399)
+                                            isTodayCol -> Color(0xFFF87171)
+                                            else -> null
+                                        }
+                                        TtCell(label, dayColWidth, highlight = isTodayCol, textColor = cellColor)
+                                    } else {
+                                        TtCell("—", dayColWidth, highlight = isTodayCol)
+                                    }
+                                }
+                            }
+                            TtCell("${fmtDec(rowTotal)}${row.task.unit}", totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    Row(Modifier.border(1.dp, border)) {
+                        TtCell("합계", nameColWidth, bold = true)
+                        dayTotals.forEach { v -> TtCell(fmtDec(v), dayColWidth, bold = true) }
+                        TtCell(fmtDec(dayTotals.sum()), totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
+                    }
                 }
             }
         }
@@ -256,45 +274,109 @@ private fun TimetableContent(
 
         // 웹앱 .tt-day-list-item — 업무명은 굵은 흰색, 값은 accent 파랑 굵게(오늘 보는 화면이라
         // .tt-today-val과 동일하게 항상 빨강), 0이면 무채색 "—".
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            var dayTotal = 0.0
-            dayTasks.forEach { t ->
-                val v = dayValue(t, jsDow).toDoubleOrNull() ?: 0.0
-                dayTotal += v
-                val achieved = v > 0 && achievedMap[t.name] == true
+        // 125차: 목록도 테두리 영역 안에서만 스크롤되게 해 위쪽 날짜 이동 줄과 경계를 분명히 한다. 업무명은
+        // 화면 폭 안에서 줄바꿈되므로(86차) 이 뷰는 가로로 넘치지 않는다 — 가로 스크롤은 주간 표에만 있다.
+        TimetableScrollArea(modifier = Modifier.weight(1f, fill = false).fillMaxWidth(), horizontal = false) {
+            Column(Modifier.padding(horizontal = Spacing.md)) {
+                var dayTotal = 0.0
+                dayTasks.forEach { t ->
+                    val v = dayValue(t, jsDow).toDoubleOrNull() ?: 0.0
+                    dayTotal += v
+                    val achieved = v > 0 && achievedMap[t.name] == true
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = Spacing.sm),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        // 86차 버그 수정: 이름/값 둘 다 weight 없이 SpaceBetween만 쓰면 이름이 길 때
+                        // 오른쪽 값(amount) Text가 화면 밖으로 밀려나 아예 안 보였다(사용자 실사용 확인) —
+                        // 이름 쪽에만 weight(1f, fill=false)를 줘서 값 Text의 자연폭을 먼저 확보하고,
+                        // 이름은 남는 폭 안에서 줄바꿈되도록 함(잘리지 않고 여러 줄로 전부 표시됨).
+                        Text(
+                            t.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f, fill = false).padding(end = Spacing.sm)
+                        )
+                        Text(
+                            if (v > 0) "${fmtDec(v)}${t.unit}" + if (achieved) " ✅" else "" else "—",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (v > 0) FontWeight.Bold else FontWeight.Normal,
+                            color = if (v <= 0) MaterialTheme.colorScheme.onSurfaceVariant
+                                else if (achieved) Color(0xFF34D399)
+                                else if (isToday) Color(0xFFF87171) else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    HorizontalDivider()
+                }
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = Spacing.sm),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // 86차 버그 수정: 이름/값 둘 다 weight 없이 SpaceBetween만 쓰면 이름이 길 때
-                    // 오른쪽 값(amount) Text가 화면 밖으로 밀려나 아예 안 보였다(사용자 실사용 확인) —
-                    // 이름 쪽에만 weight(1f, fill=false)를 줘서 값 Text의 자연폭을 먼저 확보하고,
-                    // 이름은 남는 폭 안에서 줄바꿈되도록 함(잘리지 않고 여러 줄로 전부 표시됨).
-                    Text(
-                        t.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f, fill = false).padding(end = Spacing.sm)
-                    )
-                    Text(
-                        if (v > 0) "${fmtDec(v)}${t.unit}" + if (achieved) " ✅" else "" else "—",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = if (v > 0) FontWeight.Bold else FontWeight.Normal,
-                        color = if (v <= 0) MaterialTheme.colorScheme.onSurfaceVariant
-                            else if (achieved) Color(0xFF34D399)
-                            else if (isToday) Color(0xFFF87171) else MaterialTheme.colorScheme.primary
-                    )
+                    Text("합계", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(fmtDec(dayTotal), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 }
-                HorizontalDivider()
-            }
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = Spacing.sm),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("합계", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(fmtDec(dayTotal), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+/**
+ * 일정표 표/목록을 담는 스크롤 영역(125차, 사용자 요청). 테두리 안쪽에서만 스크롤되고 넘친 내용은 테두리
+ * 밖으로 그려지지 않아 다른 UI를 침범하지 않는다. 크기는 내용에 맞추되 부모가 준 폭/높이를 넘지 않으며
+ * (호출부에서 `weight(1f, fill = false)`로 남은 높이를 준다), 넘치는 방향에는 위치 표시줄을 그린다.
+ * [header]는 세로로는 고정되고 가로로는 본문과 같은 스크롤 상태를 공유해 함께 움직인다(주간 표의 요일 행).
+ */
+@Composable
+private fun TimetableScrollArea(
+    modifier: Modifier,
+    horizontal: Boolean,
+    header: (@Composable () -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    val vScroll = rememberScrollState()
+    val hScroll = rememberScrollState()
+    val shape = RoundedCornerShape(12.dp)
+    val indicatorColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+    val horizontalScrollModifier = if (horizontal) Modifier.horizontalScroll(hScroll) else Modifier
+    Column(
+        modifier
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .drawWithContent {
+                drawContent()
+                if (horizontal) drawScrollIndicator(hScroll, vertical = false, color = indicatorColor)
+            }
+    ) {
+        if (header != null) Box(horizontalScrollModifier) { header() }
+        Box(
+            Modifier
+                .weight(1f, fill = false)
+                .drawWithContent {
+                    drawContent()
+                    drawScrollIndicator(vScroll, vertical = true, color = indicatorColor)
+                }
+                .verticalScroll(vScroll)
+                .then(horizontalScrollModifier)
+        ) { content() }
+    }
+}
+
+/** 스크롤 위치 표시줄 — 스크롤할 게 없으면(내용이 영역 안에 다 들어가면) 그리지 않는다. */
+private fun DrawScope.drawScrollIndicator(state: ScrollState, vertical: Boolean, color: Color) {
+    val max = state.maxValue
+    if (max <= 0 || max == Int.MAX_VALUE) return
+    val viewport = if (vertical) size.height else size.width
+    val thickness = 4.dp.toPx()
+    val inset = 2.dp.toPx()
+    val track = viewport - inset * 2
+    if (track <= 0f) return
+    val thumb = (track * viewport / (viewport + max)).coerceIn(minOf(24.dp.toPx(), track), track)
+    val offset = inset + (track - thumb) * state.value / max
+    val radius = CornerRadius(thickness / 2)
+    if (vertical) {
+        drawRoundRect(color, Offset(size.width - thickness - inset, offset), Size(thickness, thumb), radius)
+    } else {
+        drawRoundRect(color, Offset(offset, size.height - thickness - inset), Size(thumb, thickness), radius)
     }
 }
 

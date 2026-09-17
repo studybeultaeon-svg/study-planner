@@ -4,6 +4,54 @@
 
 ---
 
+## 2026-09-17~18 (125차) — 차단·공부 잠금 화면에서 백그라운드 음악 앱 제어 + 일정표 상하좌우 스크롤
+
+### 사용자 요청
+1. 앱 화면을 열지 않아도 백그라운드에서 재생 중인 앱(특히 Spotify 같은 음악 앱)을 재생/일시정지/이전 곡/다음 곡으로 제어. 운영체제의 미디어 제어 기능 활용.
+2. 공부 섹션 일정표가 화면을 넘으면 잘려서 전부 볼 수 없음 — 상하좌우 스크롤, 스크롤 영역 경계 명확화, 반응형, 기존 디자인 유지.
+
+사용자 확정 사항(질문으로 확인): 제어 카드는 **규칙에 지정돼 막힌 앱(잠김/실행확인 화면)** 과 **공부 잠금 중 허용 앱이 아니라 열 수 없는 앱** 상황에 둔다. 잠김·실행확인 화면은 막힌 앱이 음악 앱일 때만 그 앱의 컨트롤을, 공부 잠금 화면은 허용 앱이 아닌 재생 중인 앱의 컨트롤을 보여준다. 안드로이드 "알림 접근"은 선택 — 있으면 앱 지정 제어+곡 정보, 없으면 기본 미디어 키로 대체하고 한계를 안내.
+
+### 구현 — 백그라운드 음악 제어
+- **안드로이드**
+  - 신규 `service/MediaControlClient.kt`: 알림 접근이 있으면 `MediaSessionManager.getActiveSessions()`로 대상 패키지의 세션을 찾아 `TransportControls`로 그 앱에만 명령(제목/아티스트/재생 상태 포함). 없으면 `AudioManager.dispatchMediaKeyEvent`로 시스템 미디어 키. `isMediaApp()`(MEDIA_BUTTON 수신기/MediaBrowserService 선언 여부)로 알림 접근 없이도 "음악 앱인가" 판별. 같은 파일에 알림 접근 권한용 빈 `MediaListenerService`(알림 내용은 읽지 않음).
+  - 신규 `ui/components/MediaControlCard.kt`: 1초 주기(명령 직후 0.35초 뒤 즉시) 상태 갱신, 대상이 없으면 아무것도 그리지 않음. 공부 잠금용(대상 null)은 일시정지해도 세션이 남아 있으면 카드 유지. 알림 접근이 없으면 안내 문구 + "알림 접근 켜기"(공부 잠금 중엔 설정 앱도 잠기므로 버튼 대신 "설정 > 권한 설정 가이드" 안내).
+  - `InterstitialScreen`에 `extraContent` 슬롯 추가(기본 null이라 기존 호출부 영향 없음) + 세로 스크롤(내용이 짧으면 기존처럼 가운데 정렬 — `verticalScroll`이 `fillMaxSize`의 최소 높이를 그대로 넘기는 성질 이용).
+  - `BlockActivity`: 사유가 스케줄/일일한도(또는 사유 없음)일 때만 막힌 앱 카드(릴스/쇼츠·공부 중 사이트 차단 제외). `ConfirmOpenActivity`(앱 경로): 대기 중인 앱 카드. `StudyLockActivity`: "허용된 앱" 위에 허용 목록 제외 카드.
+  - `PermissionOnboardingScreen`(권한 설정 가이드)에 "알림 접근 — 음악 앱 제어 (선택)" 항목. 사이드로드 앱은 "제한된 설정 허용"이 먼저 필요할 수 있다는 안내 포함.
+  - `AndroidManifest.xml`: `MediaListenerService`(BIND_NOTIFICATION_LISTENER_SERVICE), `<queries>`에 MEDIA_BUTTON/MediaBrowserService 추가.
+- **데스크탑**
+  - 신규 `monitor/MediaSessionBridge.kt`: Windows 시스템 미디어 제어(GSMTC)를 고정 PowerShell 헬퍼(`%APPDATA%\PhoneLockDesktop\media_sessions.ps1`, 영문 전용)로 사용. 카드가 보이는 동안만 헬퍼 1개 유지(참조 카운트), 세션 목록이 바뀔 때만 JSON 한 줄 출력, 명령은 표준입력 `verb<TAB>세션id`(id는 비교에만 사용). 표준입력이 닫히면 헬퍼 자동 종료. 프로세스 이름(예: `Spotify.exe`)과 세션 id(`Spotify.exe`, 스토어판 `SpotifyAB.SpotifyMusic_…!Spotify`, `Chrome`)를 확장자 뗀 이름 포함 여부로 매칭.
+  - 신규 `ui/components/MediaControlCard.kt`(안드로이드판과 대칭, 권한 개념 없음). `WatchAndWaitScreen`에 `extraContent` 슬롯+세로 스크롤, `BlockScreen`에 `processName` 파라미터(스케줄/일일한도만 카드), `ConfirmScreen`/`StudyLockScreen`에 카드, `Main.kt`가 `req.processName` 전달.
+  - 헬퍼 구현 중 발견: PS 5.1은 리다이렉트된 출력에 `[Console]::OutputEncoding`이 적용되지 않아 한글 곡명이 깨짐 → 표준출력 스트림에 UTF-8 `StreamWriter`를 직접 연다. 명령 직후엔 0.25초 뒤 다시 읽어 화면 반영 지연을 약 1초→0.3초로 줄임.
+
+### 구현 — 일정표 스크롤
+- **안드로이드 `ui/TimetableScreen.kt`**: private `TimetableScrollArea` 추가 — 둥근 테두리 안에서만 스크롤·클리핑(넘친 내용이 다른 UI 위로 그려지지 않음), 크기는 내용에 맞추되 남은 높이(`weight(1f, fill = false)`)를 넘지 않음, 넘치는 방향에만 얇은 위치 표시줄. 주간 표(태블릿/가로 모드)는 원래 가로 스크롤만 있어 행이 많거나 화면이 낮으면 아래가 잘렸음 → 상하좌우 스크롤 + 요일 행 고정(가로 스크롤 상태를 본문과 공유). 일 단위 목록(폰)도 같은 영역에 넣어 날짜 이동 줄과 경계를 분명히 함(업무명은 폭 안에서 줄바꿈되는 86차 설계라 가로로는 넘치지 않음).
+- **데스크탑 `ui/TimetableScreen.kt`**: 기존에도 세로/가로 스크롤은 있었지만 스크롤바가 없어 가로로 넘친 칸을 알아채기 어려웠고 경계도 흐렸음 → 같은 구조의 `TimetableScrollArea`에 `VerticalScrollbar`/`HorizontalScrollbar`(드래그 가능, 테마 글자색 기준 스타일 — 기본 스타일은 검정 반투명이라 다크 테마에서 안 보임), 스크롤바가 마지막 열/행을 가리지 않도록 넘칠 때만 10dp 여백, 요일 행 고정. 휠=세로, Shift+휠=가로(Compose `ComposeSceneMediator`가 Shift+휠을 가로 델타로 바꿔 주는 것을 라이브러리 바이트코드로 확인).
+
+### 버그 수정 — 잠김·실행확인 화면이 이전 요청 내용을 계속 보여줌(기존 버그, 사용자 승인 후 수정)
+- **증상(에뮬레이터 재현)**: 안드로이드 잠김/실행확인 화면을 버튼 대신 홈 제스처로 벗어나 화면이 남아 있으면, 다음에 다른 앱이 막혀도 이전 앱의 문구·음악 카드가 그대로 표시됨. 실행확인은 "진행" 시 이전 그룹이 확인 처리될 수 있었음.
+- **원인**: 두 액티비티가 `singleInstance`인데 `onNewIntent` 처리가 없어 새 요청이 화면에 반영되지 않음.
+- **수정**: `IntentExtras.isSameLockRequest()`(앱/사유/사이트/그룹 비교) 추가, 두 액티비티 `onNewIntent`에서 다른 요청이면 `setIntent`+`recreate()`. `ConfirmationGate` 등 판정 로직은 그대로.
+
+### 검증
+- **안드로이드(Android 16 에뮬레이터)**: 개인용 앱은 로그인 게이트가 있어, 원본에 넣지 않는 스크래치 빌드(`C:\build\phonelock-android-uitest`, 테스트 전용 `UiTestActivity`로 각 화면을 직접 띄움)로 확인. Spotify 대신 `MediaSession`+미디어 재생 포그라운드 서비스로 무음을 재생하며 받은 명령을 logcat에 남기는 대역 앱 2개(`Test Music`/`Other Music`, 스크래치 `C:\build\mediatest-player`)를 백그라운드(런처가 최상단) 상태로 둠.
+  - 알림 접근 없음: 잠김 화면 카드 표시 → 일시정지/다음/이전/재생이 대역 앱에 도착(MEDIA_BUTTON 경유), 아이콘이 재생 상태를 따라감.
+  - 알림 접근 있음: 곡 제목 표시, 명령이 세션에 직접 도착. **다른 음악 앱이 더 최근 미디어 세션이어도 막힌 앱에만 전달**(Other Music은 영향 없음). 권한 없이 공부 잠금에서 누르면 안드로이드가 고른 앱(Other Music)으로 가는 한계도 재현 — 안내 문구대로.
+  - 표시 규칙: 음악 앱이 아닌 앱(설정) 차단·릴스 차단엔 카드 없음, 실행확인 화면 카드 동작, 공부 잠금은 허용 앱 제외·일시정지 후 유지·전부 허용 시 없음. 권한 가이드 새 항목 버튼이 이 앱의 알림 접근 상세 화면을 엶.
+  - 수정 후 홈 제스처로 남은 화면에 다른 앱 요청 → 새 앱 기준으로 다시 그려짐 확인.
+  - 일정표: 폰 세로(411dp, 긴 이름 25개)/작은 폰(360×640dp)/폰 가로(914dp, 주간 표가 두 줄 남짓만 보이는 높이)/태블릿 세로(800×1280dp)/태블릿 가로(1280dp, 업무 3개)에서 스와이프로 상하·좌우 스크롤, 요일 행 고정, 테두리 밖 미표시, 합계 행/열 도달, 넘치지 않으면 표시줄 없음 확인.
+- **데스크탑(호스트)**: 빌드 사본에만 둔 `ImageComposeScene` 렌더 테스트(APPDATA 격리, Firebase URL 제거)로 큰 창(1500×900)/작은 창(640×620, 다크)에서 휠·가로 스크롤·스크롤바 드래그 확인. 사용자 Chrome 재생을 건드리지 않도록 `Windows.Media.Playback` 기반 무음 대역 플레이어(PowerShell)를 띄워, 잠김 화면 카드 클릭으로 일시정지→다음→이전→재생이 플레이어 로그에 순서대로 기록되고 Chrome은 계속 재생됨을 확인. 음악 앱이 아닌 프로그램 차단/공부 중 사이트 차단엔 카드 없음, 공부 잠금은 허용된 chrome.exe 제외. 헬퍼 상시 부담 CPU 0.63%(1코어)·약 98MB.
+  - 테스트 중 발견(앱 코드 아님): `ImageComposeScene` 기본 `Dispatchers.Unconfined`에서 휠 스크롤 애니메이션이 프레임 락에 재진입해 교착 → 장면을 `Dispatchers.Swing`으로 구동하면 해결.
+- **실제 Spotify로는 확인 못 함**(호스트 Spotify 미실행, 에뮬레이터엔 계정 없이 설치 불가) — 실기기 확인 필요.
+
+### 빌드/배포
+- 안드로이드 `assembleRelease`(versionCode `1789659057`), APK 안 새 클래스·문자열·매니페스트 서비스 확인, 3곳 해시 일치 배포, GitHub 릴리스 `android-1789659057`.
+- 데스크탑 `packageMsi createDistributable`(BuildInfo `1789659171`), 호스트 앱·vm-build-output 교체(FAILED 0, jar 해시 일치, 새 클래스 포함), 교체 후 재실행 확인, GitHub 릴리스 `desktop-1789659171`.
+- 공개 저장소(`study-planner` main) 소스 동기화 push.
+
+---
+
 ## 2026-09-16 (124차) — 안드로이드 홈 탭 새로고침을 "화면 쓸어내리기"로 통일
 
 ### 사용자 요청
