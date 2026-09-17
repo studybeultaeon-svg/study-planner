@@ -54,7 +54,6 @@ import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.TimerRunState
 import com.phonelock.app.service.IntentExtras
 import com.phonelock.app.service.PomodoroSyncClient
-import com.phonelock.app.ui.components.MediaControlCard
 import com.phonelock.app.ui.theme.PhoneLockTheme
 import com.phonelock.app.ui.theme.applyThemeWindowBackground
 import kotlinx.coroutines.Dispatchers
@@ -292,15 +291,6 @@ private fun StudyLockScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Top
             ) {
-                // 125차(사용자 요청): 허용 앱이 아니라서 열 수 없는 음악 앱(Spotify 등)이 백그라운드에서
-                // 재생 중이면 여기서 바로 제어한다. 설정 앱도 잠겨 있으니 권한 설정 버튼은 숨긴다.
-                val allowedPackageSet = remember(allowedPackages) { allowedPackages.toSet() }
-                MediaControlCard(
-                    targetPackage = null,
-                    excludedPackages = allowedPackageSet,
-                    showAccessButton = false,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
                 Text(
                     "허용된 앱",
                     style = MaterialTheme.typography.titleMedium,

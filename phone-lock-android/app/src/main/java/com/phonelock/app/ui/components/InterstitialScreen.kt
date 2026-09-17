@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -53,7 +51,6 @@ import kotlin.random.Random
  *
  * countdownSeconds가 null이면 대기 없이 즉시 활성화된 버튼 하나만 있는 화면(차단 안내용)이 되고,
  * secondaryLabel/onSecondary가 null이면 버튼이 하나뿐인 화면이 된다.
- * [extraContent]는 버튼 아래에 붙는 부가 영역(125차, 막힌 음악 앱 제어 카드)이다.
  */
 @Composable
 fun InterstitialScreen(
@@ -70,8 +67,7 @@ fun InterstitialScreen(
     primaryFilled: Boolean = true,
     primaryOutlineColor: Color? = null,
     secondaryFilled: Boolean = false,
-    secondaryContainerColor: Color? = null,
-    extraContent: (@Composable () -> Unit)? = null
+    secondaryContainerColor: Color? = null
 ) {
     // "잠겨있다가 풀리면 누르는" 방식이 아니라 "누르면 그때부터 대기시간이 시작되고, 다 지나면
     // 자동으로 진행되는" 방식이다. 버튼은 처음부터 눌러야 시작되고, 누른 뒤에는 다시 잠긴다.
@@ -158,10 +154,8 @@ fun InterstitialScreen(
     }
 
     Surface {
-        // 125차: 버튼 아래 extraContent까지 붙으면 가로 모드 폰처럼 세로가 짧은 화면에서 넘칠 수 있어 스크롤을
-        // 준다. verticalScroll은 fillMaxSize의 최소 높이를 그대로 넘기므로 내용이 짧을 땐 기존처럼 가운데 정렬된다.
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.lg),
+            modifier = Modifier.fillMaxSize().padding(Spacing.lg),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -311,7 +305,6 @@ fun InterstitialScreen(
                     primaryButton()
                 }
             }
-            extraContent?.invoke()
         }
     }
 }

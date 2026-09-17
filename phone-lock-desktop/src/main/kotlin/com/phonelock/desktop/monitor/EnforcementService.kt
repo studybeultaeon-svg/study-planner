@@ -3,6 +3,7 @@ package com.phonelock.desktop.monitor
 import com.phonelock.desktop.data.Group
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.data.checkAndResetGrowthSeasonIfNeeded
+import com.phonelock.desktop.routine.DesktopNotifier
 import java.io.File
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -15,6 +16,10 @@ private const val TICK_MS = 2000L
 // 미러 표시와 같은 값) — 이 신호로 실제 잠금을 걸기 때문에, 신호를 올리던 기기가 정지 없이 꺼져서
 // timerActive:true가 유령처럼 영원히 남는 경우 이 기기가 영구히 잠기는 걸 막는 안전장치.
 private const val REMOTE_STUDY_SIGNAL_STALE_MS = 20 * 60 * 1000L
+// 잠긴 프로그램 백그라운드 재생 차단(125차): 루프가 밀려도 재생 시간을 한 번에 과하게 더하지 않도록 한 번에 셀 최대 간격,
+// 사용자가 계속 다시 재생해도 알림이 도배되지 않도록 세션별 최소 알림 간격.
+private const val MAX_BACKGROUND_USAGE_STEP_MS = 10_000L
+private const val PAUSE_NOTICE_INTERVAL_MS = 60_000L
 
 private sealed class TickDecision {
     data class NeedsConfirm(val group: Group) : TickDecision()
@@ -59,6 +64,11 @@ class EnforcementService(
     // 공부 잠금이 언제부터 활성 상태였는지(경과시간 근사치 표시용) — 비활성화되면 초기화.
     private var studyLockStartedAt: Long? = null
 
+    // 잠긴 프로그램 백그라운드 재생 차단(125차) — 재생 시간 적립용 기준 시각/그룹별 1초 미만 나머지, 세션별 안내 알림 시각.
+    private var lastBackgroundMediaCheckAt = 0L
+    private val backgroundUsageRemainderMs = mutableMapOf<Long, Long>()
+    private val lastPauseNoticeAt = mutableMapOf<String, Long>()
+
     /**
      * 포그라운드 창이 바뀌는 즉시(ForegroundWindowChangeWatcher) 재평가하고, 혹시 그 알림을
      * 놓치는 경우에 대비해 기존 주기적 폴링도 안전망으로 계속 돌린다.
@@ -76,6 +86,76 @@ class EnforcementService(
                 runCatching { tick() }
             }
         }
+        // 잠긴 프로그램의 백그라운드 재생 차단(125차) — tick()은 창 전환 알림에서도 불려 간격이 일정하지 않으므로,
+        // 재생 시간을 세는 이 작업은 별도의 주기 루프에서만 돈다(확인창 응답 대기에도 막히지 않는다).
+        launch {
+            while (true) {
+                delay(TICK_MS)
+                runCatching { enforceBackgroundMedia() }
+            }
+        }
+    }
+
+    /**
+     * 125차(사용자 요청): 잠긴 프로그램은 창뿐 아니라 백그라운드 재생도 못 하게 한다(차단 시 창은 최소화만 돼서
+     * 소리가 계속 났다). 안드로이드 AppMonitorAccessibilityService.enforceBackgroundMedia와 같은 기준이며, 판정
+     * 함수는 호출만 하고 고치지 않는다.
+     * - 공부 잠금 중이고 허용 프로그램이 아니면 멈춘다(checkStudyLock과 같은 기준).
+     * - 그룹이 스케줄/일일한도로 잠겼거나(evaluate), 실행확인이 필요한데 아직 통과하지 않았으면 멈춘다(decide와 같은 기준).
+     * - 그 외엔 재생을 허용하고 재생 시간을 그 프로그램 그룹의 사용시간에 더한다(일일한도도 이 값으로 판정). 지금
+     *   포그라운드인 프로그램의 그룹은 decide()가 이미 세므로 건너뛴다.
+     * 미디어 세션 id와 그룹의 프로그램 이름은 [MediaSessionBridge.matchesProcess]로 맞춘다.
+     */
+    private suspend fun enforceBackgroundMedia() {
+        val now = System.currentTimeMillis()
+        val elapsedMs = if (lastBackgroundMediaCheckAt == 0L) 0L else (now - lastBackgroundMediaCheckAt).coerceIn(0L, MAX_BACKGROUND_USAGE_STEP_MS)
+        lastBackgroundMediaCheckAt = now
+
+        val studyLocked = repository.isStudyLockActive() || isRemoteStudyTimerActive()
+        val watchedGroups = repository.getGroups().filter { it.processNames.isNotEmpty() && evaluator.isGroupActive(it) }
+        val needed = studyLocked || watchedGroups.isNotEmpty()
+        MediaSessionBridge.setActive(needed)
+        if (!needed) return
+        val playing = MediaSessionBridge.sessions.value.filter { it.isPlaying }
+        if (playing.isEmpty()) return
+
+        val foreground = ForegroundWindowWatcher.currentProcessName()
+        val studyAllowed = repository.studyLockAllowedApps
+        tickMutex.withLock {
+            val foregroundGroupIds = foreground?.let { name -> repository.findGroupsForProcess(name).map { it.id }.toSet() }.orEmpty()
+            val usageGroupIds = mutableSetOf<Long>()
+            for (session in playing) {
+                if (studyLocked && studyAllowed.none { MediaSessionBridge.matchesProcess(session.appId, it) }) {
+                    pauseBackgroundMedia(session.appId)
+                    continue
+                }
+                val groups = watchedGroups.filter { group ->
+                    group.processNames.any { MediaSessionBridge.matchesProcess(session.appId, it) }
+                }
+                if (groups.isEmpty()) continue
+                val blocked = groups.any { evaluator.evaluate(it).locked } ||
+                    groups.any { evaluator.isConfirmActiveNow(it) && !isRecentlyConfirmedAnyDevice(it) }
+                if (blocked) {
+                    pauseBackgroundMedia(session.appId)
+                } else if (foreground == null || !MediaSessionBridge.matchesProcess(session.appId, foreground)) {
+                    groups.filter { it.id !in foregroundGroupIds }.forEach { usageGroupIds += it.id }
+                }
+            }
+            for (groupId in usageGroupIds) {
+                val totalMs = (backgroundUsageRemainderMs[groupId] ?: 0L) + elapsedMs
+                backgroundUsageRemainderMs[groupId] = totalMs % 1000L
+                val seconds = (totalMs / 1000L).toInt()
+                if (seconds > 0) repository.addUsageSeconds(groupId, seconds)
+            }
+        }
+    }
+
+    private fun pauseBackgroundMedia(appId: String) {
+        MediaSessionBridge.pause(appId)
+        val now = System.currentTimeMillis()
+        if (now - (lastPauseNoticeAt[appId] ?: 0L) < PAUSE_NOTICE_INTERVAL_MS) return
+        lastPauseNoticeAt[appId] = now
+        DesktopNotifier.notify("재생 차단", "'${MediaSessionBridge.displayName(appId)}'은(는) 지금 잠겨 있어 재생을 멈췄습니다.")
     }
 
     /**

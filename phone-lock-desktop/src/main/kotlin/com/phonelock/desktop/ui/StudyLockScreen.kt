@@ -44,7 +44,6 @@ import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.data.TimerRunState
 import com.phonelock.desktop.monitor.PomodoroSyncClient
 import com.phonelock.desktop.monitor.StudyLockStatus
-import com.phonelock.desktop.ui.components.MediaControlCard
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -211,13 +210,6 @@ fun StudyLockScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Top
             ) {
-                // 125차(사용자 요청): 허용 프로그램이 아니라서 열 수 없는 음악 앱(Spotify 등)이 백그라운드에서
-                // 재생 중이면 여기서 바로 제어한다.
-                MediaControlCard(
-                    targetProcess = null,
-                    excludedProcesses = status.allowedApps,
-                    modifier = Modifier.padding(bottom = Spacing.md)
-                )
                 Text(
                     "허용된 프로그램",
                     style = MaterialTheme.typography.titleMedium,

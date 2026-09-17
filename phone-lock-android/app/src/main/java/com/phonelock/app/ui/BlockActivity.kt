@@ -4,19 +4,15 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
 import com.phonelock.shared.blockQuoteTier
 import com.phonelock.shared.quoteForTier
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.service.IntentExtras
 import com.phonelock.app.service.LockReason
 import com.phonelock.app.ui.components.InterstitialScreen
-import com.phonelock.app.ui.components.MediaControlCard
 import com.phonelock.app.ui.theme.PhoneLockTheme
-import com.phonelock.app.ui.theme.Spacing
 import com.phonelock.app.ui.theme.applyThemeWindowBackground
 
 class BlockActivity : ComponentActivity() {
@@ -26,11 +22,6 @@ class BlockActivity : ComponentActivity() {
         val reasonName = intent.getStringExtra(IntentExtras.EXTRA_REASON)
         val reason = reasonName?.let { runCatching { LockReason.valueOf(it) }.getOrNull() }
         val blockAttempts = intent.getIntExtra(IntentExtras.EXTRA_BLOCK_ATTEMPTS, 0)
-        // 125차(사용자 요청): 차단 규칙(스케줄/일일한도)에 걸린 앱이 Spotify 같은 음악 앱이면, 앱을 열 수
-        // 없어도 백그라운드 재생을 제어할 수 있게 카드를 붙인다. 릴스/쇼츠·공부 중 사이트 차단은 "그 앱을
-        // 규칙에 지정한" 상황이 아니므로 제외.
-        val mediaTargetPackage = intent.getStringExtra(IntentExtras.EXTRA_PACKAGE_NAME)
-            ?.takeIf { reason == null || reason == LockReason.SCHEDULE || reason == LockReason.LIMIT }
         val message = when (reason) {
             LockReason.SCHEDULE -> "지정된 시간대에는 이 차단 규칙의 앱을 사용할 수 없습니다."
             LockReason.LIMIT -> "오늘 이 차단 규칙의 사용 시간 한도를 모두 사용했습니다."
@@ -59,10 +50,7 @@ class BlockActivity : ComponentActivity() {
                     secondaryLabel = "중단",
                     secondaryFilled = true,
                     secondaryContainerColor = MaterialTheme.colorScheme.primary,
-                    onSecondary = { goHome() },
-                    extraContent = mediaTargetPackage?.let { pkg ->
-                        { MediaControlCard(targetPackage = pkg, modifier = Modifier.padding(top = Spacing.lg)) }
-                    }
+                    onSecondary = { goHome() }
                 )
             }
         }
@@ -76,7 +64,7 @@ class BlockActivity : ComponentActivity() {
     }
 
     // 125차(기존 버그): singleInstance라 이 화면이 홈 제스처 등으로 남아 있으면 다음 차단 요청이 onNewIntent로만
-    // 와서, 다른 앱이 막혀도 이전 앱/사유의 화면(문구·음악 카드)이 그대로 보였다 — 다른 요청이면 새로 그린다.
+    // 와서, 다른 앱이 막혀도 이전 앱/사유의 화면(문구)이 그대로 보였다 — 다른 요청이면 새로 그린다.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (!IntentExtras.isSameLockRequest(intent, this.intent)) {

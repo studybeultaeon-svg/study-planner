@@ -24,13 +24,6 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="application/vnd.android.package-archive" />
         </intent>
-        <!-- 차단 화면 음악 제어(MediaControlClient.isMediaApp): 막힌 앱이 음악 앱인지 판별 -->
-        <intent>
-            <action android:name="android.intent.action.MEDIA_BUTTON" />
-        </intent>
-        <intent>
-            <action android:name="android.media.browse.MediaBrowserService" />
-        </intent>
     </queries>
 
     <application
@@ -118,7 +111,7 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
-        <!-- 알림 접근 권한 획득용 빈 리스너 — 다른 앱의 미디어 세션 조회(MediaControlClient)에 필요 -->
+        <!-- 알림 접근 권한 획득용 빈 리스너 — 잠긴 앱의 백그라운드 재생 차단(BackgroundMediaGuard)에 필요 -->
         <service
             android:name=".service.MediaListenerService"
             android:exported="true"
