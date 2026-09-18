@@ -6,22 +6,71 @@ import org.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalDateTime
 
-/** Firebase 일일 사용시간 동기화(`dailyUsage/{date}/{그룹}/{device}`)에서 이 기기를 가리키는 키. */
+/**
+ * 이 기기의 플랫폼 이름 — 기기별 칸 이름의 접두사이자, 126차 이전 빌드가 쓰던 옛 칸 이름 그 자체다
+ * (`studyLog/{날짜}/desktop`, `dailyUsage/{날짜}/{그룹}/desktop`).
+ */
 private const val DAILY_USAGE_DEVICE = "desktop"
 
 /**
- * 공부 기록(`studyLog/{날짜}/{기기}`)을 올릴 때 쓰는 이 기기만의 칸 이름(안드로이드판과 대칭) —
- * `DAILY_USAGE_DEVICE`처럼 플랫폼 이름 하나로 고정하면 같은 플랫폼 기기 둘이 같은 칸에 서로 덮어쓰고,
- * 읽을 때도 자기 칸이라고 건너뛰어 서로의 기록을 영영 못 본다(126차 버그: "태블릿에서 공부해도
- * 폰/데스크탑에 기록이 안 뜬다"). [AppData.deviceInstallId]를 붙여 기기마다 다른 칸을 쓰게 한다.
+ * 기기별 동기화 칸(`studyLog/{날짜}/{기기}`, `dailyUsage/{날짜}/{그룹}/{기기}`)에서 이 설치본을 가리키는
+ * 이름(안드로이드판과 대칭) — 플랫폼 이름 하나로 고정하면 같은 플랫폼 기기 둘이 같은 칸에 서로
+ * 덮어쓰고, 읽을 때도 자기 칸이라고 건너뛰어 서로의 기록/사용시간을 영영 못 본다(126차 버그:
+ * "태블릿에서 공부해도 폰/데스크탑에 기록이 안 뜬다"). [AppData.deviceInstallId]를 붙여 기기마다
+ * 다른 칸을 쓰게 한다.
  */
-private fun Repository.studyLogDeviceKey(): String = synchronized(lock) {
+private fun Repository.deviceSlotKey(): String = synchronized(lock) {
     if (data.deviceInstallId.isBlank()) {
         data.deviceInstallId = java.util.UUID.randomUUID().toString().take(8)
         persist()
     }
     "$DAILY_USAGE_DEVICE-${data.deviceInstallId}"
 }
+
+/** 공부 기록 지문 — 시작시각/길이/이름이 같으면 같은 기록으로 본다(127차, 옛 칸에 남은 내 기록 제거용). */
+internal fun studyLogFingerprint(startedAt: Long, seconds: Int, taskName: String): String = "$startedAt|$seconds|$taskName"
+
+/**
+ * Firebase에서 읽은 그날 공부기록(칸 이름 -> 기록 배열)에서 **다른 기기 몫만** 뽑는다(127차).
+ *
+ * 126차는 옛 칸(플랫폼 이름 그대로인 "desktop"/"android")을 칸 이름만 보고 통째로 버렸는데, 아직
+ * 업데이트 안 된 기기는 여전히 옛 칸에 올리기 때문에 그 기기의 기록이 통째로 사라졌다(실제 재발:
+ * 폰이 옛 빌드라 "android" 칸에 올리는데 업데이트된 데스크탑이 그 칸을 버려서, 126차 전엔 잘 보이던
+ * 폰 기록이 데스크탑에서 안 보임). 정말 걸러야 하는 건 "옛 칸에 남아있는 내 기록"뿐이므로 칸 이름이
+ * 아니라 [studyLogFingerprint]로 로컬과 겹치는 것만 뺀다 — 기기 업데이트 순서와 무관하게 남의 기록은
+ * 항상 보이고, 내 기록은 로컬과 이중으로 합산되지 않는다.
+ */
+internal fun mergeRemoteStudyLog(
+    remote: JSONObject,
+    dateKey: String,
+    ownKey: String,
+    localFingerprints: Set<String>
+): List<StudyLogEntry> {
+    val others = mutableListOf<StudyLogEntry>()
+    remote.keys().forEach { device ->
+        // 내 칸은 로컬에 이미 그대로 있으므로 통째로 건너뛴다(지문 비교조차 불필요).
+        if (device == ownKey) return@forEach
+        val arr = remote.optJSONArray(device) ?: return@forEach
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val entry = StudyLogEntry(
+                dateKey, obj.optString("taskName", ""), obj.optInt("seconds", 0),
+                obj.optLong("startedAt", 0L), obj.optString("note", ""), obj.optString("tag", "")
+            )
+            if (studyLogFingerprint(entry.startedAt, entry.seconds, entry.taskName) in localFingerprints) continue
+            others.add(entry)
+        }
+    }
+    return others
+}
+
+/**
+ * 일일 한도 판정용 — 기기별 사용시간 칸(칸 이름 -> 그 기기의 오늘 누적 초) 중 **내 칸을 뺀 나머지의 합**.
+ * 옛 칸도 아직 업데이트 안 된 기기가 쓰고 있을 수 있으므로 남겨서 합산한다(한도는 덜 세는 쪽이 위험하다).
+ * 내 옛 칸은 push 때 한 번 지우므로 내 몫이 두 번 세어지지 않는다(127차).
+ */
+internal fun peerUsageSecondsOf(usageByDevice: Map<String, Int>, ownKey: String): Int =
+    usageByDevice.filterKeys { it != ownKey }.values.sum()
 
 /** 일일 사용 한도의 "오늘" 날짜를 계산한다. resetHour 이전이면 아직 전날로 취급한다. */
 internal fun effectiveDate(resetHour: Int, now: LocalDateTime = LocalDateTime.now()): LocalDate =
@@ -410,6 +459,9 @@ class Repository {
 
     private data class CachedPeerUsage(val peerSeconds: Int, val fetchedAtMillis: Long)
     private val peerUsageCache = mutableMapOf<Long, CachedPeerUsage>()
+
+    /** 옛 칸 정리를 이미 끝낸 "날짜|그룹" 모음(127차) — 앱 실행당 한 번만 지우려고 기억한다. lock으로 보호. */
+    private val legacyUsageCleared = mutableSetOf<String>()
     private val peerUsageCacheTtlMs = 10_000L
     private val peerUsageRefreshInFlight = mutableSetOf<Long>()
 
@@ -425,10 +477,14 @@ class Repository {
         if ((cached == null || now - cached.fetchedAtMillis >= peerUsageCacheTtlMs) && peerUsageRefreshInFlight.add(group.id)) {
             val url = data.fbDatabaseUrl; val key = data.fbApiKey
             val groupId = group.id; val groupName = group.name
+            // 127차: 내 칸만 빼고 나머지는 전부 더한다 — 옛 칸("desktop"/"android")도 아직 업데이트 안 된
+            // 기기가 쓰고 있을 수 있으므로 남겨서 합산한다(한도는 덜 세는 쪽이 위험하다). 내 옛 칸은
+            // 첫 push 때 [pushUsageToFirebase]가 지우므로 내 몫이 두 번 세어지지 않는다.
+            val ownKey = deviceSlotKey()
             Thread {
                 val map = com.phonelock.desktop.monitor.PomodoroSyncClient
                     .readDailyUsage(url, key, dateStr, groupName) ?: emptyMap()
-                val peerSeconds = map.filterKeys { it != DAILY_USAGE_DEVICE }.values.sum()
+                val peerSeconds = peerUsageSecondsOf(map, ownKey)
                 synchronized(lock) {
                     peerUsageCache[groupId] = CachedPeerUsage(peerSeconds, System.currentTimeMillis())
                     peerUsageRefreshInFlight.remove(groupId)
@@ -483,9 +539,16 @@ class Repository {
         val group = data.groups.find { it.id == groupId } ?: return
         val url = data.fbDatabaseUrl; val key = data.fbApiKey
         val groupName = group.name
+        val deviceKey = deviceSlotKey()
+        val clearLegacy = legacyUsageCleared.add("$dateStr|$groupName")
         Thread {
+            if (clearLegacy) {
+                com.phonelock.desktop.monitor.PomodoroSyncClient.deleteLegacyDailyUsage(
+                    url, key, dateStr, groupName, DAILY_USAGE_DEVICE
+                )
+            }
             com.phonelock.desktop.monitor.PomodoroSyncClient.writeDailyUsage(
-                url, key, dateStr, groupName, DAILY_USAGE_DEVICE, usedSeconds
+                url, key, dateStr, groupName, deviceKey, usedSeconds
             )
         }.start()
     }
@@ -494,7 +557,7 @@ class Repository {
     private fun pushUsageToFirebaseBlocking(groupId: Long, dateStr: String, usedSeconds: Int) {
         val group = data.groups.find { it.id == groupId } ?: return
         com.phonelock.desktop.monitor.PomodoroSyncClient.writeDailyUsage(
-            data.fbDatabaseUrl, data.fbApiKey, dateStr, group.name, DAILY_USAGE_DEVICE, usedSeconds
+            data.fbDatabaseUrl, data.fbApiKey, dateStr, group.name, deviceSlotKey(), usedSeconds
         )
     }
 
@@ -997,7 +1060,7 @@ class Repository {
         val entries = data.studyLog.filter { it.dateKey == dateKey }
         val json = studyLogEntriesToJson(entries)
         val url = data.fbDatabaseUrl; val key = data.fbApiKey
-        val deviceKey = studyLogDeviceKey()
+        val deviceKey = deviceSlotKey()
         Thread {
             com.phonelock.desktop.monitor.PomodoroSyncClient.writeStudyLogForDate(url, key, dateKey, deviceKey, json)
         }.start()
@@ -1011,21 +1074,13 @@ class Repository {
     fun syncStudyLogFromFirebase(dateKey: String) {
         val (url, key) = synchronized(lock) { data.fbDatabaseUrl to data.fbApiKey }
         val remote = com.phonelock.desktop.monitor.PomodoroSyncClient.readStudyLogForDate(url, key, dateKey) ?: return
-        val others = mutableListOf<StudyLogEntry>()
-        val ownKey = studyLogDeviceKey()
-        remote.keys().forEach { device ->
-            // 자기 칸은 로컬 studyLog에 이미 있으므로 건너뛴다. 플랫폼 이름 그대로인 옛 칸
-            // ("desktop"/"android")도 건너뛴다 — 기기별 칸으로 바꾸기 전(126차) 여러 기기가 뒤섞여
-            // 덮어쓰던 자리라 누구 것인지 알 수 없고, 자기 기록이 섞여 있으면 로컬과 이중으로 합산된다.
-            // 각 기기가 그날 공부를 한 번 더 기록하면 그 기기의 그날치 전체가 새 칸으로 다시 올라가므로
-            // 저절로 복구된다.
-            if (device == ownKey || device == DAILY_USAGE_DEVICE || device == "android") return@forEach
-            val arr = remote.optJSONArray(device) ?: return@forEach
-            for (i in 0 until arr.length()) {
-                val obj = arr.optJSONObject(i) ?: continue
-                others.add(StudyLogEntry(dateKey, obj.optString("taskName", ""), obj.optInt("seconds", 0), obj.optLong("startedAt", 0L), obj.optString("note", ""), obj.optString("tag", "")))
-            }
+        val ownKey = deviceSlotKey()
+        val localFingerprints = synchronized(lock) {
+            data.studyLog.filter { it.dateKey == dateKey }
+                .map { studyLogFingerprint(it.startedAt, it.seconds, it.taskName) }
+                .toSet()
         }
+        val others = mergeRemoteStudyLog(remote, dateKey, ownKey, localFingerprints)
         synchronized(lock) {
             remoteStudyLogCache = remoteStudyLogCache + (dateKey to others)
         }
