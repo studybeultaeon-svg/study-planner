@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.TimerRunState
+import com.phonelock.app.data.getCalendarTasks
 import com.phonelock.app.service.IntentExtras
 import com.phonelock.app.service.PomodoroSyncClient
 import com.phonelock.app.ui.theme.PhoneLockTheme
@@ -109,6 +110,9 @@ class StudyLockActivity : ComponentActivity() {
                     // 접근성 서비스 tick(최대 2초)에서 checkStudyLock()이 로컬 상태를 다시 읽어 닫힌다.
                     onStopTimer = { note, tag -> repository.timerStop(note, tag) },
                     onSwitchToBreak = { repository.timerSwitchPhase() },
+                    // 126차(사용자 요청): 공부 중에 일정이 바뀌어도 타이머를 끄지 않아도 되게 —
+                    // 지금까지 잰 구간은 바꾸기 전 이름으로 기록에 적립된다(timerChangeTask).
+                    onChangeTask = { repository.timerChangeTask(it) },
                     // 이 기기의 로컬 타이머뿐 아니라 다른 기기의 원격 신호로 잠긴 경우도 그 신호가
                     // 꺼지면 같이 풀려야 한다(checkStudyLock과 같은 OR 판정).
                     isStillActive = { repository.isStudyLockActive() || isRemoteStudyTimerActive(repository) },
@@ -129,6 +133,7 @@ class StudyLockActivity : ComponentActivity() {
 
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StudyLockScreen(
     allowedPackages: List<String>,
@@ -139,6 +144,7 @@ private fun StudyLockScreen(
     onLaunchApp: (String) -> Unit,
     onStopTimer: (String, String) -> Unit,
     onSwitchToBreak: () -> Unit,
+    onChangeTask: (String) -> Unit,
     isStillActive: suspend () -> Boolean,
     onInactive: () -> Unit
 ) {
@@ -149,6 +155,12 @@ private fun StudyLockScreen(
     var showStopNoteDialog by remember { mutableStateOf(false) }
     var stopNoteText by remember { mutableStateOf("") }
     var stopTagText by remember { mutableStateOf("") }
+    // 126차(사용자 요청): 허용된 앱 목록이 화면 아래 절반을 늘 차지해서 위쪽 타이머·정지 버튼까지
+    // 스크롤해야 닿았다 — 목록은 버튼을 눌렀을 때 뜨는 다이얼로그로 옮기고 화면은 타이머만 쓴다.
+    var showAllowedAppsDialog by remember { mutableStateOf(false) }
+    // 126차(사용자 요청): 타이머를 끄지 않고 공부 일정만 바꾸기.
+    var showTaskChangeDialog by remember { mutableStateOf(false) }
+    var todayTasks by remember { mutableStateOf(listOf<com.phonelock.app.data.CalendarTask>()) }
     // 92차(사용자 요청, "디자인이 밋밋하다/정보가 부족하다"): StudyTimerScreen과 같은 방식으로
     // TimerRunState/원격 신호/오늘 누적 공부시간을 읽어와 큰 원형 진행률+숫자로 보여준다.
     var run by remember { mutableStateOf(repository.getTimerRun()) }
@@ -175,6 +187,8 @@ private fun StudyLockScreen(
             }
             if (tickCount % 5 == 0) {
                 todayLogSeconds = repository.getTodayStudyLog().sumOf { it.seconds }.toLong()
+                // 일정 변경 다이얼로그에서 고를 오늘 일정 목록 — 같은 5초 주기에 얹어 따로 루프를 만들지 않는다.
+                todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
             }
             // 정지/전환 버튼이 로컬 상태를 즉시 바꾸므로, 여기서 바로 반영해 화면을 닫는다 — 예전엔
             // 접근성 서비스의 다음 tick(최대 2초)까지 기다려야 닫혔다("잠금화면 안 닫힘" 버그).
@@ -219,12 +233,14 @@ private fun StudyLockScreen(
 
     Box(Modifier.fillMaxSize().background(bg)) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // 96차 버그 수정: 태블릿(특히 가로 모드처럼 세로 폭이 좁은 화면)에서 이 위쪽 Column이
-            // 배지+타이머 원형+태스크 칩+"타이머 정지" 버튼까지 다 그리기엔 세로 공간이 부족한데,
-            // 예전엔 스크롤이 없어 넘치는 만큼 그냥 화면 밖으로 잘려 정지 버튼이 안 보였다(사용자 지적).
-            // verticalScroll을 추가해 안 잘리고 스크롤해서라도 항상 버튼에 닿을 수 있게 한다.
+            // 96차 버그 수정: 태블릿(특히 가로 모드처럼 세로 폭이 좁은 화면)에서 이 Column이 배지+타이머
+            // 원형+태스크 칩+"타이머 정지" 버튼까지 다 그리기엔 세로 공간이 부족한데, 예전엔 스크롤이
+            // 없어 넘치는 만큼 그냥 화면 밖으로 잘려 정지 버튼이 안 보였다(사용자 지적). verticalScroll을
+            // 추가해 안 잘리고 스크롤해서라도 항상 버튼에 닿을 수 있게 한다.
+            // 126차: 아래 절반을 늘 차지하던 "허용된 앱" 목록을 다이얼로그로 옮기면서 이 Column이 화면
+            // 전체를 쓴다 — 태블릿에서도 타이머와 버튼들이 한 화면에 들어와 스크롤이 거의 필요 없어졌다.
             Column(
-                modifier = Modifier.weight(1.1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -285,30 +301,57 @@ private fun StudyLockScreen(
                         )
                     }
                 }
+                Spacer(Modifier.height(16.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = { showAllowedAppsDialog = true }) {
+                        Text("📱 허용된 앱" + if (allowedApps.isNotEmpty()) " (${allowedApps.size})" else "")
+                    }
+                    // 원격 신호로 잠긴 경우엔 이 기기에 제어할 타이머가 없다(정지/전환과 같은 규칙).
+                    if (!isRemote && run != null) {
+                        OutlinedButton(onClick = { showTaskChangeDialog = true }) { Text("📖 일정 변경") }
+                    }
+                }
             }
-            Column(
-                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Top
-            ) {
-                Text(
-                    "허용된 앱",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(8.dp))
+        }
+    }
+
+    if (showAllowedAppsDialog) {
+        AlertDialog(
+            onDismissRequest = { showAllowedAppsDialog = false },
+            title = { Text("허용된 앱") },
+            text = {
                 if (allowedApps.isEmpty()) {
                     Text(
-                        "설정 탭에서 공부 잠금 허용 앱을 등록할 수 있습니다.",
+                        "설정 > 공부 탭에서 공부 잠금 허용 앱을 등록할 수 있습니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    AllowedAppsFlow(apps = allowedApps, onLaunchApp = onLaunchApp)
+                    // 허용 앱이 많아도 다이얼로그가 화면을 넘지 않게 목록만 스크롤시킨다.
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        AllowedAppsFlow(apps = allowedApps, onLaunchApp = onLaunchApp)
+                    }
                 }
+            },
+            confirmButton = { TextButton(onClick = { showAllowedAppsDialog = false }) { Text("닫기" ) } }
+        )
+    }
+
+    // 타이머가 그사이 멈췄으면(정지/다른 기기 신호 종료) 바꿀 대상이 없으므로 그냥 안 띄운다.
+    run?.takeIf { showTaskChangeDialog }?.let { currentRun ->
+        StudyTaskChangeDialog(
+            todayTasks = todayTasks,
+            currentTaskName = currentRun.taskName,
+            onDismiss = { showTaskChangeDialog = false },
+            onConfirm = { newName ->
+                onChangeTask(newName)
+                run = repository.getTimerRun()
+                showTaskChangeDialog = false
             }
-        }
+        )
     }
 
     if (showStopNoteDialog) {

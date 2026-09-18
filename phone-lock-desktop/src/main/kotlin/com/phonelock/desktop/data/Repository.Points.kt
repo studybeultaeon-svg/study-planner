@@ -36,12 +36,17 @@ private fun Repository.awardPointsOnce(delta: Int, reason: String, refId: String
     awardGrowthExp(delta.toDouble())
 }
 
-/** awardPointsOnce의 반대 — 완료가 취소되면 그때 적립됐던 원장 항목을 그대로 지운다. 호출부가 이미 lock을 쥐고 있어야 한다. */
+/** awardPointsOnce의 반대 — 완료가 취소되면 그때 적립됐던 원장 항목을 그대로 지우고, 같은 적립에
+ *  편승했던 성장 EXP도 [revokeGrowthExp]로 같이 걷어낸다(EXP까지 되돌리지 않으면 완료/미완료 토글만
+ *  반복해 EXP를 무한히 불릴 수 있다 — 126차 버그 수정). 실제로 적립됐던 양을 그대로 쓰려고 상수가
+ *  아니라 원장 항목의 delta를 읽는다. 호출부가 이미 lock을 쥐고 있어야 한다. */
 private fun Repository.revokePointsOnce(reason: String, refId: String, dateKey: String) {
+    val revokedExp = data.pointsLedger.filter { it.reason == reason && it.refId == refId && it.dateKey == dateKey }.sumOf { it.delta }
     val existed = data.pointsLedger.removeAll { it.reason == reason && it.refId == refId && it.dateKey == dateKey }
     if (!existed) return
     persist()
     pushPointsToFirebase()
+    revokeGrowthExp(revokedExp.toDouble())
 }
 
 /** 공부 시간 비례 적립(10분당 1포인트) — 세션마다 별개 기록이라 중복 판정 없이 매번 추가. 호출부가 이미 lock을 쥐고 있어야 한다. */

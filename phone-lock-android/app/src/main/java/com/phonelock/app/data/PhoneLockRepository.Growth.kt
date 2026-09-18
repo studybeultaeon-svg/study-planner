@@ -23,6 +23,22 @@ internal fun PhoneLockRepository.awardGrowthExp(rawAmount: Double) {
     pushGrowthToFirebase()
 }
 
+/** [awardGrowthExp]의 반대 — 루틴/캘린더 완료가 취소돼 포인트를 회수할 때 그때 같이 얹혔던 EXP도
+ *  걷어낸다(125차 후속 버그: 포인트 원장만 되돌리고 EXP는 그대로 둬서 완료/미완료를 반복하는 것만으로
+ *  EXP를 무한히 불릴 수 있었다). 아직 "적용" 전이면 대기 EXP에서 빼고, 이미 적용돼 누적으로 넘어간
+ *  뒤라면 모자란 만큼 누적에서 마저 뺀다 — 대기에서만 빼면 "적립 → 적용 → 취소"를 반복해 그대로
+ *  무한 복사가 되기 때문이다. 어느 쪽도 0 밑으로는 내려가지 않는다(환생/시즌 초기화로 이미 0이 된
+ *  뒤에 들어온 취소는 뺄 것이 없으므로 그냥 흡수된다). */
+internal fun PhoneLockRepository.revokeGrowthExp(rawAmount: Double) {
+    if (rawAmount <= 0.0) return
+    var remaining = rawAmount * GrowthSystem.expMultiplier(preferences.rebirthCount)
+    val fromPending = remaining.coerceAtMost(preferences.growthExpPending).coerceAtLeast(0.0)
+    preferences.growthExpPending -= fromPending
+    remaining -= fromPending
+    if (remaining > 0.0) preferences.growthExpTotal = (preferences.growthExpTotal - remaining).coerceAtLeast(0.0)
+    pushGrowthToFirebase()
+}
+
 fun PhoneLockRepository.getGrowthExpTotal(): Double = preferences.growthExpTotal
 
 fun PhoneLockRepository.getGrowthExpPending(): Double = preferences.growthExpPending

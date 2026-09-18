@@ -64,13 +64,14 @@
 
 # 현재 진행 중인 작업
 
-**125차 세션(2026-09-17~18) — 잠긴 앱 백그라운드 재생 차단 + 일정표 상하좌우 스크롤.**
+**126차 세션(2026-09-18) — 사용자 보고 버그/UI 요청 4건.**
 
-1. **요구 오해 정정(중요)**: 처음엔 "백그라운드 앱 제어"를 차단 화면에서 음악을 재생/곡넘김하는 카드로 잘못 만들어 배포까지 했다가(android `1789659057`/desktop `1789659171`), 사용자 지적("음악을 못 틀게 하는 기능")으로 카드만 롤백하고 **잠긴 앱의 백그라운드 재생을 멈추는 기능**으로 다시 만들었다. 멈출 시점·사용시간 포함·알림 접근 필수는 사용자가 질문에 답해 확정([[DECISIONS.md]] 125차 후속).
-2. 일정표: 테두리 영역 안 상하좌우 스크롤+요일 행 고정(안드로이드 주간 표가 낮은 화면에서 잘리던 문제 포함), 데스크탑 스크롤바.
-3. 기존 버그 수정(사용자 승인): 안드로이드 잠김·실행확인 화면이 이전 요청 내용을 계속 보여주던 문제([[BUGS.md]] 125차).
+1. **경험치 무한 복사 버그 수정**: 완료를 취소해도 EXP가 안 돌아오던 문제. 포인트 원장만 회수되고 EXP 회수 경로가 아예 없었다 — `revokeGrowthExp()` 신설, 이미 "적용"돼 누적으로 넘어간 분까지 회수한다(대기에서만 빼면 "완료→적용→취소" 반복으로 그대로 무한 복사). 캘린더·루틴·스트릭 보너스 전부 해당([[DECISIONS.md]]·[[BUGS.md]] 126차).
+2. **공부 잠금 화면 재배치**: 아래 절반을 늘 차지하던 허용 앱/프로그램 목록을 `📱 허용된 앱 (N)` 버튼 + 플로팅 다이얼로그로 옮기고, 타이머가 화면 전체를 쓴다. 125차부터 Open이던 "정지 버튼 잘림"도 같이 해결.
+3. **타이머 실행 중 일정 변경**: `timerChangeTask()` — 앞 구간은 바꾸기 전 이름으로 기록에 적립하고 페이즈(카운트다운/스톱워치)는 안 끊는다. 이를 위해 `TimerRunState.taskStartedAt`(적립 구간 시작)을 `phaseStartedAt`에서 분리. 타이머 탭과 잠금 화면 양쪽에 공용 `StudyTaskChangeDialog`.
+4. **공부 기록 동기화 버그 수정**: Firebase 칸 이름이 플랫폼 상수라 폰·태블릿이 같은 칸을 덮어쓰고 서로 못 봤다 — 설치본별 `deviceInstallId`를 붙인 기기별 칸으로 변경.
 
-검증: 에뮬레이터 자동 시나리오(스케줄/실행확인/일일한도/공부 잠금/권한 없음) 전부 통과 + 정지 토스트 확인, 데스크탑 JUnit 12/12(사용자 Chrome 재생 영향 없음), 일정표는 여러 화면 크기에서 확인([[CHANGELOG.md]] 125차·125차 후속). 릴리스 android `1789661510`(3곳 해시 일치)·desktop `1789661610`(호스트 교체·재실행, 헬퍼 1개 동작), 공개 저장소 push, GitHub 릴리스 게시. **실제 Spotify·실기기 확인은 아직.**
+검증: 데스크탑 JUnit 스크래치 테스트 4/4(+ 수정 제거 사본에서 3/4 실패하는 역검증), 기존 JUnit 12/12, 안드로이드 에뮬레이터에서 EXP 값 직접 확인 + 폰/세로 태블릿/가로 태블릿 3크기 잠금 화면 확인 + 일정 변경 동작 확인([[CHANGELOG.md]] 126차). 릴리스 android `1789733126`(3곳 해시 일치)·desktop `1789733044`(호스트 교체·재실행), GitHub 릴리스 게시. **실기기 확인은 아직** — 특히 4번은 폰·태블릿 2대가 있어야 검증된다.
 
 사용자가 요청했다가 취소한 것(79차): "캘린더에 실제 공휴일 표시"(data.go.kr 인증키 발급이 번거롭다는 이유로 중단) — 다시 요청받기 전까진 손대지 말 것.
 
@@ -78,6 +79,7 @@
 
 # 다음 작업 우선순위
 
+- [ ] **126차 실사용 검증(폰·태블릿 2대 + 데스크탑)**: ① **태블릿에서 공부 → 폰/데스크탑의 "오늘의 공부 기록"·통계에 그 시간이 뜨는지**(양쪽 다 이번 릴리스로 업데이트한 뒤에 확인할 것, 업데이트 당일은 업데이트 전 기록이 한 번 빠질 수 있음) ② 캘린더/루틴 완료 → 홈 탭 "대기 경험치" 증가 → 완료 취소 → 원래대로 돌아오는지, "경험치 적용"으로 레벨에 반영한 뒤 취소해도 레벨/누적이 되돌아가는지 ③ 태블릿 공부 잠금 화면이 스크롤 없이 한 화면에 들어오고 "허용된 앱" 버튼 → 플로팅 창에서 앱 실행이 되는지 ④ 타이머 실행 중 "일정 변경" → 스톱워치·뽀모도로 카운트다운이 안 끊기고, 앞 구간이 **이전 일정 이름으로** 기록에 남는지(타이머 탭과 잠금 화면 양쪽).
 - [ ] **125차 실사용 검증(실제 Spotify, 안드로이드 폰·태블릿 + 데스크탑)**: ① 안드로이드 설정 > 권한 설정 가이드 > "알림 접근" 켜기(사이드로드라 "제한된 설정 허용" 필요할 수 있음, 앱 알림 권한도 켜져 있어야 안내 토스트가 보임) ② Spotify를 스케줄/일일한도 그룹에 넣고 잠긴 시간에 백그라운드 재생 → 2초 안에 멈추고 다시 틀어도 멈추는지 ③ 실행확인 그룹: 확인 전엔 멈추고 "진행" 통과 후 유예시간 동안은 재생되는지 ④ 일일한도: 백그라운드 청취 시간이 사용기록에 쌓이고 한도에서 멈추는지 ⑤ 공부 타이머 중 허용 안 된 Spotify가 멈추고 허용 앱 음악은 유지되는지 ⑥ 데스크탑 Spotify(스토어판)도 같은 동작인지 ⑦ 일정표 상하좌우 스크롤 ⑧ 잠김 화면을 홈 제스처로 벗어난 뒤 다른 앱이 막히면 새 앱 기준으로 보이는지.
 - [ ] **124차 실사용 검증(안드로이드 폰·태블릿)**: 홈 탭 캔버스(식물 영역) 어디를 당겨도 새로고침 표시가 나오고 손을 떼면 잠깐 돌다 사라지는지, 🔄 버튼이 없는지, Wi-Fi를 끈 상태에서 다른 탭(루틴/캘린더 등)을 당겨도 표시가 남지 않는지.
 - [ ] **123차 실사용 검증**: 그룹 편집에서 "사용 중 남은 시간 표시"를 끈 그룹의 차단 사이트를 브라우저에서 열어 실행확인 통과 후 오버레이가 더 이상 안 뜨는지, 반대로 켠 그룹은 여전히 뜨는지 확인.
@@ -154,6 +156,7 @@
 - **데스크탑 오버레이는 코너 소형 위젯**(전체화면 click-through 불가) — [[DECISIONS.md]], [[IDEAS.md]] 참고. (공부 잠금은 이 제약과 무관 — `BlockScreen`처럼 click-through가 필요 없는 완전 차단용 Maximized 창이라 JNA 없이 구현됨)
 - **안드로이드 공부 잠금은 진짜 실행 차단이 아니라 베스트 에포트**: 기기 소유자(device owner)/키오스크 모드 없이는 접근성 서비스로 다른 앱 실행 자체를 막을 수 없다. 허용 안 된 앱이 열리는 걸 감지해서(최대 2초 지연) 잠금 화면으로 되돌리는 방식 — 순간적으로 화면이 보였다 사라질 수 있음.
 - **(67차 정정)** 이 git 저장소의 유일한 커밋(`7d9e448`, 2026-08-15 "Initial baseline commit for isolation/rollback safety net")은 그 시점 전체 스냅샷 하나뿐이라 의미 있는 변경 이력이 없다는 뜻이지, `phone-lock-android`/`phone-lock-desktop`이 untracked라는 뜻이 아니었다(`git ls-files`로 확인하니 실제로는 커밋에 포함돼 추적 중 — 과거 서술이 틀렸었음, 67차 keystore 작업 중 발견). **git에 커밋되면 안 되는 새 파일(keystore/비밀번호 등)을 추가할 땐 항상 `.gitignore`에 명시적으로 올릴 것** — 상세 이력은 계속 CHANGELOG.md에 의존.
+- **일일 사용시간이 안드로이드 기기끼리 서로 덮어쓰임(126차 Open)**: `dailyUsage/{날짜}/{그룹}/{기기}`의 기기 값이 아직 플랫폼 상수(`"android"`)라 폰과 태블릿이 같은 칸을 쓴다 — **일일 사용한도가 기기 수만큼 느슨해질 수 있다**. 공부 기록은 126차에 기기별 칸으로 고쳤고, 이쪽은 판정 로직에 직접 쓰여 사용자 확인 후 따로 다룬다([[BUGS.md]]·[[DECISIONS.md]] 126차).
 - 상세 버그 이력(대부분 Fixed)은 [[BUGS.md]] 참고.
 - **(57차 교훈) 코드는 고쳤는데 문서가 안 따라간 사례가 실제로 있었음**: Alt-Tab 우회 버그가 41차 전후로 실제 수정됐지만 BUGS.md/HANDOFF.md엔 56차까지 "보류"로 남아있었다(57차에 발견해 정정). 코드를 수정한 세션은 그 자리에서 바로 BUGS.md를 갱신할 것 — "다음에 정리"로 미루면 이런 불일치가 쌓인다.
 
@@ -168,7 +171,7 @@
 |------|------|
 | `data/Models.kt` | `Group`/`AppData` 데이터 모델(스누즈/기간지정/오버레이 밝기/블록 시도횟수/루틴/모임 공유설정·비공개 등 전체 필드 포함) |
 | `data/JsonStore.kt` | JSON 파일 원자적 읽기/쓰기(모든 필드 parse/save), `exportToFile()`(설정/그룹 내보내기) |
-| `data/Repository.kt` | 그룹/사용기록/escalation 조회·저장, 캐싱, heartbeat, 크로스디바이스 동기화(공부기록/스누즈/실행확인/루틴/캘린더-계산기 연동), 자체 업데이트 체크(`checkForUpdateIfNeeded`/`checkForUpdateNow`) |
+| `data/Repository.kt` | 그룹/사용기록/escalation 조회·저장, 캐싱, heartbeat, 크로스디바이스 동기화(공부기록/스누즈/실행확인/루틴/캘린더-계산기 연동), 자체 업데이트 체크(`checkForUpdateIfNeeded`/`checkForUpdateNow`), 공부 타이머(`timerStart`/`timerStop`/`timerSwitchPhase`/`timerChangeTask`). 공부기록은 `studyLogDeviceKey()`(=`desktop-<deviceInstallId>`)로 기기별 칸에 올린다 — 일일 사용시간은 아직 플랫폼 상수 `DAILY_USAGE_DEVICE`([[BUGS.md]] 126차 Open) |
 | `routine/RoutineEngine.kt` | 루틴 스트릭 순수 계산(`currentStreak`, 방어권 주 2회 고정, 기간(`startDate`/`endDate`) 검사 포함) — `calc/CalcEngine.kt`와 같은 위치적 역할(플랫폼별 대칭 복제) |
 | `routine/RoutineQuotes.kt` | 스트릭 기반 응원/비판/조롱 알림 문구 — `forStreak(streak, broken)` |
 | `routine/DesktopNotifier.kt` | `Main.kt`가 등록한 `TrayState`를 들고 있다가 Composable이 아닌 곳에서도 `sendNotification()` 호출 |
@@ -191,7 +194,7 @@
 | `net/LocalApiServer.kt` | 로컬 HTTP API(127.0.0.1:47882) |
 | `net/ApiToken.kt` | 토큰 발급/영구 저장 |
 | `ui/UsageOverlayContent.kt` | 데스크탑 오버레이 위젯 UI(우측 상단 코너 소형, 알파는 `levelStepsToMax`로부터 매번 계산) |
-| `ui/StudyTimerScreen.kt` | 네이티브 타이머/뽀모도로 탭 — 업무 선택은 오늘 캘린더 일정 드롭다운, 좌우 분할 레이아웃, "오늘 한눈에" 요약, 다른 기기 타이머 미러링, 공부기록 5초 주기 동기화, 정지 시 회고 입력 다이얼로그 |
+| `ui/StudyTimerScreen.kt` | 네이티브 타이머/뽀모도로 탭 — 업무 선택은 오늘 캘린더 일정 드롭다운, 좌우 분할 레이아웃, "오늘 한눈에" 요약, 다른 기기 타이머 미러링, 공부기록 5초 주기 동기화, 정지 시 회고 입력 다이얼로그. 실행 중엔 업무명 옆 "일정 변경"(공용 `StudyTaskChangeDialog`도 이 파일에 있음, 잠금 화면과 공유) |
 | `ui/CalendarScreen.kt` | 캘린더 탭(월그리드+날짜상세, 완료 배지, `LinkedCalcSection`, 공부기록 5초 주기 동기화) |
 | `calc/CalcEngine.kt` | 계산기 순수 계산 로직(웹앱 calculate() 이식) |
 | `ui/CalculatorScreen.kt` | 계산기 탭 — 웹앱과 동일한 좌(2):우(8) 사이드바 구조(왼쪽 업무입력/저장됨 서브탭, 오른쪽 항상 결과), 폴더 접기 영속화·전체 저장·재귀 폴더 트리 |
@@ -200,7 +203,7 @@
 | `ui/StudyStatsScreen.kt` | 통계 탭 — 캘린더 일정 전체 기준 완료율/스트릭/30일 추이 |
 | `ui/GroupListScreen.kt` | 그룹 목록 — 선택된 그룹 accent 강조(좌우 분할용), "😴 스누즈" 버튼 |
 | `ui/StatsScreen.kt` | 사용 통계 — 왼쪽 그룹별 요약/오른쪽 선택한 그룹 상세로 좌우 분할 |
-| `ui/StudyLockScreen.kt` | 공부 잠금 전체화면 UI(위: 타이머, 아래: 허용 프로그램 실행 버튼) — 원격 신호로 잠긴 경우(`isRemote`) 정지/전환 버튼 숨기고 안내 문구만 표시 |
+| `ui/StudyLockScreen.kt` | 공부 잠금 전체화면 UI — 타이머가 화면 전체를 쓰고, 허용 프로그램은 `🖥 허용된 프로그램 (N)` 버튼 → 다이얼로그. 하단에 `📖 일정 변경`(공용 `StudyTaskChangeDialog`). 원격 신호로 잠긴 경우(`isRemote`) 정지/전환/일정변경 숨기고 안내 문구만 표시 |
 | `ui/components/SectionCard.kt` | 공용 카드(`accentColor` 옵션, 기본은 무채색) |
 | `ui/components/WatchAndWaitScreen.kt` | 차단/실행확인/종료확인 공용 카운트다운 셸(title=조롱 문구 자리, quote 슬롯은 미사용) |
 | `ui/MotivationalQuotes.kt` | 조롱조 문구 5단계(순한~극한, 149개)와 `confirmQuoteTier(level)`/`blockQuoteTier(attempts)` 매핑 — 안드로이드/`quotes.js`와 내용 동일 유지할 것 |
@@ -214,7 +217,7 @@
 | `ui/components/GroupWalkieSettingsDialog.kt` | 모임별 무전기 수신 설정 다이얼로그(켜짐/모드/볼륨/요일×시간대 다중 일정/TTS 성별 미리듣기) |
 | `ui/SocialGroupScreen.kt` / `SocialGroupMembersScreen.kt` / `SocialGroupMemberDetailScreen.kt` | "소셜" 탭 화면(105차부터 포인트/레벨/캐릭터 카드는 빠지고 모임/대화/DM만) — 모임 목록+만들기/참여하기, 멤버 목록(마스터-디테일, 완료율 낮은 순 정렬+배지+😴 깨우기+초대코드+관리자 메뉴+공유 설정), 멤버 상세(탭 구조: 루틴/공부/관리, 무전 버튼+인박스, 사용자별 비공개 설정) |
 | `ui/PlantScreen.kt` | "홈" 탭 — 가용 폭별 반응형 레이아웃(`HomeSceneArea` 씬+오버레이 / `HomeGrowthPanel` 레벨·경험치 HUD / `HomeTodayCard` 오늘 요약, 폰 하단 오버레이·600dp+ 2단·840dp+ 사이드 패널), 🔄 새로고침 버튼, `GroundScene`(화면 전체 Canvas 땅 배경+화분/줄기/잎/꽃, `GrowthSystem.STAGES` 기준 성장)에 칭호별 `illustrationId`로 전용 장식(아우라/번개/왕관/밈 모티프) 오버레이, "경험치 적용" 버튼(대기 EXP를 레벨에 반영+레벨업마다 애니메이션/효과음 재생), 환생 버튼/다이얼로그. 꾸미기 장식(`DECORATION_CATALOG`/`drawSceneryDecorations`/`drawPropDecorations`/`DecorationPreview`)도 같은 Canvas에 벡터로 그린다. 표시값은 `growthTick`(2초 주기 재조회)으로 저장값을 따라간다. `permPlant` 권한 대상 |
-| `data/Repository.Growth.kt` | `GrowthSystem`(shared)의 레벨/환생 공식을 `AppData.growthExpTotal`(적용된 누적치)/`growthExpPending`(대기치)/`rebirthCount`에 연결 — `awardGrowthExp()`(포인트 적립 이벤트에 편승, 대기치에 적립), `applyPendingGrowthExp()`(대기치를 원자적으로 적용+`GrowthSystem.ApplyResult` 반환), `rebirth()`, getter들 |
+| `data/Repository.Growth.kt` | `GrowthSystem`(shared)의 레벨/환생 공식을 `AppData.growthExpTotal`(적용된 누적치)/`growthExpPending`(대기치)/`rebirthCount`에 연결 — `awardGrowthExp()`(포인트 적립 이벤트에 편승, 대기치에 적립)/`revokeGrowthExp()`(완료 취소 시 회수 — 대기치에서 먼저, 모자라면 누적치에서), `applyPendingGrowthExp()`(대기치를 원자적으로 적용+`GrowthSystem.ApplyResult` 반환), `rebirth()`, getter들 |
 | `monitor/GrowthSoundPlayer.kt` | "식물" 탭 경험치 적용/레벨업 효과음 재생 — `shared/GrowthSoundEffects.kt`가 합성한 PCM을 `SourceDataLine`으로 직접 스트리밍 |
 | `ui/MainScreen.kt` | 왼쪽 `NavigationRail`(루틴/공부/관리/소셜/식물/설정)+섹션별 `TabRow` 서브탭 구조, 공부 섹션 서브탭 5개(타이머/캘린더/계산기/일정표/통계) |
 | `ui/theme/Color.kt`/`Theme.kt`/`Shape.kt` | 3종 테마(`ThemeMode`: 라이트+그린/다크+파랑/화이트+오렌지, `PhoneLockPalette` 데이터클래스, `PhoneLockTheme(themeMode, content)`가 선택) |
@@ -235,7 +238,7 @@
 ## Android (`phone-lock-android/app/src/main/java/com/phonelock/app/`)
 | 파일 | 역할 |
 |------|------|
-| `data/PhoneLockRepository.kt` | 그룹/사용기록/실행확인 레벨 조회·저장(escalationMutex로 직렬화), 크로스디바이스 동기화 전체(공부기록/스누즈/실행확인/루틴/캘린더-계산기 연동), 자체 업데이트 체크, "소셜" 관련 pass-through 함수 전체(모임/무전기/채팅 등), `copyGroup()`/`copyRoutine()`/`swapRoutineOrder()`, `restoreGroupsFromBackup()`(그룹 복구) |
+| `data/PhoneLockRepository.kt` | 그룹/사용기록/실행확인 레벨 조회·저장(escalationMutex로 직렬화), 크로스디바이스 동기화 전체(공부기록/스누즈/실행확인/루틴/캘린더-계산기 연동), 자체 업데이트 체크, "소셜" 관련 pass-through 함수 전체(모임/무전기/채팅 등), 공부 타이머(`timerStart`/`timerStop`/`timerSwitchPhase`/`timerChangeTask`), `copyGroup()`/`copyRoutine()`/`swapRoutineOrder()`, `restoreGroupsFromBackup()`(그룹 복구). 공부기록은 `studyLogDeviceKey()`(=`android-<deviceInstallId>`)로 기기별 칸에 올린다 — 일일 사용시간은 아직 플랫폼 상수 `DAILY_USAGE_DEVICE`([[BUGS.md]] 126차 Open) |
 | `routine/RoutineEngine.kt` | 루틴 스트릭 순수 계산(`currentStreak`) — 데스크탑판과 동일 로직 대칭 복제, 방어권 주 2회 고정, 기간 검사 포함 |
 | `routine/RoutineQuotes.kt` | 스트릭 알림 문구 — `forStreak(streak, broken)`, 데스크탑판과 내용 동일 유지할 것 |
 | `routine/RoutineAlarmScheduler.kt` | 루틴/스트릭 알림 예약·취소 — `scheduleNext(routine)`는 8일 이내에서 요일마스크+기간을 만족하는 가장 가까운 시각을 찾아 예약, `rescheduleAll()`은 부팅/앱시작 시 전체 재예약, `setExactAndAllowWhileIdle`(권한 없으면 자동 폴백) |
@@ -262,7 +265,7 @@
 | `routine/StudyAlertChecker.kt` | 공부 알림(안드로이드) — 저장소 데이터로 `StudyAlertEngine.Snapshot`을 만들어 판정 → 알림(진동/무진동 채널 2개), 종류별 하루 1회(`AppPreferences.lastStudyAlertDate`). `RoutineAlarmScheduler.scheduleStudyAlertCheck`(3시간 간격 자기 재예약)+`RoutineReminderReceiver`가 호출 |
 | `ui/SocialGroupScreen.kt` / `SocialGroupMembersScreen.kt` / `SocialGroupMemberDetailScreen.kt` | "소셜" 탭 화면(데스크탑판과 대칭, 105차부터 포인트/레벨/캐릭터 카드는 빠지고 모임/대화/DM만) — 모임 목록+만들기/참여하기, 멤버 목록(마스터-디테일, 완료율 낮은 순+배지+😴 깨우기+초대코드+관리자 메뉴+공유 설정), 멤버 상세(탭 구조: 루틴/공부/관리, 🎙️ 무전 버튼+인박스, 사용자별 비공개 설정) |
 | `ui/PlantScreen.kt` | "홈" 탭(데스크탑판과 대칭, 같은 반응형 레이아웃, 새로고침은 버튼 없이 `PullToRefreshBox` — 캔버스까지 당기기가 닿도록 범위 0 세로 스크롤로 감쌈) — `GroundScene`(`contentBottomInset`로 폰 HUD 위에 화분/소품 배치)+칭호별 전용 일러스트+"경험치 적용" 버튼(애니메이션/효과음)+환생 버튼/다이얼로그. `permPlant` 권한 대상 |
-| `data/PhoneLockRepository.Growth.kt` | `GrowthSystem`(shared)을 `AppPreferences.growthExpTotal`(적용된 누적치)/`growthExpPending`(대기치)/`rebirthCount`에 연결(데스크탑판과 대칭) — `applyPendingGrowthExp()` 포함 |
+| `data/PhoneLockRepository.Growth.kt` | `GrowthSystem`(shared)을 `AppPreferences.growthExpTotal`(적용된 누적치)/`growthExpPending`(대기치)/`rebirthCount`에 연결(데스크탑판과 대칭) — `applyPendingGrowthExp()`/`revokeGrowthExp()` 포함 |
 | `service/GrowthSoundPlayer.kt` | "식물" 탭 경험치 적용/레벨업 효과음 재생(데스크탑판과 대칭) — `AudioTrack` STATIC 모드로 `shared/GrowthSoundEffects.kt` PCM 재생 |
 | `ui/components/GroupWalkieSettingsDialog.kt` | 모임별 무전기 수신 설정 다이얼로그(데스크탑판과 대칭, TTS 성별 미리듣기) |
 | `ui/SettingsScreen.kt` | 설정 화면 — 공통/루틴/공부/관리 서브탭(권한 있는 섹션만 필터링), 업데이트/테마/무전기 카드, "모임 공유 설정"은 안내 문구만(실제 토글은 각 모임 화면), "권한/백그라운드 보호" 섹션에 정확한 알람 상태 표시 |
@@ -272,13 +275,13 @@
 | `data/PreMigrationBackup.kt` | 앱 버전 변경 감지 시 Room 열기 전에 raw SQLite를 JSON으로 백업(`backupIfVersionChanged`), `listBackups()`(설정 화면 그룹 복구 카드용) — 성공 시 `AppPreferences.resetSyncTimestamps()`도 함께 호출 |
 | `ui/GroupListScreen.kt` | 그룹 목록 — "😴 스누즈" 버튼, 좌상단 "🗂️ 그룹" headline(데스크탑판과 대칭) |
 | `ui/GroupEditScreen.kt` / `ui/SettingsScreen.kt` | 그룹 편집/설정 화면(데스크탑판과 대칭) — 실행확인/스누즈/기간지정 섹션, "복사" 버튼, "⚠ 그룹 데이터 복구" 카드, "루틴 스트릭 알림" 토글 |
-| `ui/StudyTimerScreen.kt` | 네이티브 타이머/뽀모도로 탭(데스크탑판과 대칭) — 업무 선택은 오늘 캘린더 일정 드롭다운, 인라인 접이식 허용앱 선택, 타이머 미러+공부기록 동기화, 정지 시 회고 입력, `TIMER_COLOR_LABEL` 8단계 |
+| `ui/StudyTimerScreen.kt` | 네이티브 타이머/뽀모도로 탭(데스크탑판과 대칭) — 업무 선택은 오늘 캘린더 일정 드롭다운(허용앱 편집은 설정 > 공부 탭에 있음), 타이머 미러+공부기록 동기화, 정지 시 회고 입력, `TIMER_COLOR_LABEL` 8단계. 실행 중엔 업무명 옆 "일정 변경"(공용 `StudyTaskChangeDialog`도 이 파일에 있음, 잠금 화면과 공유) |
 | `ui/CalendarScreen.kt` | 캘린더 탭(데스크탑판과 대칭) — 날짜 상세 시간 표시+5초 주기 동기화, `LinkedCalcSection`, 8단계 무지개 색상 선택 |
 | `calc/CalcEngine.kt` | 계산기 순수 계산 로직(데스크탑판과 동일 로직, 플랫폼 공유 모듈 없어 대칭 복제) |
 | `ui/CalculatorScreen.kt` | 계산기 탭(데스크탑판과 대칭) — 폴더접기 영속화·카드접기·전체저장, 저장됨 폴더 `DropdownMenu` 팝오버 |
 | `ui/TimetableScreen.kt` | 일정표 탭 — 폰은 일 단위 뷰(◀/▶ 날짜 이동), 태블릿/가로 모드는 주간 표, 둘 다 `TimetableScrollArea`(테두리·위치 표시줄, 주간 표는 상하좌우+요일 행 고정), 계산기-캘린더 연동 목표 달성 시 ✅ 표시 |
 | `ui/StudyStatsScreen.kt` | 통계 탭(데스크탑판과 동일 로직 대칭 복제) — 30일 완료 추이 그래프는 `horizontalScroll`+고정폭 |
-| `ui/StudyLockActivity.kt` / `ui/StudyLockAppsScreen.kt` | 공부 잠금 전체화면(정지/전환이 로컬 `PhoneLockRepository` 직접 호출, 비활성화되면 스스로 `finish()`, 원격 잠금이면 버튼 숨김) / 허용 앱 선택 화면(`AllowedAppsPickerBody`를 타이머 탭과 공유) |
+| `ui/StudyLockActivity.kt` / `ui/StudyLockAppsScreen.kt` | 공부 잠금 전체화면 — 타이머가 화면 전체를 쓰고 허용 앱은 `📱 허용된 앱 (N)` 버튼 → 다이얼로그, 하단에 `📖 일정 변경`. 정지/전환/일정변경이 로컬 `PhoneLockRepository` 직접 호출, 비활성화되면 스스로 `finish()`, 원격 잠금이면 버튼 숨김 / 허용 앱 **선택**(체크박스) 화면(`AllowedAppsPickerBody`를 설정 > 공부 탭과 공유) |
 | `ui/MainActivity.kt` | 하단 `NavigationBar`(루틴/공부/관리/소셜/식물/설정)+섹션별 `TabRow` 서브탭, 공부 섹션 서브탭 5개, 최상단 자체 업데이트 배너, 앱 시작 시 `syncRoutinesFromFirebase()` 후 알림 재예약 |
 | `ui/theme/Color.kt`/`Theme.kt`/`Shape.kt` | 3종 테마(`ThemeMode`/`PhoneLockPalette`, 데스크탑판과 동일 값) |
 | `app/build.gradle.kts` | `buildFeatures.buildConfig = true`(자체 업데이트 버전 비교용) |

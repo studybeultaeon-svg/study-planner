@@ -33,6 +33,14 @@ fun PhoneLockRepository.isEffectivelyOffline(): Boolean =
 /** Firebase 일일 사용시간 동기화(`dailyUsage/{date}/{그룹}/{device}`)에서 이 기기를 가리키는 키. */
 private const val DAILY_USAGE_DEVICE = "android"
 
+/**
+ * 공부 기록(`studyLog/{날짜}/{기기}`)을 올릴 때 쓰는 이 기기만의 칸 이름 — `DAILY_USAGE_DEVICE`처럼
+ * 플랫폼 이름 하나로 고정하면 폰과 태블릿이 같은 칸에 서로 덮어쓰고, 읽을 때도 자기 칸이라고
+ * 건너뛰어 안드로이드끼리는 서로의 기록을 영영 못 본다(126차 버그: "태블릿에서 공부해도 폰/데스크탑에
+ * 기록이 안 뜬다"). `AppPreferences.deviceInstallId`를 붙여 기기마다 다른 칸을 쓰게 한다.
+ */
+private fun PhoneLockRepository.studyLogDeviceKey(): String = "$DAILY_USAGE_DEVICE-${preferences.deviceInstallId}"
+
 /** 네이티브 공부 타이머(1단계)의 실행 상태. taskName/mode/phase 등은 [AppPreferences]에 낱개 필드로
  *  저장돼 있어(SharedPreferences 친화적), 조회 시 이 값으로 묶어서 돌려준다. */
 data class TimerRunState(
@@ -42,7 +50,11 @@ data class TimerRunState(
     val phaseStartedAt: Long,
     val phaseEndAt: Long,
     val cycleCount: Int,
-    val breakExtraUsed: Boolean
+    val breakExtraUsed: Boolean,
+    /** 지금 taskName을 재기 시작한 시각 = 공부 기록에 적립할 구간의 시작점(126차). 보통 phaseStartedAt과
+     *  같고, 타이머를 끄지 않고 일정만 바꿨을 때만 달라진다. 다른 기기 상태를 미러링해서 보여주기만 하는
+     *  화면들은 이 값을 쓰지 않으므로 기본값 0을 그대로 둬도 된다. */
+    val taskStartedAt: Long = 0L
 )
 
 class PhoneLockRepository(context: Context) {
@@ -735,7 +747,10 @@ class PhoneLockRepository(context: Context) {
             phaseStartedAt = startedAt,
             phaseEndAt = preferences.timerPhaseEndAt,
             cycleCount = preferences.timerCycleCount,
-            breakExtraUsed = preferences.timerBreakExtraUsed
+            breakExtraUsed = preferences.timerBreakExtraUsed,
+            // 0이면(구버전에서 켜둔 채 업데이트된 타이머) 페이즈 시작 시각으로 대체 — 이후 호출부는
+            // taskStartedAt만 보고 적립 구간을 계산하면 된다.
+            taskStartedAt = preferences.timerTaskStartedAt.takeIf { it > 0L } ?: startedAt
         )
     }
 
@@ -750,6 +765,7 @@ class PhoneLockRepository(context: Context) {
             preferences.timerPhaseEndAt = state.phaseEndAt
             preferences.timerCycleCount = state.cycleCount
             preferences.timerBreakExtraUsed = state.breakExtraUsed
+            preferences.timerTaskStartedAt = state.taskStartedAt
         }
         ioScope.launch {
             com.phonelock.app.service.PomodoroSyncClient.pushLocalStudyStatus(
@@ -802,7 +818,7 @@ class PhoneLockRepository(context: Context) {
                 put("taskName", e.taskName); put("seconds", e.seconds); put("startedAt", e.startedAt); put("note", e.note); put("tag", e.tag)
             })
         }
-        com.phonelock.app.service.PomodoroSyncClient.writeStudyLogForDate(fbDatabaseUrl, fbApiKey, dateKey, DAILY_USAGE_DEVICE, json)
+        com.phonelock.app.service.PomodoroSyncClient.writeStudyLogForDate(fbDatabaseUrl, fbApiKey, dateKey, studyLogDeviceKey(), json)
     }
 
     /**
@@ -812,8 +828,13 @@ class PhoneLockRepository(context: Context) {
     suspend fun syncStudyLogFromFirebase(dateKey: String) {
         val remote = com.phonelock.app.service.PomodoroSyncClient.readStudyLogForDate(fbDatabaseUrl, fbApiKey, dateKey) ?: return
         val others = mutableListOf<StudyLogEntry>()
+        val ownKey = studyLogDeviceKey()
         remote.keys().forEach { device ->
-            if (device == DAILY_USAGE_DEVICE) return@forEach
+            // 자기 칸은 로컬 DB에 이미 있으므로 건너뛴다. 플랫폼 이름 그대로인 옛 칸("android"/"desktop")도
+            // 건너뛴다 — 기기별 칸으로 바꾸기 전(126차) 여러 기기가 뒤섞여 덮어쓰던 자리라 누구 것인지
+            // 알 수 없고, 자기 기록이 섞여 있으면 로컬 DB와 이중으로 합산된다. 각 기기가 그날 공부를
+            // 한 번 더 기록하면 그 기기의 그날치 전체가 새 칸으로 다시 올라가므로 저절로 복구된다.
+            if (device == ownKey || device == DAILY_USAGE_DEVICE || device == "desktop") return@forEach
             val arr = remote.optJSONArray(device) ?: return@forEach
             for (i in 0 until arr.length()) {
                 val obj = arr.optJSONObject(i) ?: continue
@@ -829,7 +850,7 @@ class PhoneLockRepository(context: Context) {
         val now = System.currentTimeMillis()
         val mode = if (pomodoro) "pomodoro" else "plain"
         val phaseEndAt = if (pomodoro) now + pomodoroStudyMinutes * 60_000L else 0L
-        writeTimerRun(TimerRunState(taskName, mode, "study", now, phaseEndAt, cycleCount = 0, breakExtraUsed = false))
+        writeTimerRun(TimerRunState(taskName, mode, "study", now, phaseEndAt, cycleCount = 0, breakExtraUsed = false, taskStartedAt = now))
     }
 
     /** 타이머를 정지하고, 진행 중이던 공부 페이즈의 경과시간을 기록에 적립한다. note는 사용자가 남긴 짧은 회고(선택),
@@ -837,8 +858,8 @@ class PhoneLockRepository(context: Context) {
     fun timerStop(note: String = "", tag: String = "") {
         val run = getTimerRun() ?: return
         if (run.phase == "study") {
-            val elapsed = ((System.currentTimeMillis() - run.phaseStartedAt) / 1000L).toInt()
-            addStudyLogEntry(run.taskName, elapsed, run.phaseStartedAt, note, tag)
+            val elapsed = ((System.currentTimeMillis() - run.taskStartedAt) / 1000L).toInt()
+            addStudyLogEntry(run.taskName, elapsed, run.taskStartedAt, note, tag)
         }
         writeTimerRun(null)
     }
@@ -852,12 +873,30 @@ class PhoneLockRepository(context: Context) {
         val now = System.currentTimeMillis()
         if (run.phase == "study") {
             if (run.mode != "pomodoro" || now < run.phaseEndAt) return
-            val elapsed = ((now - run.phaseStartedAt) / 1000L).toInt()
-            addStudyLogEntry(run.taskName, elapsed, run.phaseStartedAt)
-            writeTimerRun(run.copy(phase = "break", phaseStartedAt = now, phaseEndAt = now + pomodoroBreakMinutes * 60_000L, breakExtraUsed = false))
+            val elapsed = ((now - run.taskStartedAt) / 1000L).toInt()
+            addStudyLogEntry(run.taskName, elapsed, run.taskStartedAt)
+            writeTimerRun(run.copy(phase = "break", phaseStartedAt = now, phaseEndAt = now + pomodoroBreakMinutes * 60_000L, breakExtraUsed = false, taskStartedAt = now))
         } else {
-            writeTimerRun(run.copy(phase = "study", phaseStartedAt = now, phaseEndAt = now + pomodoroStudyMinutes * 60_000L, cycleCount = run.cycleCount + 1))
+            writeTimerRun(run.copy(phase = "study", phaseStartedAt = now, phaseEndAt = now + pomodoroStudyMinutes * 60_000L, cycleCount = run.cycleCount + 1, taskStartedAt = now))
         }
+    }
+
+    /**
+     * 타이머를 끄지 않고 지금 재고 있는 공부 일정만 바꾼다(126차, 사용자 요청: 일정을 바꾸려고 타이머를
+     * 종료해야 하는 불편 해소, 데스크탑판과 대칭). 지금까지 잰 구간은 **바꾸기 전 이름으로** 기록에
+     * 적립하고 새 이름으로 구간을 다시 시작한다 — 그러지 않으면 A를 공부한 시간이 통째로 B의 기록이
+     * 된다. 페이즈 자체(phaseStartedAt/phaseEndAt/cycleCount)는 건드리지 않아서 뽀모도로 카운트다운과
+     * 스톱워치 표시는 끊기지 않고 이어진다. 휴식 중이면 적립할 공부 구간이 없으므로 이름만 바꾼다.
+     */
+    fun timerChangeTask(newTaskName: String) {
+        val run = getTimerRun() ?: return
+        if (run.taskName == newTaskName) return
+        val now = System.currentTimeMillis()
+        if (run.phase == "study") {
+            val elapsed = ((now - run.taskStartedAt) / 1000L).toInt()
+            addStudyLogEntry(run.taskName, elapsed, run.taskStartedAt)
+        }
+        writeTimerRun(run.copy(taskName = newTaskName, taskStartedAt = now))
     }
 
     /** 휴식이 다 됐을 때 1회 한정으로 5분 더 쉰다. */

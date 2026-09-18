@@ -100,6 +100,7 @@ object JsonStore {
                 ?.ifBlank { null } ?: DEFAULT_FB_DATABASE_URL,
             fbApiKey = (if (json.isNull("fbApiKey")) null else json.optString("fbApiKey", null))
                 ?.ifBlank { null } ?: DEFAULT_FB_API_KEY,
+            deviceInstallId = json.optString("deviceInstallId", ""),
             timerRun = json.optJSONObject("timerRun")?.let { t ->
                 TimerRunState(
                     taskName = t.optString("taskName", ""),
@@ -108,7 +109,8 @@ object JsonStore {
                     phaseStartedAt = t.optLong("phaseStartedAt", 0L),
                     phaseEndAt = t.optLong("phaseEndAt", 0L),
                     cycleCount = t.optInt("cycleCount", 0),
-                    breakExtraUsed = t.optBoolean("breakExtraUsed", false)
+                    breakExtraUsed = t.optBoolean("breakExtraUsed", false),
+                    taskStartedAt = t.optLong("taskStartedAt", 0L)
                 ).takeIf { it.phaseStartedAt > 0L }
             },
             pomodoroStudyMinutes = json.optInt("pomodoroStudyMinutes", 25),
@@ -479,6 +481,7 @@ object JsonStore {
         json.put("zeroStreakDays", data.zeroStreakDays)
         json.put("fbDatabaseUrl", data.fbDatabaseUrl ?: JSONObject.NULL)
         json.put("fbApiKey", data.fbApiKey ?: JSONObject.NULL)
+        json.put("deviceInstallId", data.deviceInstallId)
         json.put("pomodoroStudyMinutes", data.pomodoroStudyMinutes)
         json.put("pomodoroBreakMinutes", data.pomodoroBreakMinutes)
         json.put("pomodoroModeEnabled", data.pomodoroModeEnabled)
@@ -534,6 +537,7 @@ object JsonStore {
             put("phaseEndAt", timerRun.phaseEndAt)
             put("cycleCount", timerRun.cycleCount)
             put("breakExtraUsed", timerRun.breakExtraUsed)
+            put("taskStartedAt", timerRun.taskStartedAt)
         })
         val studyLogJson = JSONArray()
         data.studyLog.forEach { s ->
