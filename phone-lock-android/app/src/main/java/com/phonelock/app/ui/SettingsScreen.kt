@@ -71,6 +71,7 @@ import com.phonelock.app.service.AccessibilityServiceChecker
 import com.phonelock.app.service.ADMIN_USERNAME
 import com.phonelock.app.service.AccountSyncClient
 import com.phonelock.app.service.AuthManager
+import com.phonelock.app.service.BackgroundMediaGuard
 import com.phonelock.app.service.PhoneLockDeviceAdminReceiver
 import com.phonelock.app.ui.components.SectionCard
 import com.phonelock.app.ui.components.ToggleRow
@@ -151,6 +152,7 @@ fun SettingsScreen(
     var deviceAdminActive by remember { mutableStateOf(isDeviceAdminActive(context)) }
     var batteryOptIgnored by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
     var exactAlarmGranted by remember { mutableStateOf(canScheduleExactAlarms(context)) }
+    var mediaAccessGranted by remember { mutableStateOf(BackgroundMediaGuard.hasSessionAccess(context)) }
     // 106차: 개별 권한 카드 여러 개 대신 "권한 설정 가이드" 진입점 하나로 통합 — 최초 실행 때 본 것과
     // 같은 화면을 여기서 다시 연다.
     var showPermissionGuide by remember { mutableStateOf(false) }
@@ -320,6 +322,7 @@ fun SettingsScreen(
             deviceAdminActive = isDeviceAdminActive(context)
             batteryOptIgnored = isIgnoringBatteryOptimizations(context)
             exactAlarmGranted = canScheduleExactAlarms(context)
+            mediaAccessGranted = BackgroundMediaGuard.hasSessionAccess(context)
         })
         return
     }
@@ -1240,14 +1243,14 @@ fun SettingsScreen(
                     Spacer(Modifier.height(Spacing.md))
 
                     SectionCard("권한 설정") {
-                        val allGranted = accessibilityEnabled && batteryOptIgnored && exactAlarmGranted && isNotificationGranted(context)
+                        val allGranted = accessibilityEnabled && batteryOptIgnored && exactAlarmGranted && isNotificationGranted(context) && mediaAccessGranted
                         Text(
                             if (allGranted) "모든 필수 권한이 설정되어 있습니다." else "일부 권한이 아직 설정되지 않았습니다.",
                             style = MaterialTheme.typography.bodyLarge,
                             color = if (allGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                         Text(
-                            "알림 / 접근성 서비스 / 백그라운드 실행 보호 / 정확한 알람 / 삭제 방지를 한 화면에서 확인하고 설정할 수 있습니다.",
+                            "알림 / 접근성 서비스 / 백그라운드 실행 보호 / 정확한 알람 / 알림 접근(잠긴 앱 백그라운드 재생 차단) / 삭제 방지를 한 화면에서 확인하고 설정할 수 있습니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

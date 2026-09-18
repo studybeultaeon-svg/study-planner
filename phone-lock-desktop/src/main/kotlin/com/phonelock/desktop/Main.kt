@@ -265,7 +265,7 @@ private fun startApp() = application {
             state = rememberWindowState(placement = WindowPlacement.Maximized)
         ) {
             PhoneLockTheme(palette) {
-                BlockScreen(req.reason, req.blockAttempts, processName = req.processName) { blockRequest = null }
+                BlockScreen(req.reason, req.blockAttempts) { blockRequest = null }
             }
         }
     }

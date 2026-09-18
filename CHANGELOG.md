@@ -4,6 +4,46 @@
 
 ---
 
+## 2026-09-18 (125차 후속) — 요구 오해 정정: 음악 제어 카드 롤백 + 잠긴 앱 백그라운드 재생 차단
+
+### 사용자 지적
+"앱 잠금 상태에서도 음악을 틀 수 있게 하는 기능이 아니라, 음악을 못 틀게(백그라운드로도 못 틀게) 하는 기능"이었다 — 바로 아래 125차 항목의 "차단 화면 음악 제어 카드"는 요구를 반대로 이해한 것. 롤백하고 다시 만들 것.
+
+사용자 확정 사항(질문으로 확인): 카드 관련 코드만 롤백(일정표 스크롤·잠김/실행확인 화면 잔존 버그 수정은 유지) / 멈출 시점은 스케줄·일일한도 잠김 + 공부 잠금(허용 앱 제외) + **실행확인 미통과** / 일일한도 앱의 **백그라운드 재생 시간도 사용시간에 포함** / 안드로이드 알림 접근이 없으면 기능 꺼짐 + 켜라고 안내.
+
+### 롤백
+- 삭제: 안드로이드 `ui/components/MediaControlCard.kt`·`service/MediaControlClient.kt`, 데스크탑 `ui/components/MediaControlCard.kt`.
+- 124차 상태로 복원: `InterstitialScreen`/`WatchAndWaitScreen`(extraContent 슬롯·세로 스크롤 제거), `StudyLockActivity`/`StudyLockScreen`, `BlockScreen`/`ConfirmScreen`/`Main.kt`, 매니페스트 `<queries>`의 MEDIA_BUTTON/MediaBrowserService.
+- `BlockActivity`/`ConfirmOpenActivity`는 124차로 되돌린 뒤 `onNewIntent` 수정(잔존 버그)만 다시 적용.
+
+### 구현 — 잠긴 앱 백그라운드 재생 차단
+- **안드로이드**
+  - 신규 `service/BackgroundMediaGuard.kt`: 알림 접근이 있을 때 `MediaSessionManager`로 재생 중인 세션 패키지 조회·일시정지, 알림 접근 설정 열기. 같은 파일에 알림 접근용 빈 `MediaListenerService`(컴포넌트 이름 유지 — 이미 켠 권한이 업데이트 후에도 유지됨).
+  - `AppMonitorAccessibilityService.enforceBackgroundMedia()`: 주기 루프(`monitorLoop`, 2초)에서만 실행 — `tick()`은 창 전환 이벤트로도 불려 간격이 일정하지 않기 때문. 재생 중인 앱마다 (1) 공부 잠금 중 허용 앱 아님 (2) 그룹 `evaluate().locked`(스케줄/일일한도, 스누즈·뽀모도로 휴식 해제 반영) (3) `isConfirmActiveNow && !isRecentlyConfirmedAnyDevice`면 일시정지. 허용된 재생은 그 앱 그룹들의 사용시간에 실제 경과 시간(1초 미만은 그룹별로 이월, 한 번에 최대 10초)을 더함 — 지금 화면에 떠 있는 앱의 그룹은 기존 `tickInternal`이 세므로 제외. 멈출 때 앱별 60초에 한 번 토스트("'앱'은(는) 지금 잠겨 있어 재생을 멈췄습니다."). 판정 함수(`LockEvaluator`/`ConfirmationGate`)는 호출만 함.
+  - 권한 설정 가이드 항목을 "알림 접근 — 잠긴 앱 백그라운드 재생 차단"(필수 성격)으로 변경, 설정 화면 "권한 설정" 경고(`allGranted`)와 안내 문구에 포함.
+- **데스크탑**
+  - `MediaSessionBridge`를 일시정지 전용으로 변경(`pause` 동사만, `setActive()`로 필요할 때만 헬퍼 유지, 헬퍼가 죽으면 최대 30초에 한 번 재시작).
+  - `EnforcementService.enforceBackgroundMedia()`: 별도 2초 루프(확인창 응답 대기에 막히지 않음), 안드로이드와 같은 세 기준. 공부 잠금이거나 프로그램이 등록된 활성 그룹이 있을 때만 헬퍼 실행. 세션 id↔프로그램 이름은 `matchesProcess`. 허용된 재생은 사용시간 적립(포그라운드 프로그램의 그룹 제외, `tickMutex` 안에서). 멈출 때 세션별 60초에 한 번 트레이 알림.
+
+### 검증
+- **안드로이드(Android 16 에뮬레이터, 스크래치 테스트 빌드 + 대역 음악 앱 2개, 접근성 서비스 켬)** — 자동 시나리오 전부 통과:
+  - 스케줄 잠김 그룹의 앱은 2초 안에 정지, 다시 재생해도 다시 정지, 다른 앱은 계속 재생.
+  - 실행확인 그룹: 미통과면 정지 → 확인 통과(`ConfirmationGate.markConfirmed`) 후엔 계속 재생 + 10초 재생에 사용시간 10초 적립.
+  - 일일한도 16초 그룹: 백그라운드 재생 시간이 적립(8초에 +12)되다가 한도 도달 후 정지, 무관한 앱은 계속 재생.
+  - 공부 잠금(허용=Other Music): 허용 안 된 Test Music만 정지. (첫 실행에선 테스트 액티비티가 허용 목록을 설정 값에 넣지 않아 허용 앱까지 멈춰 실패 → 테스트 쪽 수정 후 통과. 실제 앱은 잠금 화면과 차단 모두 같은 설정 값을 씀.)
+  - 알림 접근을 끄면 아무것도 멈추지 않고(기능 꺼짐), 다시 켜면 곧바로 정지.
+  - 정지 토스트 화면 확인. 앱의 알림 권한이 꺼져 있으면 안드로이드가 백그라운드 토스트를 억제한다(로그 "Suppressing toast ... by user request") — 정지 자체는 영향 없음.
+  - 시스템 로그에 `MediaSessionService ... callingPackage:com.phonelock.app ... reason:MediaSessionRecord:pause` 기록 확인.
+- **데스크탑(호스트, 빌드 사본 전용 JUnit + 무음 대역 플레이어)** — 12/12 통과: 스케줄 잠김 정지/재정지, 실행확인 미통과 정지·통과 후 재생+적립(13초), 일일한도 12초 적립 후 정지, 공부 잠금(허용=chrome.exe) 시 대역 플레이어만 정지, 규칙이 없으면 헬퍼 종료. **사용자가 재생 중이던 Chrome은 테스트 내내 재생 유지**(테스트 규칙이 Chrome과 매칭되지 않음·다른 재생 세션이 전부 허용 앱일 때만 공부 잠금 시나리오 실행하도록 안전장치). 배포 후 실제 앱에서 헬퍼 1개 실행·Chrome 영향 없음 확인.
+- **실제 Spotify·실기기 확인은 아직.**
+
+### 빌드/배포
+- 안드로이드 `assembleRelease`(versionCode `1789661510`), APK에 새 문자열 포함·옛 카드 문자열 없음 확인, 3곳 해시 일치 배포, GitHub 릴리스 `android-1789661510`.
+- 데스크탑 `packageMsi createDistributable`(BuildInfo `1789661610`), 호스트·vm-build-output 교체(FAILED 0, jar 해시 일치, `MediaControlCard` 없음·`enforceBackgroundMedia` 있음), 재실행 확인, GitHub 릴리스 `desktop-1789661610`.
+- 공개 저장소 소스 동기화 push. 직전 릴리스(`android-1789659057`/`desktop-1789659171`, 카드 포함)는 삭제하지 않았고 새 릴리스가 자체 업데이트로 대체한다.
+
+---
+
 ## 2026-09-17~18 (125차) — 차단·공부 잠금 화면에서 백그라운드 음악 앱 제어 + 일정표 상하좌우 스크롤
 
 ### 사용자 요청

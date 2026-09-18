@@ -3,8 +3,11 @@
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Toast
 import com.phonelock.app.data.AppGroup
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.GroupSite
@@ -28,6 +31,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 private const val TICK_MS = 2000L
 // ?ㅻⅨ 湲곌린媛 ?щ┛ "怨듬? ??대㉧ ?ㅽ뻾 以? ?좏샇媛 ?대낫???ㅻ옒 媛깆떊 ???먯쑝硫?臾댁떆?쒕떎(StudyTimerScreen??// 誘몃윭 ?쒖떆? 媛숈? 媛? ?곗뒪?ы깙??EnforcementService.REMOTE_STUDY_SIGNAL_STALE_MS? ?숈씪) ???좏샇瑜?// ?щ━??湲곌린媛 ?뺤? ?놁씠 爰쇱졇??timerActive:true媛 ?좊졊泥섎읆 ?⑥븘 ??湲곌린媛 ?곴뎄???좉린??嫄?留됰뒗??
 private const val REMOTE_STUDY_SIGNAL_STALE_MS = 20 * 60 * 1000L
+// 잠긴 앱 백그라운드 재생 차단(125차): 루프가 잠깐 밀려도 재생 시간을 한 번에 과하게 더하지 않도록 한 번에 셀 최대 간격,
+// 사용자가 계속 다시 재생을 눌러도 안내 토스트가 도배되지 않도록 앱별 최소 간격.
+private const val MAX_BACKGROUND_USAGE_STEP_MS = 10_000L
+private const val PAUSE_NOTICE_INTERVAL_MS = 60_000L
 
 class AppMonitorAccessibilityService : AccessibilityService() {
 
@@ -52,6 +59,12 @@ class AppMonitorAccessibilityService : AccessibilityService() {
 
     // 공부 페이즈가 방금 끝났는지(true -> false 전환) 감지해 StudyNotificationGate에 쌓인 큐를 비우기 위한 상태.
     @Volatile private var wasStudying = false
+
+    // 잠긴 앱 백그라운드 재생 차단(125차) — 재생 시간 적립용 기준 시각/그룹별 1초 미만 나머지, 앱별 안내 토스트 시각.
+    private var lastBackgroundMediaCheckAt = 0L
+    private val backgroundUsageRemainderMs = mutableMapOf<Long, Long>()
+    private val lastPauseNoticeAt = mutableMapOf<String, Long>()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -103,6 +116,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         while (currentCoroutineContext().isActive) {
             delay(TICK_MS)
             runCatching { tick() }
+            runCatching { enforceBackgroundMedia() }
         }
     }
 
@@ -234,6 +248,65 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             StudyNotificationGate.flushQueued(applicationContext)
         }
         wasStudying = studying
+    }
+
+    /**
+     * 125차(사용자 요청): 잠긴 앱은 화면뿐 아니라 백그라운드 재생도 못 하게 한다. 주기 루프(monitorLoop)에서만
+     * 호출한다 — tick()은 창 전환 이벤트에서도 불려 호출 간격이 일정하지 않으므로, 여기서 세는 재생 시간이 겹칠 수 있다.
+     *
+     * 재생 중인 앱마다 화면에 떠 있을 때와 같은 기준으로 판단한다(판정 함수는 호출만 하고 고치지 않는다).
+     * - 공부 잠금 중이고 허용 앱이 아니면 멈춘다(checkStudyLock과 같은 기준).
+     * - 그룹이 스케줄/일일한도로 잠겼거나(evaluate), 실행확인이 필요한데 아직 통과하지 않았으면 멈춘다(tickInternal과 같은 기준).
+     * - 그 외엔 재생을 허용하고, 재생 시간을 그 앱 그룹의 사용시간에 더한다(일일한도도 이 값으로 판정). 지금 화면에 떠 있는
+     *   앱의 그룹은 tickInternal이 이미 세므로 건너뛴다.
+     * 알림 접근이 없으면 재생 중인 앱을 알 수 없어 아무것도 하지 않는다(권한 설정 경고로 안내).
+     */
+    private suspend fun enforceBackgroundMedia() {
+        val now = System.currentTimeMillis()
+        val elapsedMs = if (lastBackgroundMediaCheckAt == 0L) 0L else (now - lastBackgroundMediaCheckAt).coerceIn(0L, MAX_BACKGROUND_USAGE_STEP_MS)
+        lastBackgroundMediaCheckAt = now
+        val playing = BackgroundMediaGuard.playingPackages(applicationContext) - applicationContext.packageName
+        if (playing.isEmpty()) return
+
+        val foreground = rootInActiveWindow?.packageName?.toString()
+        val foregroundGroupIds = foreground?.let { pkg -> repository.findGroupsForPackage(pkg).map { it.id }.toSet() }.orEmpty()
+        val studyLocked = repository.isStudyLockActive() || isRemoteStudyTimerActive()
+        val studyAllowed = preferences.studyLockAllowedPackages
+        val usageGroupIds = mutableSetOf<Long>()
+        for (pkg in playing) {
+            if (studyLocked && pkg !in studyAllowed) {
+                pauseBackgroundMedia(pkg)
+                continue
+            }
+            val groups = repository.findGroupsForPackage(pkg)
+            if (groups.isEmpty()) continue
+            val blocked = groups.any { evaluator.evaluate(it).locked } ||
+                groups.any { evaluator.isConfirmActiveNow(it) && !isRecentlyConfirmedAnyDevice(it) }
+            if (blocked) {
+                pauseBackgroundMedia(pkg)
+            } else if (pkg != foreground) {
+                groups.filter { it.id !in foregroundGroupIds }.forEach { usageGroupIds += it.id }
+            }
+        }
+        for (groupId in usageGroupIds) {
+            val totalMs = (backgroundUsageRemainderMs[groupId] ?: 0L) + elapsedMs
+            backgroundUsageRemainderMs[groupId] = totalMs % 1000L
+            val seconds = (totalMs / 1000L).toInt()
+            if (seconds > 0) repository.addUsageSeconds(groupId, seconds)
+        }
+    }
+
+    private fun pauseBackgroundMedia(packageName: String) {
+        if (!BackgroundMediaGuard.pause(applicationContext, packageName)) return
+        val now = System.currentTimeMillis()
+        if (now - (lastPauseNoticeAt[packageName] ?: 0L) < PAUSE_NOTICE_INTERVAL_MS) return
+        lastPauseNoticeAt[packageName] = now
+        val label = runCatching {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
+        }.getOrDefault(packageName)
+        mainHandler.post {
+            Toast.makeText(applicationContext, "'$label'은(는) 지금 잠겨 있어 재생을 멈췄습니다.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     /**

@@ -4,14 +4,12 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import com.phonelock.shared.confirmQuoteTier
 import com.phonelock.shared.quoteForTier
 import com.phonelock.app.data.AppPreferences
@@ -19,9 +17,7 @@ import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.service.ConfirmationGate
 import com.phonelock.app.service.IntentExtras
 import com.phonelock.app.ui.components.InterstitialScreen
-import com.phonelock.app.ui.components.MediaControlCard
 import com.phonelock.app.ui.theme.PhoneLockTheme
-import com.phonelock.app.ui.theme.Spacing
 import com.phonelock.app.ui.theme.applyThemeWindowBackground
 
 private const val DEFAULT_WAIT_SECONDS = 5
@@ -83,7 +79,6 @@ class ConfirmOpenActivity : ComponentActivity() {
             return
         }
 
-        val packageName = intent.getStringExtra(IntentExtras.EXTRA_PACKAGE_NAME)
         setContent {
             // 96차 버그 수정: 이 경로(앱 실행 확인)만 themeMode만 넘기고 커스텀 배경/강조색·글자
             // 크기를 안 넘겨서, 커스텀 테마를 쓰는 사용자에게는 이 화면만 기본 프리셋 팔레트로
@@ -115,12 +110,6 @@ class ConfirmOpenActivity : ComponentActivity() {
                     onSecondary = {
                         repository.recordQuoteOutcomeFireAndForget(confirmQuoteTier(level), title, proceeded = false)
                         goHome()
-                    },
-                    // 125차(사용자 요청): 대기 중인 앱이 음악 앱이면 앱을 열지 않고도 재생을 제어할 수 있게 한다.
-                    // 재생 제어 버튼은 화면을 벗어나지 않아 대기시간에 영향이 없다("알림 접근 켜기"는 설정 화면으로
-                    // 나가므로 기존 규칙대로 대기시간이 처음부터 다시 시작된다).
-                    extraContent = packageName?.let { pkg ->
-                        { MediaControlCard(targetPackage = pkg, modifier = Modifier.padding(top = Spacing.lg)) }
                     }
                 )
             }

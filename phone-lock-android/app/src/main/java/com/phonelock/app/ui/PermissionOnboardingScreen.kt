@@ -39,7 +39,7 @@ import com.phonelock.app.R
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.routine.RoutineAlarmScheduler
 import com.phonelock.app.service.AccessibilityServiceChecker
-import com.phonelock.app.service.MediaControlClient
+import com.phonelock.app.service.BackgroundMediaGuard
 import com.phonelock.app.service.PhoneLockDeviceAdminReceiver
 import com.phonelock.app.ui.components.SectionCard
 import com.phonelock.app.ui.theme.Spacing
@@ -64,7 +64,7 @@ fun PermissionOnboardingScreen(repository: PhoneLockRepository, onDone: () -> Un
     var batteryOptIgnored by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
     var exactAlarmGranted by remember { mutableStateOf(canScheduleExactAlarms(context)) }
     var deviceAdminActive by remember { mutableStateOf(isDeviceAdminActive(context)) }
-    var mediaAccessGranted by remember { mutableStateOf(MediaControlClient.hasSessionAccess(context)) }
+    var mediaAccessGranted by remember { mutableStateOf(BackgroundMediaGuard.hasSessionAccess(context)) }
 
     fun refreshAll() {
         notificationGranted = isNotificationGranted(context)
@@ -72,7 +72,7 @@ fun PermissionOnboardingScreen(repository: PhoneLockRepository, onDone: () -> Un
         batteryOptIgnored = isIgnoringBatteryOptimizations(context)
         exactAlarmGranted = canScheduleExactAlarms(context)
         deviceAdminActive = isDeviceAdminActive(context)
-        mediaAccessGranted = MediaControlClient.hasSessionAccess(context)
+        mediaAccessGranted = BackgroundMediaGuard.hasSessionAccess(context)
     }
 
     // 설정 앱을 갔다가 이 화면으로 돌아왔을 때(특히 접근성처럼 결과 콜백이 없는 startActivity 방식)
@@ -165,16 +165,17 @@ fun PermissionOnboardingScreen(repository: PhoneLockRepository, onDone: () -> Un
             }
         )
 
-        // 125차: 차단/공부 잠금 화면의 음악 제어 카드용 — 없어도 기본 제어(미디어 키)는 되므로 선택 항목.
+        // 125차: 잠긴 앱의 백그라운드 재생 차단(BackgroundMediaGuard)은 이 권한 없이는 동작하지 않는다.
         PermissionGuideItem(
-            title = "알림 접근 — 음악 앱 제어 (선택)",
+            title = "알림 접근 — 잠긴 앱 백그라운드 재생 차단",
             granted = mediaAccessGranted,
-            why = "차단되거나 공부 잠금으로 열 수 없는 음악 앱(Spotify 등)을 차단 화면에서 제어할 때, 정확히 그 앱만 " +
-                "골라 명령을 보내고 곡 제목·재생 상태를 보여주려면 필요합니다. 알림 내용은 읽거나 저장하지 않습니다.",
+            why = "차단 규칙으로 잠겼거나 실행 확인을 통과하지 않았거나 공부 잠금 중인 앱(Spotify 등)이 화면 뒤에서 음악을 " +
+                "계속 트는 걸 멈추려면 필요합니다. 어느 앱이 재생 중인지 알아내는 데만 쓰고 알림 내용은 읽거나 저장하지 않습니다. " +
+                "꺼져 있으면 잠긴 앱의 백그라운드 재생을 막지 못하고, 백그라운드 재생 시간도 사용시간에 들어가지 않습니다.",
             whereToSet = "버튼을 누르면 알림 접근(기기 및 앱 알림) 설정 화면이 열립니다. 이 앱을 켜 주세요. 켤 수 없게 " +
                 "흐리게 보이면 앱 정보 > 오른쪽 위 메뉴 > \"제한된 설정 허용\"을 먼저 누르세요(접근성 켤 때와 같음).",
             actionLabel = "알림 접근 설정 열기",
-            onAction = { MediaControlClient.openAccessSettings(context) }
+            onAction = { BackgroundMediaGuard.openAccessSettings(context) }
         )
 
         SectionCard("삭제 방지 (선택)") {

@@ -1,16 +1,12 @@
 package com.phonelock.desktop.ui
 
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
 import com.phonelock.shared.blockQuoteTier
 import com.phonelock.shared.quoteForTier
 import com.phonelock.desktop.monitor.LockReason
-import com.phonelock.desktop.ui.components.MediaControlCard
 import com.phonelock.desktop.ui.components.WatchAndWaitScreen
-import com.phonelock.desktop.ui.theme.Spacing
 
 /**
  * 실행확인 대기화면(ConfirmScreen)과 같은 톤으로 통일. 여기선 "확인"이라는 탈출구를 주지 않기 위해
@@ -18,7 +14,7 @@ import com.phonelock.desktop.ui.theme.Spacing
  * "중단"(secondaryLabel, onConfirm)에만 걸려있다.
  */
 @Composable
-fun BlockScreen(reason: LockReason, blockAttempts: Int = 0, processName: String? = null, onConfirm: () -> Unit) {
+fun BlockScreen(reason: LockReason, blockAttempts: Int = 0, onConfirm: () -> Unit) {
     val message = when (reason) {
         LockReason.SCHEDULE -> "지정된 시간대에는 이 차단 규칙의 프로그램을 사용할 수 없습니다."
         LockReason.LIMIT -> "오늘 이 차단 규칙의 사용 시간 한도를 모두 사용했습니다."
@@ -36,11 +32,6 @@ fun BlockScreen(reason: LockReason, blockAttempts: Int = 0, processName: String?
         secondaryLabel = "중단",
         secondaryFilled = true,
         secondaryContainerColor = MaterialTheme.colorScheme.primary,
-        onSecondary = onConfirm,
-        // 125차(사용자 요청): 차단 규칙에 걸린 프로그램이 Spotify 같은 음악 앱이면(최소화돼 계속 재생 중) 창을
-        // 열지 않고 재생을 제어할 수 있게 한다. 카드는 그 프로그램의 미디어 세션이 있을 때만 보인다.
-        extraContent = processName?.takeIf { reason == LockReason.SCHEDULE || reason == LockReason.LIMIT }?.let { name ->
-            { MediaControlCard(targetProcess = name, modifier = Modifier.padding(top = Spacing.lg)) }
-        }
+        onSecondary = onConfirm
     )
 }

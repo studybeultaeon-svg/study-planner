@@ -10,48 +10,55 @@ import java.io.File
 import kotlin.concurrent.thread
 
 /**
- * 차단(잠김/실행확인)·공부 잠금 화면에서 백그라운드로 재생 중인 음악 앱(Spotify 등)을 창을 열지 않고
- * 제어한다(125차, 사용자 요청). Windows 시스템 미디어 제어(GSMTC,
- * `GlobalSystemMediaTransportControlsSessionManager`)로 앱별 미디어 세션을 찾아 그 세션에만 명령을 보낸다
- * — 권한이 필요 없고, 창이 최소화돼 있어도 동작한다.
+ * 잠긴 프로그램의 백그라운드 재생 차단(125차, 사용자 요청) — 차단된 프로그램은 창만 최소화되고 소리는 계속 날 수
+ * 있어서, Windows 시스템 미디어 제어(GSMTC, `GlobalSystemMediaTransportControlsSessionManager`)로 재생 중인
+ * 세션을 찾아 그 세션만 일시정지한다. 어떤 세션을 멈출지는 [EnforcementService]가 기존 잠금 판정으로 정한다.
+ * 권한이 필요 없고, 창이 최소화돼 있어도 동작한다.
  *
- * GSMTC는 WinRT API라 JVM에서 직접 부를 수 없어 [TtsPlayer]처럼 고정 PowerShell 스크립트를 쓴다. 다만
- * 매번 프로세스를 띄우면 몇 시간씩 떠 있는 공부 잠금 화면에서 부담이 크므로, 카드가 보이는 동안만
- * 헬퍼 프로세스 하나를 유지한다([acquire]/[release] 참조 카운트).
+ * GSMTC는 WinRT API라 JVM에서 직접 부를 수 없어 [TtsPlayer]처럼 고정 PowerShell 스크립트를 쓴다. 매 조회마다
+ * 프로세스를 띄우면 부담이 커서, 감시가 필요한 동안(차단 그룹이나 공부 잠금이 있을 때) 헬퍼 프로세스 하나를
+ * 유지한다([setActive]). 측정 부담은 CPU 약 0.6%(1코어), 메모리 약 98MB.
  *
  * 헬퍼 ↔ 앱 프로토콜(한 줄 단위, UTF-8):
  * - 헬퍼 → 앱: 세션 목록이 바뀔 때마다 JSON 배열 한 줄 `[{"id","title","artist","playing"}, ...]`
- * - 앱 → 헬퍼: `toggle|next|prev` + 탭 + 세션 id. id는 시스템이 준 값을 그대로 돌려줄 뿐이고, 스크립트는
- *   이 값을 세션 비교(-eq)에만 쓰므로 코드로 실행되지 않는다.
+ * - 앱 → 헬퍼: `pause` + 탭 + 세션 id. id는 시스템이 준 값을 그대로 돌려줄 뿐이고, 스크립트는 이 값을 세션
+ *   비교(-eq)에만 쓰므로 코드로 실행되지 않는다.
  * 앱이 종료돼 표준입력이 닫히면 헬퍼도 스스로 끝난다.
  */
 object MediaSessionBridge {
     data class Session(val appId: String, val title: String, val artist: String, val isPlaying: Boolean)
 
-    enum class Action(val verb: String) { PREVIOUS("prev"), PLAY_PAUSE("toggle"), NEXT("next") }
-
     private val _sessions = MutableStateFlow<List<Session>>(emptyList())
     val sessions: StateFlow<List<Session>> = _sessions.asStateFlow()
 
+    private const val RESTART_INTERVAL_MS = 30_000L
+
     private val lock = Any()
-    private var users = 0
     private var process: Process? = null
     private var writer: BufferedWriter? = null
+    private var lastStartAt = 0L
 
-    fun acquire() = synchronized(lock) {
-        users++
-        if (process?.isAlive != true) start()
+    /**
+     * 감시가 필요한 동안 주기적으로 true를 넘겨 준다 — 헬퍼가 없거나 죽었으면 다시 띄우고(PowerShell 자체가 안 뜨는
+     * 환경에서 매번 재시도하지 않도록 최대 [RESTART_INTERVAL_MS]에 한 번), false면 헬퍼를 끈다.
+     */
+    fun setActive(active: Boolean) = synchronized(lock) {
+        if (!active) {
+            if (process != null) stop()
+            return@synchronized
+        }
+        if (process?.isAlive == true) return@synchronized
+        val now = System.currentTimeMillis()
+        if (now - lastStartAt < RESTART_INTERVAL_MS) return@synchronized
+        lastStartAt = now
+        start()
     }
 
-    fun release() = synchronized(lock) {
-        users = (users - 1).coerceAtLeast(0)
-        if (users == 0) stop()
-    }
-
-    fun send(appId: String, action: Action) {
+    /** [appId] 세션을 일시정지하도록 헬퍼에 요청한다(비동기 — 결과는 다음 세션 목록에 반영된다). */
+    fun pause(appId: String) {
         if (appId.any { it == '\t' || it == '\r' || it == '\n' }) return
         synchronized(lock) {
-            runCatching { writer?.apply { write("${action.verb}\t$appId\n"); flush() } }
+            runCatching { writer?.apply { write("pause\t$appId\n"); flush() } }
         }
     }
 
@@ -65,7 +72,7 @@ object MediaSessionBridge {
         return base.length >= 3 && appId.contains(base, ignoreCase = true)
     }
 
-    /** 화면에 보여줄 앱 이름 — id의 마지막 조각에서 경로/확장자를 뗀다. */
+    /** 알림에 보여줄 앱 이름 — id의 마지막 조각에서 경로/확장자를 뗀다. */
     fun displayName(appId: String): String =
         appId.substringAfterLast('!').substringAfterLast('\\').removeSuffix(".exe").ifBlank { appId }
 
@@ -164,11 +171,7 @@ object MediaSessionBridge {
                             }
                             if (${'$'}null -ne ${'$'}target) {
                                 try {
-                                    switch (${'$'}parts[0]) {
-                                        'toggle' { ${'$'}null = Await (${'$'}target.TryTogglePlayPauseAsync()) ([bool]) }
-                                        'next' { ${'$'}null = Await (${'$'}target.TrySkipNextAsync()) ([bool]) }
-                                        'prev' { ${'$'}null = Await (${'$'}target.TrySkipPreviousAsync()) ([bool]) }
-                                    }
+                                    if (${'$'}parts[0] -eq 'pause') { ${'$'}null = Await (${'$'}target.TryPauseAsync()) ([bool]) }
                                 } catch { }
                             }
                         }
