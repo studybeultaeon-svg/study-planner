@@ -116,7 +116,9 @@ suspend fun PhoneLockRepository.pushMySocialStats(groupId: String) {
     val lastOfMonth = firstOfMonth.plusMonths(1).minusDays(1)
     val monthTasks = getCalendarTasksInRange(firstOfMonth.minusDays(7).toString(), lastOfMonth.plusDays(7).toString())
     val scheduleStats = monthTasks.map {
-        com.phonelock.app.service.SocialGroupSyncClient.ScheduleStat(it.dateKey, it.name, it.status, it.color, it.linkedCalc, it.progressStep)
+        com.phonelock.app.service.SocialGroupSyncClient.ScheduleStat(
+            it.dateKey, it.name, it.status, it.color, it.linkedCalc, it.progressStep, it.passIndex, it.passTotal
+        )
     }
     // "일정표" 탭에 캘린더 오늘 할 일이 아니라 진짜 TimetableScreen과 같은 요일별 목표량 표를
     // 보여달라는 요청(78차) — TimetableScreen.kt와 동일 필터(이름/디데이 필수)로 draft 업무를 옮긴다.

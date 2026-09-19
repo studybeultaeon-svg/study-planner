@@ -34,6 +34,17 @@ object PassSchedule {
         return lerpArgb(RAINBOW_STOPS[segIndex], RAINBOW_STOPS[segIndex + 1], localT)
     }
 
+    /** passIndex/passTotal 없이 레거시 color 문자열만 있는 데이터의 회독 위치 추론. 저장소 로드 시점
+     *  (JsonStore/Room 마이그레이션)의 3단계 규칙과 같되, 4회독 이상 라벨("pass{N}", N이 곧 passIndex —
+     *  Repository.Calendar의 legacyColorLabel 참고)까지 되돌린다. 구버전 클라이언트가 passIndex를 빼고
+     *  올린 모임 동기화 데이터를 읽는 쪽(SocialGroupSyncClient)에서 쓴다. */
+    fun legacyPassIndex(color: String): Int = when {
+        color == "yellow" -> 1
+        color == "green" -> 2
+        color.startsWith("pass") -> color.removePrefix("pass").toIntOrNull() ?: 0
+        else -> 0
+    }
+
     private fun lerpArgb(from: Int, to: Int, t: Float): Int {
         val fr = (from shr 16) and 0xFF; val fg = (from shr 8) and 0xFF; val fb = from and 0xFF
         val tr = (to shr 16) and 0xFF; val tg = (to shr 8) and 0xFF; val tb = to and 0xFF

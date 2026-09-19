@@ -4,6 +4,27 @@
 
 ---
 
+## 2026-09-19 (128차) — 모임 멤버 상세 캘린더 일정 색상을 라이브 캘린더와 동일하게 정정
+
+사용자 보고: "모임 상세페이지 → 공부앱 캘린더 상세페이지에 뜨는 일정들 색깔이 제대로 반영되지 않는다."
+
+### 버그 수정 — 멤버 상세 캘린더가 레거시 색상표로 칠해지고 있었음
+- **원인**: 83차(다회독 상세화)에 라이브 캘린더는 색상 원천을 `CalendarTask.passIndex/passTotal` 기반 그라데이션(`PassSchedule.passColor`)으로 옮겼지만, 모임 동기화 payload(`SocialGroupSyncClient.ScheduleStat`)에는 두 필드를 안 실어서 멤버 상세 화면만 레거시 `color` 문자열 팔레트에 남아 있었다(당시 주석에도 "이 화면은 다회독 상세화 범위 밖"이라고 명시돼 있었음). `color`는 passTotal==3인 기본 케이스용 하위호환 라벨이라 ① 3회독 이하도 라이브 캘린더와 색이 미묘하게 달랐고(`#EF4444` vs `#E64A4A` 등) ② 4회독 이상은 라벨이 `"pass{N}"`이라 팔레트에 없어 **전부 회색(`#AAAAAA`)** 으로 나왔다.
+- **수정(양 플랫폼 동일)**: `ScheduleStat`에 `passIndex`/`passTotal`을 추가해 push/parse 양쪽에 싣고, 멤버 상세의 날짜 상세 목록(안드로이드·데스크탑)과 데스크탑 월 그리드 칩을 라이브 캘린더와 같은 `PassSchedule.passColor`로 렌더링한다.
+- **하위호환**: 두 필드를 안 올리는 구버전 클라이언트의 데이터는 `PassSchedule.legacyPassIndex(color)`로 회독 위치를 추론한다(`yellow`→1, `green`→2, `pass{N}`→N — `legacyColorLabel`의 역함수).
+
+### 리팩터링(이번 수정이 만든 정리)
+- 데스크탑 `TaskChip(name, stage, status)` 레거시 오버로드 → `TaskChip(name, passIndex, passTotal, status)`로 바꾸고, `TaskChip(task: CalendarTask)`는 여기에 위임하도록 통합(중복 제거).
+- 위 변경으로 쓰이지 않게 된 데스크탑 `stageTextColor` / `stageChipColors` / `ChipColors` 제거, 안드로이드 `memberCalStageColor` → `memberCalPassColor`로 교체.
+- (미수정) 안드로이드 `CalendarScreen.stageTextColor`는 이번 변경 이전부터 이미 미사용 상태 — 기존 죽은 코드라 손대지 않음.
+
+### 검증
+- 안드로이드 `compileReleaseKotlin` + `assembleRelease` 성공, 데스크탑 `compileKotlin` + `packageMsi createDistributable` 성공(신규 경고 없음).
+- 릴리스: android `1789818037`(4곳 해시 일치) / desktop `1789818171`(호스트 교체·재실행, 3곳 jar 해시 일치), GitHub 릴리스 게시.
+- **실사용 확인은 아직** — 모임 멤버가 최신 빌드로 올린 일정이어야 색이 정확히 맞는다.
+
+---
+
 ## 2026-09-18 (127차) — 기기 간 공부기록 동기화 복구 + 일일 사용한도 기기별 칸 분리
 
 126차 수정 직후 사용자 보고 2건: ① 126차에 고친 공부기록 동기화가 오히려 잘 되던 데스크탑에서 안 됨 ② 126차에 Open으로 남겨둔 일일 사용한도 기기별 칸 버그 처리.

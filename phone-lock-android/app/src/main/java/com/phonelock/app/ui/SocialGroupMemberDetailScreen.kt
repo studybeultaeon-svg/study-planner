@@ -483,19 +483,12 @@ private fun PrivacyToggleRow(title: String, description: String, checked: Boolea
 private val MEMBER_CAL_MONTHS_KO = arrayOf("1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월")
 private val MEMBER_CAL_WEEKDAYS_KO = arrayOf("일", "월", "화", "수", "목", "금", "토")
 
-/** CalendarScreen.kt의 stageTextColor와 동일한 팔레트 — 파일 간 top-level 이름 충돌(desktop판에서도
- *  겪음)을 피하려고 이 화면 전용으로 복제해뒀다. */
-private fun memberCalStageColor(stage: String): Color = when (stage) {
-    "white" -> Color(0xFF9CA3AF)
-    "red" -> Color(0xFFEF4444)
-    "orange" -> Color(0xFFF97316)
-    "yellow" -> Color(0xFFEAB308)
-    "green" -> Color(0xFF22C55E)
-    "blue" -> Color(0xFF3B82F6)
-    "indigo" -> Color(0xFF6366F1)
-    "purple" -> Color(0xFFA855F7)
-    else -> Color(0xFFAAAAAA)
-}
+/** 128차: 레거시 color 문자열 팔레트를 복제해 쓰던 걸 CalendarScreen.kt의 passColor와 같은 회독
+ *  그라데이션으로 맞췄다 — 4회독 이상("pass{N}") 일정이 전부 회색으로 보이고 3회독 이하도 라이브
+ *  캘린더와 색이 달랐던 문제. */
+private fun memberCalPassColor(
+    stat: com.phonelock.app.service.SocialGroupSyncClient.ScheduleStat
+): Color = Color(com.phonelock.shared.calc.PassSchedule.passColor(stat.passIndex, stat.passTotal))
 
 /**
  * "오늘 일정" 텍스트 목록이었던 걸 76차에 실제 캘린더 탭(CalendarScreen)과 같은 시각 언어(색상 배지)로
@@ -611,7 +604,7 @@ private fun ReadOnlyMiniCalendar(
                         dayTasks.forEach { t ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(when (t.status) { "O" -> "✅"; "X" -> "❌"; else -> "▫" }, modifier = Modifier.padding(end = Spacing.sm))
-                                Text(t.name, style = MaterialTheme.typography.bodyMedium, color = memberCalStageColor(t.color))
+                                Text(t.name, style = MaterialTheme.typography.bodyMedium, color = memberCalPassColor(t))
                             }
                         }
                     }

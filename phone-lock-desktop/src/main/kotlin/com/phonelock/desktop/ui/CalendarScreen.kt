@@ -65,36 +65,9 @@ import java.time.LocalDate
 
 private val MONTHS_KO = arrayOf("1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월")
 private val WEEKDAYS_KO = arrayOf("일", "월", "화", "수", "목", "금", "토")
-// 77차: 8단계(51차)에서 3단계(빨/노/초)로 축소(사용자 요청). 예전 색(white/orange/blue/indigo/purple)의
-// 라벨은 지웠지만 stageTextColor의 색상값 자체는 남겨둬서, 과거에 그 색으로 저장된 일정은 여전히
-// 고유한 색으로 표시된다(51차와 같은 "라벨만 바뀌는" 전례, HANDOFF.md 참고).
+// 77차: 8단계(51차)에서 3단계(빨/노/초)로 축소(사용자 요청). 83차부터는 색상 자체가 passIndex/passTotal
+// 그라데이션으로 넘어가 이 라벨 표는 더 이상 쓰이지 않는다(이력은 HANDOFF.md 참고).
 private val COLOR_LABEL = mapOf("red" to "1회 복습", "yellow" to "2회 복습", "green" to "3회 복습")
-
-/**
- * 51차: 4단계(빨주노초)→7단계 무지개(빨주노초파남보)→8단계(사용자 요청) — 1회독을 "하얀색"으로 새로
- * 두고 기존 빨주노초파남보는 2~8회독으로 한 칸씩 밀렸다. white는 완전한 흰색(#FFFFFF)이면 이 앱의
- * 밝은 배경(라이트+그린 테마, 49차)에서 텍스트/테두리가 안 보이므로, 대신 은은한 회색조로 표현했다.
- */
-internal fun stageTextColor(stage: String): Color = when (stage) {
-    "white" -> Color(0xFF9CA3AF)
-    "red" -> Color(0xFFEF4444)
-    "orange" -> Color(0xFFF97316)
-    "yellow" -> Color(0xFFEAB308)
-    "green" -> Color(0xFF22C55E)
-    "blue" -> Color(0xFF3B82F6)
-    "indigo" -> Color(0xFF6366F1)
-    "purple" -> Color(0xFFA855F7)
-    else -> Color(0xFFAAAAAA)
-}
-
-internal data class ChipColors(val bg: Color, val border: Color)
-
-/** 웹앱 `.task-chip.{color}-task`의 배경/테두리(월 그리드 배지 전용). 배경은 accent를 옅게 탄 라이트
- *  테마용 틴트, 테두리는 accent 그대로 — stageTextColor와 같은 accent를 공유한다. */
-internal fun stageChipColors(stage: String): ChipColors {
-    val accent = stageTextColor(stage)
-    return ChipColors(accent.copy(alpha = 0.15f), accent)
-}
 
 /** 83차(다회독 상세화) — passIndex/passTotal 기반 빨강→초록 그라데이션 accent. */
 internal fun passAccentColor(task: CalendarTask): Color = Color(com.phonelock.shared.calc.PassSchedule.passColor(task.passIndex, task.passTotal))
@@ -107,36 +80,17 @@ private fun dowLabel(date: LocalDate): String = WEEKDAYS_KO[date.dayOfWeek.value
  * 별개로 항상 초록/빨강(`.status-O::before`/`.status-X::before`). 83차부터 색상은 task.passIndex/
  * passTotal 기반 그라데이션(레거시 color 문자열 대신).
  */
-/** 모임 멤버 상세(다른 사용자의 동기화된 일정 요약, passIndex/passTotal 없음)용 레거시 오버로드 — 그
- *  화면은 이번 다회독 상세화 범위 밖이라 기존 color 문자열 기반 렌더링을 그대로 유지한다. */
+/** 모임 멤버 상세(CalendarTask 엔티티가 아니라 동기화로 받은 일정 요약)용 오버로드 — 128차부터 여기도
+ *  passIndex/passTotal을 받아 라이브 캘린더와 똑같은 회독 색을 낸다(이전엔 레거시 color 문자열 기반이라
+ *  4회독 이상 일정이 회색으로 나왔다). */
 @Composable
-internal fun TaskChip(name: String, stage: String, status: String?, modifier: Modifier = Modifier) {
-    val chip = stageChipColors(stage)
+internal fun TaskChip(name: String, passIndex: Int, passTotal: Int, status: String?, modifier: Modifier = Modifier) {
+    val accent = Color(com.phonelock.shared.calc.PassSchedule.passColor(passIndex, passTotal))
     Text(
         buildAnnotatedString {
             if (status == "O") withStyle(SpanStyle(color = Color(0xFF34D399), fontWeight = FontWeight.Black)) { append("O ") }
             else if (status == "X") withStyle(SpanStyle(color = Color(0xFFF87171), fontWeight = FontWeight.Black)) { append("X ") }
             append(name)
-        },
-        modifier = modifier
-            .background(chip.bg, MaterialTheme.shapes.extraSmall)
-            .border(1.dp, chip.border, MaterialTheme.shapes.extraSmall)
-            .padding(horizontal = 4.dp, vertical = 1.dp),
-        style = MaterialTheme.typography.labelSmall,
-        color = stageTextColor(stage),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
-    )
-}
-
-@Composable
-internal fun TaskChip(task: CalendarTask, modifier: Modifier = Modifier) {
-    val accent = passAccentColor(task)
-    Text(
-        buildAnnotatedString {
-            if (task.status == "O") withStyle(SpanStyle(color = Color(0xFF34D399), fontWeight = FontWeight.Black)) { append("O ") }
-            else if (task.status == "X") withStyle(SpanStyle(color = Color(0xFFF87171), fontWeight = FontWeight.Black)) { append("X ") }
-            append(task.name)
         },
         modifier = modifier
             .background(accent.copy(alpha = 0.15f), MaterialTheme.shapes.extraSmall)
@@ -148,6 +102,10 @@ internal fun TaskChip(task: CalendarTask, modifier: Modifier = Modifier) {
         overflow = TextOverflow.Ellipsis
     )
 }
+
+@Composable
+internal fun TaskChip(task: CalendarTask, modifier: Modifier = Modifier) =
+    TaskChip(task.name, task.passIndex, task.passTotal, task.status, modifier)
 
 /**
  * 네이티브 캘린더(2단계). 웹앱 index.html "캘린더" 탭을 이식 — 월 그리드 + 아래 선택된 날짜 상세
