@@ -37,6 +37,16 @@ class AppPreferences(context: Context) {
         lastSyncFailCount = lastSyncFailCount + 1
     }
 
+    /**
+     * 이 설치본만의 기기 식별자(126차 버그 수정). 공부 기록은 Firebase에 `studyLog/{날짜}/{기기}`처럼
+     * 기기별 칸으로 나눠 올리는데, 그 "기기" 값이 플랫폼 이름 하나("android")로 고정돼 있어서 폰과
+     * 태블릿이 같은 칸에 서로 덮어쓰고, 읽을 땐 자기 칸이라고 건너뛰어 안드로이드끼리는 서로의 기록을
+     * 영영 못 봤다. 설치할 때 한 번 뽑아 저장하는 이 값을 칸 이름에 붙여 기기마다 다른 칸을 쓰게 한다.
+     */
+    val deviceInstallId: String
+        get() = prefs.getString("device_install_id", null) ?: java.util.UUID.randomUUID().toString().take(8)
+            .also { prefs.edit().putString("device_install_id", it).apply() }
+
     /** 글자 크기 배율(82차, §6/§9) — 0.85(작게)/1.0(기본)/1.15(크게)/1.3(아주 크게). */
     var fontScale: Float
         get() = prefs.getFloat("font_scale", 1.0f)
@@ -148,6 +158,15 @@ class AppPreferences(context: Context) {
         get() = prefs.getLong("timer_phase_started_at", 0L)
         set(value) = prefs.edit().putLong("timer_phase_started_at", value).apply()
 
+    /** 지금 업무(taskName)를 재기 시작한 시각 — 공부 기록에 적립할 구간의 시작점이다. 보통은
+     *  timerPhaseStartedAt과 같지만, 타이머를 끄지 않고 일정만 바꾸면(126차 `timerChangeTask`)
+     *  여기만 "바꾼 시각"으로 갱신돼서 앞 구간은 이전 일정 이름으로 기록되고 페이즈 카운트다운
+     *  (timerPhaseStartedAt/EndAt)은 그대로 이어진다. 0이면 아직 기록이 없다는 뜻이라 호출부에서
+     *  timerPhaseStartedAt으로 대체한다(구버전에서 켜둔 채 업데이트된 타이머 호환). */
+    var timerTaskStartedAt: Long
+        get() = prefs.getLong("timer_task_started_at", 0L)
+        set(value) = prefs.edit().putLong("timer_task_started_at", value).apply()
+
     /** 뽀모도로 모드에서만 의미 있음(0이면 미설정). */
     var timerPhaseEndAt: Long
         get() = prefs.getLong("timer_phase_end_at", 0L)
@@ -188,6 +207,22 @@ class AppPreferences(context: Context) {
     var dailyResetHour: Int
         get() = prefs.getInt("daily_reset_hour", 0)
         set(value) = prefs.edit().putInt("daily_reset_hour", value).apply()
+
+    /** 차단 규칙 수정·삭제 방지(129차, 사용자 요청) — 켜져 있으면 아래 시간대 안에서 지금 걸려있는
+     *  제한을 약화시키는 수정/삭제/off가 회유 멘트 20개를 통과해야 적용된다. 128차까지는 11~23시로
+     *  하드코딩(LockEvaluator)이었고 그 값을 그대로 기본값으로 옮겨왔다. */
+    var editProtectionEnabled: Boolean
+        get() = prefs.getBoolean("edit_protection_enabled", true)
+        set(value) = prefs.edit().putBoolean("edit_protection_enabled", value).apply()
+
+    /** 방지가 적용되는 시작/끝 시각(0~23시, 끝 시각은 미포함). 시작==끝이면 하루 종일 적용. */
+    var editProtectionStartHour: Int
+        get() = prefs.getInt("edit_protection_start_hour", 11)
+        set(value) = prefs.edit().putInt("edit_protection_start_hour", value).apply()
+
+    var editProtectionEndHour: Int
+        get() = prefs.getInt("edit_protection_end_hour", 23)
+        set(value) = prefs.edit().putInt("edit_protection_end_hour", value).apply()
 
     /** 앱 전체 테마 선택(설정 화면) — ThemeMode.LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE. 데스크탑판과 달리
      *  Room이 아니라 다른 설정들처럼 SharedPreferences에 둔다. */

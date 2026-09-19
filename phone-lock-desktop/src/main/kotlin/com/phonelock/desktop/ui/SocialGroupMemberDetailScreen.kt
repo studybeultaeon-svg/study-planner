@@ -415,8 +415,8 @@ private val MEMBER_CAL_MONTHS_KO = arrayOf("1월", "2월", "3월", "4월", "5월
 private val MEMBER_CAL_WEEKDAYS_KO = arrayOf("일", "월", "화", "수", "목", "금", "토")
 
 /**
- * "오늘 일정" 텍스트 목록이었던 걸 76차에 실제 캘린더 탭(CalendarScreen)과 같은 시각 언어(TaskChip,
- * stageTextColor 등 internal로 열어둔 함수 재사용)로 그리는 읽기전용 미니 월 그리드로 바꿨다 —
+ * "오늘 일정" 텍스트 목록이었던 걸 76차에 실제 캘린더 탭(CalendarScreen)과 같은 시각 언어(TaskChip 등
+ * internal로 열어둔 함수 재사용)로 그리는 읽기전용 미니 월 그리드로 바꿨다 —
  * 편집 불가(색상변경/이동복사 없음)라는 점만 다르고, 배지/칩 스타일은 캘린더 탭과 동일하다.
  * 날짜 칸을 클릭하면 그 날의 일정 전체(이름/상태)와 그 날 공부시간을 아래에 펼쳐 보여준다(77차, 한 페이지에
  * 다 욱여넣지 말고 클릭해서 상세를 보게 해달라는 요청).
@@ -476,7 +476,10 @@ private fun ReadOnlyMiniCalendar(
                                     )
                                 }
                                 dayTasks.take(2).forEach { t ->
-                                    TaskChip(name = t.name, stage = t.color, status = t.status, modifier = Modifier.fillMaxWidth().padding(top = 1.dp))
+                                    TaskChip(
+                                        name = t.name, passIndex = t.passIndex, passTotal = t.passTotal,
+                                        status = t.status, modifier = Modifier.fillMaxWidth().padding(top = 1.dp)
+                                    )
                                 }
                                 if (dayTasks.size > 2) {
                                     Text("+${dayTasks.size - 2}개 더", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -512,7 +515,10 @@ private fun ReadOnlyMiniCalendar(
                         dayTasks.forEach { t ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(when (t.status) { "O" -> "✅"; "X" -> "❌"; else -> "▫" }, modifier = Modifier.padding(end = Spacing.sm))
-                                Text(t.name, style = MaterialTheme.typography.bodyMedium, color = stageTextColor(t.color))
+                                Text(
+                                    t.name, style = MaterialTheme.typography.bodyMedium,
+                                    color = Color(com.phonelock.shared.calc.PassSchedule.passColor(t.passIndex, t.passTotal))
+                                )
                             }
                         }
                     }

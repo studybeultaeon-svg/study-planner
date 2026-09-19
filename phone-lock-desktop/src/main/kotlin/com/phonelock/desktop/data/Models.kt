@@ -126,7 +126,12 @@ data class TimerRunState(
     /** 뽀모도로 모드에서만 의미 있음(0이면 미설정). */
     val phaseEndAt: Long = 0L,
     val cycleCount: Int = 0,
-    val breakExtraUsed: Boolean = false
+    val breakExtraUsed: Boolean = false,
+    /** 지금 taskName을 재기 시작한 시각 = 공부 기록에 적립할 구간의 시작점(126차). 보통 phaseStartedAt과
+     *  같고, 타이머를 끄지 않고 일정만 바꿨을 때만 달라진다. 0이면 phaseStartedAt으로 대체한다
+     *  (구버전에서 켜둔 채 업데이트된 타이머 호환). 다른 기기 상태를 미러링만 하는 화면들은 이 값을
+     *  쓰지 않으므로 기본값을 그대로 둬도 된다. */
+    val taskStartedAt: Long = 0L
 )
 
 data class StudyLogEntry(val dateKey: String, val taskName: String, val seconds: Int, val startedAt: Long, val note: String = "", val tag: String = "")
@@ -278,6 +283,13 @@ data class AppData(
     var nextGroupId: Long = 1,
     /** 일일 사용 한도(dailyLimitMinutes)의 "하루" 기준이 되는 시각 (0~23시, 기본값 0 = 자정). */
     var dailyResetHour: Int = 0,
+    /** 차단 규칙 수정·삭제 방지(129차, 사용자 요청, 안드로이드판 AppPreferences.editProtection*와 대칭) —
+     *  켜져 있으면 아래 시간대 안에서 지금 걸려있는 제한을 약화시키는 수정/삭제/off가 회유 멘트 20개를
+     *  통과해야 적용된다. 128차까지는 11~23시로 하드코딩(LockEvaluator)이었고 그 값이 기본값이다.
+     *  끝 시각은 미포함이며, 시작==끝이면 하루 종일 적용. */
+    var editProtectionEnabled: Boolean = true,
+    var editProtectionStartHour: Int = 11,
+    var editProtectionEndHour: Int = 23,
     /** 브라우저 확장프로그램이 URL 패턴(youtube.com/shorts, instagram.com/reels)으로 감지해서 차단할지 여부. */
     var blockReels: Boolean = false,
     var blockShorts: Boolean = false,
@@ -303,6 +315,13 @@ data class AppData(
      */
     var fbDatabaseUrl: String? = DEFAULT_FB_DATABASE_URL,
     var fbApiKey: String? = DEFAULT_FB_API_KEY,
+    /**
+     * 이 설치본만의 기기 식별자(126차 버그 수정, 안드로이드 `AppPreferences.deviceInstallId`와 대칭).
+     * 공부 기록은 `studyLog/{날짜}/{기기}`처럼 기기별 칸으로 나눠 올리는데, 그 "기기" 값이 플랫폼 이름
+     * 하나로 고정돼 있어서 같은 플랫폼 기기끼리 서로 덮어쓰고, 읽을 땐 자기 칸이라고 건너뛰어 서로의
+     * 기록을 영영 못 봤다. 비어 있으면 처음 쓸 때 한 번 뽑아 저장한다.
+     */
+    var deviceInstallId: String = "",
     /** 네이티브 공부 타이머 상태(1단계). null이면 타이머 미실행. */
     var timerRun: TimerRunState? = null,
     var pomodoroStudyMinutes: Int = 25,

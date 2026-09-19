@@ -24,6 +24,10 @@ class LockEvaluatorTest {
     fun setUp() {
         repository = mockk()
         every { repository.dailyResetHour } returns 0
+        // 129차: 수정·삭제 방지는 설정값이 됐다 — 기본값(11~23시 켜짐)으로 고정해 기존 시나리오를 유지한다.
+        every { repository.editProtectionEnabled } returns true
+        every { repository.editProtectionStartHour } returns 11
+        every { repository.editProtectionEndHour } returns 23
         every { repository.getTodayUsageSeconds(any()) } returns 0
         every { repository.syncedSnoozeUntil(any()) } returns 0L
         evaluator = LockEvaluator(repository)
@@ -126,6 +130,113 @@ class LockEvaluatorTest {
         assertFalse(
             evaluator.detectWeakeningEdit(original, updated, emptySet(), emptySet(), emptySet(), emptySet(), now)
         )
+    }
+
+    // ---- 129차: 꼼수 방지 추가분 (안드로이드판 LockEvaluatorTest와 대칭) ----
+
+    @Test
+    fun `isWithinEditExemptionWindow follows the configured protection window`() {
+        every { repository.editProtectionStartHour } returns 9
+        every { repository.editProtectionEndHour } returns 18
+
+        assertFalse(evaluator.isWithinEditExemptionWindow(LocalDateTime.of(2026, 1, 7, 14, 0)))
+        assertTrue(evaluator.isWithinEditExemptionWindow(LocalDateTime.of(2026, 1, 7, 23, 30)))
+        assertTrue(evaluator.isWithinEditExemptionWindow(LocalDateTime.of(2026, 1, 7, 8, 59)))
+    }
+
+    @Test
+    fun `isWithinEditExemptionWindow is always true when protection is turned off`() {
+        every { repository.editProtectionEnabled } returns false
+
+        assertTrue(evaluator.isWithinEditExemptionWindow(LocalDateTime.of(2026, 1, 7, 14, 0)))
+    }
+
+    @Test
+    fun `isEditProtectionHour treats equal start and end as all day`() {
+        assertTrue(isEditProtectionHour(enabled = true, startHour = 0, endHour = 0, hour = 3))
+        assertTrue(isEditProtectionHour(enabled = true, startHour = 0, endHour = 0, hour = 20))
+    }
+
+    @Test
+    fun `isEditProtectionHour supports a window crossing midnight`() {
+        assertTrue(isEditProtectionHour(enabled = true, startHour = 22, endHour = 6, hour = 23))
+        assertTrue(isEditProtectionHour(enabled = true, startHour = 22, endHour = 6, hour = 2))
+        assertFalse(isEditProtectionHour(enabled = true, startHour = 22, endHour = 6, hour = 12))
+    }
+
+    @Test
+    fun `detectWeakeningEdit is true when loosening snooze minutes or daily limit`() {
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val original = baseGroup().copy(snoozeEnabled = true, snoozeMinutes = 30, snoozeDailyLimit = 3)
+
+        assertTrue(
+            evaluator.detectWeakeningEdit(
+                original, original.copy(snoozeMinutes = 60), emptySet(), emptySet(), emptySet(), emptySet(), now
+            )
+        )
+        assertTrue(
+            evaluator.detectWeakeningEdit(
+                original, original.copy(snoozeDailyLimit = 5), emptySet(), emptySet(), emptySet(), emptySet(), now
+            )
+        )
+    }
+
+    @Test
+    fun `detectWeakeningEdit is true when turning snooze or pomodoro unlock on`() {
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val original = baseGroup().copy(snoozeEnabled = false, pomodoroUnlockEnabled = false)
+
+        assertTrue(
+            evaluator.detectWeakeningEdit(
+                original, original.copy(snoozeEnabled = true), emptySet(), emptySet(), emptySet(), emptySet(), now
+            )
+        )
+        assertTrue(
+            evaluator.detectWeakeningEdit(
+                original, original.copy(pomodoroUnlockEnabled = true), emptySet(), emptySet(), emptySet(), emptySet(), now
+            )
+        )
+    }
+
+    @Test
+    fun `detectWeakeningEdit no longer passes weakening edits made during a snooze`() {
+        // 사용자가 제보한 꼼수: 잠깐 풀기를 켜둔 사이에 잠깐 풀기 시간을 늘려 계속 해제하는 경로.
+        every { repository.syncedSnoozeUntil(any()) } returns System.currentTimeMillis() + 10 * 60_000L
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val original = baseGroup().copy(snoozeEnabled = true, snoozeMinutes = 30)
+        val updated = original.copy(snoozeMinutes = 120)
+
+        assertTrue(
+            evaluator.detectWeakeningEdit(original, updated, emptySet(), emptySet(), emptySet(), emptySet(), now)
+        )
+    }
+
+    @Test
+    fun `detectWeakeningEdit is true when clearing an active force-enabled period`() {
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val original = baseGroup().copy(forceEnabledFrom = "2026-01-01", forceEnabledUntil = "2026-01-31")
+        val updated = original.copy(forceEnabledFrom = null, forceEnabledUntil = null)
+
+        assertTrue(
+            evaluator.detectWeakeningEdit(original, updated, emptySet(), emptySet(), emptySet(), emptySet(), now)
+        )
+    }
+
+    @Test
+    fun `requiresDeleteGate is true for a confirm-only group inside the protection window`() {
+        // 128차까지는 시간대 차단/일일한도만 "제한"으로 쳐서 실행확인만 걸린 규칙이 무방비로 지워졌다.
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val group = baseGroup().copy(confirmEnabled = true)
+
+        assertTrue(evaluator.requiresDeleteGate(group, now))
+    }
+
+    @Test
+    fun `requiresDeleteGate is false outside the protection window`() {
+        val now = LocalDateTime.of(2026, 1, 7, 23, 30)
+        val group = baseGroup().copy(confirmEnabled = true)
+
+        assertFalse(evaluator.requiresDeleteGate(group, now))
     }
 
     @Test

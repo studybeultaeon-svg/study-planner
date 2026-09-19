@@ -284,6 +284,27 @@ object PomodoroSyncClient {
         }
     }
 
+    /**
+     * 126차 이전 빌드가 쓰던 옛 칸(플랫폼 이름 그대로, 예: `dailyUsage/{date}/{group}/desktop`)을 지운다 —
+     * 127차. 업데이트 후엔 이 기기가 기기별 칸에 올리므로, 옛 칸에 남은 이 기기의 마지막 값이 그대로
+     * 있으면 "남의 기기 몫"으로 오인돼 한도가 실제보다 빨리 찬다. 앱 실행당 (날짜, 그룹)마다 한 번만
+     * 호출한다 — 아직 업데이트 안 된 같은 플랫폼 기기가 옛 칸을 쓰고 있었다면 그 기기가 다음 주기(30초)에
+     * 다시 올리므로 저절로 복구된다.
+     */
+    fun deleteLegacyDailyUsage(databaseUrl: String?, apiKey: String?, date: String, groupName: String, legacyDevice: String) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
+        runCatching {
+            val (token, user) = resolveIdentity(apiKey) ?: return@runCatching
+            val base = databaseUrl.trimEnd('/')
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("$base/users/$user/dailyUsage/$date/${firebaseSafeKey(groupName)}/$legacyDevice.json?auth=$token"))
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                .DELETE()
+                .build()
+            httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        }
+    }
+
     /** 이 기기가 그날(dateKey) 기록한 공부 기록 전체를 덮어쓴다 — dailyUsage와 같은 기기별 키 패턴이라
      *  경쟁이 없다(각 기기가 자기 키에만 쓴다). */
     fun writeStudyLogForDate(databaseUrl: String?, apiKey: String?, dateKey: String, device: String, entries: org.json.JSONArray) {

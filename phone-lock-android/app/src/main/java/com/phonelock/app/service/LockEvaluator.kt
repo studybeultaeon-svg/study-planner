@@ -8,9 +8,20 @@ enum class LockReason { SCHEDULE, LIMIT, REELS, SHORTS, STUDY_LOCK }
 
 data class LockResult(val locked: Boolean, val reason: LockReason? = null)
 
-/** 매일 이 시각(23시)부터 다음날 이 시각(11시) 전까지는 그룹 내용 수정/삭제, on/off 전환에 회유 멘트 절차를 요구하지 않는다. */
-private const val EDIT_EXEMPTION_START_HOUR = 23
-private const val EDIT_EXEMPTION_END_HOUR = 11
+/**
+ * "차단 규칙 수정·삭제 방지"(129차)가 [hour]시에 적용되는지 — 시작 시각 포함, 끝 시각 미포함이며
+ * 자정을 넘는 범위(예: 22~6시)도 지원한다. 설정 화면이 *아직 저장하지 않은* 값으로 "이 변경이 방지를
+ * 약화시키는가"를 미리 판정해야 해서, repository를 보는 [LockEvaluator.isWithinEditProtectionWindow]와
+ * 로직이 갈리지 않도록 순수 함수로 빼두고 양쪽이 같이 쓴다.
+ *
+ * [startHour]==[endHour]는 "빈 범위"가 아니라 하루 종일 적용으로 본다 — 빈 범위로 해석하면 켜둔 채로
+ * 방지가 통째로 사라져 설정이 조용히 무력화되기 때문.
+ */
+fun isEditProtectionHour(enabled: Boolean, startHour: Int, endHour: Int, hour: Int): Boolean {
+    if (!enabled) return false
+    if (startHour == endHour) return true
+    return if (startHour < endHour) hour in startHour until endHour else hour >= startHour || hour < endHour
+}
 
 /**
  * 그룹의 스케줄/일일 한도 조건을 평가한다. groupId는 순수 데이터 조회이므로
@@ -111,9 +122,21 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
     fun isScheduleWindowActiveNow(group: AppGroup, now: LocalDateTime = LocalDateTime.now()): Boolean =
         isWithinScheduleWindow(group, now)
 
-    /** 매일 밤 11시부터 다음날 오전 11시 전까지는 그룹 수정/삭제/on-off가 회유 멘트 없이 바로 적용된다. */
+    /**
+     * "차단 규칙 수정·삭제 방지"가 지금 적용되는 시간대 안인지. 128차까지는 11시~23시로 하드코딩
+     * 이었고, 129차부터 설정(규칙 카테고리)에서 on/off와 시작/끝 시각을 정한다. 판정은 [isEditProtectionHour].
+     */
+    fun isWithinEditProtectionWindow(now: LocalDateTime = LocalDateTime.now()): Boolean =
+        isEditProtectionHour(
+            repository.editProtectionEnabled,
+            repository.editProtectionStartHour,
+            repository.editProtectionEndHour,
+            now.hour
+        )
+
+    /** 방지 시간대 밖이면 그룹 수정/삭제/on-off가 회유 멘트 없이 바로 적용된다. */
     fun isWithinEditExemptionWindow(now: LocalDateTime = LocalDateTime.now()): Boolean =
-        now.hour >= EDIT_EXEMPTION_START_HOUR || now.hour < EDIT_EXEMPTION_END_HOUR
+        !isWithinEditProtectionWindow(now)
 
     /** startMinute/endMinute이 둘 다 null이면 "적용 시간대" 미설정으로 보고 하루 종일 적용된 것으로 취급한다. */
     private fun isWithinApplyWindow(startMinute: Int?, endMinute: Int?, now: LocalDateTime): Boolean {
@@ -134,9 +157,20 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
         return usedSeconds >= limit
     }
 
-    /** 실행 확인이 지금 이 순간 적용되어야 하는 상태인지 (그룹 전체 켜짐 + 실행확인 사용 on + 오늘 요일 + 적용 시간대 안). */
-    suspend fun isConfirmActiveNow(group: AppGroup, now: LocalDateTime = LocalDateTime.now()): Boolean =
-        (isForceEnabled(group, now) || !isSnoozed(group)) &&
+    /**
+     * 실행 확인이 지금 이 순간 적용되어야 하는 상태인지 (그룹 전체 켜짐 + 실행확인 사용 on + 오늘 요일 + 적용 시간대 안).
+     *
+     * [ignoreTemporaryUnlock]=true면 잠깐 풀기(스누즈)/뽀모도로 휴식 같은 "임시 해제"를 없는 것으로 보고
+     * 판정한다(129차) — 임시 해제 중에 영구 설정을 약화시키거나 규칙을 지우는 꼼수를 막는
+     * [detectWeakeningEdit]/[requiresDeleteGate] 전용이다. 실제 차단 판정 경로는 기본값(false) 그대로
+     * 임시 해제를 존중한다.
+     */
+    suspend fun isConfirmActiveNow(
+        group: AppGroup,
+        now: LocalDateTime = LocalDateTime.now(),
+        ignoreTemporaryUnlock: Boolean = false
+    ): Boolean =
+        (ignoreTemporaryUnlock || isForceEnabled(group, now) || !isSnoozed(group)) &&
             isGroupActive(group, now) &&
             group.confirmEnabled &&
             isTodayInMask(group.confirmDaysMask, now) &&
@@ -152,10 +186,15 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
      *  판정 로직 밖(서비스)에서도 확인해야 할 때 쓴다. */
     suspend fun isPomodoroUnlockActive(group: AppGroup): Boolean = isPomodoroUnlocked(group)
 
-    /** 그룹이 지금 이 순간 실제로 제한(시간대 차단 또는 일일 한도 초과)에 걸려있는 상태인지. */
-    suspend fun isCurrentlyRestricting(group: AppGroup, now: LocalDateTime = LocalDateTime.now()): Boolean {
-        if (isPomodoroUnlocked(group)) return false
-        if (!isForceEnabled(group, now) && isSnoozed(group)) return false
+    /** 그룹이 지금 이 순간 실제로 제한(시간대 차단 또는 일일 한도 초과)에 걸려있는 상태인지.
+     *  [ignoreTemporaryUnlock]의 의미는 [isConfirmActiveNow] 참고. */
+    suspend fun isCurrentlyRestricting(
+        group: AppGroup,
+        now: LocalDateTime = LocalDateTime.now(),
+        ignoreTemporaryUnlock: Boolean = false
+    ): Boolean {
+        if (!ignoreTemporaryUnlock && isPomodoroUnlocked(group)) return false
+        if (!ignoreTemporaryUnlock && !isForceEnabled(group, now) && isSnoozed(group)) return false
         if (!isGroupActive(group, now)) return false
         val inWindow = isWithinScheduleWindow(group, now)
         val limitExceeded = isLimitExceeded(group, now)
@@ -192,12 +231,14 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
         // 무엇을 바꾸든 약화가 아니다.
         if (!isGroupActive(original)) return false
 
-        // 0-1. 매일 밤 11시~오전 11시는 회유 절차 없이 자유롭게 수정할 수 있다.
+        // 0-1. "차단 규칙 수정·삭제 방지" 시간대 밖이면 회유 절차 없이 자유롭게 수정할 수 있다.
         if (isWithinEditExemptionWindow(now)) return false
 
-        // 0-2. 스누즈(#1) 중이면 이미 회유 절차 없이 자기 승인으로 모든 관리를 임시 해제한 상태이므로,
-        // 그 동안의 설정 변경도 다시 회유 절차를 거칠 필요가 없다 (기간 지정 자동 강화가 우선하면 예외).
-        if (!isForceEnabled(original, now) && isSnoozed(original)) return false
+        // 0-2(129차에 삭제된 예외): 55차엔 "스누즈 중이면 이미 자기 승인으로 해제한 상태"라는 이유로
+        // 스누즈 중 모든 약화 수정을 통과시켰다. 이게 "잠깐 풀기 → 그 사이에 잠깐 풀기 시간/횟수를
+        // 늘림 → 다시 잠깐 풀기"로 무한히 잠금을 해제하는 꼼수의 통로였다. 잠깐 풀기는 *임시* 해제일
+        // 뿐이고 여기서 막는 건 *영구* 설정 약화라 성격이 다르므로 예외를 없앴다 — 아래 판정들은
+        // ignoreTemporaryUnlock=true로 "임시 해제가 없었다면 지금 걸려있었을 상태"를 기준으로 본다.
 
         // 1. 확인마다 늘어나는 시간을 줄임
         if (updated.waitIncrementSeconds < original.waitIncrementSeconds) return true
@@ -237,7 +278,9 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
 
         // 3. 지금 실행 확인이 적용되어 확인창이 뜨는 상태인데 적용 시간대를 좁혀서 지금 시각이
         // 범위 밖으로 빠지게 함 (실행 확인을 통째로 끄는 것과 같은 효과의 회피 수단)
-        if (isConfirmActiveNow(original, now) && !isConfirmActiveNow(updated, now) && updated.confirmEnabled) return true
+        if (isConfirmActiveNow(original, now, ignoreTemporaryUnlock = true) &&
+            !isConfirmActiveNow(updated, now, ignoreTemporaryUnlock = true) && updated.confirmEnabled
+        ) return true
 
         // 3-1. 오늘이 실행확인 적용 요일인데 그 요일만 뺌
         if (original.confirmEnabled &&
@@ -260,7 +303,7 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
         }
 
         // 6. 지금 제한이 걸린 상태에서 포함된 앱/사이트를 뺌
-        if (isCurrentlyRestricting(original, now)) {
+        if (isCurrentlyRestricting(original, now, ignoreTemporaryUnlock = true)) {
             val removedPackages = originalPackages - updatedPackages
             val removedSites = originalSites - updatedSites
             if (removedPackages.isNotEmpty() || removedSites.isNotEmpty()) return true
@@ -272,6 +315,37 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
             isScheduleTypeActiveToday(original, now)
         ) return true
 
+        // 8. 잠깐 풀기(스누즈)를 더 헐겁게 만듦 — 이 규칙 하나하나가 "회유 절차를 생략하는 합법적
+        // 탈출구"를 넓히는 것이라, 지금 뭔가 걸려있는지와 무관하게 약화로 본다(1-x 대기시간 항목들과
+        // 같은 취급). 꺼져 있는 동안 숫자만 바꿔두는 건 탈출구가 없으니 막지 않고, 실제로 켜는
+        // 순간(off→on)에 걸린다.
+        if (!original.snoozeEnabled && updated.snoozeEnabled) return true
+        if (original.snoozeEnabled && updated.snoozeMinutes > original.snoozeMinutes) return true
+        if (original.snoozeEnabled && updated.snoozeDailyLimit > original.snoozeDailyLimit) return true
+
+        // 9. 기간 지정 자동 강화(시험기간 등)가 지금 걸려있는데 그 기간을 지우거나 오늘이 빠지게 좁힘.
+        // 이 기능은 "나중에 후회할 즉흥적 판단을 미리 막아두는" 안전장치라(39차 DECISIONS), 그 즉흥적
+        // 판단으로 안전장치 자체를 걷어낼 수 있으면 존재 의미가 없다.
+        if (isForceEnabled(original, now) && !isForceEnabled(updated, now)) return true
+
+        // 10. 뽀모도로 휴식 임시 해제를 새로 켬 — 공부앱에서 휴식 버튼만 누르면 이 규칙이 통째로
+        // 풀리는 탈출구가 새로 생기는 것이므로 8번(스누즈 새로 켜기)과 같은 취급.
+        if (!original.pomodoroUnlockEnabled && updated.pomodoroUnlockEnabled) return true
+
         return false
+    }
+
+    /**
+     * 이 규칙을 지금 삭제하는 게 "걸려있는 제한을 통째로 없애는" 행위라 회유 멘트 절차를 거쳐야 하는지.
+     *
+     * 128차까지는 삭제 버튼이 [isCurrentlyRestricting]만 봤는데, 이 함수는 시간대 차단/일일한도만
+     * "제한"으로 치기 때문에 ① 실행 확인만 설정한 규칙은 대낮에도 버튼 한 번에 지워졌고(편집으로
+     * 실행 확인을 끄려면 절차를 거쳐야 하는데도) ② 잠깐 풀기 중에는 아무 규칙이나 무방비로 지워졌다.
+     * 둘 다 "편집보다 삭제가 더 쉬운" 역전이라 129차에 조건을 맞췄다.
+     */
+    suspend fun requiresDeleteGate(group: AppGroup, now: LocalDateTime = LocalDateTime.now()): Boolean {
+        if (isWithinEditExemptionWindow(now)) return false
+        return isCurrentlyRestricting(group, now, ignoreTemporaryUnlock = true) ||
+            isConfirmActiveNow(group, now, ignoreTemporaryUnlock = true)
     }
 }

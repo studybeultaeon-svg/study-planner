@@ -78,6 +78,9 @@ object JsonStore {
             customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
             exitConfirmEnabled = json.optBoolean("exitConfirmEnabled", false),
+            editProtectionEnabled = json.optBoolean("editProtectionEnabled", true),
+            editProtectionStartHour = json.optInt("editProtectionStartHour", 11),
+            editProtectionEndHour = json.optInt("editProtectionEndHour", 23),
             defaultMultiPassEnabled = json.optBoolean("defaultMultiPassEnabled", false),
             defaultPassCount = json.optInt("defaultPassCount", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT),
             defaultPassIntervalsCsv = json.optString("defaultPassIntervalsCsv", com.phonelock.shared.calc.PassSchedule.DEFAULT_INTERVALS_CSV),
@@ -100,6 +103,7 @@ object JsonStore {
                 ?.ifBlank { null } ?: DEFAULT_FB_DATABASE_URL,
             fbApiKey = (if (json.isNull("fbApiKey")) null else json.optString("fbApiKey", null))
                 ?.ifBlank { null } ?: DEFAULT_FB_API_KEY,
+            deviceInstallId = json.optString("deviceInstallId", ""),
             timerRun = json.optJSONObject("timerRun")?.let { t ->
                 TimerRunState(
                     taskName = t.optString("taskName", ""),
@@ -108,7 +112,8 @@ object JsonStore {
                     phaseStartedAt = t.optLong("phaseStartedAt", 0L),
                     phaseEndAt = t.optLong("phaseEndAt", 0L),
                     cycleCount = t.optInt("cycleCount", 0),
-                    breakExtraUsed = t.optBoolean("breakExtraUsed", false)
+                    breakExtraUsed = t.optBoolean("breakExtraUsed", false),
+                    taskStartedAt = t.optLong("taskStartedAt", 0L)
                 ).takeIf { it.phaseStartedAt > 0L }
             },
             pomodoroStudyMinutes = json.optInt("pomodoroStudyMinutes", 25),
@@ -455,6 +460,9 @@ object JsonStore {
         json.put("customThemeBackground", data.customThemeBackground)
         json.put("customThemeAccent", data.customThemeAccent)
         json.put("exitConfirmEnabled", data.exitConfirmEnabled)
+        json.put("editProtectionEnabled", data.editProtectionEnabled)
+        json.put("editProtectionStartHour", data.editProtectionStartHour)
+        json.put("editProtectionEndHour", data.editProtectionEndHour)
         json.put("defaultMultiPassEnabled", data.defaultMultiPassEnabled)
         json.put("defaultPassCount", data.defaultPassCount)
         json.put("defaultPassIntervalsCsv", data.defaultPassIntervalsCsv)
@@ -479,6 +487,7 @@ object JsonStore {
         json.put("zeroStreakDays", data.zeroStreakDays)
         json.put("fbDatabaseUrl", data.fbDatabaseUrl ?: JSONObject.NULL)
         json.put("fbApiKey", data.fbApiKey ?: JSONObject.NULL)
+        json.put("deviceInstallId", data.deviceInstallId)
         json.put("pomodoroStudyMinutes", data.pomodoroStudyMinutes)
         json.put("pomodoroBreakMinutes", data.pomodoroBreakMinutes)
         json.put("pomodoroModeEnabled", data.pomodoroModeEnabled)
@@ -534,6 +543,7 @@ object JsonStore {
             put("phaseEndAt", timerRun.phaseEndAt)
             put("cycleCount", timerRun.cycleCount)
             put("breakExtraUsed", timerRun.breakExtraUsed)
+            put("taskStartedAt", timerRun.taskStartedAt)
         })
         val studyLogJson = JSONArray()
         data.studyLog.forEach { s ->

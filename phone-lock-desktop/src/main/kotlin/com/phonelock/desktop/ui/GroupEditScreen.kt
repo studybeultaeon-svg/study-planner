@@ -862,8 +862,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 OutlinedButton(
                     onClick = {
                         val original = originalGroup
-                        val exempt = evaluator.isWithinEditExemptionWindow()
-                        if (original != null && !exempt && evaluator.isCurrentlyRestricting(original)) {
+                        if (original != null && evaluator.requiresDeleteGate(original)) {
                             pendingDelete = true
                             pendingMessage = null
                         } else {

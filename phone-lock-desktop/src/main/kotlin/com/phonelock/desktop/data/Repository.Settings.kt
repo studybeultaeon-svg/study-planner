@@ -17,6 +17,11 @@ fun Repository.pushSettingsToFirebase() {
             put("defaultMultiPassEnabled", data.defaultMultiPassEnabled)
             put("defaultPassCount", data.defaultPassCount)
             put("defaultPassIntervalsCsv", data.defaultPassIntervalsCsv)
+            // 129차: 수정·삭제 방지도 동기화한다 — 한 기기에서만 방지를 꺼두고 거기서 약화시킨 규칙을
+            // 다른 기기로 밀어넣는 우회가 가능해지기 때문(그룹 설정은 syncEnabled면 기기 간 공유됨).
+            put("editProtectionEnabled", data.editProtectionEnabled)
+            put("editProtectionStartHour", data.editProtectionStartHour)
+            put("editProtectionEndHour", data.editProtectionEndHour)
         }
     }
     persist()
@@ -37,6 +42,9 @@ fun Repository.syncSettingsFromFirebase() {
             if (json.has("defaultMultiPassEnabled")) data.defaultMultiPassEnabled = json.optBoolean("defaultMultiPassEnabled", data.defaultMultiPassEnabled)
             if (json.has("defaultPassCount")) data.defaultPassCount = json.optInt("defaultPassCount", data.defaultPassCount)
             if (json.has("defaultPassIntervalsCsv")) data.defaultPassIntervalsCsv = json.optString("defaultPassIntervalsCsv", data.defaultPassIntervalsCsv)
+            if (json.has("editProtectionEnabled")) data.editProtectionEnabled = json.optBoolean("editProtectionEnabled", data.editProtectionEnabled)
+            if (json.has("editProtectionStartHour")) data.editProtectionStartHour = json.optInt("editProtectionStartHour", data.editProtectionStartHour)
+            if (json.has("editProtectionEndHour")) data.editProtectionEndHour = json.optInt("editProtectionEndHour", data.editProtectionEndHour)
             data.settingsTs = result.ts
             persist()
         } else if (data.settingsTs > result.ts) {

@@ -52,6 +52,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +74,9 @@ import com.phonelock.app.service.AccountSyncClient
 import com.phonelock.app.service.AuthManager
 import com.phonelock.app.service.BackgroundMediaGuard
 import com.phonelock.app.service.PhoneLockDeviceAdminReceiver
+import com.phonelock.app.service.isEditProtectionHour
+import com.phonelock.shared.PERSUASION_MESSAGES
+import com.phonelock.app.ui.components.PersuasionStepper
 import com.phonelock.app.ui.components.SectionCard
 import com.phonelock.app.ui.components.ToggleRow
 import com.phonelock.app.ui.components.isTabletWidth
@@ -176,6 +180,15 @@ fun SettingsScreen(
     // 90차: 타이머 탭에서 옮겨온 "공부 잠금 허용 사이트"(공부 서브탭) — 저장 위치는 그대로다.
     var studyAllowedSites by remember { mutableStateOf(prefs.studyLockAllowedSites.toList()) }
     var dailyResetHourText by remember { mutableStateOf(prefs.dailyResetHour.toString()) }
+    // 차단 규칙 수정·삭제 방지(129차, 사용자 요청) — 128차까지 11~23시로 하드코딩이던 걸 설정으로 뺐다.
+    var editProtectionEnabled by remember { mutableStateOf(prefs.editProtectionEnabled) }
+    var editProtectionStartText by remember { mutableStateOf(prefs.editProtectionStartHour.toString()) }
+    var editProtectionEndText by remember { mutableStateOf(prefs.editProtectionEndHour.toString()) }
+    // 방지를 끄거나 시간대를 좁혀 "지금"이 방지 밖으로 빠지는 변경은 그 한 번으로 모든 보호를 걷어내는
+    // 새 우회로라, 79차 "종료 확인 절차 끄기"와 같이 회유 멘트 20개로 게이트한다(반대로 켜거나 넓히는
+    // 방향은 즉시 적용). null이 아니면 게이트 진행 중이고, 끝까지 통과해야 실제로 저장된다.
+    var pendingProtection by remember { mutableStateOf<Triple<Boolean, Int, Int>?>(null) }
+    var pendingProtectionMessageIndex by remember { mutableIntStateOf(0) }
     // 85차: 설정 화면 진입 시 다른 기기에서 바꾼 다회독 기본값/일일 초기화 시각을 받아와 로컬 상태를 갱신.
     LaunchedEffect(Unit) {
         repository.syncSettingsFromFirebase()
@@ -183,6 +196,39 @@ fun SettingsScreen(
         defaultPassCount = prefs.defaultPassCount
         defaultPassIntervals = com.phonelock.shared.calc.PassSchedule.parsePassIntervals(prefs.defaultPassIntervalsCsv, prefs.defaultPassCount)
         dailyResetHourText = prefs.dailyResetHour.toString()
+        editProtectionEnabled = prefs.editProtectionEnabled
+        editProtectionStartText = prefs.editProtectionStartHour.toString()
+        editProtectionEndText = prefs.editProtectionEndHour.toString()
+    }
+
+    // 저장된 값 기준으로 되돌리기(게이트 취소 시) / 실제 저장.
+    fun revertProtectionFields() {
+        editProtectionEnabled = prefs.editProtectionEnabled
+        editProtectionStartText = prefs.editProtectionStartHour.toString()
+        editProtectionEndText = prefs.editProtectionEndHour.toString()
+    }
+
+    fun saveProtection(enabled: Boolean, startHour: Int, endHour: Int) {
+        prefs.editProtectionEnabled = enabled
+        prefs.editProtectionStartHour = startHour
+        prefs.editProtectionEndHour = endHour
+        editProtectionEnabled = enabled
+        repository.pushSettingsToFirebase()
+    }
+
+    /** 지금 시각이 방지 안에서 밖으로 빠지는 변경이면 회유 절차로, 아니면 즉시 적용한다. */
+    fun requestProtection(enabled: Boolean, startHour: Int, endHour: Int) {
+        val nowHour = java.time.LocalTime.now().hour
+        val protectedBefore = isEditProtectionHour(
+            prefs.editProtectionEnabled, prefs.editProtectionStartHour, prefs.editProtectionEndHour, nowHour
+        )
+        val protectedAfter = isEditProtectionHour(enabled, startHour, endHour, nowHour)
+        if (protectedBefore && !protectedAfter) {
+            pendingProtection = Triple(enabled, startHour, endHour)
+            pendingProtectionMessageIndex = 0
+        } else {
+            saveProtection(enabled, startHour, endHour)
+        }
     }
     var loginId by remember { mutableStateOf(AuthManager.currentLoginId) }
     var showRestoreConfirmDialog by remember { mutableStateOf(false) }
@@ -312,6 +358,42 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showRoutineRestoreConfirmDialog = false }) { Text("취소") }
             }
+        )
+    }
+
+    pendingProtection?.let { staged ->
+        val (pEnabled, pStart, pEnd) = staged
+        val isLast = pendingProtectionMessageIndex == PERSUASION_MESSAGES.lastIndex
+        AlertDialog(
+            // 밖을 눌러 닫으면 절차를 건너뛰고 창만 사라지는 셈이라 취소 버튼으로만 빠져나가게 한다.
+            onDismissRequest = {},
+            title = { Text("수정·삭제 방지를 약하게 만드는 변경입니다") },
+            text = {
+                Column {
+                    PersuasionStepper(
+                        stepKey = staged,
+                        messageIndex = pendingProtectionMessageIndex,
+                        headerText = "(%d/%d)".format(pendingProtectionMessageIndex + 1, PERSUASION_MESSAGES.size),
+                        message = PERSUASION_MESSAGES[pendingProtectionMessageIndex],
+                        confirmLabel = if (isLast) "적용" else "예",
+                        onCancel = {
+                            revertProtectionFields()
+                            pendingProtection = null
+                            pendingProtectionMessageIndex = 0
+                        },
+                        onConfirmStep = {
+                            if (isLast) {
+                                saveProtection(pEnabled, pStart, pEnd)
+                                pendingProtection = null
+                                pendingProtectionMessageIndex = 0
+                            } else {
+                                pendingProtectionMessageIndex++
+                            }
+                        }
+                    )
+                }
+            },
+            confirmButton = {}
         )
     }
 
@@ -795,6 +877,65 @@ fun SettingsScreen(
                         )
                         Text(
                             "이 시각이 되면 차단 규칙별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    SectionCard("차단 규칙 수정·삭제 방지") {
+                        ToggleRow(
+                            title = "방지 사용",
+                            checked = editProtectionEnabled,
+                            onCheckedChange = { checked ->
+                                val start = editProtectionStartText.toIntOrNull() ?: prefs.editProtectionStartHour
+                                val end = editProtectionEndText.toIntOrNull() ?: prefs.editProtectionEndHour
+                                if (checked) {
+                                    // 보호를 강화하는 방향이라 즉시 적용.
+                                    saveProtection(true, start, end)
+                                } else {
+                                    // 끄는 것 자체를 회유 절차로 보호 — 통과 전엔 스위치도 그대로 둔다.
+                                    requestProtection(false, start, end)
+                                }
+                            }
+                        )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            OutlinedTextField(
+                                value = editProtectionStartText,
+                                onValueChange = { text ->
+                                    editProtectionStartText = text
+                                    val start = text.toIntOrNull() ?: return@OutlinedTextField
+                                    if (start !in 0..23) return@OutlinedTextField
+                                    requestProtection(
+                                        editProtectionEnabled,
+                                        start,
+                                        editProtectionEndText.toIntOrNull() ?: prefs.editProtectionEndHour
+                                    )
+                                },
+                                label = { Text("시작 (0~23시)") },
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = editProtectionEndText,
+                                onValueChange = { text ->
+                                    editProtectionEndText = text
+                                    val end = text.toIntOrNull() ?: return@OutlinedTextField
+                                    if (end !in 0..23) return@OutlinedTextField
+                                    requestProtection(
+                                        editProtectionEnabled,
+                                        editProtectionStartText.toIntOrNull() ?: prefs.editProtectionStartHour,
+                                        end
+                                    )
+                                },
+                                label = { Text("끝 (0~23시)") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Text(
+                            "이 시간대 안에서는 지금 차단 중인 규칙을 약하게 바꾸거나 지우거나 끄려면 확인 질문 " +
+                                "${PERSUASION_MESSAGES.size}개를 통과해야 합니다. 시간대 밖에서는 바로 적용됩니다. " +
+                                "끝 시각은 포함하지 않으며(예: 11~23이면 23시부터 자유), 시작과 끝이 같으면 하루 종일 적용됩니다. " +
+                                "방지를 끄거나 시간대를 좁혀 지금이 빠지게 하는 변경은 그 자체가 확인 질문을 거칩니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

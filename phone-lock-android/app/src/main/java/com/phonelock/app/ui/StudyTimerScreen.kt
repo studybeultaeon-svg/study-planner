@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -134,6 +135,9 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     var showStopNoteDialog by remember { mutableStateOf(false) }
     var stopNoteText by remember { mutableStateOf("") }
     var stopTagText by remember { mutableStateOf("") }
+    // 126차(사용자 요청): 실행 중에도 일정을 바꿀 수 있게 — 예전엔 일정을 바꾸려면 타이머를 정지했다
+    // 다시 시작해야 했다.
+    var showTaskChangeDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -254,7 +258,9 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                 repository.syncCalendarFromFirebase()
                 todayLog = repository.getTodayStudyLog()
                 calcTasksForSummary = repository.getCalcTasks()
-                if (run == null) todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
+                // 126차: 실행 중에도 "일정 변경" 다이얼로그가 최신 목록을 보여줘야 해서 run 상태와
+                // 무관하게 갱신한다(taskName 자동 채움은 taskNameTouchedByUser 가드가 막아준다).
+                todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
             }
             // 30초마다 스트릭/주간 그래프 갱신 — 과거 날짜 동기화는 매 5초씩 하기엔 비용이 커서 더 낮은 주기로.
             if (tickCount % 30 == 0) {
@@ -320,6 +326,22 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
             },
             dismissButton = {
                 TextButton(onClick = { showStopNoteDialog = false }) { Text("취소") }
+            }
+        )
+    }
+
+    // 타이머가 그사이 멈췄으면 바꿀 대상이 없으므로 그냥 안 띄운다.
+    run?.takeIf { showTaskChangeDialog }?.let { current ->
+        StudyTaskChangeDialog(
+            todayTasks = todayTasks,
+            currentTaskName = current.taskName,
+            onDismiss = { showTaskChangeDialog = false },
+            onConfirm = { newName ->
+                repository.timerChangeTask(newName)
+                run = repository.getTimerRun()
+                // 앞 구간이 방금 기록으로 넘어갔으므로 "오늘의 공부 기록"도 바로 다시 읽는다.
+                refreshLog()
+                showTaskChangeDialog = false
             }
         )
     }
@@ -468,11 +490,19 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                 val isBreak = current.phase == "break"
                 PomoPhaseBadge(isBreak = isBreak)
                 Spacer(Modifier.height(Spacing.xs))
-                Text(
-                    current.taskName.ifBlank { "이름 없는 공부" },
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    Text(
+                        current.taskName.ifBlank { "이름 없는 공부" },
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    // 다른 기기 세션을 미러링 중일 땐 제어하지 않는다(정지/전환과 같은 규칙).
+                    if (!isMirror) {
+                        TextButton(onClick = { showTaskChangeDialog = true }, contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 0.dp)) {
+                            Text("일정 변경", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
                 Spacer(Modifier.height(Spacing.sm))
 
                 val displaySec = if (current.mode == "pomodoro") {
@@ -1068,6 +1098,83 @@ internal fun LockListEditor(items: List<String>, placeholder: String, onAdd: (St
             }
         }
     }
+}
+
+/**
+ * 타이머를 끄지 않고 지금 재고 있는 공부 일정만 바꾸는 다이얼로그(126차, 사용자 요청) — 타이머 탭과
+ * 공부 잠금 화면([StudyLockActivity])이 같은 것을 쓴다. 시작 전 입력칸과 같은 규칙으로 "오늘 캘린더
+ * 일정 중에서 고르거나 직접 입력"이 둘 다 되게 한다. 확인을 누르면 호출부가 `timerChangeTask`를
+ * 부르고, 거기서 지금까지 잰 구간은 바꾸기 전 이름으로 기록에 적립된다.
+ */
+@Composable
+internal fun StudyTaskChangeDialog(
+    todayTasks: List<CalendarTask>,
+    currentTaskName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var text by remember { mutableStateOf(currentTaskName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("공부 일정 변경") },
+        text = {
+            Column {
+                Text(
+                    "지금까지 잰 시간은 \"${currentTaskName.ifBlank { "이름 없는 공부" }}\" 기록으로 남고, " +
+                        "새 일정부터 다시 잽니다. 타이머는 멈추지 않습니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("공부 일정") },
+                    placeholder = { Text("예: 수학 (비워두면 이름 없는 공부)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (todayTasks.isNotEmpty()) {
+                    Spacer(Modifier.height(Spacing.sm))
+                    Text(
+                        "오늘 캘린더 일정",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(Spacing.xs))
+                    // 오늘 일정이 많으면 다이얼로그가 화면을 넘지 않게 목록만 스크롤시킨다.
+                    Column(Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState())) {
+                        todayTasks.forEach { t ->
+                            Surface(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp).clickable { text = t.name },
+                                shape = MaterialTheme.shapes.small,
+                                color = if (t.name == text) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                else MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (t.name == text) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                                    else MaterialTheme.colorScheme.outline
+                                )
+                            ) {
+                                Text(
+                                    taskDropdownLabel(t),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(text.trim()) },
+                enabled = text.trim() != currentTaskName
+            ) { Text("변경") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
+    )
 }
 
 private fun taskDropdownLabel(task: CalendarTask): String {

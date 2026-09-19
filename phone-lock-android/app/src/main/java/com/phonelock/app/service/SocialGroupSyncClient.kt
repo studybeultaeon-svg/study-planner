@@ -33,10 +33,14 @@ object SocialGroupSyncClient {
     data class RoutineStat(val title: String, val doneToday: Boolean, val icon: String = "", val timeSlot: String? = null)
 
     /** [dateKey]/[color]가 있어야 모임 멤버 상세에서 실제 캘린더 미니 그리드로 그릴 수 있다(76차 확장 —
-     *  예전엔 오늘 하루치만 이름/상태로 보여줬다). */
+     *  예전엔 오늘 하루치만 이름/상태로 보여줬다).
+     *  128차: [passIndex]/[passTotal]을 같이 실어 보내 멤버 상세 캘린더도 라이브 캘린더와 같은 회독
+     *  그라데이션 색으로 그린다 — [color]는 passTotal==3 기본 케이스용 레거시 라벨이라 4회독 이상이면
+     *  "pass{N}"이 들어가 색을 못 냈다. 구버전이 올린 데이터는 [color]로 위치를 추론한다. */
     data class ScheduleStat(
         val dateKey: String, val name: String, val status: String?, val color: String,
-        val linkedCalc: String? = null, val progressStep: String? = null
+        val linkedCalc: String? = null, val progressStep: String? = null,
+        val passIndex: Int = 0, val passTotal: Int = com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT
     )
 
     /** 할당량 계산기 업무 하나 — 라이브 [com.phonelock.app.ui.TimetableScreen]과 같은 요일별 목표량 표를
@@ -577,6 +581,8 @@ object SocialGroupSyncClient {
                                     put("color", s.color)
                                     put("linkedCalc", s.linkedCalc ?: JSONObject.NULL)
                                     put("progressStep", s.progressStep ?: JSONObject.NULL)
+                                    put("passIndex", s.passIndex)
+                                    put("passTotal", s.passTotal)
                                 })
                             }
                         })
@@ -657,13 +663,17 @@ object SocialGroupSyncClient {
                             val arr = s.optJSONArray("schedule") ?: org.json.JSONArray()
                             (0 until arr.length()).map { i ->
                                 val sc = arr.getJSONObject(i)
+                                val scColor = sc.optString("color", "white")
                                 ScheduleStat(
                                     sc.optString("dateKey", ""),
                                     sc.optString("name", ""),
                                     if (sc.isNull("status")) null else sc.optString("status", null),
-                                    sc.optString("color", "white"),
+                                    scColor,
                                     if (sc.isNull("linkedCalc")) null else sc.optString("linkedCalc", null),
-                                    if (sc.isNull("progressStep")) null else sc.optString("progressStep", null)
+                                    if (sc.isNull("progressStep")) null else sc.optString("progressStep", null),
+                                    // passIndex/passTotal을 안 올리는 구버전 클라이언트의 데이터는 레거시 3단계 규칙으로 추론.
+                                    sc.optInt("passIndex", com.phonelock.shared.calc.PassSchedule.legacyPassIndex(scColor)),
+                                    sc.optInt("passTotal", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT)
                                 )
                             }
                         } else null,

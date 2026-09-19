@@ -24,6 +24,24 @@ internal fun Repository.awardGrowthExp(rawAmount: Double) {
     pushGrowthToFirebase()
 }
 
+/** [awardGrowthExp]의 반대(안드로이드판과 대칭) — 루틴/캘린더 완료가 취소돼 포인트를 회수할 때 그때
+ *  같이 얹혔던 EXP도 걷어낸다(125차 후속 버그: 포인트 원장만 되돌리고 EXP는 그대로 둬서 완료/미완료를
+ *  반복하는 것만으로 EXP를 무한히 불릴 수 있었다). 아직 "적용" 전이면 대기 EXP에서 빼고, 이미 적용돼
+ *  누적으로 넘어간 뒤라면 모자란 만큼 누적에서 마저 뺀다 — 대기에서만 빼면 "적립 → 적용 → 취소"를
+ *  반복해 그대로 무한 복사가 되기 때문이다. 어느 쪽도 0 밑으로는 내려가지 않는다(환생/시즌 초기화로
+ *  이미 0이 된 뒤에 들어온 취소는 뺄 것이 없으므로 그냥 흡수된다).
+ *  호출부(Repository.Points.kt)가 이미 lock을 쥐고 있어야 한다. */
+internal fun Repository.revokeGrowthExp(rawAmount: Double) {
+    if (rawAmount <= 0.0) return
+    var remaining = rawAmount * GrowthSystem.expMultiplier(data.rebirthCount)
+    val fromPending = remaining.coerceAtMost(data.growthExpPending).coerceAtLeast(0.0)
+    data.growthExpPending -= fromPending
+    remaining -= fromPending
+    if (remaining > 0.0) data.growthExpTotal = (data.growthExpTotal - remaining).coerceAtLeast(0.0)
+    persist()
+    pushGrowthToFirebase()
+}
+
 fun Repository.getGrowthExpTotal(): Double = synchronized(lock) { data.growthExpTotal }
 
 fun Repository.getGrowthExpPending(): Double = synchronized(lock) { data.growthExpPending }

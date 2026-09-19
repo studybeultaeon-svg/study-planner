@@ -21,6 +21,11 @@ fun PhoneLockRepository.pushSettingsToFirebase() {
         put("defaultMultiPassEnabled", preferences.defaultMultiPassEnabled)
         put("defaultPassCount", preferences.defaultPassCount)
         put("defaultPassIntervalsCsv", preferences.defaultPassIntervalsCsv)
+        // 129차: 수정·삭제 방지도 동기화한다 — 한 기기에서만 방지를 꺼두고 거기서 약화시킨 규칙을
+        // 다른 기기로 밀어넣는 우회가 가능해지기 때문(그룹 설정은 syncEnabled면 기기 간 공유됨).
+        put("editProtectionEnabled", preferences.editProtectionEnabled)
+        put("editProtectionStartHour", preferences.editProtectionStartHour)
+        put("editProtectionEndHour", preferences.editProtectionEndHour)
     }
     ioScope.launch {
         com.phonelock.app.service.PomodoroSyncClient.writeSettings(fbDatabaseUrl, fbApiKey, json, ts)
@@ -36,6 +41,9 @@ suspend fun PhoneLockRepository.syncSettingsFromFirebase() {
         if (json.has("defaultMultiPassEnabled")) preferences.defaultMultiPassEnabled = json.optBoolean("defaultMultiPassEnabled", preferences.defaultMultiPassEnabled)
         if (json.has("defaultPassCount")) preferences.defaultPassCount = json.optInt("defaultPassCount", preferences.defaultPassCount)
         if (json.has("defaultPassIntervalsCsv")) preferences.defaultPassIntervalsCsv = json.optString("defaultPassIntervalsCsv", preferences.defaultPassIntervalsCsv)
+        if (json.has("editProtectionEnabled")) preferences.editProtectionEnabled = json.optBoolean("editProtectionEnabled", preferences.editProtectionEnabled)
+        if (json.has("editProtectionStartHour")) preferences.editProtectionStartHour = json.optInt("editProtectionStartHour", preferences.editProtectionStartHour)
+        if (json.has("editProtectionEndHour")) preferences.editProtectionEndHour = json.optInt("editProtectionEndHour", preferences.editProtectionEndHour)
         settingsTs = result.ts
     } else if (settingsTs > result.ts) {
         pushSettingsToFirebase()

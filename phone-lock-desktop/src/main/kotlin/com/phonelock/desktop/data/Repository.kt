@@ -6,8 +6,71 @@ import org.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalDateTime
 
-/** Firebase 일일 사용시간 동기화(`dailyUsage/{date}/{그룹}/{device}`)에서 이 기기를 가리키는 키. */
+/**
+ * 이 기기의 플랫폼 이름 — 기기별 칸 이름의 접두사이자, 126차 이전 빌드가 쓰던 옛 칸 이름 그 자체다
+ * (`studyLog/{날짜}/desktop`, `dailyUsage/{날짜}/{그룹}/desktop`).
+ */
 private const val DAILY_USAGE_DEVICE = "desktop"
+
+/**
+ * 기기별 동기화 칸(`studyLog/{날짜}/{기기}`, `dailyUsage/{날짜}/{그룹}/{기기}`)에서 이 설치본을 가리키는
+ * 이름(안드로이드판과 대칭) — 플랫폼 이름 하나로 고정하면 같은 플랫폼 기기 둘이 같은 칸에 서로
+ * 덮어쓰고, 읽을 때도 자기 칸이라고 건너뛰어 서로의 기록/사용시간을 영영 못 본다(126차 버그:
+ * "태블릿에서 공부해도 폰/데스크탑에 기록이 안 뜬다"). [AppData.deviceInstallId]를 붙여 기기마다
+ * 다른 칸을 쓰게 한다.
+ */
+private fun Repository.deviceSlotKey(): String = synchronized(lock) {
+    if (data.deviceInstallId.isBlank()) {
+        data.deviceInstallId = java.util.UUID.randomUUID().toString().take(8)
+        persist()
+    }
+    "$DAILY_USAGE_DEVICE-${data.deviceInstallId}"
+}
+
+/** 공부 기록 지문 — 시작시각/길이/이름이 같으면 같은 기록으로 본다(127차, 옛 칸에 남은 내 기록 제거용). */
+internal fun studyLogFingerprint(startedAt: Long, seconds: Int, taskName: String): String = "$startedAt|$seconds|$taskName"
+
+/**
+ * Firebase에서 읽은 그날 공부기록(칸 이름 -> 기록 배열)에서 **다른 기기 몫만** 뽑는다(127차).
+ *
+ * 126차는 옛 칸(플랫폼 이름 그대로인 "desktop"/"android")을 칸 이름만 보고 통째로 버렸는데, 아직
+ * 업데이트 안 된 기기는 여전히 옛 칸에 올리기 때문에 그 기기의 기록이 통째로 사라졌다(실제 재발:
+ * 폰이 옛 빌드라 "android" 칸에 올리는데 업데이트된 데스크탑이 그 칸을 버려서, 126차 전엔 잘 보이던
+ * 폰 기록이 데스크탑에서 안 보임). 정말 걸러야 하는 건 "옛 칸에 남아있는 내 기록"뿐이므로 칸 이름이
+ * 아니라 [studyLogFingerprint]로 로컬과 겹치는 것만 뺀다 — 기기 업데이트 순서와 무관하게 남의 기록은
+ * 항상 보이고, 내 기록은 로컬과 이중으로 합산되지 않는다.
+ */
+internal fun mergeRemoteStudyLog(
+    remote: JSONObject,
+    dateKey: String,
+    ownKey: String,
+    localFingerprints: Set<String>
+): List<StudyLogEntry> {
+    val others = mutableListOf<StudyLogEntry>()
+    remote.keys().forEach { device ->
+        // 내 칸은 로컬에 이미 그대로 있으므로 통째로 건너뛴다(지문 비교조차 불필요).
+        if (device == ownKey) return@forEach
+        val arr = remote.optJSONArray(device) ?: return@forEach
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val entry = StudyLogEntry(
+                dateKey, obj.optString("taskName", ""), obj.optInt("seconds", 0),
+                obj.optLong("startedAt", 0L), obj.optString("note", ""), obj.optString("tag", "")
+            )
+            if (studyLogFingerprint(entry.startedAt, entry.seconds, entry.taskName) in localFingerprints) continue
+            others.add(entry)
+        }
+    }
+    return others
+}
+
+/**
+ * 일일 한도 판정용 — 기기별 사용시간 칸(칸 이름 -> 그 기기의 오늘 누적 초) 중 **내 칸을 뺀 나머지의 합**.
+ * 옛 칸도 아직 업데이트 안 된 기기가 쓰고 있을 수 있으므로 남겨서 합산한다(한도는 덜 세는 쪽이 위험하다).
+ * 내 옛 칸은 push 때 한 번 지우므로 내 몫이 두 번 세어지지 않는다(127차).
+ */
+internal fun peerUsageSecondsOf(usageByDevice: Map<String, Int>, ownKey: String): Int =
+    usageByDevice.filterKeys { it != ownKey }.values.sum()
 
 /** 일일 사용 한도의 "오늘" 날짜를 계산한다. resetHour 이전이면 아직 전날로 취급한다. */
 internal fun effectiveDate(resetHour: Int, now: LocalDateTime = LocalDateTime.now()): LocalDate =
@@ -396,6 +459,9 @@ class Repository {
 
     private data class CachedPeerUsage(val peerSeconds: Int, val fetchedAtMillis: Long)
     private val peerUsageCache = mutableMapOf<Long, CachedPeerUsage>()
+
+    /** 옛 칸 정리를 이미 끝낸 "날짜|그룹" 모음(127차) — 앱 실행당 한 번만 지우려고 기억한다. lock으로 보호. */
+    private val legacyUsageCleared = mutableSetOf<String>()
     private val peerUsageCacheTtlMs = 10_000L
     private val peerUsageRefreshInFlight = mutableSetOf<Long>()
 
@@ -411,10 +477,14 @@ class Repository {
         if ((cached == null || now - cached.fetchedAtMillis >= peerUsageCacheTtlMs) && peerUsageRefreshInFlight.add(group.id)) {
             val url = data.fbDatabaseUrl; val key = data.fbApiKey
             val groupId = group.id; val groupName = group.name
+            // 127차: 내 칸만 빼고 나머지는 전부 더한다 — 옛 칸("desktop"/"android")도 아직 업데이트 안 된
+            // 기기가 쓰고 있을 수 있으므로 남겨서 합산한다(한도는 덜 세는 쪽이 위험하다). 내 옛 칸은
+            // 첫 push 때 [pushUsageToFirebase]가 지우므로 내 몫이 두 번 세어지지 않는다.
+            val ownKey = deviceSlotKey()
             Thread {
                 val map = com.phonelock.desktop.monitor.PomodoroSyncClient
                     .readDailyUsage(url, key, dateStr, groupName) ?: emptyMap()
-                val peerSeconds = map.filterKeys { it != DAILY_USAGE_DEVICE }.values.sum()
+                val peerSeconds = peerUsageSecondsOf(map, ownKey)
                 synchronized(lock) {
                     peerUsageCache[groupId] = CachedPeerUsage(peerSeconds, System.currentTimeMillis())
                     peerUsageRefreshInFlight.remove(groupId)
@@ -469,9 +539,16 @@ class Repository {
         val group = data.groups.find { it.id == groupId } ?: return
         val url = data.fbDatabaseUrl; val key = data.fbApiKey
         val groupName = group.name
+        val deviceKey = deviceSlotKey()
+        val clearLegacy = legacyUsageCleared.add("$dateStr|$groupName")
         Thread {
+            if (clearLegacy) {
+                com.phonelock.desktop.monitor.PomodoroSyncClient.deleteLegacyDailyUsage(
+                    url, key, dateStr, groupName, DAILY_USAGE_DEVICE
+                )
+            }
             com.phonelock.desktop.monitor.PomodoroSyncClient.writeDailyUsage(
-                url, key, dateStr, groupName, DAILY_USAGE_DEVICE, usedSeconds
+                url, key, dateStr, groupName, deviceKey, usedSeconds
             )
         }.start()
     }
@@ -480,7 +557,7 @@ class Repository {
     private fun pushUsageToFirebaseBlocking(groupId: Long, dateStr: String, usedSeconds: Int) {
         val group = data.groups.find { it.id == groupId } ?: return
         com.phonelock.desktop.monitor.PomodoroSyncClient.writeDailyUsage(
-            data.fbDatabaseUrl, data.fbApiKey, dateStr, group.name, DAILY_USAGE_DEVICE, usedSeconds
+            data.fbDatabaseUrl, data.fbApiKey, dateStr, group.name, deviceSlotKey(), usedSeconds
         )
     }
 
@@ -527,6 +604,29 @@ class Repository {
         get() = synchronized(lock) { data.exitConfirmEnabled }
         set(value) = synchronized(lock) {
             data.exitConfirmEnabled = value
+            persist()
+        }
+
+    /** 차단 규칙 수정·삭제 방지(129차) — LockEvaluator.isWithinEditProtectionWindow가 읽는다.
+     *  방지를 끄거나 시간대를 좁히는 변경 자체도 회유 멘트 절차로 보호한다(설정 화면에서 처리). */
+    var editProtectionEnabled: Boolean
+        get() = synchronized(lock) { data.editProtectionEnabled }
+        set(value) = synchronized(lock) {
+            data.editProtectionEnabled = value
+            persist()
+        }
+
+    var editProtectionStartHour: Int
+        get() = synchronized(lock) { data.editProtectionStartHour }
+        set(value) = synchronized(lock) {
+            data.editProtectionStartHour = value
+            persist()
+        }
+
+    var editProtectionEndHour: Int
+        get() = synchronized(lock) { data.editProtectionEndHour }
+        set(value) = synchronized(lock) {
+            data.editProtectionEndHour = value
             persist()
         }
 
@@ -885,7 +985,11 @@ class Repository {
     // 로컬 상태가 유일한 source of truth. Firebase엔 페이즈 전환 시점에만(EnforcementService/UI 쪽에서
     // PomodoroSyncClient.pushLocalStudyStatus 호출) 크로스디바이스 신호로 write한다 — DECISIONS.md 참고.
 
-    fun getTimerRun(): TimerRunState? = synchronized(lock) { data.timerRun }
+    /** taskStartedAt이 0이면(구버전에서 켜둔 채 업데이트된 타이머) phaseStartedAt으로 대체해서 돌려준다 —
+     *  이후 호출부는 taskStartedAt만 보고 적립 구간을 계산하면 된다. */
+    fun getTimerRun(): TimerRunState? = synchronized(lock) {
+        data.timerRun?.let { if (it.taskStartedAt > 0L) it else it.copy(taskStartedAt = it.phaseStartedAt) }
+    }
 
     private fun setTimerRun(state: TimerRunState?) {
         synchronized(lock) {
@@ -979,8 +1083,9 @@ class Repository {
         val entries = data.studyLog.filter { it.dateKey == dateKey }
         val json = studyLogEntriesToJson(entries)
         val url = data.fbDatabaseUrl; val key = data.fbApiKey
+        val deviceKey = deviceSlotKey()
         Thread {
-            com.phonelock.desktop.monitor.PomodoroSyncClient.writeStudyLogForDate(url, key, dateKey, DAILY_USAGE_DEVICE, json)
+            com.phonelock.desktop.monitor.PomodoroSyncClient.writeStudyLogForDate(url, key, dateKey, deviceKey, json)
         }.start()
     }
 
@@ -992,15 +1097,13 @@ class Repository {
     fun syncStudyLogFromFirebase(dateKey: String) {
         val (url, key) = synchronized(lock) { data.fbDatabaseUrl to data.fbApiKey }
         val remote = com.phonelock.desktop.monitor.PomodoroSyncClient.readStudyLogForDate(url, key, dateKey) ?: return
-        val others = mutableListOf<StudyLogEntry>()
-        remote.keys().forEach { device ->
-            if (device == DAILY_USAGE_DEVICE) return@forEach
-            val arr = remote.optJSONArray(device) ?: return@forEach
-            for (i in 0 until arr.length()) {
-                val obj = arr.optJSONObject(i) ?: continue
-                others.add(StudyLogEntry(dateKey, obj.optString("taskName", ""), obj.optInt("seconds", 0), obj.optLong("startedAt", 0L), obj.optString("note", ""), obj.optString("tag", "")))
-            }
+        val ownKey = deviceSlotKey()
+        val localFingerprints = synchronized(lock) {
+            data.studyLog.filter { it.dateKey == dateKey }
+                .map { studyLogFingerprint(it.startedAt, it.seconds, it.taskName) }
+                .toSet()
         }
+        val others = mergeRemoteStudyLog(remote, dateKey, ownKey, localFingerprints)
         synchronized(lock) {
             remoteStudyLogCache = remoteStudyLogCache + (dateKey to others)
         }
@@ -1012,7 +1115,7 @@ class Repository {
         val now = System.currentTimeMillis()
         val mode = if (pomodoro) "pomodoro" else "plain"
         val phaseEndAt = if (pomodoro) now + pomodoroStudyMinutes * 60_000L else 0L
-        setTimerRun(TimerRunState(taskName = taskName, mode = mode, phase = "study", phaseStartedAt = now, phaseEndAt = phaseEndAt))
+        setTimerRun(TimerRunState(taskName = taskName, mode = mode, phase = "study", phaseStartedAt = now, phaseEndAt = phaseEndAt, taskStartedAt = now))
     }
 
     /** 타이머를 정지하고, 진행 중이던 공부 페이즈의 경과시간을 기록에 적립한다. note는 사용자가 남긴 짧은 회고(선택),
@@ -1020,8 +1123,8 @@ class Repository {
     fun timerStop(note: String = "", tag: String = "") {
         val run = getTimerRun() ?: return
         if (run.phase == "study") {
-            val elapsed = ((System.currentTimeMillis() - run.phaseStartedAt) / 1000L).toInt()
-            addStudyLogEntry(run.taskName, elapsed, run.phaseStartedAt, note, tag)
+            val elapsed = ((System.currentTimeMillis() - run.taskStartedAt) / 1000L).toInt()
+            addStudyLogEntry(run.taskName, elapsed, run.taskStartedAt, note, tag)
         }
         setTimerRun(null)
     }
@@ -1035,12 +1138,30 @@ class Repository {
         val now = System.currentTimeMillis()
         if (run.phase == "study") {
             if (run.mode != "pomodoro" || now < run.phaseEndAt) return
-            val elapsed = ((now - run.phaseStartedAt) / 1000L).toInt()
-            addStudyLogEntry(run.taskName, elapsed, run.phaseStartedAt)
-            setTimerRun(run.copy(phase = "break", phaseStartedAt = now, phaseEndAt = now + pomodoroBreakMinutes * 60_000L, breakExtraUsed = false))
+            val elapsed = ((now - run.taskStartedAt) / 1000L).toInt()
+            addStudyLogEntry(run.taskName, elapsed, run.taskStartedAt)
+            setTimerRun(run.copy(phase = "break", phaseStartedAt = now, phaseEndAt = now + pomodoroBreakMinutes * 60_000L, breakExtraUsed = false, taskStartedAt = now))
         } else {
-            setTimerRun(run.copy(phase = "study", phaseStartedAt = now, phaseEndAt = now + pomodoroStudyMinutes * 60_000L, cycleCount = run.cycleCount + 1))
+            setTimerRun(run.copy(phase = "study", phaseStartedAt = now, phaseEndAt = now + pomodoroStudyMinutes * 60_000L, cycleCount = run.cycleCount + 1, taskStartedAt = now))
         }
+    }
+
+    /**
+     * 타이머를 끄지 않고 지금 재고 있는 공부 일정만 바꾼다(126차, 사용자 요청: 일정을 바꾸려고 타이머를
+     * 종료해야 하는 불편 해소). 지금까지 잰 구간은 **바꾸기 전 이름으로** 기록에 적립하고 새 이름으로
+     * 구간을 다시 시작한다 — 그러지 않으면 A를 공부한 시간이 통째로 B의 기록이 된다. 페이즈 자체
+     * (phaseStartedAt/phaseEndAt/cycleCount)는 건드리지 않아서 뽀모도로 카운트다운과 스톱워치 표시는
+     * 끊기지 않고 이어진다. 휴식 중이면 적립할 공부 구간이 없으므로 이름만 바꾼다.
+     */
+    fun timerChangeTask(newTaskName: String) {
+        val run = getTimerRun() ?: return
+        if (run.taskName == newTaskName) return
+        val now = System.currentTimeMillis()
+        if (run.phase == "study") {
+            val elapsed = ((now - run.taskStartedAt) / 1000L).toInt()
+            addStudyLogEntry(run.taskName, elapsed, run.taskStartedAt)
+        }
+        setTimerRun(run.copy(taskName = newTaskName, taskStartedAt = now))
     }
 
     /** 휴식이 다 됐을 때 1회 한정으로 5분 더 쉰다. */
