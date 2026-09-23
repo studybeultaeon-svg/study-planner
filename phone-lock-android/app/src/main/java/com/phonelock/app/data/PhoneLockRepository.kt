@@ -255,11 +255,13 @@ class PhoneLockRepository(context: Context) {
     }
 
     /**
-     * 자동 백업/정리(82차, §9) — 하루 1회(dailyResetHour 기준 "오늘"이 바뀔 때) 실행되는 유지보수 묶음.
+     * 하루 1회 유지보수(82차, §9) — dailyResetHour 기준 "오늘"이 바뀔 때 호출된다.
      * `checkForUpdateIfNeeded`/`applyDailyGroupResetIfNeeded`와 동일한 lastXxxDate 가드 패턴.
-     * 1) 12개월 이상 지난 통계 자동 정리(이미 있는 [pruneOldStats] 재사용, 월 1회만).
-     * 2) 클라우드 자동 백업 켜져 있으면 [exportBackupJson] 결과를 Firebase Storage에 업로드.
-     * 두 작업 모두 실패해도 예외를 던지지 않는다(호출부가 화면 진입 경로라 여기서 죽으면 안 됨).
+     * 1) 성장 시즌이 바뀌었으면 초기화([checkAndResetGrowthSeasonIfNeeded]).
+     * 2) 12개월 이상 지난 통계 자동 정리(이미 있는 [pruneOldStats] 재사용, 월 1회만).
+     * 클라우드 자동 백업(Firebase Storage 업로드)도 여기 있었지만 134차에 설정 항목과 함께 삭제했다 —
+     * 스위치를 없애면서 업로드만 남기면 켜둔 적 있는 기기에서 끌 방법 없이 계속 돌기 때문.
+     * 실패해도 예외를 던지지 않는다(호출부가 화면 진입 경로라 여기서 죽으면 안 됨).
      */
     suspend fun runDailyMaintenanceIfNeeded() {
         val today = effectiveDate(dailyResetHour).toString()
@@ -271,15 +273,6 @@ class PhoneLockRepository(context: Context) {
         if (prevPruneRunLongAgo) {
             runCatching { pruneOldStats(12) }
             preferences.lastAutoStatsPruneDate = today
-        }
-
-        if (preferences.cloudBackupEnabled && preferences.lastCloudBackupDate != today) {
-            val result = runCatching {
-                val json = exportBackupJson()
-                com.phonelock.app.service.CloudBackupClient.uploadBackup(fbDatabaseUrl, json).getOrThrow()
-            }
-            preferences.lastCloudBackupDate = today
-            preferences.lastCloudBackupResult = if (result.isSuccess) "성공 (${result.getOrNull()})" else "실패: ${result.exceptionOrNull()?.message}"
         }
     }
 
@@ -546,6 +539,10 @@ class PhoneLockRepository(context: Context) {
     suspend fun getMembers(groupId: Long): List<GroupMember> = memberDao.getMembers(groupId)
 
     suspend fun getAllEnabledGroups(): List<AppGroup> = groupDao.getAllEnabled()
+
+    /** 모든 그룹(`enabled`는 통계 표시 필터일 뿐 차단 판정과 무관하므로 걸러내지 않는다) — 130차 미니멀
+     *  런처가 "지금 잠긴 앱"을 계산할 때 쓴다. 잠금 여부 판정 자체는 [LockEvaluator]에 그대로 맡긴다. */
+    suspend fun getAllGroupsOnce(): List<AppGroup> = groupDao.getAllOnce()
 
     /**
      * 같은 앱이 여러 그룹에 겹쳐 등록된 경우, 첫 매칭만 보고 끝내면 그 그룹이 오늘 비활성(요일 미포함)이어도

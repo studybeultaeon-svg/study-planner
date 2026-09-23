@@ -44,6 +44,24 @@
             </intent-filter>
         </activity>
 
+        <!-- 미니멀 런처(130차) — 홈 버튼이 띄우는 화면. MainActivity와 분리한 이유는 LauncherActivity.kt 주석 참고.
+             taskAffinity=""로 자기만의 태스크에 머물러 여기서 띄운 앱이 홈 태스크 위에 쌓이지 않게 하고,
+             stateNotNeeded로 메모리에서 정리됐다 돌아와도 저장된 상태 없이 그냥 다시 그린다. -->
+        <activity
+            android:name=".ui.launcher.LauncherActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.PhoneLock">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".ui.BlockActivity"
             android:exported="false"

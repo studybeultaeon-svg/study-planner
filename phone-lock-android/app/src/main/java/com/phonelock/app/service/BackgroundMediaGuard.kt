@@ -9,6 +9,7 @@ import android.media.session.PlaybackState
 import android.os.Build
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
+import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationManagerCompat
 
 /**
@@ -68,8 +69,16 @@ object BackgroundMediaGuard {
 }
 
 /**
- * 알림 접근 권한을 받기 위한 빈 리스너. [MediaSessionManager.getActiveSessions]는 호출자가 "사용자가 켠
- * 알림 리스너"를 가진 앱일 때만 다른 앱의 미디어 세션을 돌려주기 때문에 필요하다 — 알림 내용 자체는
- * 읽지도 저장하지도 않는다(콜백을 하나도 재정의하지 않음).
+ * 알림 접근 권한을 받기 위한 리스너. [MediaSessionManager.getActiveSessions]는 호출자가 "사용자가 켠
+ * 알림 리스너"를 가진 앱일 때만 다른 앱의 미디어 세션을 돌려주기 때문에 필요하다.
+ *
+ * 130차부터 알림 필터(묶음 요약)도 같은 리스너를 쓴다 — 알림 접근 권한은 컴포넌트 단위라 리스너를 새로
+ * 만들면 사용자가 권한을 한 번 더 켜야 하기 때문. 필터할 앱을 하나도 안 골랐으면(기본값) 아래 콜백은
+ * 곧바로 돌아오므로 알림 내용을 읽지도 저장하지도 않는다.
  */
-class MediaListenerService : NotificationListenerService()
+class MediaListenerService : NotificationListenerService() {
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        val notification = sbn ?: return
+        runCatching { NotificationFilter.handlePosted(this, notification) }
+    }
+}

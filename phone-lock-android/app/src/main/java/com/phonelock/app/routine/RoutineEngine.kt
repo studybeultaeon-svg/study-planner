@@ -1,5 +1,7 @@
 package com.phonelock.app.routine
 
+import com.phonelock.shared.routine.RoutineRepeat
+
 import com.phonelock.app.data.Routine
 import java.time.LocalDate
 
@@ -13,9 +15,17 @@ object RoutineEngine {
     private fun bitIndexFor(date: LocalDate): Int = date.dayOfWeek.value - 1
     /** 요일마스크+기간(52차)을 함께 고려해 이 날짜에 예정됐는지 판정 — 알림 스케줄러(RoutineAlarmScheduler)도 재사용. */
     fun isScheduledOn(routine: Routine, date: LocalDate): Boolean {
-        routine.startDate?.let { if (date.isBefore(LocalDate.parse(it))) return false }
-        routine.endDate?.let { if (date.isAfter(LocalDate.parse(it))) return false }
-        return (routine.daysMask shr bitIndexFor(date)) and 1 == 1
+        val start = routine.startDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        if (start != null && date.isBefore(start)) return false
+        routine.endDate?.let { end -> runCatching { LocalDate.parse(end) }.getOrNull()?.let { if (date.isAfter(it)) return false } }
+        return RoutineRepeat.isScheduled(
+            mode = routine.repeatMode,
+            daysMask = routine.daysMask,
+            intervalDays = routine.repeatIntervalDays,
+            monthDaysCsv = routine.repeatMonthDaysCsv,
+            anchorDate = start,
+            date = date
+        )
     }
 
     /** 그날 예정된 루틴이 없으면 null(중립, 스트릭 계산에서 건너뜀), 하나라도 미완료면 false, 전부 완료면 true. */

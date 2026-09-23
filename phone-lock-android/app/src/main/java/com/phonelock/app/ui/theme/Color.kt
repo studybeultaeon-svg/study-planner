@@ -13,6 +13,13 @@ object ThemeMode {
     /** 커스텀(79차, 사용자 요청) — 배경/포인트 두 색만 사용자가 고르면 나머지 팔레트 값은
      *  [buildCustomPalette]가 자동 계산한다. 실제 두 색은 AppPreferences.customThemeBackground/customThemeAccent. */
     const val CUSTOM = "CUSTOM"
+
+    /**
+     * 미니멀 모드(130차) 전용 흑백 팔레트. **설정의 테마 목록에는 넣지 않는다** — 테마를 하나 더 고르는
+     * 게 아니라 "미니멀 모드" 스위치를 켜면 골라둔 테마와 무관하게 이 팔레트가 강제되는 구조이기 때문이다
+     * (85차에 테마 종류를 3개로 줄인 결정을 되돌리지 않으려는 의도). 스위치를 끄면 원래 고른 테마로 그대로 돌아온다.
+     */
+    const val MINIMAL = "MINIMAL"
 }
 
 /** 팔레트 하나가 채워야 하는 색상 집합 — PhoneLockColorScheme(Theme.kt)이 그대로 매핑한다. */
@@ -162,9 +169,34 @@ fun buildCustomPalette(backgroundHex: String, accentHex: String): PhoneLockPalet
     )
 }
 
+/**
+ * 미니멀 모드(130차) 흑백 팔레트 — 색으로 시선을 끄는 자리를 전부 없앤다. 경고/에러만 회색 농도로
+ * 구분해서(빨강 대신 가장 진한 먹색) "위험한 동작"이라는 신호 자체는 남긴다.
+ */
+val MonoPalette = PhoneLockPalette(
+    isDark = false,
+    background = Color(0xFFFFFFFF),
+    surface = Color(0xFFFFFFFF),
+    surfaceAlt = Color(0xFFF4F4F4),
+    primary = Color(0xFF1A1A1A),
+    primaryContainer = Color(0xFFE8E8E8),
+    onPrimary = Color(0xFFFFFFFF),
+    secondary = Color(0xFF4A4A4A),
+    onSecondary = Color(0xFFFFFFFF),
+    success = Color(0xFF3A3A3A),
+    warning = Color(0xFF5A5A5A),
+    warningContainer = Color(0xFFEDEDED),
+    error = Color(0xFF000000),
+    errorContainer = Color(0xFFE0E0E0),
+    onBackground = Color(0xFF1A1A1A),
+    muted = Color(0xFF7A7A7A),
+    outline = Color(0xFFD6D6D6)
+)
+
 fun paletteFor(themeMode: String): PhoneLockPalette = when (themeMode) {
     ThemeMode.DARK_BLUE -> DarkBluePalette
     ThemeMode.LIGHT_ORANGE -> LightOrangePalette
+    ThemeMode.MINIMAL -> MonoPalette
     else -> LightGreenPalette
 }
 

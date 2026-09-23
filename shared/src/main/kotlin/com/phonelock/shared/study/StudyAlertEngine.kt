@@ -26,7 +26,7 @@ object StudyAlertEngine {
         /** 계획 대비 진행량이 부족하다(진행률이 기간 경과율보다 뒤처짐). */
         PACE_BEHIND,
 
-        /** 마감이 지났거나, 지금 페이스면 마감까지 못 끝낸다. */
+        /** 마감이 지났거나, 요일별 목표대로 해도 마감까지 다 못 끝낸다. */
         SCHEDULE_DELAYED
     }
 
@@ -55,14 +55,21 @@ object StudyAlertEngine {
         val quantity: Double,
         /** 지금까지 진행한 양. */
         val progress: Double,
-        /** 시작일부터 오늘까지 흐른 일수(오늘 포함, 최소 1). */
+        /** 시작일부터 오늘까지 흐른 일수(오늘 포함). 아직 시작 전이면 0. */
         val daysElapsed: Int,
         /** 오늘 이후 마감까지 남은 일수(오늘 제외). 음수면 마감이 지난 것. */
         val daysLeft: Int,
         /** 오늘 해야 할 양(요일별 할당량). 0이면 오늘은 예정 없음. */
         val todayQuota: Double,
         /** 오늘치 목표를 채웠는지(연동된 캘린더 일정 완료분 합 ≥ 오늘 할당량). */
-        val todayAchieved: Boolean
+        val todayAchieved: Boolean,
+        /** 분량 단위(쪽/강/문제 …). 알림 문구의 숫자 뒤에 그대로 붙인다 — 비어 있으면 숫자만 쓴다. */
+        val unit: String,
+        /** 오늘(시작 전이면 시작일)부터 마감일까지 요일별 목표를 그대로 지켰을 때 해낼 수 있는 양(휴일 제외,
+         *  `CalcEngine.planWindow`). 계산기 화면의 "필요 페이스"와 같은 기준이다. */
+        val planCapacity: Double,
+        /** 위 기간 중 목표가 잡힌(0보다 큰) 날 수. */
+        val planDays: Int
     )
 
     data class Snapshot(
@@ -109,29 +116,44 @@ object StudyAlertEngine {
             )
         }
 
-        // 2) 마감이 지났거나, 지금 페이스면 마감을 못 맞추는 업무.
+        // 2) 마감이 지났거나, 요일별 목표대로 해도 마감까지 다 못 끝내는 업무.
         if (settings.scheduleEnabled) {
             val overdueTask = snapshot.tasks.firstOrNull { it.quantity > 0.0 && it.daysLeft < 0 && it.progress < it.quantity }
+            // 134차: 예전엔 "지금까지 평균 속도(진행량 ÷ 시작 후 지난 날짜)"를 마감까지 늘려 모자랄 양을 냈는데,
+            // 시작 직후엔 며칠치 기록만으로 몇 달을 내다봐 숫자가 터무니없이 커지고(실사용 "223.6만큼 모자랍니다"),
+            // 목표가 없는 요일·아직 시작 안 한 업무까지 "느리다"고 셌다. 이제는 사용자가 직접 정한 요일별 목표를
+            // 기준으로 "그대로 해도 마감 때 얼마가 남는가"를 본다 — 계산기 화면의 필요 페이스와 같은 숫자다.
             val willMissTask = snapshot.tasks
                 .filter { it.quantity > 0.0 && it.daysLeft >= 0 }
-                .map { it to shortfallAtCurrentPace(it) }
-                .filter { it.second > 0.0 }
-                .maxByOrNull { it.second }
+                .map { it to planShortfall(it) }
+                .filter { (task, shortfall) -> shortfall > 0.0 && shortfall >= averagePlanPerDay(task) }
+                .maxByOrNull { (task, shortfall) -> shortfallInDays(task, shortfall) }
             when {
                 overdueTask != null -> alerts.add(
                     Alert(
                         Kind.SCHEDULE_DELAYED,
                         "📉 마감이 지난 공부가 있어요",
-                        "'${overdueTask.name}'이(가) ${percent(remainingRatio(overdueTask))}% 남은 채 마감일을 넘겼어요."
+                        "'${overdueTask.name}': 마감일이 지났는데 아직 ${subject(amount(remaining(overdueTask), overdueTask.unit))} " +
+                            "남아 있어요(전체의 ${percent(remainingRatio(overdueTask))}%)."
                     )
                 )
-                willMissTask != null -> alerts.add(
-                    Alert(
-                        Kind.SCHEDULE_DELAYED,
-                        "📉 목표 일정에 차질이 예상돼요",
-                        "'${willMissTask.first.name}'은 지금 페이스면 마감까지 ${round1(willMissTask.second)}만큼 모자랍니다."
+                willMissTask != null -> {
+                    val (task, shortfall) = willMissTask
+                    alerts.add(
+                        Alert(
+                            Kind.SCHEDULE_DELAYED,
+                            "📉 이대로면 마감을 못 맞춰요",
+                            if (task.planDays <= 0) {
+                                "'${task.name}': 마감(${ddayLabel(task.daysLeft)})까지 목표가 잡힌 날이 없어 " +
+                                    "남은 ${objectOf(amount(remaining(task), task.unit))} 끝낼 수 없어요. 계산기에서 요일별 목표를 다시 잡아 주세요."
+                            } else {
+                                "'${task.name}': 요일별 목표대로 해도 마감(${ddayLabel(task.daysLeft)}) 때 " +
+                                    "${subject(amount(shortfall, task.unit))} 남아요. 제때 끝내려면 하루 평균 " +
+                                    "${amount(averagePlanPerDay(task), task.unit)} → ${towards(amount(ceil1(neededPerPlanDay(task)), task.unit))} 늘려야 해요."
+                            }
+                        )
                     )
-                )
+                }
                 snapshot.calendarOverdue > 0 -> alerts.add(
                     Alert(
                         Kind.SCHEDULE_DELAYED,
@@ -142,7 +164,7 @@ object StudyAlertEngine {
             }
         }
 
-        // 3) 계획한 양에 비해 진행이 뒤처진 업무(페이스 지연).
+        // 3) 계획한 양에 비해 진행이 뒤처진 업무(페이스 지연). 아직 시작 전(daysElapsed == 0)인 업무는 제외.
         if (settings.paceEnabled) {
             val behind = snapshot.tasks
                 .filter { it.quantity > 0.0 && it.daysElapsed > 0 && it.daysLeft >= 0 }
@@ -155,8 +177,9 @@ object StudyAlertEngine {
                     Alert(
                         Kind.PACE_BEHIND,
                         "⏳ 학습 페이스가 계획보다 느려요",
-                        "'${task.name}' 진행 ${percent(progressRatio(task))}% / 기간 ${percent(elapsedRatio(task))}% — " +
-                            "남은 ${task.daysLeft}일 동안 하루 ${round1(dailyNeeded(task))}씩 해야 맞출 수 있어요."
+                        "'${task.name}': 기간은 ${percent(elapsedRatio(task))}% 지났는데 진행은 ${percent(progressRatio(task))}%예요. " +
+                            "마감(${ddayLabel(task.daysLeft)})까지 공부하는 날마다 평균 " +
+                            "${amount(ceil1(neededPerPlanDay(task)), task.unit)}씩 해야 따라잡아요."
                     )
                 )
             }
@@ -176,25 +199,63 @@ object StudyAlertEngine {
 
     private fun remainingRatio(task: TaskProgress): Double = 1.0 - progressRatio(task)
 
+    private fun remaining(task: TaskProgress): Double = (task.quantity - task.progress).coerceAtLeast(0.0)
+
     private fun elapsedRatio(task: TaskProgress): Double {
         val total = task.daysElapsed + task.daysLeft.coerceAtLeast(0)
         return if (total > 0) (task.daysElapsed.toDouble() / total).coerceIn(0.0, 1.0) else 1.0
     }
 
-    /** 남은 양을 남은 일수로 나눈 "이제부터 하루에 해야 하는 양". */
-    private fun dailyNeeded(task: TaskProgress): Double {
-        val remaining = (task.quantity - task.progress).coerceAtLeast(0.0)
-        val days = task.daysLeft.coerceAtLeast(1)
-        return remaining / days
+    /** 요일별 목표를 그대로 지켰을 때 마감 때 남는 양(0 이하면 제때 끝남). */
+    private fun planShortfall(task: TaskProgress): Double = remaining(task) - task.planCapacity
+
+    /** 지금 계획의 "공부하는 날" 하루 평균 목표. 목표가 잡힌 날이 없으면 0. */
+    private fun averagePlanPerDay(task: TaskProgress): Double =
+        if (task.planDays > 0) task.planCapacity / task.planDays else 0.0
+
+    /** 남은 양을 목표가 잡힌 날에 고르게 나눴을 때 하루에 해야 하는 양. 그런 날이 없으면 남은 날(최소 1일)로 나눈다. */
+    private fun neededPerPlanDay(task: TaskProgress): Double {
+        val days = if (task.planDays > 0) task.planDays else (task.daysLeft + 1).coerceAtLeast(1)
+        return remaining(task) / days
     }
 
-    /** 지금까지의 평균 진행 속도가 그대로 이어진다고 볼 때 마감 시점에 모자랄 양(0 이하면 여유 있음). */
-    private fun shortfallAtCurrentPace(task: TaskProgress): Double {
-        if (task.daysElapsed <= 0) return 0.0
-        val perDay = task.progress / task.daysElapsed
-        val projected = task.progress + perDay * task.daysLeft.coerceAtLeast(0)
-        return task.quantity - projected
+    /** 여러 업무 중 가장 급한 것을 고르는 기준 — 단위가 서로 달라(쪽/강) 양 대신 "지금 계획 기준 며칠치가
+     *  모자란가"로 비교한다. 목표가 잡힌 날이 아예 없으면 가장 급한 것으로 친다. */
+    private fun shortfallInDays(task: TaskProgress, shortfall: Double): Double {
+        val perDay = averagePlanPerDay(task)
+        return if (perDay > 0.0) shortfall / perDay else Double.MAX_VALUE
     }
+
+    private fun ddayLabel(daysLeft: Int): String = if (daysLeft <= 0) "D-Day" else "D-$daysLeft"
+
+    /** 숫자 + 단위(예: "22쪽"). 단위가 비어 있으면 숫자만. */
+    private fun amount(value: Double, unit: String): String = round1(value) + unit.trim()
+
+    /** 소수 첫째 자리에서 올림 — "하루 이만큼은 해야 한다"는 값이라 반올림으로 깎이면 안 된다. */
+    private fun ceil1(value: Double): Double = Math.ceil(value * 10 - 1e-9) / 10.0
+
+    /** 마지막 글자의 받침 번호(0 = 받침 없음, 8 = ㄹ). 숫자는 읽는 소리 기준(0은 십·백·천/영 모두 받침 있음). */
+    private fun finalConsonant(word: String): Int {
+        val c = word.trimEnd().lastOrNull() ?: return 0
+        return when {
+            c in '가'..'힣' -> (c - '가') % 28
+            c == '0' -> 17
+            c == '1' || c == '7' || c == '8' -> 8
+            c == '3' -> 16
+            c == '6' -> 1
+            else -> 0
+        }
+    }
+
+    /** 주격 조사(이/가)를 붙인다 — 단위가 "쪽"이면 "22쪽이", "문제"면 "3문제가". */
+    private fun subject(word: String): String = word + if (finalConsonant(word) != 0) "이" else "가"
+
+    /** 목적격 조사(을/를)를 붙인다. */
+    private fun objectOf(word: String): String = word + if (finalConsonant(word) != 0) "을" else "를"
+
+    /** 방향 조사(으로/로)를 붙인다 — ㄹ 받침 뒤는 "로". */
+    private fun towards(word: String): String =
+        word + finalConsonant(word).let { if (it != 0 && it != 8) "으로" else "로" }
 
     private fun percent(ratio: Double): Int = Math.round(ratio * 100).toInt()
 

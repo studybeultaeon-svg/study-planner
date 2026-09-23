@@ -52,20 +52,7 @@ class AppPreferences(context: Context) {
         get() = prefs.getFloat("font_scale", 1.0f)
         set(value) = prefs.edit().putFloat("font_scale", value).apply()
 
-    // ---- 자동 백업/정리(82차, §9 "자동 백업 클라우드 업로드"/"12개월 정리 자동 스케줄") ----
-    /** 매일 1회 전체 데이터를 Firebase Storage에 자동 업로드할지 — 기본 off(로그인 필요, 데이터 사용량 발생). */
-    var cloudBackupEnabled: Boolean
-        get() = prefs.getBoolean("cloud_backup_enabled", false)
-        set(value) = prefs.edit().putBoolean("cloud_backup_enabled", value).apply()
-
-    var lastCloudBackupDate: String
-        get() = prefs.getString("last_cloud_backup_date", "") ?: ""
-        set(value) = prefs.edit().putString("last_cloud_backup_date", value).apply()
-
-    var lastCloudBackupResult: String
-        get() = prefs.getString("last_cloud_backup_result", "") ?: ""
-        set(value) = prefs.edit().putString("last_cloud_backup_result", value).apply()
-
+    // ---- 자동 정리(82차, §9 "12개월 정리 자동 스케줄" — 같이 있던 클라우드 자동 백업은 134차에 삭제) ----
     /** 12개월 이상 지난 통계를 자동으로 정리한 마지막 날짜 — 월 1회만 실행되게 가드. */
     var lastAutoStatsPruneDate: String
         get() = prefs.getString("last_auto_stats_prune_date", "") ?: ""
@@ -239,11 +226,127 @@ class AppPreferences(context: Context) {
         get() = prefs.getString("custom_theme_accent", "#8BC34A") ?: "#8BC34A"
         set(value) = prefs.edit().putString("custom_theme_accent", value).apply()
 
+    // ---- 미니멀 런처(130차) ----
+    // 런처 설정은 전부 여기(SharedPreferences)에 둔다 — 항목이 전부 소규모 키-값이라 Room 버전을
+    // 올릴 이유가 없고, 82차 정책상 스키마 변경엔 명시적 마이그레이션이 필요해 실패 시 로컬 전용
+    // 데이터(그룹)까지 위험해지기 때문. 기기마다 깔린 앱이 달라 동기화 대상도 아니다.
+
+    /** 런처 홈에 고정한 앱 패키지명 — 홈에 그리는 순서가 의미 있어 Set 대신 CSV(패키지명엔 쉼표가 없음). */
+    var launcherFavorites: List<String>
+        get() = (prefs.getString("launcher_favorites_csv", "") ?: "")
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        set(value) = prefs.edit().putString("launcher_favorites_csv", value.joinToString(",")).apply()
+
+    /** 런처 목록과 검색 결과에서 아예 감출 앱(사용자가 직접 고른 것 — 차단 규칙에 걸린 앱 숨김은 2단계). */
+    var launcherHiddenPackages: Set<String>
+        get() = prefs.getStringSet("launcher_hidden_packages", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("launcher_hidden_packages", value).apply()
+
+    /**
+     * 런처 홈에 띄울 디데이 후보 목록(133차) — 한 줄에 `id<TAB>이름<TAB>날짜`.
+     * 파싱/직렬화는 `ui.launcher`의 순수 함수(`parseLauncherDdays`/`launcherDdaysToText`)가 맡는다.
+     */
+    var launcherDdaysText: String
+        get() = prefs.getString("launcher_ddays", "") ?: ""
+        set(value) = prefs.edit().putString("launcher_ddays", value).apply()
+
+    /** 후보 중 홈 화면에 실제로 뜨는 하나의 id — 비어 있으면 홈에 디데이를 그리지 않는다. */
+    var launcherPinnedDdayId: String?
+        get() = prefs.getString("launcher_pinned_dday", null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit().putString("launcher_pinned_dday", value ?: "").apply()
+
+    /** 런처에서만 쓰는 앱 이름 바꾸기(패키지명 -> 보여줄 이름) JSON — 원래 앱 이름은 건드리지 않는다. */
+    var launcherRenamesJson: String
+        get() = prefs.getString("launcher_renames_json", "{}") ?: "{}"
+        set(value) = prefs.edit().putString("launcher_renames_json", value).apply()
+
+    /** 알림을 즉시 지우고 요약으로만 모아 볼 앱 — 비어 있으면 알림 필터 기능 자체가 꺼진 것과 같다(옵트인). */
+    var notificationFilterPackages: Set<String>
+        get() = prefs.getStringSet("notification_filter_packages", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("notification_filter_packages", value).apply()
+
+    /** 모아둔 알림을 한 번에 알려줄 시각들("12:30,18:30" 형식, 설정 화면에서 자유 입력). */
+    var notificationDigestTimesCsv: String
+        get() = prefs.getString("notification_digest_times", "12:30,18:30,21:30") ?: "12:30,18:30,21:30"
+        set(value) = prefs.edit().putString("notification_digest_times", value).apply()
+
+    /** 거른 알림은 되돌릴 수 없으므로 제목/본문을 그대로 들고 있다가 요약에 싣는다. */
+    data class FilteredNotification(
+        val packageName: String,
+        val appLabel: String,
+        val title: String,
+        val text: String,
+        val atMillis: Long
+    )
+
+    private var notificationDigestQueueJson: String
+        get() = prefs.getString("notification_digest_queue", "[]") ?: "[]"
+        set(value) = prefs.edit().putString("notification_digest_queue", value).apply()
+
+    fun filteredNotifications(): List<FilteredNotification> = runCatching {
+        val arr = org.json.JSONArray(notificationDigestQueueJson)
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            FilteredNotification(
+                packageName = o.optString("pkg"),
+                appLabel = o.optString("label"),
+                title = o.optString("title"),
+                text = o.optString("text"),
+                atMillis = o.optLong("at")
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    fun addFilteredNotification(item: FilteredNotification) {
+        val arr = runCatching { org.json.JSONArray(notificationDigestQueueJson) }.getOrDefault(org.json.JSONArray())
+        arr.put(
+            org.json.JSONObject()
+                .put("pkg", item.packageName)
+                .put("label", item.appLabel)
+                .put("title", item.title)
+                .put("text", item.text)
+                .put("at", item.atMillis)
+        )
+        // 상한을 넘으면 오래된 것부터 버린다(JSONArray는 앞에서부터 시간순).
+        val overflow = arr.length() - com.phonelock.app.service.NotificationFilter.MAX_QUEUE
+        if (overflow > 0) repeat(overflow) { arr.remove(0) }
+        notificationDigestQueueJson = arr.toString()
+    }
+
+    fun clearFilteredNotifications() {
+        notificationDigestQueueJson = "[]"
+    }
+
+    fun launcherRenames(): Map<String, String> = runCatching {
+        val json = org.json.JSONObject(launcherRenamesJson)
+        json.keys().asSequence().associateWith { json.optString(it, "") }.filterValues { it.isNotBlank() }
+    }.getOrDefault(emptyMap())
+
+    /** [newName]이 비어 있으면(또는 null) 바꾼 이름을 지워 원래 앱 이름으로 되돌린다. */
+    fun setLauncherRename(packageName: String, newName: String?) {
+        val json = runCatching { org.json.JSONObject(launcherRenamesJson) }.getOrDefault(org.json.JSONObject())
+        if (newName.isNullOrBlank()) json.remove(packageName) else json.put(packageName, newName.trim())
+        launcherRenamesJson = json.toString()
+    }
+
     /** 지금 선택된 테마의 완성된 팔레트(121차, 데스크탑판 `Repository.currentPalette()`와 대칭) —
      *  Compose 밖(위젯/오버레이/액티비티 창 배경)에서 테마 색이 필요할 때 쓰는 유일한 창구. CUSTOM이면
      *  배경/포인트 두 색으로부터 나머지를 자동 계산한다. */
     fun currentPalette(): com.phonelock.app.ui.theme.PhoneLockPalette =
-        com.phonelock.app.ui.theme.paletteFor(themeMode, customThemeBackground, customThemeAccent)
+        com.phonelock.app.ui.theme.paletteFor(effectiveThemeMode, customThemeBackground, customThemeAccent)
+
+    /**
+     * 미니멀 모드(130차) — 켜면 앱 전체가 흑백이 되고, 홈은 움직이는 식물 씬 대신 텍스트 요약만,
+     * 탭은 이모지 없이 글자만 남는다. 고른 테마([themeMode])는 그대로 두고 표시만 덮어쓰기 때문에
+     * 끄는 순간 원래 테마로 돌아온다.
+     */
+    var minimalMode: Boolean
+        get() = prefs.getBoolean("minimal_mode", false)
+        set(value) = prefs.edit().putBoolean("minimal_mode", value).apply()
+
+    /** 미니멀 모드를 반영한 실제 표시용 테마 — 화면/위젯/오버레이는 [themeMode] 대신 항상 이 값을 쓴다. */
+    val effectiveThemeMode: String
+        get() = if (minimalMode) com.phonelock.app.ui.theme.ThemeMode.MINIMAL else themeMode
 
     /** 그룹 자동 재활성화를 마지막으로 적용한 날짜(effectiveDate 기준) — 데스크탑판 lastGroupAutoResetDate와 동일 역할. */
     var lastGroupAutoResetDate: String?

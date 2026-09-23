@@ -1,5 +1,7 @@
 package com.phonelock.app.data
 
+import com.phonelock.shared.routine.RoutineRepeat
+
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
@@ -130,6 +132,9 @@ fun PhoneLockRepository.routinesToJson(routines: List<Routine>, logs: List<Routi
             put("notifyEnabled", r.notifyEnabled)
             put("startDate", r.startDate ?: JSONObject.NULL)
             put("endDate", r.endDate ?: JSONObject.NULL)
+            put("repeatMode", r.repeatMode)
+            put("repeatIntervalDays", r.repeatIntervalDays)
+            put("repeatMonthDaysCsv", r.repeatMonthDaysCsv)
         })
     }
     val logsArr = JSONArray()
@@ -165,7 +170,10 @@ fun PhoneLockRepository.routinesFromJson(routinesJson: JSONArray, logsJson: JSON
                 archived = r.optBoolean("archived", false),
                 notifyEnabled = r.optBoolean("notifyEnabled", false),
                 startDate = if (r.isNull("startDate")) null else r.optString("startDate", null),
-                endDate = if (r.isNull("endDate")) null else r.optString("endDate", null)
+                endDate = if (r.isNull("endDate")) null else r.optString("endDate", null),
+                repeatMode = r.optString("repeatMode", RoutineRepeat.MODE_WEEKLY),
+                repeatIntervalDays = r.optInt("repeatIntervalDays", 3),
+                repeatMonthDaysCsv = r.optString("repeatMonthDaysCsv", "1")
             )
         )
     }

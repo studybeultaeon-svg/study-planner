@@ -55,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
@@ -100,6 +101,7 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** 홈(식물) 화면이 저장값을 다시 읽는 주기(121차) — EXP는 이 화면 밖(공부 타이머·루틴 체크·다른 기기
  *  동기화)에서도 쌓이므로, 화면이 떠 있는 동안 이 간격으로 다시 읽어 표시가 실제 값과 벌어지지 않게 한다. */
@@ -1007,89 +1009,146 @@ fun GroundScene(
             withFrameNanos { t -> nowMs = (t - startTime) / 1_000_000f }
         }
     }
-    val anim = growthAnimForTier(stage.tier, nowMs)
 
     // tier2+ 장식·흔들림 효과가 이 컴포저블에 할당된 영역(왼쪽 NavigationRail 옆 콘텐츠 영역) 밖으로
     // 번져 나가 탭 바를 가리지 않도록 그리기 자체를 자기 경계 안으로 가둔다.
-    Canvas(modifier.clipToBounds()) {
-        val w = size.width
-        val fullH = size.height
-        // 콘텐츠 높이가 너무 줄어 나무가 찌그러지지 않도록 전체의 절반 아래로는 줄이지 않는다.
-        val h = (fullH - contentBottomInset.toPx()).coerceAtLeast(fullH * 0.5f)
-        val scale = (min(w, h) / 400f).coerceIn(0.7f, 3.5f)
-        val tier = stage.tier
-        val horizonY = h * 0.2f
-        val margin = SHAKE_MARGIN * scale
-
-        translate(anim.shakeX * scale, anim.shakeY * scale) {
-            drawSky(tier, w, h, horizonY, scale, nowMs, margin)
-            drawGroundLayer(tier, w, fullH, horizonY, scale, margin)
-
-            if (tier == 3) drawCrackedGroundPatch(w, h, scale, 1 + (stageIndex - 17).coerceAtLeast(0), 0.35f + anim.flicker * 0.3f)
-            if (tier == 4) drawCrackedGroundPatch(w, h, scale, 3, 0.4f + anim.flicker * 0.3f)
-            if (tier >= 2) drawCosmicBackdrop(tier, w, h, scale, anim, margin)
-
-            val potW = 74f * scale
-            val potH = 46f * scale
-            val potLeft = w / 2f - potW / 2f
-            val potTop = h * 0.62f
-
-            // 꾸미기 아이템(121차) — 화분 바닥선을 "땅"으로 삼아 나무와 같은 Canvas에 그린다.
-            val decoScene = DecorationScene(
-                w = w, h = h, scale = scale,
-                groundY = potTop + potH,
-                tMs = nowMs
-            )
-            drawSceneryDecorations(decorationIds, decoScene)
-
-            val potPath = Path().apply {
-                moveTo(potLeft, potTop)
-                lineTo(potLeft + potW, potTop)
-                lineTo(potLeft + potW - 10f * scale, potTop + potH)
-                lineTo(potLeft + 10f * scale, potTop + potH)
-                close()
-            }
-            drawPath(potPath, color = Color(0xFFD08B5B))
-            drawRect(color = Color(0xFFB5723F), topLeft = Offset(potLeft - 4f * scale, potTop - 6f * scale), size = Size(potW + 8f * scale, 8f * scale))
-
+    //
+    // 134차: 시간에 따라 모양이 바뀌지 않는 배경 도형(언덕·풀 포기·울타리 말뚝)은 drawWithCache 블록에서 크기·등급·
+    // 꾸미기가 바뀔 때만 한 번 만든다. 매 프레임 수백 개의 Path를 새로 만들면 GPU 경로 캐시가 계속 갈려 나가
+    // 느려지고(에뮬레이터는 아예 죽었다) 배터리도 먹는다. 같은 이유로 애니메이션 시각(nowMs)은 컴포지션이 아니라
+    // 그리기 단계에서만 읽는다 — 예전엔 컴포지션에서 읽어 이 컴포저블 전체가 매 프레임 다시 구성됐다.
+    Spacer(
+        modifier.clipToBounds().drawWithCache {
+            val w = size.width
+            val fullH = size.height
+            // 콘텐츠 높이가 너무 줄어 나무가 찌그러지지 않도록 전체의 절반 아래로는 줄이지 않는다.
+            val h = (fullH - contentBottomInset.toPx()).coerceAtLeast(fullH * 0.5f)
+            val scale = (min(w, h) / 400f).coerceIn(0.7f, 3.5f)
+            val tier = stage.tier
+            val horizonY = h * HORIZON_FRACTION
+            val margin = SHAKE_MARGIN * scale
             val cx = w / 2f
-            val isTree = stageIndex >= 8 // "든든한 나무"(Lv.95)부터 실제 가지 뻗은 나무
-            val anchor: Offset = when {
-                !isTree -> drawYoungPlant(cx, potTop, h * 0.3f, scale, stageIndex, anim.swayPx)
-                tier == 0 -> drawBranchingTree(
-                    cx, potTop, h * 0.42f, scale,
-                    (1f + (stageIndex - 8) * 0.35f).coerceAtMost(3.2f), anim.swayPx,
-                    Color(0xFF5FA043), Color(0xFF7A5A36), false
-                )
-                tier == 1 -> drawBranchingTree(
-                    cx, potTop, h * 0.44f, scale,
-                    3.2f + (stageIndex - 12) * 0.15f, anim.swayPx,
-                    Color(0xFF7C8B6E), Color(0xFF6B5A48), true
-                )
-                tier == 2 -> drawRadiantTree(cx, potTop, h * 0.5f, scale, (stageIndex - 15) / 3f, anim, w)
-                tier == 3 -> drawCorruptedTree(cx, potTop, h * 0.56f, scale, (stageIndex - 18) / 3f, anim, w)
-                else -> drawWorldTree(cx, potTop, h * 0.68f, scale, (stageIndex - 21) / 2f, anim, w)
+            // 땅을 "깊이"가 있는 정원으로 본다 — 지평선(깊이 0)부터 캔버스 앞 가장자리(깊이 1)까지. 화분은 깊이
+            // POT_DEPTH에 놓이고, 꾸미기 소품은 각자 정해진 깊이에서 원근에 맞는 크기로 그려진다.
+            val sceneAt = { t: Float -> DecorationScene(w = w, h = h, scale = scale, horizonY = horizonY, tMs = t, plantAnchor = Offset(cx, horizonY)) }
+            val staticScene = sceneAt(0f)
+            val pot = PotGeometry(cx, staticScene.yAt(POT_DEPTH), scale)
+            val hills = buildHills(tier, w, horizonY, scale, margin)
+            val tufts = buildGroundTufts(tier, staticScene, pot)
+            val fence = if ("fence" in decorationIds) buildFence(staticScene) else null
+
+            onDrawBehind {
+                val tMs = nowMs
+                val anim = growthAnimForTier(tier, tMs)
+                val baseScene = sceneAt(tMs)
+                translate(anim.shakeX * scale, anim.shakeY * scale) {
+                    drawSky(tier, w, h, horizonY, scale, tMs, margin)
+                    drawHillScenery(hills)
+                    drawGroundLayer(tier, w, fullH, h, horizonY, margin)
+                    drawGroundTufts(tufts)
+
+                    if (tier == 3) drawCrackedGroundPatch(w, h, scale, 1 + (stageIndex - 17).coerceAtLeast(0), 0.35f + anim.flicker * 0.3f)
+                    if (tier == 4) drawCrackedGroundPatch(w, h, scale, 3, 0.4f + anim.flicker * 0.3f)
+                    if (tier >= 2) drawCosmicBackdrop(tier, w, h, scale, anim, margin)
+
+                    // 화분보다 멀리 있는 꾸미기(울타리·길·연못 같은 배경과 화분 뒤편 소품)는 화분·식물보다 먼저 그린다.
+                    drawDecorationsBehindPot(decorationIds, baseScene, fence)
+                    drawPot(tier, pot, anim, tMs)
+
+                    val soilY = pot.soilY
+                    val isTree = stageIndex >= 8 // "든든한 나무"(Lv.95)부터 실제 가지 뻗은 나무
+                    val anchor: Offset = when {
+                        !isTree -> drawYoungPlant(cx, soilY, h * 0.30f, scale, stageIndex, anim.swayPx, tMs)
+                        tier == 0 -> drawBranchingTree(
+                            cx, soilY, h * 0.42f, scale,
+                            (1f + (stageIndex - 8) * 0.35f).coerceAtMost(3.2f), anim.swayPx,
+                            Color(0xFF5FA043), Color(0xFF7A5A36), twisted = false, fruit = stageIndex >= 9
+                        )
+                        tier == 1 -> drawBranchingTree(
+                            cx, soilY, h * 0.44f, scale,
+                            3.2f + (stageIndex - 12) * 0.15f, anim.swayPx,
+                            Color(0xFF7C8B6E), Color(0xFF6B5A48), twisted = true, fruit = false
+                        )
+                        tier == 2 -> drawRadiantTree(cx, soilY, h * 0.5f, scale, (stageIndex - 15) / 3f, anim, w)
+                        tier == 3 -> drawCorruptedTree(cx, soilY, h * 0.56f, scale, (stageIndex - 18) / 3f, anim, w)
+                        else -> drawWorldTree(cx, soilY, h * 0.68f, scale, (stageIndex - 21) / 2f, anim, w)
+                    }
+
+                    if (rebirthCount > 0) drawRebirthAura(cx, soilY - h * 0.1f, scale, rebirthCount)
+
+                    drawGrowthIllustration(stage.illustrationId, cx, soilY, anchor, w, h, scale, anim)
+                    // 화분보다 앞에 놓인 소품(화분 발치를 살짝 가린다) → 공중에 떠다니는 것(나비·반딧불이) 순서.
+                    val scene = baseScene.copy(plantAnchor = anchor)
+                    drawDecorationsInFrontOfPot(decorationIds, scene)
+                    drawAirborneDecorations(decorationIds, scene)
+                    if (tier == 3) drawEmberOverlay(w, h, scale, anim, tMs)
+                    if (tier == 4) drawTranscendentOverlay(w, h, scale, anim, tMs)
+                }
             }
-
-            if (rebirthCount > 0) drawRebirthAura(cx, potTop - h * 0.1f, scale, rebirthCount)
-
-            drawGrowthIllustration(stage.illustrationId, cx, potTop, anchor, w, h, scale, anim)
-            drawPropDecorations(decorationIds, decoScene)
-            if (tier == 3) drawEmberOverlay(w, h, scale, anim, nowMs)
-            if (tier == 4) drawTranscendentOverlay(w, h, scale, anim, nowMs)
         }
+    )
+}
+
+/** 지평선 높이(캔버스 콘텐츠 높이 대비). 134차에 0.2 → 0.4 — 하늘이 좁은 띠로만 남고 평평한 초록 땅이
+ *  화면 대부분을 덮어 밋밋했다(사용자 지적 "홈 탭 퀄리티"). */
+private const val HORIZON_FRACTION = 0.4f
+
+/** 화분이 놓이는 땅의 깊이(0 = 지평선, 1 = 캔버스 앞 가장자리). 이 깊이에서 원근 배율이 정확히 1이다. */
+internal const val POT_DEPTH = 0.74f
+
+/** 등급별 하늘(위, 지평선 쪽). */
+private val SKY_COLORS = listOf(
+    Color(0xFFA6D7F5) to Color(0xFFE9F6FF),
+    Color(0xFF8FA08A) to Color(0xFFC7D3BE),
+    Color(0xFF241344) to Color(0xFF3E2564),
+    Color(0xFF3E1210) to Color(0xFF8A2E1C),
+    Color(0xFF07040D) to Color(0xFF170C28)
+)
+
+/** 등급별 땅(먼 곳, 중간, 가까운 곳) — 멀수록 옅게(대기 원근), 가까울수록 짙게. */
+private val GROUND_COLORS = listOf(
+    Triple(Color(0xFFB2D98A), Color(0xFF93C85A), Color(0xFF6FA83E)),
+    Triple(Color(0xFF9AA586), Color(0xFF7C8B5C), Color(0xFF5C6843)),
+    Triple(Color(0xFF6A5A8E), Color(0xFF4A3B6B), Color(0xFF30264A)),
+    Triple(Color(0xFF81483A), Color(0xFF6B3A2A), Color(0xFF41211A)),
+    Triple(Color(0xFF3A2E55), Color(0xFF241C38), Color(0xFF120E20))
+)
+
+private fun mix(a: Color, b: Color, t: Float): Color = androidx.compose.ui.graphics.lerp(a, b, t.coerceIn(0f, 1f))
+
+/** 매 프레임 같은 값이 나오는 0~1 난수 — 풀 포기처럼 "흩어져 있되 움직이면 안 되는" 배치에 쓴다. */
+private fun hash01(i: Int, salt: Int): Float {
+    var x = i * 374761393 + salt * 668265263
+    x = (x xor (x ushr 13)) * 1274126177
+    x = x xor (x ushr 16)
+    return (x and 0xFFFFFF) / 16777215f
+}
+
+private fun cubicPoint(p0: Offset, p1: Offset, p2: Offset, p3: Offset, t: Float): Offset {
+    val u = 1f - t
+    val a = u * u * u
+    val b = 3f * u * u * t
+    val c = 3f * u * t * t
+    val d = t * t * t
+    return Offset(p0.x * a + p1.x * b + p2.x * c + p3.x * d, p0.y * a + p1.y * b + p2.y * c + p3.y * d)
+}
+
+/** 가장자리가 부드럽게 옅어지는 타원 그림자 — 크기를 줄여 가며 옅은 단색 타원을 겹쳐 가운데만 진하게 만든다.
+ *  (radialGradient를 비균등 scale로 눌러 그리는 방식은 에뮬레이터 GPU 계층을 죽여서 134차에 이렇게 바꿨다.) */
+private fun DrawScope.drawSoftShadow(center: Offset, halfW: Float, halfH: Float, alpha: Float) {
+    val layers = 5
+    for (k in 0 until layers) {
+        val f = 1f - k / layers.toFloat() * 0.75f
+        drawOval(
+            color = Color.Black.copy(alpha = alpha / layers * 1.4f),
+            topLeft = Offset(center.x - halfW * f, center.y - halfH * f),
+            size = Size(halfW * 2f * f, halfH * 2f * f)
+        )
     }
 }
 
 private fun DrawScope.drawSky(tier: Int, w: Float, h: Float, horizonY: Float, scale: Float, tMs: Float, margin: Float) {
-    val skies = listOf(
-        Color(0xFFBEE3F8) to Color(0xFFEAF6FF),
-        Color(0xFF8FA08A) to Color(0xFFC7D3BE),
-        Color(0xFF241344) to Color(0xFF3E2564),
-        Color(0xFF3E1210) to Color(0xFF8A2E1C),
-        Color(0xFF07040D) to Color(0xFF170C28)
-    )
-    val (top, bottom) = skies[tier]
+    val (top, bottom) = SKY_COLORS[tier]
     drawRect(
         brush = Brush.verticalGradient(listOf(top, bottom), startY = 0f, endY = horizonY),
         topLeft = Offset(-margin, -margin),
@@ -1097,20 +1156,34 @@ private fun DrawScope.drawSky(tier: Int, w: Float, h: Float, horizonY: Float, sc
     )
     when (tier) {
         0 -> {
-            drawCircle(color = Color(0xFFFFE17D), radius = 22f * scale, center = Offset(w * 0.72f, h * 0.08f))
-            val cloudSpan = w + 68f * scale
-            val x1 = ((w * 0.2f + tMs * 0.006f * scale).mod(cloudSpan)) - 34f * scale
-            val x2 = ((w * 0.55f + tMs * 0.004f * scale).mod(cloudSpan)) - 34f * scale
-            drawCloudPuff(Offset(x1, h * 0.07f), scale)
-            drawCloudPuff(Offset(x2, h * 0.13f), scale)
+            // 해는 우상단 설정 버튼과 겹치지 않게 왼쪽 위에 — 번지는 빛무리 위에 둥근 해.
+            val sun = Offset(w * 0.2f, horizonY * 0.26f)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    listOf(Color(0xFFFFF4C2).copy(alpha = 0.8f), Color(0xFFFFF4C2).copy(alpha = 0f)),
+                    center = sun, radius = 66f * scale
+                ),
+                radius = 66f * scale, center = sun
+            )
+            drawCircle(
+                brush = Brush.radialGradient(listOf(Color(0xFFFFF9DC), Color(0xFFFFD54F)), center = sun, radius = 21f * scale),
+                radius = 21f * scale, center = sun
+            )
+            val cloudSpan = w + 100f * scale
+            val x1 = ((w * 0.12f + tMs * 0.006f * scale).mod(cloudSpan)) - 50f * scale
+            val x2 = ((w * 0.55f + tMs * 0.004f * scale).mod(cloudSpan)) - 50f * scale
+            val x3 = ((w * 0.86f + tMs * 0.005f * scale).mod(cloudSpan)) - 50f * scale
+            drawCloudPuff(Offset(x1, horizonY * 0.2f), scale * 1.1f)
+            drawCloudPuff(Offset(x2, horizonY * 0.42f), scale * 0.85f)
+            drawCloudPuff(Offset(x3, horizonY * 0.63f), scale * 0.62f)
 
             val birdSpan = w + 40f * scale
             val bx1 = ((w * 0.1f + tMs * 0.03f * scale).mod(birdSpan)) - 20f * scale
             val bx2 = ((w * 0.4f + tMs * 0.035f * scale).mod(birdSpan)) - 20f * scale
-            drawBird(Offset(bx1, h * 0.18f + sin(tMs * 0.002f) * 6f * scale), scale, tMs * 0.01f)
-            drawBird(Offset(bx2, h * 0.22f + sin(tMs * 0.002f + 1f) * 6f * scale), scale, tMs * 0.012f + 1f)
+            drawBird(Offset(bx1, horizonY * 0.5f + sin(tMs * 0.002f) * 6f * scale), scale, tMs * 0.01f)
+            drawBird(Offset(bx2, horizonY * 0.58f + sin(tMs * 0.002f + 1f) * 6f * scale), scale, tMs * 0.012f + 1f)
         }
-        1 -> drawCircle(color = Color(0xFFC8C8BE).copy(alpha = 0.55f), radius = 18f * scale, center = Offset(w * 0.82f, h * 0.09f))
+        1 -> drawCircle(color = Color(0xFFC8C8BE).copy(alpha = 0.55f), radius = 18f * scale, center = Offset(w * 0.2f, h * 0.09f))
         2 -> {
             val stars = listOf(0.1f to 0.05f, 0.25f to 0.12f, 0.4f to 0.03f, 0.62f to 0.09f, 0.78f to 0.04f, 0.9f to 0.14f, 0.5f to 0.15f, 0.15f to 0.16f)
             stars.forEach { (fx, fy) -> drawCircle(color = Color.White.copy(alpha = 0.85f), radius = 1.6f * scale, center = Offset(w * fx, h * fy)) }
@@ -1146,11 +1219,18 @@ private fun DrawScope.drawSky(tier: Int, w: Float, h: Float, horizonY: Float, sc
     }
 }
 
+/** 뭉게구름 — 아래쪽 옅은 그늘 위에 크기가 다른 원 세 개와 납작한 밑면을 겹쳐 입체감을 준다. */
 private fun DrawScope.drawCloudPuff(center: Offset, scale: Float) {
-    val color = Color.White.copy(alpha = 0.85f)
-    drawCircle(color = color, radius = 14f * scale, center = center)
-    drawCircle(color = color, radius = 10f * scale, center = center + Offset(16f * scale, 3f * scale))
-    drawCircle(color = color, radius = 10f * scale, center = center + Offset(-16f * scale, 3f * scale))
+    val white = Color.White.copy(alpha = 0.96f)
+    drawOval(
+        color = Color(0xFFD5E6F3).copy(alpha = 0.9f),
+        topLeft = Offset(center.x - 31f * scale, center.y - 1f * scale),
+        size = Size(62f * scale, 14f * scale)
+    )
+    drawCircle(color = white, radius = 13f * scale, center = center + Offset(-15f * scale, 0f))
+    drawCircle(color = white, radius = 17f * scale, center = center + Offset(2f * scale, -6f * scale))
+    drawCircle(color = white, radius = 11f * scale, center = center + Offset(18f * scale, 1f * scale))
+    drawOval(color = white, topLeft = Offset(center.x - 29f * scale, center.y - 3f * scale), size = Size(58f * scale, 12f * scale))
 }
 
 /** 정상 등급 하늘을 날아다니는 작은 새 실루엣 — wingPhase로 날갯짓하는 "V"자 곡선만 그리는 최소 표현. */
@@ -1165,33 +1245,320 @@ private fun DrawScope.drawBird(center: Offset, scale: Float, wingPhase: Float) {
     drawPath(path, color = Color(0xFF5C5C5C).copy(alpha = 0.6f), style = Stroke(width = 1.6f * scale))
 }
 
-private fun DrawScope.drawGroundLayer(tier: Int, w: Float, h: Float, horizonY: Float, scale: Float, margin: Float) {
-    val grounds = listOf(
-        Triple(Color(0xFF8BC34A), Color(0xFF7CB342), Color(0xFF6D4C2F)),
-        Triple(Color(0xFF7C8B5C), Color(0xFF6B7A4E), Color(0xFF463A2A)),
-        Triple(Color(0xFF4A3B6B), Color(0xFF3C2F58), Color(0xFF241C3A)),
-        Triple(Color(0xFF6B3A2A), Color(0xFF5A2E1E), Color(0xFF301810)),
-        Triple(Color(0xFF241C38), Color(0xFF1A1428), Color(0xFF0D0A18))
-    )
-    val (c1, c2, c3) = grounds[tier]
+/** 지평선 위 먼 언덕 두 겹(134차) — 하늘과 땅이 직선 한 줄로 딱 잘리던 경계를 부드럽게 잇고 거리감을 준다.
+ *  색은 등급별 하늘 아래쪽 색과 먼 땅 색을 섞어 만들어 어느 등급에서도 장면 톤을 따른다. 정상 등급은 먼 능선
+ *  위에 작은 나무들을 세워 풍경에 규모감을 준다. 모양이 변하지 않으므로 [GroundScene]의 캐시에서 한 번만 만든다. */
+private class HillScenery(val far: Path, val farColor: Color, val near: Path, val nearColor: Color, val trees: Path?, val treeColor: Color)
+
+private fun buildHills(tier: Int, w: Float, horizonY: Float, scale: Float, margin: Float): HillScenery {
+    val skyBottom = SKY_COLORS[tier].second
+    val groundFar = GROUND_COLORS[tier].first
+    val left = -margin
+    val right = w + margin
+    fun hillY(x: Float, layer: Int): Float {
+        val f = x / w
+        val amp = (if (layer == 0) 30f else 15f) * scale
+        val phase = if (layer == 0) 0.3f else 1.9f
+        val wave = 0.55f + 0.3f * sin(f * 6.283f * (1.1f + layer * 0.7f) + phase) + 0.15f * sin(f * 6.283f * 3.3f + phase * 2f)
+        return horizonY - amp * wave
+    }
+    fun layerPath(layer: Int) = Path().apply {
+        moveTo(left, horizonY + 2f * scale)
+        val steps = 40
+        for (i in 0..steps) {
+            val x = left + (right - left) * i / steps
+            lineTo(x, hillY(x, layer))
+        }
+        lineTo(right, horizonY + 2f * scale)
+        close()
+    }
+    val farColor = mix(skyBottom, groundFar, 0.45f)
+    val treeColor = mix(farColor, Color(0xFF4F8A3A), 0.4f)
+    val trees = if (tier == 0) Path().apply {
+        for (i in 0 until 7) {
+            val x = w * (0.05f + i * 0.145f + hash01(i, 3) * 0.05f)
+            val y = hillY(x, 0)
+            val r = (4f + hash01(i, 9) * 2.5f) * scale
+            addRect(androidx.compose.ui.geometry.Rect(x - 0.6f * scale, y - r, x + 0.6f * scale, y + 1f * scale))
+            addOval(androidx.compose.ui.geometry.Rect(center = Offset(x, y - r * 1.2f), radius = r))
+        }
+    } else null
+    return HillScenery(layerPath(0), farColor, layerPath(1), mix(skyBottom, groundFar, 0.8f), trees, treeColor)
+}
+
+private fun DrawScope.drawHillScenery(hills: HillScenery) {
+    drawPath(hills.far, color = hills.farColor)
+    hills.trees?.let { drawPath(it, color = hills.treeColor) }
+    drawPath(hills.near, color = hills.nearColor)
+}
+
+private fun DrawScope.drawGroundLayer(tier: Int, w: Float, fullH: Float, contentH: Float, horizonY: Float, margin: Float) {
+    val (far, mid, near) = GROUND_COLORS[tier]
     drawRect(
-        brush = Brush.verticalGradient(listOf(c1, c2, c3), startY = horizonY, endY = h),
+        brush = Brush.verticalGradient(0f to far, 0.4f to mid, 1f to near, startY = horizonY, endY = contentH),
         topLeft = Offset(-margin, horizonY),
-        size = Size(w + margin * 2, h - horizonY + margin)
-    )
-    drawLine(
-        color = if (tier == 0) Color(0xFF689F38) else Color.White.copy(alpha = 0.15f),
-        start = Offset(0f, horizonY), end = Offset(w, horizonY), strokeWidth = 3f * scale
+        size = Size(w + margin * 2, fullH - horizonY + margin)
     )
     if (tier == 2) {
         drawRect(
             brush = Brush.radialGradient(
                 listOf(Color(0xFFFFD778).copy(alpha = 0.25f), Color(0xFFFFD778).copy(alpha = 0f)),
-                center = Offset(w / 2f, h * 0.62f), radius = (w * 0.4f).coerceAtLeast(1f)
+                center = Offset(w / 2f, contentH * 0.72f), radius = (w * 0.4f).coerceAtLeast(1f)
             ),
-            topLeft = Offset(0f, horizonY), size = Size(w, h - horizonY)
+            topLeft = Offset(0f, horizonY), size = Size(w, fullH - horizonY)
         )
     }
+}
+
+/** 땅 위 풀 포기(정상 등급은 작은 들꽃 포함) — 멀수록 작고 위에, 가까울수록 크고 아래에 흩어 원근감을 준다.
+ *  등급마다 색이 달라진다(이상함 = 칙칙한 풀, 초월급 = 수정 조각, 종말급 = 마른 풀, 최강자급 = 금빛). 잎 수십 장을
+ *  색별로 Path 두 개에 모아 한 번씩만 칠한다. */
+private class GroundTufts(
+    val dark: Path, val light: Path, val darkColor: Color, val lightColor: Color,
+    val flowers: List<Triple<Offset, Float, Color>>
+)
+
+private fun buildGroundTufts(tier: Int, scene: DecorationScene, pot: PotGeometry): GroundTufts {
+    val darkColor = listOf(Color(0xFF5E9E36), Color(0xFF5B6641), Color(0xFFB7A3EC), Color(0xFF4A2A1C), Color(0xFFE8C66A))[tier]
+    val lightColor = listOf(Color(0xFF9CD068), Color(0xFF8C9870), Color(0xFFE2D6FF), Color(0xFF7A4A34), Color(0xFFFFF1B8))[tier]
+    val dark = Path()
+    val light = Path()
+    val flowers = mutableListOf<Triple<Offset, Float, Color>>()
+    for (i in 0 until 40) {
+        val d = 0.06f + 0.94f * hash01(i, 11)
+        val x = scene.w * hash01(i, 23)
+        // 화분 발치 바로 앞에 난 풀은 나중에 그려지는 화분에 덮여 어색해진다 — 그 자리만 비운다.
+        if (d > POT_DEPTH - 0.04f && d < POT_DEPTH + 0.12f && abs(x - pot.cx) < pot.rimHalfW * 1.3f) continue
+        val y = scene.yAt(d)
+        val s = scene.scaleAt(d)
+        val bh = (5f + 4f * hash01(i, 37)) * s
+        val lean = (hash01(i, 41) - 0.5f) * 2f * s
+        val target = if (i % 2 == 0) dark else light
+        val half = 0.7f * s
+        for (k in -1..1) {
+            val bx = x + k * 1.6f * s
+            val midX = x + k * 2.2f * s
+            val tip = Offset(x + k * 4.2f * s + lean, y - bh * (if (k == 0) 1f else 0.72f))
+            target.moveTo(bx - half, y)
+            target.quadraticBezierTo(midX - half * 0.4f, y - bh * 0.6f, tip.x, tip.y)
+            target.quadraticBezierTo(midX + half * 0.4f, y - bh * 0.6f, bx + half, y)
+            target.close()
+        }
+        if (tier == 0 && i % 4 == 1) {
+            val flower = listOf(Color.White, Color(0xFFFFE082), Color(0xFFF8BBD0))[i % 3]
+            flowers += Triple(Offset(x + lean, y - bh - 0.6f * s), 1.9f * s, flower)
+        }
+    }
+    return GroundTufts(dark, light, darkColor, lightColor, flowers)
+}
+
+private fun DrawScope.drawGroundTufts(t: GroundTufts) {
+    drawPath(t.dark, color = t.darkColor.copy(alpha = 0.85f))
+    drawPath(t.light, color = t.lightColor.copy(alpha = 0.85f))
+    t.flowers.forEach { (c, r, color) ->
+        drawCircle(color = color, radius = r, center = c)
+        drawCircle(color = Color(0xFFFFB300), radius = r * 0.42f, center = c)
+    }
+}
+
+/** 화분 기하(134차) — 모든 치수는 씬 배율 기준 단위. [baseY]가 땅에 닿는 바닥선, [soilY]가 식물이 올라오는 흙 표면. */
+private data class PotGeometry(val cx: Float, val baseY: Float, val scale: Float) {
+    val rimHalfW: Float get() = 44f * scale
+    val rimH: Float get() = 11f * scale
+    val bodyTopHalfW: Float get() = 38f * scale
+    val bottomHalfW: Float get() = 28f * scale
+    val bodyH: Float get() = 44f * scale
+    val rimBottomY: Float get() = baseY - bodyH
+    val rimTopY: Float get() = rimBottomY - rimH
+    val soilY: Float get() = rimTopY + 1.6f * scale
+}
+
+/** 등급별 화분 재질 — 정상 = 테라코타, 이상함 = 이끼 낀 돌, 초월급 = 대리석+금 테두리, 종말급 = 흑요석+용암 균열,
+ *  최강자급 = 황금+보석. 식물·배경만 바뀌고 화분은 그대로라 등급이 올라도 "같은 화분"처럼 보이던 문제를 없앤다. */
+private data class PotStyle(
+    val dark: Color, val base: Color, val light: Color,
+    val rimDark: Color, val rimLight: Color,
+    val soil: Color, val soilLight: Color
+)
+
+private val POT_STYLES = listOf(
+    PotStyle(Color(0xFF93461F), Color(0xFFC86A3A), Color(0xFFEBA06C), Color(0xFFA9552B), Color(0xFFF0AE7C), Color(0xFF3F2A1C), Color(0xFF6B4A33)),
+    PotStyle(Color(0xFF454C3E), Color(0xFF727C66), Color(0xFFA2AB93), Color(0xFF555D4B), Color(0xFFB2BAA2), Color(0xFF2A261F), Color(0xFF4A4336)),
+    PotStyle(Color(0xFFB3A994), Color(0xFFEAE4D8), Color(0xFFFFFFFF), Color(0xFFB07F26), Color(0xFFF8DE92), Color(0xFF34284A), Color(0xFF5A4A78)),
+    PotStyle(Color(0xFF0C0808), Color(0xFF2A1F1D), Color(0xFF4F3E39), Color(0xFF170F0E), Color(0xFF5C4842), Color(0xFF170C09), Color(0xFF3A1A10)),
+    PotStyle(Color(0xFF8A600F), Color(0xFFD6A332), Color(0xFFFFEBA6), Color(0xFFA47418), Color(0xFFFFF4CB), Color(0xFF261B38), Color(0xFF4B3A6E))
+)
+
+private fun DrawScope.drawPot(tier: Int, pot: PotGeometry, anim: GrowthAnim, tMs: Float) {
+    val st = POT_STYLES[tier.coerceIn(0, POT_STYLES.size - 1)]
+    val s = pot.scale
+    val cx = pot.cx
+    val top = pot.rimBottomY
+    val base = pot.baseY
+    val tw = pot.bodyTopHalfW
+    val bw = pot.bottomHalfW
+
+    drawSoftShadow(Offset(cx, base), bw * 1.55f, 6.5f * s, 0.3f)
+
+    // 몸통 — 위는 넓고 아래로 갈수록 둥글게 좁아진다. 왼쪽 위에서 빛이 드는 원통 음영.
+    val body = Path().apply {
+        moveTo(cx - tw, top)
+        lineTo(cx + tw, top)
+        cubicTo(cx + tw, top + pot.bodyH * 0.4f, cx + bw + 2f * s, base - 10f * s, cx + bw, base - 2.5f * s)
+        quadraticBezierTo(cx, base + 3.5f * s, cx - bw, base - 2.5f * s)
+        cubicTo(cx - bw - 2f * s, base - 10f * s, cx - tw, top + pot.bodyH * 0.4f, cx - tw, top)
+        close()
+    }
+    drawPath(
+        body,
+        brush = Brush.horizontalGradient(
+            0f to st.dark, 0.22f to st.base, 0.38f to st.light, 0.62f to st.base, 1f to st.dark,
+            startX = cx - tw, endX = cx + tw
+        )
+    )
+    // 테두리가 드리운 그늘(위) + 바닥 쪽 어둠(아래).
+    drawPath(
+        body,
+        brush = Brush.verticalGradient(
+            0f to Color.Black.copy(alpha = 0.26f), 0.22f to Color.Black.copy(alpha = 0f),
+            0.75f to Color.Black.copy(alpha = 0f), 1f to Color.Black.copy(alpha = 0.16f),
+            startY = top, endY = base + 3f * s
+        )
+    )
+
+    fun halfWAt(f: Float) = tw + (bw - tw) * f
+    fun bandPath(f: Float, inset: Float): Path {
+        val y = top + pot.bodyH * f
+        val hw = halfWAt(f) - inset
+        return Path().apply {
+            moveTo(cx - hw, y)
+            quadraticBezierTo(cx, y + 3.5f * s, cx + hw, y)
+        }
+    }
+    when (tier) {
+        0 -> {
+            // 테라코타: 가는 음각 띠 두 줄(어두운 선 + 바로 아래 밝은 선).
+            drawPath(bandPath(0.46f, 1f * s), color = Color.Black.copy(alpha = 0.18f), style = Stroke(width = 1.5f * s))
+            drawPath(bandPath(0.51f, 1f * s), color = Color.White.copy(alpha = 0.2f), style = Stroke(width = 1.1f * s))
+        }
+        1 -> {
+            // 이끼 낀 돌: 이끼 얼룩 + 가는 금.
+            val moss = Color(0xFF6F8F3F).copy(alpha = 0.85f)
+            listOf(Triple(-0.62f, 0.12f, 4.5f), Triple(-0.45f, 0.2f, 3f), Triple(0.5f, 0.72f, 3.6f), Triple(0.66f, 0.62f, 2.4f), Triple(-0.1f, 0.9f, 2.8f))
+                .forEach { (fx, fy, r) -> drawCircle(color = moss, radius = r * s, center = Offset(cx + fx * halfWAt(fy), top + fy * pot.bodyH)) }
+            val crack = Path().apply {
+                moveTo(cx + tw * 0.3f, top + 1f * s)
+                lineTo(cx + tw * 0.2f, top + pot.bodyH * 0.22f)
+                lineTo(cx + tw * 0.33f, top + pot.bodyH * 0.38f)
+                lineTo(cx + tw * 0.16f, top + pot.bodyH * 0.6f)
+            }
+            drawPath(crack, color = Color.Black.copy(alpha = 0.38f), style = Stroke(width = 1.2f * s, cap = StrokeCap.Round))
+        }
+        2 -> {
+            // 대리석 결 + 금 띠.
+            val vein = Path().apply {
+                moveTo(cx - tw * 0.8f, top + pot.bodyH * 0.2f)
+                quadraticBezierTo(cx - tw * 0.1f, top + pot.bodyH * 0.35f, cx + tw * 0.3f, top + pot.bodyH * 0.78f)
+            }
+            drawPath(vein, color = Color(0xFFB9B2A6).copy(alpha = 0.45f), style = Stroke(width = 1f * s))
+            drawPath(
+                bandPath(0.48f, 0f),
+                brush = Brush.horizontalGradient(listOf(st.rimDark, st.rimLight, st.rimDark), startX = cx - tw, endX = cx + tw),
+                style = Stroke(width = 4f * s)
+            )
+        }
+        3 -> {
+            // 흑요석 + 이글거리는 용암 균열(깜빡임은 종말급 애니메이션 값을 따른다).
+            val glow = (0.55f + anim.flicker * 0.4f).coerceIn(0f, 1f)
+            listOf(
+                listOf(-0.5f to 0.05f, -0.35f to 0.35f, -0.52f to 0.6f, -0.3f to 0.92f),
+                listOf(0.42f to 0.1f, 0.3f to 0.4f, 0.46f to 0.7f)
+            ).forEach { pts ->
+                val crack = Path()
+                pts.forEachIndexed { i, (fx, fy) ->
+                    val p = Offset(cx + fx * halfWAt(fy), top + fy * pot.bodyH)
+                    if (i == 0) crack.moveTo(p.x, p.y) else crack.lineTo(p.x, p.y)
+                }
+                drawPath(crack, color = Color(0xFFFF5A1F).copy(alpha = glow * 0.35f), style = Stroke(width = 4f * s, cap = StrokeCap.Round))
+                drawPath(crack, color = Color(0xFFFFB35C).copy(alpha = glow), style = Stroke(width = 1.4f * s, cap = StrokeCap.Round))
+            }
+        }
+        4 -> {
+            // 황금: 돋을새김 띠 + 가운데 보석 + 반짝임.
+            drawPath(bandPath(0.46f, 0f), color = st.light.copy(alpha = 0.8f), style = Stroke(width = 5f * s))
+            drawPath(bandPath(0.46f, 0f), color = st.dark.copy(alpha = 0.55f), style = Stroke(width = 1.2f * s))
+            val gem = Offset(cx, top + pot.bodyH * 0.46f + 1.8f * s)
+            val gr = 6.5f * s
+            val gemPath = Path().apply {
+                moveTo(gem.x, gem.y - gr)
+                lineTo(gem.x + gr * 0.8f, gem.y)
+                lineTo(gem.x, gem.y + gr)
+                lineTo(gem.x - gr * 0.8f, gem.y)
+                close()
+            }
+            drawPath(gemPath, brush = Brush.radialGradient(listOf(Color(0xFFFF8FB1), Color(0xFFB0103A)), center = gem, radius = gr))
+            drawPath(gemPath, color = st.dark, style = Stroke(width = 1f * s))
+            val twinkle = (0.5f + 0.5f * sin(tMs / 380f)).coerceIn(0f, 1f)
+            val sp = Offset(gem.x - gr * 0.3f, gem.y - gr * 0.35f)
+            drawLine(color = Color.White.copy(alpha = twinkle), start = sp + Offset(-4f * s, 0f), end = sp + Offset(4f * s, 0f), strokeWidth = 1f * s)
+            drawLine(color = Color.White.copy(alpha = twinkle), start = sp + Offset(0f, -4f * s), end = sp + Offset(0f, 4f * s), strokeWidth = 1f * s)
+        }
+    }
+
+    // 테두리 앞면 → 윗면(타원) → 안쪽 그늘 → 흙 순서로 겹쳐 "살짝 위에서 내려다본" 화분 입구를 만든다.
+    val rimLeft = cx - pot.rimHalfW
+    // 그라디언트 둥근 사각형은 drawRoundRect 대신 Path로 칠한다 — 에뮬레이터 GPU 계층이 "그라디언트 + drawRoundRect"
+    // 조합에서만 매번 통째로 죽었다(134차에 원인만 골라내는 실험으로 확인, 그라디언트 Path는 문제없음).
+    val rim = Path().apply {
+        addRoundRect(
+            androidx.compose.ui.geometry.RoundRect(
+                left = rimLeft, top = pot.rimTopY, right = cx + pot.rimHalfW, bottom = pot.rimTopY + pot.rimH,
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.5f * s, 4.5f * s)
+            )
+        )
+    }
+    drawPath(
+        rim,
+        brush = Brush.horizontalGradient(
+            0f to st.rimDark, 0.3f to st.rimLight, 0.6f to mix(st.rimLight, st.rimDark, 0.35f), 1f to st.rimDark,
+            startX = rimLeft, endX = cx + pot.rimHalfW
+        )
+    )
+    drawLine(
+        color = Color.Black.copy(alpha = 0.2f),
+        start = Offset(rimLeft + 3f * s, pot.rimBottomY - 0.6f * s),
+        end = Offset(cx + pot.rimHalfW - 3f * s, pot.rimBottomY - 0.6f * s),
+        strokeWidth = 1.2f * s
+    )
+    drawOval(
+        color = mix(st.rimLight, st.rimDark, 0.25f),
+        topLeft = Offset(rimLeft + 0.5f * s, pot.rimTopY - 4f * s),
+        size = Size((pot.rimHalfW - 0.5f * s) * 2f, 9f * s)
+    )
+    val soilHalfW = pot.rimHalfW - 5.5f * s
+    drawOval(
+        color = mix(st.soil, Color.Black, 0.35f),
+        topLeft = Offset(cx - soilHalfW - 1.2f * s, pot.rimTopY - 2.8f * s),
+        size = Size((soilHalfW + 1.2f * s) * 2f, 7.6f * s)
+    )
+    drawOval(
+        brush = Brush.verticalGradient(listOf(st.soil, st.soilLight), startY = pot.rimTopY - 1.6f * s, endY = pot.rimTopY + 4.8f * s),
+        topLeft = Offset(cx - soilHalfW, pot.rimTopY - 1.6f * s),
+        size = Size(soilHalfW * 2f, 6.4f * s)
+    )
+    listOf(-0.6f to 0.3f, -0.25f to 0.7f, 0.2f to 0.45f, 0.55f to 0.65f, 0.75f to 0.35f).forEach { (fx, fy) ->
+        drawCircle(
+            color = st.soilLight.copy(alpha = 0.8f), radius = 0.9f * s,
+            center = Offset(cx + fx * soilHalfW, pot.rimTopY - 1.6f * s + fy * 6.4f * s)
+        )
+    }
+    // 테두리 앞면 왼쪽 윗단의 반사광.
+    drawLine(
+        color = Color.White.copy(alpha = 0.3f),
+        start = Offset(rimLeft + 5f * s, pot.rimTopY + 6.6f * s),
+        end = Offset(cx - pot.rimHalfW * 0.2f, pot.rimTopY + 6.6f * s),
+        strokeWidth = 1.2f * s, cap = StrokeCap.Round
+    )
 }
 
 private fun DrawScope.drawCrackedGroundPatch(w: Float, h: Float, scale: Float, intensity: Int, alpha: Float) {
@@ -1291,80 +1658,349 @@ private fun DrawScope.drawRebirthAura(cx: Float, cy: Float, scale: Float, rebirt
     }
 }
 
-/** 초반(레벨 1~95 미만, "든든한 나무" 이전) 어린 식물 — 줄기 하나에 잎 몇 쌍, 고레벨 트리 렌더러들과
- *  달리 단순하고 친근한 느낌을 그대로 유지한다(사용자 요청: 초반은 단순해도 된다). */
-private fun DrawScope.drawYoungPlant(baseX: Float, baseY: Float, maxHeight: Float, scale: Float, stageIndex: Int, swayPx: Float): Offset {
-    val growthFrac = ((stageIndex + 1) / 9f).coerceAtMost(1f)
-    val stemHeight = maxHeight * growthFrac
-    val sway = swayPx * scale
-    val topX = baseX + sway
-    val topY = baseY - stemHeight
-    if (stemHeight > 6f * scale) {
-        drawLine(color = Color(0xFF4CAF50), start = Offset(baseX, baseY), end = Offset(topX, topY), strokeWidth = 6f * scale, cap = StrokeCap.Round)
-        val leafPairs = stageIndex.coerceIn(0, 6)
-        for (i in 1..leafPairs) {
-            val t = i / (leafPairs + 1f)
-            val ly = baseY - stemHeight * t
-            drawOval(color = Color(0xFF66BB6A), topLeft = Offset(baseX - 20f * scale, ly - 5.5f * scale), size = Size(18f * scale, 11f * scale))
-            drawOval(color = Color(0xFF66BB6A), topLeft = Offset(baseX + 2f * scale, ly - 5.5f * scale), size = Size(18f * scale, 11f * scale))
+private val LEAF_VEIN = Color(0xFF3D8B37)
+private val LEAF_BASE = Color(0xFF58AE45)
+private val LEAF_LIGHT = Color(0xFF8ED36A)
+private val COTYLEDON_BASE = Color(0xFFA5CF63)
+private val COTYLEDON_LIGHT = Color(0xFFD4EE9A)
+private val COTYLEDON_VEIN = Color(0xFF6E9A3A)
+private val STEM_DARK = Color(0xFF3F7F32)
+private val STEM_LIGHT = Color(0xFF79C257)
+
+/**
+ * 잎 한 장(134차) — 끝이 뾰족한 잎 모양 + 빛을 받는 윗면 반쪽을 밝게 + 잎맥. [angleDeg]는 +x축 기준
+ * 각도(음수 = 위쪽, -90 = 똑바로 위). 왼쪽을 향한 잎도 항상 "위를 향한 반쪽"이 밝도록 뒤집어 칠한다.
+ */
+private fun DrawScope.drawLeaf(
+    base: Offset, angleDeg: Float, length: Float, width: Float,
+    color: Color = LEAF_BASE, light: Color = LEAF_LIGHT, vein: Color = LEAF_VEIN
+) {
+    val upSign = if (cos(Math.toRadians(angleDeg.toDouble())) >= 0.0) -1f else 1f
+    rotate(degrees = angleDeg, pivot = base) {
+        val x0 = base.x
+        val y0 = base.y
+        val tipX = x0 + length
+        val leaf = Path().apply {
+            moveTo(x0, y0)
+            cubicTo(x0 + length * 0.22f, y0 - width, x0 + length * 0.68f, y0 - width * 0.95f, tipX, y0)
+            cubicTo(x0 + length * 0.68f, y0 + width * 0.95f, x0 + length * 0.22f, y0 + width, x0, y0)
+            close()
         }
-        if (stageIndex >= 5) {
-            val petalColor = if (stageIndex >= 7) Color(0xFFFFA726) else Color(0xFFE91E63)
-            for (angleDeg in 0 until 360 step 60) {
-                val rad = Math.toRadians(angleDeg.toDouble())
-                drawCircle(
-                    color = petalColor, radius = 9f * scale,
-                    center = Offset(topX + (14f * scale * cos(rad)).toFloat(), topY + (14f * scale * sin(rad)).toFloat())
-                )
-            }
-            drawCircle(color = Color(0xFFFFF176), radius = 7f * scale, center = Offset(topX, topY))
+        drawPath(leaf, color = color)
+        val upper = Path().apply {
+            moveTo(x0, y0)
+            cubicTo(x0 + length * 0.22f, y0 + width * upSign, x0 + length * 0.68f, y0 + width * 0.95f * upSign, tipX, y0)
+            close()
         }
-    } else {
-        drawCircle(color = Color(0xFF6D4C41), radius = 6f * scale, center = Offset(baseX, baseY - 4f * scale))
-        return Offset(baseX, baseY - 4f * scale)
+        drawPath(upper, color = light.copy(alpha = 0.75f))
+        drawLine(
+            color = vein.copy(alpha = 0.55f),
+            start = Offset(x0 + length * 0.04f, y0), end = Offset(tipX - length * 0.1f, y0),
+            strokeWidth = (width * 0.14f).coerceAtLeast(0.8f), cap = StrokeCap.Round
+        )
     }
-    return Offset(topX, topY)
 }
 
-/** 정상/이상함(tier 0·1) 공용 — 굵은 줄기+여러 갈래 가지+잎 뭉치를 가진 가지 뻗은 나무. twisted=true
- *  (이상함 등급)면 가지 하나가 부자연스럽게 꺾여서 위화감을 준다. */
-private fun DrawScope.drawBranchingTree(
-    baseX: Float, baseY: Float, height: Float, scale: Float, canopyScale: Float, swayPx: Float,
-    leafColor: Color, trunkColor: Color, twisted: Boolean
-): Offset {
-    val sway = swayPx * scale
-    val trunkH = height * 0.55f
-    val trunkTopY = baseY - trunkH
-    val trunkTopX = baseX + sway * 0.3f
-    val trunkW = (9f + canopyScale * 3f) * scale
-
-    drawLine(
-        brush = Brush.verticalGradient(listOf(Color(0xFF5C4326), trunkColor), startY = baseY, endY = trunkTopY),
-        start = Offset(baseX, baseY), end = Offset(trunkTopX, trunkTopY), strokeWidth = trunkW, cap = StrokeCap.Round
-    )
-
-    val branchCount = (3 + canopyScale.toInt()).coerceAtMost(7)
-    val branchLen = height * (0.32f + canopyScale * 0.05f)
-    val leafR = 13f * scale * canopyScale.coerceAtMost(2.6f)
-    var topmostY = trunkTopY
-
-    for (i in 0 until branchCount) {
-        val frac = if (branchCount == 1) 0.5f else i / (branchCount - 1).toFloat()
-        var angleDeg = -85f + frac * 170f
-        if (twisted && i == 1) angleDeg += 55f
-        val rad = Math.toRadians(angleDeg.toDouble())
-        val forkY = trunkTopY + trunkH * 0.15f * (i % 2)
-        val endX = trunkTopX + (sin(rad) * branchLen).toFloat() + sway
-        val endY = forkY - (cos(rad) * branchLen * 0.82).toFloat()
-        drawLine(color = Color(0xFF6B4E30), start = Offset(trunkTopX, forkY), end = Offset(endX, endY), strokeWidth = trunkW * 0.32f, cap = StrokeCap.Round)
-
-        listOf(0f to 0f, leafR * 0.55f to -leafR * 0.25f, -leafR * 0.55f to -leafR * 0.25f, 0f to leafR * 0.4f).forEach { (ox, oy) ->
-            drawCircle(color = leafColor, radius = leafR * 0.62f, center = Offset(endX + ox, endY + oy))
+/** 다섯 장 꽃잎 꽃 — 꽃잎은 가운데가 밝고 끝이 짙은 방사형 음영, 가운데는 노란 꽃술. */
+private fun DrawScope.drawFlower(center: Offset, radius: Float, petal: Color, petalLight: Color, rotationDeg: Float) {
+    for (k in 0 until 5) {
+        rotate(degrees = rotationDeg + k * 72f, pivot = center) {
+            drawOval(
+                brush = Brush.radialGradient(listOf(petalLight, petal), center = center, radius = radius * 1.05f),
+                topLeft = Offset(center.x + radius * 0.06f, center.y - radius * 0.34f),
+                size = Size(radius * 0.98f, radius * 0.68f)
+            )
         }
-        topmostY = min(topmostY, endY - leafR * 0.6f)
+    }
+    drawCircle(
+        brush = Brush.radialGradient(listOf(Color(0xFFFFF59D), Color(0xFFFFA000)), center = center, radius = radius * 0.34f),
+        radius = radius * 0.34f, center = center
+    )
+    for (k in 0 until 6) {
+        val a = Math.toRadians((rotationDeg + k * 60f).toDouble())
+        drawCircle(
+            color = Color(0xFFB26A00), radius = radius * 0.05f,
+            center = Offset(center.x + (cos(a) * radius * 0.19f).toFloat(), center.y + (sin(a) * radius * 0.19f).toFloat())
+        )
+    }
+}
+
+/** 꽃봉오리 — 분홍 물방울 모양 꽃잎을 초록 꽃받침 두 장이 감싼다. [stemTop]은 줄기 끝. */
+private fun DrawScope.drawBud(stemTop: Offset, size: Float) {
+    val cx = stemTop.x
+    val by = stemTop.y
+    val bud = Path().apply {
+        moveTo(cx, by - size * 1.6f)
+        cubicTo(cx + size * 0.8f, by - size * 1.15f, cx + size * 0.62f, by - size * 0.15f, cx, by)
+        cubicTo(cx - size * 0.62f, by - size * 0.15f, cx - size * 0.8f, by - size * 1.15f, cx, by - size * 1.6f)
+        close()
+    }
+    drawPath(bud, brush = Brush.verticalGradient(listOf(Color(0xFFF8BBD0), Color(0xFFE2457A)), startY = by - size * 1.6f, endY = by))
+    drawLeaf(stemTop, -58f, size * 1.1f, size * 0.34f)
+    drawLeaf(stemTop, -122f, size * 1.1f, size * 0.34f)
+}
+
+/**
+ * 초반(레벨 1~95 미만, "든든한 나무" 이전) 식물 — 134차에 칭호마다 모습이 분명히 달라지도록 다시 그렸다
+ * (예전엔 줄기 선 하나에 타원 잎을 좌우 대칭으로 붙인 모양이라 단계 차이가 잎 개수뿐이었다).
+ * 씨앗 → 발아(휜 줄기 + 덜 펴진 떡잎) → 새싹(떡잎 + 첫 본잎) → 어린잎·무럭무럭(어긋나는 본잎이 늘어남)
+ * → 꽃봉오리 → 첫 개화 → 풍성한 화분(곁가지 둘 + 꽃 세 송이). 돌려주는 값은 식물 꼭대기(나비가 맴도는 중심).
+ */
+private fun DrawScope.drawYoungPlant(baseX: Float, baseY: Float, maxHeight: Float, scale: Float, stageIndex: Int, swayPx: Float, tMs: Float): Offset {
+    val s = scale
+    val sway = swayPx * scale
+    val flutter = sin(tMs / 900f) * 3f
+    when (stageIndex) {
+        0 -> {
+            // 씨앗: 흙 위에 반쯤 묻힌 씨앗 + 살짝 비친 싹 끝.
+            val c = Offset(baseX, baseY - 1.5f * s)
+            rotate(degrees = -18f, pivot = c) {
+                drawOval(
+                    brush = Brush.linearGradient(listOf(Color(0xFFC89060), Color(0xFF7A4A26)), start = Offset(c.x - 7f * s, c.y - 4f * s), end = Offset(c.x + 7f * s, c.y + 4f * s)),
+                    topLeft = Offset(c.x - 7.5f * s, c.y - 4.5f * s), size = Size(15f * s, 9f * s)
+                )
+                drawOval(color = Color.White.copy(alpha = 0.35f), topLeft = Offset(c.x - 4.5f * s, c.y - 3.2f * s), size = Size(5f * s, 2.2f * s))
+            }
+            val sprout = Path().apply {
+                moveTo(c.x + 3f * s, c.y - 3f * s)
+                quadraticBezierTo(c.x + 6f * s, c.y - 8f * s, c.x + 2.5f * s + sway * 0.2f, c.y - 10f * s)
+            }
+            drawPath(sprout, color = STEM_LIGHT, style = Stroke(width = 2f * s, cap = StrokeCap.Round))
+            return Offset(baseX, baseY - 14f * s)
+        }
+        1 -> {
+            // 발아: 갈고리처럼 휜 줄기 끝에 아직 덜 펴진 떡잎 두 장, 흙 위엔 벗겨진 씨앗 껍질.
+            val top = Offset(baseX + 3f * s + sway * 0.4f, baseY - 20f * s)
+            val stem = Path().apply {
+                moveTo(baseX, baseY)
+                cubicTo(baseX - 3f * s, baseY - 8f * s, baseX + 6f * s, baseY - 15f * s, top.x, top.y)
+            }
+            drawPath(stem, color = STEM_LIGHT, style = Stroke(width = 3f * s, cap = StrokeCap.Round))
+            drawLeaf(top, -150f + flutter, 9f * s, 3.6f * s, COTYLEDON_BASE, COTYLEDON_LIGHT, COTYLEDON_VEIN)
+            drawLeaf(top, -30f - flutter, 9f * s, 3.6f * s, COTYLEDON_BASE, COTYLEDON_LIGHT, COTYLEDON_VEIN)
+            drawArc(
+                color = Color(0xFF8D5A34), startAngle = 200f, sweepAngle = 140f, useCenter = false,
+                topLeft = Offset(baseX - 14f * s, baseY - 3.5f * s), size = Size(8f * s, 6f * s),
+                style = Stroke(width = 1.8f * s, cap = StrokeCap.Round)
+            )
+            return Offset(top.x, top.y - 6f * s)
+        }
+        2 -> {
+            // 새싹: 동그란 떡잎 두 장이 활짝 펴지고 가운데서 첫 본잎이 올라온다.
+            val top = Offset(baseX + sway * 0.6f, baseY - 34f * s)
+            val stem = Path().apply {
+                moveTo(baseX, baseY)
+                cubicTo(baseX - 2f * s, baseY - 12f * s, baseX + 3f * s + sway * 0.3f, baseY - 24f * s, top.x, top.y)
+            }
+            drawPath(
+                stem,
+                brush = Brush.verticalGradient(listOf(STEM_LIGHT, STEM_DARK), startY = top.y, endY = baseY),
+                style = Stroke(width = 3.4f * s, cap = StrokeCap.Round)
+            )
+            drawLeaf(top, -165f + flutter, 15f * s, 7f * s, COTYLEDON_BASE, COTYLEDON_LIGHT, COTYLEDON_VEIN)
+            drawLeaf(top, -15f - flutter, 15f * s, 7f * s, COTYLEDON_BASE, COTYLEDON_LIGHT, COTYLEDON_VEIN)
+            drawLeaf(top, -90f + flutter * 0.5f, 9f * s, 3.2f * s)
+            return Offset(top.x, top.y - 10f * s)
+        }
     }
 
-    drawCircle(color = leafColor, radius = leafR * 0.85f, center = Offset(trunkTopX + sway, trunkTopY - leafR * 0.3f))
+    // 3단계 이상: 살짝 휜 줄기 + 어긋나게 붙는 본잎. 단계가 오를수록 키·잎 수가 늘고 꼭대기가 봉오리 → 꽃으로 바뀐다.
+    val heightFrac = when (stageIndex) {
+        3 -> 0.38f
+        4 -> 0.54f
+        5 -> 0.68f
+        6 -> 0.82f
+        else -> 0.95f
+    }
+    val stemH = maxHeight * heightFrac
+    val base = Offset(baseX, baseY)
+    val top = Offset(baseX + sway, baseY - stemH)
+    val c1 = Offset(baseX - 4f * s, baseY - stemH * 0.35f)
+    val c2 = Offset(baseX + sway * 0.5f + 5f * s, baseY - stemH * 0.7f)
+    fun stemAt(t: Float) = cubicPoint(base, c1, c2, top, t)
+
+    // 풍성한 화분: 곁가지 두 개를 본줄기보다 먼저(뒤에) 그린다.
+    val sideFlowers = mutableListOf<Pair<Offset, Int>>()
+    if (stageIndex >= 7) {
+        listOf(Triple(0.42f, -1f, 0.22f), Triple(0.56f, 1f, 0.18f)).forEachIndexed { idx, (t, dir, rise) ->
+            val start = stemAt(t)
+            val end = Offset(start.x + dir * maxHeight * 0.19f + sway * 0.6f, start.y - maxHeight * rise)
+            val ctrl = Offset(start.x + dir * maxHeight * 0.16f, start.y - maxHeight * 0.03f)
+            val branch = Path().apply {
+                moveTo(start.x, start.y)
+                quadraticBezierTo(ctrl.x, ctrl.y, end.x, end.y)
+            }
+            drawPath(branch, color = STEM_DARK, style = Stroke(width = 3.2f * s, cap = StrokeCap.Round))
+            val mid = Offset((start.x + 2 * ctrl.x + end.x) / 4f, (start.y + 2 * ctrl.y + end.y) / 4f)
+            val leafLen = 26f * s
+            drawLeaf(mid, (if (dir < 0) -155f else -25f) + flutter, leafLen, leafLen * 0.46f)
+            drawLeaf(mid, (if (dir < 0) -80f else -100f) - flutter, leafLen * 0.8f, leafLen * 0.38f)
+            sideFlowers += end to idx
+        }
+    }
+
+    val segments = 14
+    var prev = stemAt(0f)
+    for (i in 1..segments) {
+        val t = i / segments.toFloat()
+        val p = stemAt(t)
+        drawLine(color = mix(STEM_DARK, STEM_LIGHT, t), start = prev, end = p, strokeWidth = (6.2f - 3f * t) * s, cap = StrokeCap.Round)
+        prev = p
+    }
+    if (stageIndex >= 7) {
+        // 풍성한 화분: 밑동에 넓게 퍼진 잎 두 장으로 덤불 느낌을 준다.
+        val low = stemAt(0.07f)
+        drawLeaf(low, -168f + flutter, 32f * s, 14f * s)
+        drawLeaf(low, -12f - flutter, 32f * s, 14f * s)
+    }
+    if (stageIndex == 3) {
+        // 어린잎 단계까지는 떡잎이 아래쪽에 남아 있다.
+        val low = stemAt(0.12f)
+        drawLeaf(low, -170f + flutter, 11f * s, 5.2f * s, COTYLEDON_BASE, COTYLEDON_LIGHT, COTYLEDON_VEIN)
+        drawLeaf(low, -10f - flutter, 11f * s, 5.2f * s, COTYLEDON_BASE, COTYLEDON_LIGHT, COTYLEDON_VEIN)
+    }
+    val leafCount = when (stageIndex) {
+        3 -> 4
+        4 -> 6
+        5 -> 7
+        6 -> 8
+        else -> 9
+    }
+    for (i in 0 until leafCount) {
+        val t = 0.2f + 0.72f * i / (leafCount - 1).coerceAtLeast(1)
+        val p = stemAt(t)
+        val len = (20f + stageIndex * 2.6f) * s * (1.1f - 0.45f * t)
+        val lift = 30f + 28f * t // 위쪽 잎일수록 더 곧추선다
+        val wobble = flutter * (if (i % 2 == 0) 1f else -1f)
+        val angle = if (i % 2 == 0) -180f + lift + wobble else -lift + wobble
+        drawLeaf(p, angle, len, len * 0.46f)
+    }
+
+    sideFlowers.forEach { (p, idx) ->
+        if (idx == 0) drawFlower(p, 13f * s, Color(0xFFFF7A59), Color(0xFFFFD2C2), 12f + flutter * 2f)
+        else drawFlower(p, 12f * s, Color(0xFFFFB300), Color(0xFFFFF1B8), -8f - flutter * 2f)
+    }
+    return when {
+        stageIndex == 5 -> {
+            drawBud(top, 12f * s)
+            Offset(top.x, top.y - 19f * s)
+        }
+        stageIndex >= 6 -> {
+            val flowerCenter = Offset(top.x, top.y - 4f * s)
+            drawFlower(flowerCenter, (if (stageIndex >= 7) 18f else 16f) * s, Color(0xFFE94E86), Color(0xFFFFD0E1), flutter * 3f)
+            flowerCenter
+        }
+        else -> {
+            drawLeaf(top, -118f + flutter, 9f * s, 3.4f * s)
+            drawLeaf(top, -62f - flutter, 9f * s, 3.4f * s)
+            Offset(top.x, top.y - 6f * s)
+        }
+    }
+}
+
+/** 굵기가 줄어드는 가지 한 줄기(밑동 쪽이 굵다). */
+private fun DrawScope.drawTaperedLimb(from: Offset, to: Offset, fromHalfW: Float, toHalfW: Float, color: Color) {
+    val dx = to.x - from.x
+    val dy = to.y - from.y
+    val len = sqrt(dx * dx + dy * dy).coerceAtLeast(0.001f)
+    val nx = -dy / len
+    val ny = dx / len
+    val path = Path().apply {
+        moveTo(from.x + nx * fromHalfW, from.y + ny * fromHalfW)
+        lineTo(to.x + nx * toHalfW, to.y + ny * toHalfW)
+        lineTo(to.x - nx * toHalfW, to.y - ny * toHalfW)
+        lineTo(from.x - nx * fromHalfW, from.y - ny * fromHalfW)
+        close()
+    }
+    drawPath(path, color = color)
+    drawCircle(color = color, radius = toHalfW, center = to)
+}
+
+/**
+ * 정상/이상함(tier 0·1) 공용 나무 — 134차에 다시 그렸다: 뿌리가 퍼진 줄기(원통 음영 + 나무껍질 결), 끝으로 갈수록
+ * 가늘어지는 가지, 그리고 잎 뭉치를 "그늘 → 기본색 → 빛 받는 면" 세 겹으로 한꺼번에 칠해 하나의 풍성한 수관으로 보이게
+ * 했다(예전엔 원을 따로따로 붙여 공 여러 개처럼 보였다). twisted=true(이상함 등급)면 가지 하나가 부자연스럽게 꺾인다.
+ * fruit=true(거목)면 수관에 열매가 맺힌다.
+ */
+private fun DrawScope.drawBranchingTree(
+    baseX: Float, baseY: Float, height: Float, scale: Float, canopyScale: Float, swayPx: Float,
+    leafColor: Color, trunkColor: Color, twisted: Boolean, fruit: Boolean
+): Offset {
+    val s = scale
+    val sway = swayPx * scale
+    val trunkH = height * 0.46f
+    val trunkTopX = baseX + sway * 0.3f
+    val trunkTopY = baseY - trunkH
+    val bw = (9.5f + canopyScale * 2.2f) * s
+    val tw = bw * 0.55f
+    val barkDark = mix(trunkColor, Color.Black, 0.35f)
+    val barkLight = mix(trunkColor, Color.White, 0.22f)
+
+    val branchCount = (3 + canopyScale.toInt()).coerceAtMost(7)
+    val branchLen = height * (0.25f + canopyScale * 0.02f)
+    val leafR = height * (0.11f + 0.025f * canopyScale.coerceAtMost(3.4f))
+    val clusters = mutableListOf<Offset>()
+    for (i in 0 until branchCount) {
+        val frac = if (branchCount == 1) 0.5f else i / (branchCount - 1).toFloat()
+        var angleDeg = -70f + frac * 140f
+        if (twisted && i == 1) angleDeg += 55f
+        val rad = Math.toRadians(angleDeg.toDouble())
+        val forkY = trunkTopY + trunkH * (0.08f + 0.14f * (i % 3))
+        val forkX = trunkTopX + (baseX - trunkTopX) * ((forkY - trunkTopY) / trunkH)
+        val len = branchLen * (0.85f + 0.3f * hash01(i, 5))
+        val end = Offset(forkX + (sin(rad) * len).toFloat() + sway, forkY - (cos(rad) * len * 0.85).toFloat())
+        drawTaperedLimb(Offset(forkX, forkY), end, tw * 0.62f, tw * 0.2f, mix(trunkColor, barkDark, 0.2f))
+        clusters += end
+    }
+
+    val trunk = Path().apply {
+        moveTo(baseX - bw * 1.7f, baseY + 1f * s)
+        quadraticBezierTo(baseX - bw * 0.9f, baseY - bw * 0.3f, baseX - bw, baseY - bw * 1.3f)
+        quadraticBezierTo(trunkTopX - tw * 1.1f, baseY - trunkH * 0.55f, trunkTopX - tw, trunkTopY)
+        lineTo(trunkTopX + tw, trunkTopY)
+        quadraticBezierTo(trunkTopX + tw * 1.1f, baseY - trunkH * 0.55f, baseX + bw, baseY - bw * 1.3f)
+        quadraticBezierTo(baseX + bw * 0.9f, baseY - bw * 0.3f, baseX + bw * 1.7f, baseY + 1f * s)
+        close()
+    }
+    drawPath(
+        trunk,
+        brush = Brush.horizontalGradient(
+            0f to barkDark, 0.3f to barkLight, 0.55f to trunkColor, 1f to barkDark,
+            startX = baseX - bw * 1.2f, endX = baseX + bw * 1.2f
+        )
+    )
+    for (k in 0 until 3) {
+        val ox = (-0.45f + k * 0.45f) * bw * 0.7f
+        val y1 = baseY - bw * 1.6f - k * trunkH * 0.08f
+        val line = Path().apply {
+            moveTo(baseX + ox, y1)
+            quadraticBezierTo(baseX + ox + 2f * s, y1 - trunkH * 0.2f, trunkTopX + ox * 0.55f, y1 - trunkH * 0.42f)
+        }
+        drawPath(line, color = barkDark.copy(alpha = 0.45f), style = Stroke(width = 1.2f * s, cap = StrokeCap.Round))
+    }
+
+    // 수관: 가지 끝 + 가운데 + 꼭대기 + 이웃한 가지 끝 사이를 메우는 뭉치.
+    val branchEnds = clusters.toList()
+    clusters += Offset(trunkTopX + sway, trunkTopY - leafR * 0.55f)
+    clusters += Offset(trunkTopX + sway * 0.8f, trunkTopY - leafR * 1.35f)
+    for (i in 0 until branchEnds.size - 1) {
+        clusters += Offset((branchEnds[i].x + branchEnds[i + 1].x) / 2f, (branchEnds[i].y + branchEnds[i + 1].y) / 2f - leafR * 0.35f)
+    }
+    val leafDark = mix(leafColor, Color.Black, 0.28f)
+    val leafLight = mix(leafColor, Color(0xFFFFFFE0), 0.35f)
+    clusters.forEach { c -> drawCircle(color = leafDark, radius = leafR * 0.98f, center = c + Offset(leafR * 0.1f, leafR * 0.16f)) }
+    clusters.forEach { c -> drawCircle(color = leafColor, radius = leafR * 0.9f, center = c) }
+    clusters.forEach { c -> drawCircle(color = leafLight.copy(alpha = 0.32f), radius = leafR * 0.46f, center = c + Offset(-leafR * 0.3f, -leafR * 0.34f)) }
+    if (fruit) {
+        clusters.forEachIndexed { i, c ->
+            if (i % 2 == 0) {
+                val p = c + Offset(leafR * (hash01(i, 17) - 0.5f) * 0.9f, leafR * 0.28f)
+                drawCircle(color = Color(0xFFE0443A), radius = leafR * 0.13f, center = p)
+                drawCircle(color = Color.White.copy(alpha = 0.5f), radius = leafR * 0.045f, center = p + Offset(-leafR * 0.04f, -leafR * 0.04f))
+            }
+        }
+    }
+    val topmostY = clusters.minOf { it.y } - leafR
     return Offset(baseX, topmostY)
 }
 
@@ -1789,11 +2425,12 @@ private fun DrawScope.drawGodRaysFx(cx: Float, cy: Float, scale: Float, count: I
 // 조합 + 등급별 애니메이션 파라미터 공유)으로 그린다.
 //
 // 종류는 두 가지다.
-// - [DecorationKind.PROP]: 화분 주변 땅에 놓이는 소품(등/벤치/버섯/분수…). 배치 순서대로 [DECORATION_PROP_SLOTS]
-//   자리에 하나씩 놓인다.
-// - [DecorationKind.SCENERY]: 장면 전체에 깔리는 배경 요소(울타리/조약돌길/연못/반딧불이). 슬롯을 쓰지 않아
+// - [DecorationKind.PROP]: 화분 주변 정원에 놓이는 소품(등/벤치/버섯/분수/깃발 — 나비는 식물 둘레를 난다).
+//   134차부터 소품마다 정해진 자리([PROP_SPOTS], 가로 위치 + 깊이)가 있어 배치 순서와 상관없이 같은 곳에 놓인다.
+// - [DecorationKind.SCENERY]: 장면에 깔리는 배경 요소(울타리/조약돌길/연못/반딧불이). 각자 제 깊이에 그려져
 //   소품과 겹치지 않고, "배경까지 바꾸는" 확장 축을 열어둔다.
-// 새 장식을 추가할 땐 [DECORATION_CATALOG]에 한 줄 + [DrawScope.drawDecoration]에 그리기 분기 하나만 더하면 된다.
+// 새 장식을 추가할 땐 [DECORATION_CATALOG]에 한 줄 + 소품이면 [PROP_SPOTS]에 자리 하나와 [drawProp] 분기, 배경이면
+// [drawDecorationsBehindPot]/[drawAirborneDecorations]에 그리기 한 줄을 더한다.
 // ══════════════════════════════════════════════════════
 
 internal enum class DecorationKind { PROP, SCENERY }
@@ -1821,54 +2458,80 @@ internal val DECORATION_CATALOG = listOf(
 
 internal fun decorationById(id: String): DecorationItem? = DECORATION_CATALOG.find { it.id == id }
 
-/** 소품이 놓이는 자리(화면 가로 비율) — 가운데 화분을 피해 좌우로 번갈아 놓는다. 배치 상한
- *  ([MAX_EQUIPPED_DECORATIONS], 5)만큼 자리가 있어야 소품만 가득 채워도 서로 겹치지 않는다. */
-private val DECORATION_PROP_SLOTS = listOf(0.18f, 0.82f, 0.30f, 0.70f, 0.09f)
+/**
+ * 소품마다 정해둔 자리(134차) — 121차엔 배치한 순서대로 빈칸(가로 비율 5개)에 채워 넣어서 소품이 전부 화분
+ * 바닥선 한 줄에 "진열대"처럼 늘어섰고, 칸이 좁아 등불이 벤치를 가리기도 했다(사용자 지적 "위치·조화가 마음에
+ * 안 든다"). 이제 소품마다 화분을 중심으로 한 정원 안에서 어울리는 자리(가로 위치 + 깊이)를 하나씩 갖는다:
+ * 멀리(뒤쪽) 깃발, 오른쪽 쉼터엔 벤치와 그 위로 불을 비추는 등불, 왼쪽엔 분수, 화분 발치엔 버섯. 깊이가 얕을수록
+ * 위에·작게 그려지고, 화분보다 앞이면 화분을 살짝 가린다. 여섯 자리를 서로 겹치지 않게 맞춰 두었으므로 어떤
+ * 조합으로 배치해도 겹치지 않는다. 나비는 땅에 놓이지 않고 식물 꼭대기 둘레를 맴돈다.
+ */
+private data class PropSpot(val x: Float, val depth: Float, val facingLeft: Boolean = false)
 
-/** 소품은 씬 기본 배율보다 조금 크게 그린다 — 기본 배율 그대로면 실제 홈 화면 비율에서 너무 작아
- *  "포인트를 썼는데 뭐가 달라졌는지 모르겠다"가 된다(브라우저에 같은 기하를 옮겨 그려 확인한 값). */
-private const val DECORATION_PROP_SCALE = 1.45f
+private val PROP_SPOTS = mapOf(
+    "flag" to PropSpot(0.27f, 0.47f),
+    "lamp" to PropSpot(0.87f, 0.62f, facingLeft = true),
+    "bench" to PropSpot(0.72f, 0.68f),
+    "fountain" to PropSpot(0.17f, 0.80f),
+    "mushroom" to PropSpot(0.385f, 0.785f)
+)
 
-/** 장식 그리기에 필요한 씬 기하 정보 — [GroundScene]이 이미 계산해둔 값을 그대로 넘겨 재계산을 막는다. */
+/** 소품은 원근 배율보다 조금 크게 그린다 — 그대로면 실제 홈 화면에서 너무 작아 "뭐가 달라졌는지" 안 보인다. */
+private const val DECORATION_PROP_SCALE = 1.5f
+
+/** 장식 그리기에 필요한 씬 기하 — [GroundScene]이 계산해둔 값을 넘겨 재계산을 막는다. 깊이(0 = 지평선,
+ *  1 = 앞 가장자리)로 땅 위 위치와 원근 배율을 얻는다. */
 internal data class DecorationScene(
     val w: Float,
     val h: Float,
     val scale: Float,
-    val groundY: Float,
-    val tMs: Float
-)
-
-/** 배경 장식 — 땅 위, 화분/나무 아래 레이어. 화분이 앞에 있는 것처럼 보이게 하려고 따로 분리했다. */
-internal fun DrawScope.drawSceneryDecorations(ids: List<String>, scene: DecorationScene) {
-    ids.mapNotNull { decorationById(it) }
-        .filter { it.kind == DecorationKind.SCENERY }
-        .forEach { drawDecoration(it, scene, null) }
+    val horizonY: Float,
+    val tMs: Float,
+    /** 나비가 맴도는 중심(식물 꼭대기). */
+    val plantAnchor: Offset,
+    /** 꾸미기 상점의 작은 미리보기 — 한쪽에 치우친 배경(연못)도 가운데에 그린다. */
+    val preview: Boolean = false
+) {
+    fun yAt(depth: Float): Float = horizonY + (h - horizonY) * depth
+    fun scaleAt(depth: Float): Float = scale * (1f + 0.825f * (depth - POT_DEPTH))
 }
 
-/** 소품 장식 — 나무 그림이 다 끝난 뒤. 등불의 빛 번짐 같은 게 나무에 가려지지 않게 맨 위에 올린다. */
-internal fun DrawScope.drawPropDecorations(ids: List<String>, scene: DecorationScene) {
-    ids.mapNotNull { decorationById(it) }
-        .filter { it.kind == DecorationKind.PROP }
-        .forEachIndexed { index, item ->
-            drawDecoration(item, scene, DECORATION_PROP_SLOTS[index % DECORATION_PROP_SLOTS.size])
-        }
+/** 화분보다 멀리 있는 꾸미기 — 땅에 깔리는 배경(먼 것부터 울타리 → 길 → 연못)과 화분 뒤편 소품(먼 것부터). */
+private fun DrawScope.drawDecorationsBehindPot(ids: List<String>, scene: DecorationScene, fence: FencePaths? = null) {
+    if ("fence" in ids) drawFence(fence ?: buildFence(scene))
+    if ("path" in ids) drawStonePathScenery(scene)
+    if ("pond" in ids) drawPondScenery(scene)
+    drawPropsWhere(ids, scene) { it < POT_DEPTH }
 }
 
-/** 장식 하나를 그린다. [slotFraction]은 소품일 때만(가로 위치), 배경이면 null. */
-private fun DrawScope.drawDecoration(item: DecorationItem, scene: DecorationScene, slotFraction: Float?) {
-    val x = scene.w * (slotFraction ?: 0.5f)
-    val s = scene.scale * DECORATION_PROP_SCALE
-    when (item.id) {
-        "mushroom" -> drawMushroomCluster(x, scene.groundY, s)
-        "flag" -> drawFlagProp(x, scene.groundY, s, scene.tMs)
-        "butterfly_deco" -> drawButterflyProp(x, scene.groundY, s, scene.tMs)
-        "lamp" -> drawLampProp(x, scene.groundY, s, scene.tMs)
-        "bench" -> drawBenchProp(x, scene.groundY, s)
-        "fountain" -> drawFountainProp(x, scene.groundY, s, scene.tMs)
-        "path" -> drawStonePathScenery(scene)
-        "fence" -> drawFenceScenery(scene)
-        "pond" -> drawPondScenery(scene)
-        "fireflies" -> drawFirefliesScenery(scene)
+/** 화분보다 앞에 있는 소품 — 화분·식물을 그린 뒤에 그려 화분 발치를 자연스럽게 가린다. */
+private fun DrawScope.drawDecorationsInFrontOfPot(ids: List<String>, scene: DecorationScene) {
+    drawPropsWhere(ids, scene) { it >= POT_DEPTH }
+}
+
+/** 공중에 떠 있는 꾸미기 — 맨 위 레이어(식물에 가려지지 않게). */
+private fun DrawScope.drawAirborneDecorations(ids: List<String>, scene: DecorationScene) {
+    if ("butterfly_deco" in ids) drawButterflies(scene)
+    if ("fireflies" in ids) drawFirefliesScenery(scene)
+}
+
+private fun DrawScope.drawPropsWhere(ids: List<String>, scene: DecorationScene, depthFilter: (Float) -> Boolean) {
+    ids.mapNotNull { id -> PROP_SPOTS[id]?.let { id to it } }
+        .filter { depthFilter(it.second.depth) }
+        .sortedBy { it.second.depth }
+        .forEach { (id, spot) -> drawProp(id, scene, spot) }
+}
+
+private fun DrawScope.drawProp(id: String, scene: DecorationScene, spot: PropSpot) {
+    val x = scene.w * spot.x
+    val y = scene.yAt(spot.depth)
+    val s = scene.scaleAt(spot.depth) * DECORATION_PROP_SCALE
+    when (id) {
+        "mushroom" -> drawMushroomCluster(x, y, s)
+        "flag" -> drawFlagProp(x, y, s, scene.tMs)
+        "lamp" -> drawLampProp(x, y, s, scene.tMs, spot.facingLeft)
+        "bench" -> drawBenchProp(x, y, s)
+        "fountain" -> drawFountainProp(x, y, s, scene.tMs)
     }
 }
 
@@ -1923,9 +2586,12 @@ private fun DrawScope.drawFlagProp(x: Float, groundY: Float, scale: Float, tMs: 
     drawPath(flagPath, color = Color(0xFF9E3A32).copy(alpha = 0.45f), style = Stroke(width = 1f * scale))
 }
 
-private fun DrawScope.drawButterflyProp(x: Float, groundY: Float, scale: Float, tMs: Float) {
-    // 땅에 놓이는 물건이 아니라 "떠다니는" 장식 — 그림자 없이 타원 궤도를 돈다. 날개는 위/아래 두 장씩
+private fun DrawScope.drawButterflies(scene: DecorationScene) {
+    // 땅에 놓이는 물건이 아니라 식물 꼭대기 둘레를 맴도는 장식 — 그림자 없이 타원 궤도를 돈다. 날개는 위/아래 두 장씩
     // 색을 달리해 겹치고, flap 비율로 가로만 눌러 정면에서 본 날갯짓처럼 보이게 한다.
+    val scale = scene.scale * 1.25f
+    val center = scene.plantAnchor + Offset(0f, 8f * scene.scale)
+    val tMs = scene.tMs
     val colors = listOf(
         Color(0xFFFFB74D) to Color(0xFFF57C00),
         Color(0xFF9C89E8) to Color(0xFF6A4FC4),
@@ -1934,8 +2600,8 @@ private fun DrawScope.drawButterflyProp(x: Float, groundY: Float, scale: Float, 
     val body = Color(0xFF3E2723)
     for (i in 0 until 3) {
         val phase = tMs / 1000f * (0.7f + i * 0.13f) + i * 2.1f
-        val bx = x + cos(phase) * 24f * scale
-        val by = groundY - (36f + i * 11f) * scale + sin(phase * 1.7f) * 8f * scale
+        val bx = center.x + cos(phase) * (28f + i * 7f) * scale
+        val by = center.y + (i * 11f - 12f) * scale + sin(phase * 1.7f) * 8f * scale
         val flap = 0.3f + abs(sin(tMs / 110f + i)) * 0.7f
         val wingW = 9f * scale
         val wingH = 11f * scale
@@ -1958,13 +2624,15 @@ private fun DrawScope.drawButterflyProp(x: Float, groundY: Float, scale: Float, 
     }
 }
 
-private fun DrawScope.drawLampProp(x: Float, groundY: Float, scale: Float, tMs: Float) {
+/** 종이등 기둥 — [facingLeft]면 팔이 왼쪽으로 뻗어 옆(벤치 쪽)을 비춘다. */
+private fun DrawScope.drawLampProp(x: Float, groundY: Float, scale: Float, tMs: Float, facingLeft: Boolean = false) {
     drawPropShadow(x, groundY, scale, 10f)
+    val dir = if (facingLeft) -1f else 1f
     val postH = 54f * scale
     val top = groundY - postH
     drawLine(color = Color(0xFF6D4C41), start = Offset(x, groundY), end = Offset(x, top), strokeWidth = 4f * scale, cap = StrokeCap.Round)
-    drawLine(color = Color(0xFF6D4C41), start = Offset(x, top), end = Offset(x + 15f * scale, top), strokeWidth = 3f * scale, cap = StrokeCap.Round)
-    val lx = x + 15f * scale
+    drawLine(color = Color(0xFF6D4C41), start = Offset(x, top), end = Offset(x + dir * 15f * scale, top), strokeWidth = 3f * scale, cap = StrokeCap.Round)
+    val lx = x + dir * 15f * scale
     val ly = top + 16f * scale
     val glow = 0.6f + 0.2f * sin(tMs / 700f)
     // 빛 번짐 → 매다는 줄 → 위 뚜껑 → 등 몸통 → 속 불빛 → 살 → 아래 뚜껑 → 술 순서로 겹쳐 종이등을 만든다.
@@ -2043,91 +2711,133 @@ private fun DrawScope.drawFountainProp(x: Float, groundY: Float, scale: Float, t
 }
 
 private fun DrawScope.drawStonePathScenery(scene: DecorationScene) {
-    // 화면 아래에서 화분 쪽으로 좁아지며 이어지는 징검돌 — 원근감을 주려 아래일수록 크고 넓게.
-    val steps = 5
+    // 화면 앞쪽에서 화분 발치까지 굽이지며 이어지는 징검돌 한 줄 — 멀수록 작고 촘촘하게(원근).
+    val steps = 6
     for (i in 0 until steps) {
-        val t = i / (steps - 1f)
-        val y = scene.groundY + (scene.h - scene.groundY) * (0.18f + t * 0.62f)
-        val rx = (7f + t * 9f) * scene.scale
-        val spread = (10f + t * 26f) * scene.scale
-        listOf(-1f, 1f).forEach { dir ->
-            drawOval(
-                color = Color(0xFFBCB7A8).copy(alpha = 0.9f),
-                topLeft = Offset(scene.w / 2f + dir * spread - rx, y - rx * 0.45f),
-                size = Size(rx * 2f, rx * 0.9f)
-            )
-            drawOval(
-                color = Color(0xFF8D897C).copy(alpha = 0.5f),
-                topLeft = Offset(scene.w / 2f + dir * spread - rx, y - rx * 0.45f),
-                size = Size(rx * 2f, rx * 0.9f),
-                style = Stroke(width = 1f * scene.scale)
-            )
-        }
+        val t = i / (steps - 1f) // 0 = 맨 앞, 1 = 화분 앞
+        // 미리보기 칸은 작아서 앞쪽 돌이 잘리므로 깊이 범위를 칸 안쪽으로 당긴다.
+        val depth = if (scene.preview) 0.93f - 0.45f * t else 0.985f - 0.195f * t
+        val zig = if (i % 2 == 0) 0.022f else -0.022f
+        val x = scene.w * (0.5f + 0.06f * sin((1f - t) * 1.6f) + zig * (1f - t * 0.5f))
+        val y = scene.yAt(depth)
+        val s = scene.scaleAt(depth)
+        val rx = 14f * s
+        val ry = rx * 0.42f
+        drawOval(color = Color(0xFF8F8A7C), topLeft = Offset(x - rx, y - ry + 1.4f * s), size = Size(rx * 2f, ry * 2f))
+        drawOval(color = Color(0xFFCBC5B6), topLeft = Offset(x - rx, y - ry), size = Size(rx * 2f, ry * 2f))
+        drawOval(color = Color(0xFFE6E1D5).copy(alpha = 0.75f), topLeft = Offset(x - rx * 0.55f, y - ry * 0.75f), size = Size(rx * 0.8f, ry * 0.6f))
     }
 }
 
-private fun DrawScope.drawFenceScenery(scene: DecorationScene) {
-    // 지평선 바로 아래를 가로지르는 말뚝 울타리 — 가로대 2줄 + 뾰족한 말뚝.
-    val y = scene.groundY - 6f * scene.scale
-    val postH = 26f * scene.scale
-    val step = 30f * scene.scale
-    val wood = Color(0xFFC8A87C)
-    val woodDark = Color(0xFF9C7B52)
-    listOf(10f, 18f).forEach { dy ->
-        drawRect(
-            color = wood,
-            topLeft = Offset(-scene.scale * 4f, y - dy * scene.scale),
-            size = Size(scene.w + scene.scale * 8f, 4f * scene.scale)
-        )
-    }
+/** 먼 뒤쪽(깊이 0.2)을 가로지르는 말뚝 울타리 — 정원의 경계. 말뚝 수십 개를 Path 두 개(몸통·그늘 반쪽)에 모아
+ *  한 번씩만 칠한다(모양이 안 변하므로 [GroundScene]의 캐시에서 한 번만 만든다). */
+private class FencePaths(val y: Float, val s: Float, val w: Float, val pickets: Path, val shade: Path)
+
+private fun buildFence(scene: DecorationScene): FencePaths {
+    val depth = 0.2f
+    val y = scene.yAt(depth)
+    val s = scene.scaleAt(depth)
+    val postH = 25f * s
+    val step = 22f * s
+    val halfW = 2.8f * s
+    val pickets = Path()
+    val shade = Path()
     var px = step / 2f
     while (px < scene.w + step) {
-        drawRect(color = wood, topLeft = Offset(px - 3f * scene.scale, y - postH), size = Size(6f * scene.scale, postH))
-        val tip = Path().apply {
-            moveTo(px - 3f * scene.scale, y - postH)
-            lineTo(px, y - postH - 5f * scene.scale)
-            lineTo(px + 3f * scene.scale, y - postH)
-            close()
-        }
-        drawPath(tip, color = woodDark)
+        pickets.moveTo(px - halfW, y)
+        pickets.lineTo(px - halfW, y - postH)
+        pickets.lineTo(px, y - postH - 4.5f * s)
+        pickets.lineTo(px + halfW, y - postH)
+        pickets.lineTo(px + halfW, y)
+        pickets.close()
+        shade.moveTo(px, y)
+        shade.lineTo(px, y - postH - 4.5f * s)
+        shade.lineTo(px + halfW, y - postH)
+        shade.lineTo(px + halfW, y)
+        shade.close()
         px += step
     }
+    return FencePaths(y, s, scene.w, pickets, shade)
+}
+
+private fun DrawScope.drawFence(f: FencePaths) {
+    val s = f.s
+    val wood = Color(0xFFE3C9A0)
+    val woodShade = Color(0xFFB9935F)
+    val woodDark = Color(0xFF8E6B40)
+    drawRect(color = Color.Black.copy(alpha = 0.1f), topLeft = Offset(-4f * s, f.y - 1f * s), size = Size(f.w + 8f * s, 3.5f * s))
+    listOf(8f, 17f).forEach { dy ->
+        val railTop = f.y - dy * s - 1.6f * s
+        drawRect(
+            brush = Brush.verticalGradient(listOf(wood, woodShade), startY = railTop, endY = railTop + 3.2f * s),
+            topLeft = Offset(-4f * s, railTop), size = Size(f.w + 8f * s, 3.2f * s)
+        )
+    }
+    drawPath(f.pickets, color = wood)
+    drawPath(f.shade, color = woodShade.copy(alpha = 0.6f))
+    drawPath(f.pickets, color = woodDark.copy(alpha = 0.35f), style = Stroke(width = 0.7f * s))
 }
 
 private fun DrawScope.drawPondScenery(scene: DecorationScene) {
-    // 화분 왼쪽 앞 땅에 놓이는 작은 연못 — 물 타원 + 퍼지는 잔물결 + 수련잎.
-    val cx = scene.w * 0.24f
-    val cy = scene.groundY + (scene.h - scene.groundY) * 0.42f
-    val rx = 42f * scene.scale
-    val ry = 16f * scene.scale
-    drawOval(color = Color(0xFF6E8A6A).copy(alpha = 0.5f), topLeft = Offset(cx - rx - 3f * scene.scale, cy - ry - 3f * scene.scale), size = Size((rx + 3f * scene.scale) * 2f, (ry + 3f * scene.scale) * 2f))
+    // 왼쪽 앞(분수 아래쪽) 땅의 작은 연못 — 물가 테두리 + 조약돌 + 물(하늘 반사) + 잔물결 + 수련잎과 연꽃.
+    val depth = if (scene.preview) 0.7f else 0.935f
+    val cx = scene.w * (if (scene.preview) 0.5f else 0.2f)
+    val cy = scene.yAt(depth)
+    val s = scene.scaleAt(depth)
+    val rx = 44f * s
+    val ry = 17f * s
+    drawOval(
+        color = Color(0xFF6B7F52).copy(alpha = 0.55f),
+        topLeft = Offset(cx - rx - 4f * s, cy - ry - 3f * s),
+        size = Size((rx + 4f * s) * 2f, (ry + 3f * s) * 2f + 2f * s)
+    )
     drawOval(
         brush = Brush.verticalGradient(listOf(Color(0xFF7FC4E0), Color(0xFF3F7EA6)), startY = cy - ry, endY = cy + ry),
         topLeft = Offset(cx - rx, cy - ry), size = Size(rx * 2f, ry * 2f)
     )
+    drawOval(color = Color.White.copy(alpha = 0.3f), topLeft = Offset(cx - rx * 0.55f, cy - ry * 0.62f), size = Size(rx * 0.7f, ry * 0.22f))
     for (i in 0 until 2) {
         val t = ((scene.tMs / 1400f) + i * 0.5f) % 1f
         drawOval(
             color = Color.White.copy(alpha = 0.3f * (1f - t)),
-            topLeft = Offset(cx - rx * t, cy - ry * t), size = Size(rx * 2f * t, ry * 2f * t),
-            style = Stroke(width = 1.2f * scene.scale)
+            topLeft = Offset(cx + rx * 0.15f - rx * 0.5f * t, cy + ry * 0.1f - ry * 0.5f * t), size = Size(rx * t, ry * t),
+            style = Stroke(width = 1.2f * s)
         )
     }
-    listOf(-0.45f to -0.3f, 0.35f to 0.25f).forEach { (fx, fy) ->
+    for (k in 0 until 12) {
+        val a = k / 12f * 6.283f + 0.3f
+        val p = Offset(cx + cos(a) * (rx + 2.5f * s), cy + sin(a) * (ry + 1.8f * s))
+        val pr = (2.2f + hash01(k, 29) * 1.6f) * s
+        drawOval(
+            color = if (k % 2 == 0) Color(0xFFB9B3A3) else Color(0xFF9C9686),
+            topLeft = Offset(p.x - pr, p.y - pr * 0.6f), size = Size(pr * 2f, pr * 1.2f)
+        )
+    }
+    listOf(Triple(-0.42f, -0.2f, 20f), Triple(0.38f, 0.28f, 200f)).forEachIndexed { i, (fx, fy, rot) ->
         val lx = cx + rx * fx
         val ly = cy + ry * fy
-        drawOval(color = Color(0xFF4E9B54), topLeft = Offset(lx - 8f * scene.scale, ly - 4f * scene.scale), size = Size(16f * scene.scale, 8f * scene.scale))
-        drawLine(color = Color(0xFF2F6B36), start = Offset(lx, ly), end = Offset(lx + 7f * scene.scale, ly - 1f * scene.scale), strokeWidth = 1f * scene.scale)
+        drawArc(
+            color = Color(0xFF4E9B54), startAngle = rot, sweepAngle = 320f, useCenter = true,
+            topLeft = Offset(lx - 8f * s, ly - 4f * s), size = Size(16f * s, 8f * s)
+        )
+        if (i == 0) {
+            listOf(-3f, 0f, 3f).forEach { dx ->
+                drawOval(color = Color(0xFFF8A5C2), topLeft = Offset(lx + dx * s - 2f * s, ly - 5.5f * s), size = Size(4f * s, 5f * s))
+            }
+            drawCircle(color = Color(0xFFFFE082), radius = 1.3f * s, center = Offset(lx, ly - 3f * s))
+        }
     }
 }
 
 private fun DrawScope.drawFirefliesScenery(scene: DecorationScene) {
-    // 씬 전체를 천천히 떠다니는 빛무리 — 밝기가 제각기 다른 주기로 깜빡여 "살아있는" 느낌을 준다.
+    // 정원 위를 천천히 떠다니는 빛무리 — 밝기가 제각기 다른 주기로 깜빡여 "살아있는" 느낌을 준다.
+    val top = scene.horizonY * 0.9f
+    val bottom = scene.yAt(0.92f)
     for (i in 0 until 12) {
         val seed = i * 1.37f
         val phase = scene.tMs / 1000f * (0.16f + (i % 4) * 0.05f) + seed
         val fx = ((sin(phase) * 0.5f + 0.5f) * 0.9f + 0.05f) * scene.w
-        val fy = scene.groundY * 0.55f + (sin(phase * 1.6f + seed) * 0.5f + 0.5f) * (scene.h * 0.55f)
+        val fy = top + (sin(phase * 1.6f + seed) * 0.5f + 0.5f) * (bottom - top)
         val blink = (0.25f + 0.75f * abs(sin(scene.tMs / 620f + seed))).coerceIn(0f, 1f)
         drawCircle(
             brush = Brush.radialGradient(
@@ -2142,8 +2852,8 @@ private fun DrawScope.drawFirefliesScenery(scene: DecorationScene) {
 
 /**
  * 꾸미기 상점의 아이템 미리보기 — 목록에서도 실제 홈 화면에 그려질 모양 그대로 보여준다(이모지 목록으로는
- * "사면 뭐가 나오는지"를 알 수 없어 구매 판단이 안 된다는 지적). 같은 [drawDecoration]을 작은 씬 기하로
- * 한 번 더 부르는 것이라 미리보기와 실제 모습이 어긋날 수 없다.
+ * "사면 뭐가 나오는지"를 알 수 없어 구매 판단이 안 된다는 지적). 홈 화면과 같은 그리기 함수를 작은 씬 기하로
+ * 한 번 더 부르는 것이라 미리보기와 실제 모습이 어긋날 수 없다(소품은 화분 깊이, 배경은 제 깊이에 그린다).
  */
 @Composable
 internal fun DecorationPreview(item: DecorationItem, modifier: Modifier = Modifier) {
@@ -2155,17 +2865,27 @@ internal fun DecorationPreview(item: DecorationItem, modifier: Modifier = Modifi
         }
     }
     Canvas(modifier.size(56.dp).clip(RoundedCornerShape(10.dp))) {
-        val groundY = size.height * 0.72f
+        val horizonY = size.height * 0.42f
         drawRect(
-            brush = Brush.verticalGradient(listOf(Color(0xFFDCEBF5), Color(0xFFEFF5E6)), startY = 0f, endY = groundY),
-            size = Size(size.width, groundY)
+            brush = Brush.verticalGradient(listOf(Color(0xFFCFE7F7), Color(0xFFEFF7FD)), startY = 0f, endY = horizonY),
+            size = Size(size.width, horizonY)
         )
-        drawRect(color = Color(0xFF9CC46B), topLeft = Offset(0f, groundY), size = Size(size.width, size.height - groundY))
+        drawRect(
+            brush = Brush.verticalGradient(listOf(Color(0xFFB2D98A), Color(0xFF86BC52)), startY = horizonY, endY = size.height),
+            topLeft = Offset(0f, horizonY), size = Size(size.width, size.height - horizonY)
+        )
         val scene = DecorationScene(
             w = size.width, h = size.height,
-            scale = (min(size.width, size.height) / 130f).coerceIn(0.3f, 1.0f),
-            groundY = groundY, tMs = nowMs
+            scale = (min(size.width, size.height) / 125f).coerceIn(0.3f, 1.4f),
+            horizonY = horizonY, tMs = nowMs,
+            plantAnchor = Offset(size.width / 2f, size.height * 0.5f),
+            preview = true
         )
-        drawDecoration(item, scene, if (item.kind == DecorationKind.PROP) 0.5f else null)
+        val spot = PROP_SPOTS[item.id]
+        when {
+            spot != null -> drawProp(item.id, scene, PropSpot(0.5f, POT_DEPTH))
+            item.id == "butterfly_deco" || item.id == "fireflies" -> drawAirborneDecorations(listOf(item.id), scene)
+            else -> drawDecorationsBehindPot(listOf(item.id), scene)
+        }
     }
 }

@@ -88,15 +88,31 @@ object CalcEngine {
 
     data class RequiredPace(val multiplier: Double, val totalCapacity: Double, val enough: Boolean)
 
-    private fun calcRequiredPace(remaining: Double, startDate: LocalDate, endDate: LocalDate, dayGoals: Map<Int, Double>, holidays: Set<String>): RequiredPace {
-        val dayCounts = IntArray(7)
-        var cur = startDate
-        while (!cur.isAfter(endDate)) {
-            if (!holidays.contains(cur.toString())) dayCounts[jsDow(cur)]++
+    /** [planWindow] 결과 — 요일별 목표를 그대로 지켰을 때 해낼 수 있는 양과, 그중 목표가 잡힌(0보다 큰) 날 수. */
+    data class PlanWindow(val capacity: Double, val activeDays: Int)
+
+    /**
+     * from~to(양끝 포함)에서 휴일을 뺀 날들의 요일별 목표 합. 계산기의 "필요 페이스"와 공부 알림(134차)이
+     * 같은 기준으로 "요일별 목표대로 하면 마감까지 얼마나 할 수 있나"를 판단하도록 한 곳에 둔다.
+     * from이 to보다 뒤면 둘 다 0.
+     */
+    fun planWindow(from: LocalDate, to: LocalDate, dayGoals: Map<Int, Double>, holidays: Set<String>): PlanWindow {
+        var capacity = 0.0
+        var activeDays = 0
+        var cur = from
+        while (!cur.isAfter(to)) {
+            if (!holidays.contains(cur.toString())) {
+                val goal = dayGoals[jsDow(cur)] ?: 0.0
+                capacity += goal
+                if (goal > 0.0) activeDays++
+            }
             cur = cur.plusDays(1)
         }
-        var totalCapacity = 0.0
-        for (d in 0..6) totalCapacity += dayCounts[d] * (dayGoals[d] ?: 0.0)
+        return PlanWindow(capacity, activeDays)
+    }
+
+    private fun calcRequiredPace(remaining: Double, startDate: LocalDate, endDate: LocalDate, dayGoals: Map<Int, Double>, holidays: Set<String>): RequiredPace {
+        val totalCapacity = planWindow(startDate, endDate, dayGoals, holidays).capacity
         val multiplier = if (totalCapacity > 0) remaining / totalCapacity else Double.POSITIVE_INFINITY
         return RequiredPace(multiplier, totalCapacity, multiplier <= 1.0)
     }

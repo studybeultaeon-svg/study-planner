@@ -83,6 +83,7 @@ private enum class SettingsCategory(val label: String, val emoji: String) {
     SOCIAL("모임", "👥"),
     DATA("데이터", "💾"),
     SYSTEM("시스템", "⚙️"),
+    HELP("도움말", "❓"),
     ADMIN("관리자 패널", "🛡️")
 }
 
@@ -146,6 +147,11 @@ fun SettingsScreen(
     var editProtectionEnabled by remember { mutableStateOf(repository.editProtectionEnabled) }
     var editProtectionStartText by remember { mutableStateOf(repository.editProtectionStartHour.toString()) }
     var editProtectionEndText by remember { mutableStateOf(repository.editProtectionEndHour.toString()) }
+    // 134차: 저장된 값과 입력칸 값을 분리한다 — 예전엔 글자를 칠 때마다 저장·판정해서, 방지 시간대 밖에서
+    // "11" → "10"으로 고치는 도중의 중간값("1" = 1~23시)이 잠깐 저장되며 그 순간 방지 시간대가 돼버렸고,
+    // 이어지는 타이핑이 확인 질문에 막혔다(안드로이드판과 대칭 수정).
+    var savedProtectionStart by remember { mutableStateOf(repository.editProtectionStartHour) }
+    var savedProtectionEnd by remember { mutableStateOf(repository.editProtectionEndHour) }
     // 방지를 끄거나 시간대를 좁혀 "지금"이 방지 밖으로 빠지는 변경은 그 한 번으로 모든 보호를 걷어내는
     // 새 우회로라, 79차 "종료 확인 절차 끄기"와 같이 회유 멘트 20개(ExitConfirmScreen)로 게이트한다 —
     // 반대로 켜거나 넓히는 방향은 즉시 적용. null이 아니면 게이트 진행 중.
@@ -160,6 +166,8 @@ fun SettingsScreen(
         editProtectionEnabled = repository.editProtectionEnabled
         editProtectionStartText = repository.editProtectionStartHour.toString()
         editProtectionEndText = repository.editProtectionEndHour.toString()
+        savedProtectionStart = repository.editProtectionStartHour
+        savedProtectionEnd = repository.editProtectionEndHour
     }
 
     // 저장된 값 기준으로 되돌리기(게이트 취소 시) / 실제 저장.
@@ -167,6 +175,8 @@ fun SettingsScreen(
         editProtectionEnabled = repository.editProtectionEnabled
         editProtectionStartText = repository.editProtectionStartHour.toString()
         editProtectionEndText = repository.editProtectionEndHour.toString()
+        savedProtectionStart = repository.editProtectionStartHour
+        savedProtectionEnd = repository.editProtectionEndHour
     }
 
     fun saveProtection(enabled: Boolean, startHour: Int, endHour: Int) {
@@ -174,6 +184,11 @@ fun SettingsScreen(
         repository.editProtectionStartHour = startHour
         repository.editProtectionEndHour = endHour
         editProtectionEnabled = enabled
+        savedProtectionStart = startHour
+        savedProtectionEnd = endHour
+        editProtectionStartText = startHour.toString()
+        editProtectionEndText = endHour.toString()
+        // 다른 기기에도 바로 반영(설정 문서 LWW) — 방지 시간대 밖에서 바꾼 값도 그대로 동기화된다.
         repository.pushSettingsToFirebase()
     }
 
@@ -270,6 +285,7 @@ fun SettingsScreen(
             SettingsCategory.SOCIAL.takeIf { repository.permSocial },
             SettingsCategory.DATA,
             SettingsCategory.SYSTEM,
+            SettingsCategory.HELP,
             SettingsCategory.ADMIN.takeIf { isAdmin }
         )
     }
@@ -898,38 +914,50 @@ fun SettingsScreen(
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                                 OutlinedTextField(
                                     value = editProtectionStartText,
-                                    onValueChange = { text ->
-                                        editProtectionStartText = text
-                                        val start = text.toIntOrNull() ?: return@OutlinedTextField
-                                        if (start !in 0..23) return@OutlinedTextField
-                                        requestProtection(
-                                            editProtectionEnabled,
-                                            start,
-                                            editProtectionEndText.toIntOrNull() ?: repository.editProtectionEndHour
-                                        )
-                                    },
+                                    onValueChange = { text -> editProtectionStartText = text.filter { it.isDigit() }.take(2) },
                                     label = { Text("시작 (0~23시)") },
                                     modifier = Modifier.weight(1f)
                                 )
                                 OutlinedTextField(
                                     value = editProtectionEndText,
-                                    onValueChange = { text ->
-                                        editProtectionEndText = text
-                                        val end = text.toIntOrNull() ?: return@OutlinedTextField
-                                        if (end !in 0..23) return@OutlinedTextField
-                                        requestProtection(
-                                            editProtectionEnabled,
-                                            editProtectionStartText.toIntOrNull() ?: repository.editProtectionStartHour,
-                                            end
-                                        )
-                                    },
+                                    onValueChange = { text -> editProtectionEndText = text.filter { it.isDigit() }.take(2) },
                                     label = { Text("끝 (0~23시)") },
                                     modifier = Modifier.weight(1f)
                                 )
                             }
+                            // 입력칸은 값만 담아두고, 아래 버튼을 눌러야 저장·판정한다(타이핑 중간값으로 잠기지 않게).
+                            val typedStart = editProtectionStartText.toIntOrNull()
+                            val typedEnd = editProtectionEndText.toIntOrNull()
+                            val rangeValid = typedStart in 0..23 && typedEnd in 0..23
+                            val rangeChanged = rangeValid && (typedStart != savedProtectionStart || typedEnd != savedProtectionEnd)
+                            Spacer(Modifier.height(Spacing.xs))
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                                Button(
+                                    enabled = rangeChanged,
+                                    onClick = { requestProtection(editProtectionEnabled, typedStart!!, typedEnd!!) }
+                                ) { Text("시간대 적용") }
+                                if (rangeChanged) {
+                                    TextButton(onClick = { revertProtectionFields() }) { Text("되돌리기") }
+                                } else if (!rangeValid) {
+                                    Text("0~23 사이 숫자를 넣어주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            Spacer(Modifier.height(Spacing.xs))
+                            val protectedNow = com.phonelock.desktop.monitor.isEditProtectionHour(
+                                editProtectionEnabled, savedProtectionStart, savedProtectionEnd, java.time.LocalTime.now().hour
+                            )
+                            Text(
+                                if (protectedNow) {
+                                    "지금은 방지 시간대(" + savedProtectionStart + "시~" + savedProtectionEnd + "시)입니다 — 지금 차단 중인 규칙을 약하게 바꾸거나 지우거나 끄려면 확인 질문 ${PERSUASION_MESSAGES.size}개를 통과해야 합니다."
+                                } else {
+                                    "지금은 방지 시간대가 아닙니다 — 차단 규칙도, 이 방지 설정도 확인 질문 없이 바로 수정되고 다른 기기에도 그대로 동기화됩니다."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (protectedNow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             Text(
                                 "끝 시각은 포함하지 않으며(예: 11~23이면 23시부터 자유), 시작과 끝이 같으면 하루 종일 " +
-                                    "적용됩니다. 방지를 끄거나 시간대를 좁혀 지금이 빠지게 하는 변경은 그 자체가 확인 질문을 거칩니다.",
+                                    "적용됩니다. 방지 시간대 안에서 방지를 끄거나 시간대를 좁혀 지금이 빠지게 하는 변경은 그 자체가 확인 질문을 거칩니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1061,7 +1089,7 @@ fun SettingsScreen(
                                 )
                                 ToggleRow(
                                     title = "일정 지연 알림",
-                                    description = "마감이 지났거나, 지금 페이스면 목표 일정을 못 맞출 때.",
+                                    description = "마감이 지났거나, 요일별 목표대로 해도 마감까지 다 못 끝낼 때(하루치 이상 모자랄 때만).",
                                     checked = studyAlertSchedule,
                                     onCheckedChange = { checked ->
                                         studyAlertSchedule = checked
@@ -1360,6 +1388,21 @@ fun SettingsScreen(
                             )
                         }
                     })
+
+                    SettingsCategory.HELP -> {
+                        // 도움말 본문은 shared/HelpContent.kt(안드로이드와 공유), 그리기는 HelpScreen.kt.
+                        // 관리자가 꺼둔 기능 영역의 주제는 숨긴다(설정 카테고리를 숨기는 것과 같은 기준).
+                        HelpCenter(
+                            visibleAreas = buildSet {
+                                add(com.phonelock.shared.HelpContent.Area.GENERAL)
+                                if (repository.permPlant) add(com.phonelock.shared.HelpContent.Area.HOME)
+                                if (repository.permRoutine) add(com.phonelock.shared.HelpContent.Area.ROUTINE)
+                                if (repository.permStudy) add(com.phonelock.shared.HelpContent.Area.STUDY)
+                                if (repository.permManage) add(com.phonelock.shared.HelpContent.Area.RULES)
+                                if (repository.permSocial) add(com.phonelock.shared.HelpContent.Area.SOCIAL)
+                            }
+                        )
+                    }
 
                     SettingsCategory.ADMIN -> SettingsColumns(left = {
                         SectionCard("가입 승인 대기") {

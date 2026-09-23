@@ -110,14 +110,23 @@ object StudyAlertChecker {
             // 오늘치 목표는 일정표 화면이 보여주는 것과 같은 값(요일별 할당량, 휴일·기간 밖이면 0).
             val quota = if (todayKey in holidays || today.isBefore(start) || today.isAfter(dday)) 0.0
             else dayQuota(task, jsDow)
+            // 요일별 목표를 오늘(시작 전이면 시작일)부터 마감까지 그대로 지켰을 때 해낼 수 있는 양 —
+            // 계산기 화면의 "필요 페이스"와 같은 기준(CalcEngine.planWindow).
+            val plan = CalcEngine.planWindow(
+                if (today.isBefore(start)) start else today, dday,
+                (0..6).associateWith { dayQuota(task, it) }, holidays
+            )
             StudyAlertEngine.TaskProgress(
                 name = task.name,
                 quantity = quantity,
                 progress = task.progress.toDoubleOrNull() ?: 0.0,
-                daysElapsed = (ChronoUnit.DAYS.between(start, today).toInt() + 1).coerceAtLeast(1),
+                daysElapsed = if (today.isBefore(start)) 0 else ChronoUnit.DAYS.between(start, today).toInt() + 1,
                 daysLeft = ChronoUnit.DAYS.between(today, dday).toInt(),
                 todayQuota = quota,
-                todayAchieved = quota <= 0.0 || repository.isLinkedGoalAchieved(todayKey, task.name, quota)
+                todayAchieved = quota <= 0.0 || repository.isLinkedGoalAchieved(todayKey, task.name, quota),
+                unit = task.unit.trim(),
+                planCapacity = plan.capacity,
+                planDays = plan.activeDays
             )
         }
 

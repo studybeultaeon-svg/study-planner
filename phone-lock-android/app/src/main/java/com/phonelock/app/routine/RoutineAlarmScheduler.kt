@@ -26,11 +26,13 @@ object RoutineAlarmScheduler {
     const val ACTION_GROUP_NUDGE_CHECK = "com.phonelock.app.ACTION_GROUP_NUDGE_CHECK"
     const val ACTION_WEEKLY_SUMMARY = "com.phonelock.app.ACTION_WEEKLY_SUMMARY"
     const val ACTION_STUDY_ALERT_CHECK = "com.phonelock.app.ACTION_STUDY_ALERT_CHECK"
+    const val ACTION_NOTIFICATION_DIGEST = "com.phonelock.app.ACTION_NOTIFICATION_DIGEST"
     const val EXTRA_ROUTINE_ID = "routineId"
     private const val STREAK_REQUEST_CODE = -1
     private const val GROUP_NUDGE_REQUEST_CODE = -2
     private const val WEEKLY_SUMMARY_REQUEST_CODE = -3
     private const val STUDY_ALERT_REQUEST_CODE = -4
+    private const val NOTIFICATION_DIGEST_REQUEST_CODE = -5
 
     /** 공부 알림 검사 주기(시간, 122차) — 조건 기반 알림이라 정확한 시각에 붙을 이유가 없고,
      *  하루에 몇 번 상황을 다시 보는 정도면 충분하다(같은 종류는 어차피 하루 한 번만 발송된다). */
@@ -93,7 +95,8 @@ object RoutineAlarmScheduler {
             return
         }
         val now = LocalDateTime.now()
-        for (i in 0..7) {
+        // 134차: N일마다·매월 반복이 생겨 다음 실행일이 일주일 밖일 수 있다(최대 365일 주기).
+        for (i in 0..com.phonelock.shared.routine.RoutineRepeat.MAX_LOOKAHEAD_DAYS) {
             val date = now.toLocalDate().plusDays(i.toLong())
             if (!RoutineEngine.isScheduledOn(routine, date)) continue
             val candidate = LocalDateTime.of(date, time)
@@ -169,5 +172,30 @@ object RoutineAlarmScheduler {
 
     fun cancelStudyAlertCheck(context: Context) {
         alarmManager(context).cancel(pendingIntentFor(context, STUDY_ALERT_REQUEST_CODE, ACTION_STUDY_ALERT_CHECK))
+    }
+
+    /**
+     * 알림 묶음 요약(130차) — 사용자가 정한 시각 중 다음 것 하나만 예약하고, 발화할 때마다
+     * [RoutineReminderReceiver]가 다시 예약해 이어간다(공부 알림과 같은 방식). 거를 앱을 하나도
+     * 안 골랐거나 시각 형식이 전부 틀렸으면 예약하지 않는다.
+     */
+    fun scheduleNotificationDigest(context: Context) {
+        val preferences = com.phonelock.app.data.AppPreferences(context)
+        if (preferences.notificationFilterPackages.isEmpty()) {
+            cancelNotificationDigest(context)
+            return
+        }
+        val times = com.phonelock.app.service.parseDigestTimes(preferences.notificationDigestTimesCsv)
+        val next = com.phonelock.app.service.nextDigestTrigger(LocalDateTime.now(), times) ?: return
+        val triggerAtMillis = next.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        scheduleAlarm(
+            context,
+            triggerAtMillis,
+            pendingIntentFor(context, NOTIFICATION_DIGEST_REQUEST_CODE, ACTION_NOTIFICATION_DIGEST)
+        )
+    }
+
+    fun cancelNotificationDigest(context: Context) {
+        alarmManager(context).cancel(pendingIntentFor(context, NOTIFICATION_DIGEST_REQUEST_CODE, ACTION_NOTIFICATION_DIGEST))
     }
 }

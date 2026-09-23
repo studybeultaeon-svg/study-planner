@@ -13,12 +13,9 @@ import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.runBlocking
 import java.time.LocalDate
 
-private fun isScheduledOn(routine: Routine, date: LocalDate): Boolean {
-    routine.startDate?.let { if (date.isBefore(LocalDate.parse(it))) return false }
-    routine.endDate?.let { if (date.isAfter(LocalDate.parse(it))) return false }
-    val bitIndex = date.dayOfWeek.value - 1
-    return (routine.daysMask shr bitIndex) and 1 == 1
-}
+// 134차: 예정일 판정은 RoutineEngine 하나만 쓴다(반복 방식이 늘어도 위젯이 따로 어긋나지 않게).
+private fun isScheduledOn(routine: Routine, date: LocalDate): Boolean =
+    com.phonelock.app.routine.RoutineEngine.isScheduledOn(routine, date)
 
 /**
  * 위젯 ListView의 데이터 소스 — 오늘 예정된 루틴만, 시간대 있는 순서로(RoutineScreen.kt의 "오늘" 탭

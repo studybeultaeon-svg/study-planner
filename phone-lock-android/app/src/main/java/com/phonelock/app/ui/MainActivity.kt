@@ -1,6 +1,8 @@
 package com.phonelock.app.ui
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -26,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
@@ -56,14 +59,14 @@ import java.util.concurrent.TimeUnit
 /** 하단 탭은 "관리앱"(그룹/통계)/"공부앱"(타이머/캘린더/계산기)/"설정" 3개로만 두고, 그 안을
  * 서브탭으로 나눈다 — 데스크탑판(왼쪽 사이드바 + 서브탭)과 같은 2단 구조를 모바일에서는 하단 탭으로 구현. */
 private sealed class Tab(val route: String, val label: String, val emoji: String) {
-    object Home : Tab("home", "홈", "🌱")
-    object Routine : Tab("routine", "루틴", "📋")
-    object Study : Tab("study", "공부", "📘")
-    object Manage : Tab("manage", "규칙", "🗂️")
-    object Group : Tab("group", "모임", "👥")
+    object Home : Tab(MainActivity.ROUTE_HOME, "홈", "🌱")
+    object Routine : Tab(MainActivity.ROUTE_ROUTINE, "루틴", "📋")
+    object Study : Tab(MainActivity.ROUTE_STUDY, "공부", "📘")
+    object Manage : Tab(MainActivity.ROUTE_MANAGE, "규칙", "🗂️")
+    object Group : Tab(MainActivity.ROUTE_GROUP, "모임", "👥")
     // 118차부터 설정은 탭이 아니라 홈 화면 우상단 버튼으로만 들어가는 독립 라우트 — visibleTabs()엔
     // 포함하지 않지만 NavHost 등록/네비게이션 대상으로는 그대로 쓴다.
-    object Settings : Tab("settings", "설정", "⚙️")
+    object Settings : Tab(MainActivity.ROUTE_SETTINGS, "설정", "⚙️")
 }
 
 /** 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임)에 맞춰 보이는 탭만 남긴다 — 홈은 설정 진입점이
@@ -80,13 +83,58 @@ private fun visibleTabs(prefs: AppPreferences): List<Tab> = listOfNotNull(
     Tab.Group.takeIf { prefs.permSocial && com.phonelock.app.service.AuthManager.currentUser?.isAnonymous != true }
 )
 
+/** 런처 바로가기가 요청한 진입 지점 — [MainActivity.EXTRA_START_ROUTE]/[MainActivity.EXTRA_START_SUB_TAB]을 담는다. */
+private data class StartRequest(val route: String, val subTab: Int, val seq: Int)
+
 class MainActivity : ComponentActivity() {
+    companion object {
+        // 131차: 미니멀 런처 홈이 "루틴/타이머/캘린더/..."로 바로 들어올 때 쓰는 진입 지점. 라우트 문자열을
+        // 런처 쪽에 한 번 더 적어두면 둘이 어긋나므로 여기 상수를 [Tab]과 런처가 함께 쓴다.
+        const val ROUTE_HOME = "home"
+        const val ROUTE_ROUTINE = "routine"
+        const val ROUTE_STUDY = "study"
+        const val ROUTE_MANAGE = "manage"
+        const val ROUTE_GROUP = "group"
+        const val ROUTE_SETTINGS = "settings"
+
+        const val EXTRA_START_ROUTE = "start_route"
+        /** 공부/규칙 탭 안의 서브탭 번호(타이머=0, 캘린더=1 …). -1이면 "탭만 열고 서브탭은 그대로". */
+        const val EXTRA_START_SUB_TAB = "start_sub_tab"
+
+        /** 런처 바로가기가 쓰는 인텐트 — 어디서 부르든 같은 모양이 되도록 여기서만 만든다. */
+        fun openIntent(context: Context, route: String, subTab: Int = -1): Intent =
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(EXTRA_START_ROUTE, route)
+                .putExtra(EXTRA_START_SUB_TAB, subTab)
+    }
+
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* 거부해도 앱의 다른 기능에는 지장 없음 — 그냥 알림을 못 받을 뿐 */ }
 
+    /**
+     * 런처에서 요청한 진입 지점(131차). `launchMode=singleTask`라 앱이 이미 떠 있으면 새 인텐트가
+     * [onNewIntent]로 들어오므로 onCreate에서 한 번 읽고 마는 게 아니라 상태로 들고 있어야 한다.
+     * [StartRequest.seq]는 "같은 곳으로 두 번 연속" 요청해도 다시 이동하게 하는 구분자다.
+     */
+    private val startRequest = mutableStateOf<StartRequest?>(null)
+    private var startSeq = 0
+
+    private fun readStartRequest(intent: Intent?) {
+        val route = intent?.getStringExtra(EXTRA_START_ROUTE) ?: return
+        startRequest.value = StartRequest(route, intent.getIntExtra(EXTRA_START_SUB_TAB, -1), ++startSeq)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        readStartRequest(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        readStartRequest(intent)
         // Room(=PhoneLockRepository)을 열기 전에 먼저 실행해야 한다 — Room이 fallbackToDestructiveMigration()을
         // 쓰고 있어서, 앱 버전이 바뀐 뒤 Room을 처음 여는 순간 스키마가 안 맞으면 DB가 통째로 삭제된다.
         // 그 삭제가 일어나기 전에 원본 SQLite 파일을 직접 읽어 백업해둔다.
@@ -162,10 +210,13 @@ class MainActivity : ComponentActivity() {
             if (AppPreferences(applicationContext).studyAlertEnabled) {
                 RoutineAlarmScheduler.scheduleStudyAlertCheck(applicationContext)
             }
+            // 알림 묶음 요약(130차) — 거를 앱을 안 골랐으면 안에서 예약을 취소하고 끝난다.
+            RoutineAlarmScheduler.scheduleNotificationDigest(applicationContext)
         }
 
         setContent {
-            var themeMode by remember { mutableStateOf(AppPreferences(applicationContext).themeMode) }
+            // 130차: 미니멀 모드가 켜져 있으면 고른 테마와 무관하게 흑백 팔레트를 쓰므로 effectiveThemeMode를 읽는다.
+            var themeMode by remember { mutableStateOf(AppPreferences(applicationContext).effectiveThemeMode) }
             // 79차: 커스텀 테마는 themeMode 문자열("CUSTOM")이 안 바뀌어도 색만 바뀔 수 있어서 별도
             // 카운터로 강제 재계산(데스크탑판 Main.kt와 동일 패턴).
             var themeRefreshTick by remember { mutableStateOf(0) }
@@ -191,7 +242,9 @@ class MainActivity : ComponentActivity() {
                         } else {
                             PhoneLockApp(
                                 repository,
-                                onThemeChange = { themeMode = it; themeRefreshTick++ }
+                                onThemeChange = { themeMode = it; themeRefreshTick++ },
+                                startRequest = startRequest.value,
+                                onStartRequestHandled = { startRequest.value = null }
                             )
                         }
                     }
@@ -202,12 +255,42 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String) -> Unit = {}) {
+private fun PhoneLockApp(
+    repository: PhoneLockRepository,
+    onThemeChange: (String) -> Unit = {},
+    startRequest: StartRequest? = null,
+    onStartRequestHandled: () -> Unit = {}
+) {
     val navController = rememberNavController()
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { AppPreferences(context) }
     val tabs = remember { visibleTabs(prefs) }
+    // 131차: 공부/규칙 섹션의 서브탭을 각 섹션 안(remember)이 아니라 여기로 올렸다 — 런처 바로가기가
+    // "공부 > 캘린더"처럼 서브탭까지 지정해서 들어오는데, 섹션 안에 숨어 있으면 이미 한 번 그려진 뒤에는
+    // 바깥에서 바꿀 방법이 없기 때문이다. 동작(탭을 눌러 오갈 때 마지막 서브탭 유지)은 이전과 같다.
+    var studySubTab by rememberSaveable { mutableIntStateOf(0) }
+    var manageSubTab by rememberSaveable { mutableIntStateOf(0) }
+    // 130차 미니멀 모드: 탭에서 이모지를 빼고 글자만 남긴다(색과 그림이 곧 자극이라는 게 이 모드의 전제).
+    val minimalMode = remember { prefs.minimalMode }
     var pendingUpdateApkUrl by remember { mutableStateOf<String?>(null) }
+    // 런처 바로가기로 들어온 진입 지점 처리(131차). 승인 범위 밖 라우트가 들어와도 NavHost엔 모든 라우트가
+    // 등록돼 있어 이동 자체는 되지만, 애초에 런처가 권한에 맞는 바로가기만 보여준다.
+    LaunchedEffect(startRequest) {
+        val request = startRequest ?: return@LaunchedEffect
+        if (request.subTab >= 0) when (request.route) {
+            Tab.Study.route -> studySubTab = request.subTab
+            Tab.Manage.route -> manageSubTab = request.subTab
+        }
+        runCatching {
+            navController.navigate(request.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+        // 이동을 마친 뒤에 비운다 — 먼저 비우면 재구성이 이 이펙트를 취소할 여지가 생긴다.
+        onStartRequestHandled()
+    }
     LaunchedEffect(Unit) {
         repository.checkForUpdateIfNeeded()
         pendingUpdateApkUrl = repository.pendingUpdateApkUrl()
@@ -225,7 +308,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
             modifier = navModifier
         ) {
             composable(Tab.Manage.route) {
-                ManageSection(repository, navController)
+                ManageSection(repository, navController, manageSubTab) { manageSubTab = it }
             }
             composable(
                 "group_edit/{groupId}",
@@ -236,7 +319,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                 GroupEditScreen(repository, groupId) { navController.popBackStack() }
             }
             composable(Tab.Study.route) {
-                StudySection(repository)
+                StudySection(repository, studySubTab) { studySubTab = it }
             }
             composable(Tab.Routine.route) {
                 RoutineScreen(repository)
@@ -245,6 +328,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                 PlantScreen(
                     repository,
                     permPlant = prefs.permPlant,
+                    minimalMode = prefs.minimalMode,
                     onOpenSettings = { navController.navigate(Tab.Settings.route) }
                 )
             }
@@ -335,7 +419,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                                     restoreState = true
                                 }
                             },
-                            icon = { Text(tab.emoji) },
+                            icon = { if (!minimalMode) Text(tab.emoji) },
                             label = { Text(tab.label) }
                         )
                     }
@@ -361,7 +445,7 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
                                         restoreState = true
                                     }
                                 },
-                                icon = { Text(tab.emoji) },
+                                icon = { if (!minimalMode) Text(tab.emoji) },
                                 label = { Text(tab.label) }
                             )
                         }
@@ -379,14 +463,20 @@ private fun PhoneLockApp(repository: PhoneLockRepository, onThemeChange: (String
 
 /** "관리앱" 탭 내부의 그룹/통계 서브탭. */
 @Composable
-private fun ManageSection(repository: PhoneLockRepository, navController: NavController) {
-    var subTab by remember { mutableIntStateOf(0) }
+private fun ManageSection(
+    repository: PhoneLockRepository,
+    navController: NavController,
+    subTab: Int,
+    onSubTabChange: (Int) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val minimalMode = remember { AppPreferences(context).minimalMode }
     Column(Modifier.fillMaxSize()) {
         // 공부 섹션 서브탭(아래 StudySection)만 이모지 아이콘이 있고 관리 섹션엔 없어서 같은 자리의
         // 탭 줄인데도 높이/생김새가 서로 달라 보였다 — 두 섹션의 서브탭 표기를 통일한다.
         TabRow(selectedTabIndex = subTab) {
-            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("🗂️") }, text = { Text("차단 규칙") })
-            MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, icon = { Text("📊") }, text = { Text("사용 기록") })
+            MaterialTab(selected = subTab == 0, onClick = { onSubTabChange(0) }, icon = if (minimalMode) null else ({ Text("🗂️") }), text = { Text("차단 규칙") })
+            MaterialTab(selected = subTab == 1, onClick = { onSubTabChange(1) }, icon = if (minimalMode) null else ({ Text("📊") }), text = { Text("사용 기록") })
         }
         Box(Modifier.weight(1f)) {
             when (subTab) {
@@ -402,18 +492,19 @@ private fun ManageSection(repository: PhoneLockRepository, navController: NavCon
 
 /** "공부앱" 탭 내부의 타이머/캘린더/계산기 서브탭. */
 @Composable
-private fun StudySection(repository: PhoneLockRepository) {
-    var subTab by remember { mutableIntStateOf(0) }
+private fun StudySection(repository: PhoneLockRepository, subTab: Int, onSubTabChange: (Int) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val minimalMode = remember { AppPreferences(context).minimalMode }
     Column(Modifier.fillMaxSize()) {
         // 85차: 이모지+텍스트를 하나의 text 슬롯에 나란히 넣으면 좁은 폰 화면에서 5칸이 우겨넣어져
         // 글자가 잘리거나 두 줄로 밀린다(사용자 지적) — Tab의 icon/text 슬롯을 분리하면 Material3가
         // 이모지를 위, 라벨을 아래로 항상 세로로 쌓아준다.
         TabRow(selectedTabIndex = subTab) {
-            MaterialTab(selected = subTab == 0, onClick = { subTab = 0 }, icon = { Text("⏱️") }, text = { Text("타이머") })
-            MaterialTab(selected = subTab == 1, onClick = { subTab = 1 }, icon = { Text("📅") }, text = { Text("캘린더") })
-            MaterialTab(selected = subTab == 2, onClick = { subTab = 2 }, icon = { Text("🧮") }, text = { Text("계산기") })
-            MaterialTab(selected = subTab == 3, onClick = { subTab = 3 }, icon = { Text("🗓️") }, text = { Text("일정표") })
-            MaterialTab(selected = subTab == 4, onClick = { subTab = 4 }, icon = { Text("📈") }, text = { Text("통계") })
+            MaterialTab(selected = subTab == 0, onClick = { onSubTabChange(0) }, icon = if (minimalMode) null else ({ Text("⏱️") }), text = { Text("타이머") })
+            MaterialTab(selected = subTab == 1, onClick = { onSubTabChange(1) }, icon = if (minimalMode) null else ({ Text("📅") }), text = { Text("캘린더") })
+            MaterialTab(selected = subTab == 2, onClick = { onSubTabChange(2) }, icon = if (minimalMode) null else ({ Text("🧮") }), text = { Text("계산기") })
+            MaterialTab(selected = subTab == 3, onClick = { onSubTabChange(3) }, icon = if (minimalMode) null else ({ Text("🗓️") }), text = { Text("일정표") })
+            MaterialTab(selected = subTab == 4, onClick = { onSubTabChange(4) }, icon = if (minimalMode) null else ({ Text("📈") }), text = { Text("통계") })
         }
         Box(Modifier.weight(1f)) {
             when (subTab) {

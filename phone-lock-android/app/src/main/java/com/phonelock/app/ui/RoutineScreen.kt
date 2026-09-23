@@ -1,6 +1,7 @@
 package com.phonelock.app.ui
 
 import androidx.compose.foundation.BorderStroke
+import com.phonelock.shared.routine.RoutineRepeat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.Icons
@@ -64,11 +65,10 @@ private val ROUTINE_WEEKDAYS_KO = arrayOf("월", "화", "수", "목", "금", "�
 private val ROUTINE_WEEKDAYS_SUN_FIRST = arrayOf("일", "월", "화", "수", "목", "금", "토")
 
 private fun bitIndexFor(date: LocalDate): Int = date.dayOfWeek.value - 1
-private fun isScheduledOn(routine: Routine, date: LocalDate): Boolean {
-    routine.startDate?.let { if (date.isBefore(LocalDate.parse(it))) return false }
-    routine.endDate?.let { if (date.isAfter(LocalDate.parse(it))) return false }
-    return (routine.daysMask shr bitIndexFor(date)) and 1 == 1
-}
+
+// 134차: 예정일 판정은 RoutineEngine 하나만 쓴다 — 여기에 같은 로직을 복사해 두었더니 반복 방식이
+// 늘었을 때(며칠마다·매월 날짜) 이 화면만 옛 규칙으로 목록을 그렸다(에뮬레이터 확인에서 발견).
+private fun isScheduledOn(routine: Routine, date: LocalDate): Boolean = RoutineEngine.isScheduledOn(routine, date)
 
 /**
  * 루틴앱 v1(47~48차 설계, DECISIONS.md 참고) 메인 화면 — 데스크탑판과 대칭. "오늘"(체크리스트, 시간대
@@ -490,8 +490,12 @@ private fun RoutineRow(
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                 )
-                routine.timeSlot?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 134차: 요일 반복이 아닌 루틴(며칠마다 · 매월 날짜)은 목록에서도 주기를 알 수 있게 함께 보여준다.
+                val repeatLabel = if (routine.repeatMode == RoutineRepeat.MODE_WEEKLY) null
+                else RoutineRepeat.describe(routine.repeatMode, routine.daysMask, routine.repeatIntervalDays, routine.repeatMonthDaysCsv)
+                val subtitle = listOfNotNull(routine.timeSlot, repeatLabel).joinToString(" · ")
+                if (subtitle.isNotEmpty()) {
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             if (onMoveUp != null || onMoveDown != null) {

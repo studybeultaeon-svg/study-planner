@@ -58,6 +58,7 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                     if (AppPreferences(appContext).studyAlertEnabled) {
                         RoutineAlarmScheduler.scheduleStudyAlertCheck(appContext)
                     }
+                    RoutineAlarmScheduler.scheduleNotificationDigest(appContext)
                 }
             }
             RoutineAlarmScheduler.ACTION_ROUTINE_REMINDER -> {
@@ -124,6 +125,11 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                 if (AppPreferences(appContext).studyAlertEnabled) {
                     RoutineAlarmScheduler.scheduleStudyAlertCheck(appContext)
                 }
+            }
+            // 알림 묶음 요약(130차) — 모아둔 알림이 없으면 postDigest가 아무것도 안 띄우고, 다음 시각은 항상 다시 예약한다.
+            RoutineAlarmScheduler.ACTION_NOTIFICATION_DIGEST -> runAsync {
+                runCatching { com.phonelock.app.service.NotificationFilter.postDigest(appContext) }
+                RoutineAlarmScheduler.scheduleNotificationDigest(appContext)
             }
         }
     }

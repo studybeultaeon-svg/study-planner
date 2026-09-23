@@ -37,7 +37,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // 120차: v41 — "루틴 모드" 기능 전체 삭제(사용자 요청) — routine_mode 테이블 drop + routine.modeId
     // 컬럼 제거. SQLite는 컬럼 삭제를 직접 지원하지 않아(구버전 호환) 새 테이블 생성 후 복사하는 방식으로
     // 처리한다(MIGRATION_40_41 참고).
-    version = 41,
+    version = 42,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -184,6 +184,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** 134차: 루틴 반복 규칙 확장(요일마다 → N일마다 · 매월 특정 날짜). 기존 루틴은 전부 기본값
+         *  ("WEEKLY")이라 그대로 요일 반복으로 동작한다. */
+        private val MIGRATION_41_42 = object : Migration(41, 42) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE routine ADD COLUMN repeatMode TEXT NOT NULL DEFAULT 'WEEKLY'")
+                db.execSQL("ALTER TABLE routine ADD COLUMN repeatIntervalDays INTEGER NOT NULL DEFAULT 3")
+                db.execSQL("ALTER TABLE routine ADD COLUMN repeatMonthDaysCsv TEXT NOT NULL DEFAULT '1'")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -193,7 +203,7 @@ abstract class AppDatabase : RoomDatabase() {
                 ).addMigrations(
                     MIGRATION_27_28, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
                     MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38,
-                    MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41
+                    MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42
                 )
                     .fallbackToDestructiveMigration().build().also { instance = it }
             }

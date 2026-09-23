@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
@@ -60,6 +61,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.width
+import com.phonelock.app.data.getAllCalendarTasksOnce
 import androidx.compose.ui.platform.LocalContext
 import com.phonelock.app.R
 import com.phonelock.app.data.AppPreferences
@@ -125,6 +127,7 @@ private enum class SettingsCategory(val label: String, val emoji: String) {
     SOCIAL("모임", "👥"),
     DATA("데이터", "💾"),
     SYSTEM("시스템", "⚙️"),
+    HELP("도움말", "❓"),
     ADMIN("관리자 패널", "🛡️")
 }
 
@@ -184,6 +187,11 @@ fun SettingsScreen(
     var editProtectionEnabled by remember { mutableStateOf(prefs.editProtectionEnabled) }
     var editProtectionStartText by remember { mutableStateOf(prefs.editProtectionStartHour.toString()) }
     var editProtectionEndText by remember { mutableStateOf(prefs.editProtectionEndHour.toString()) }
+    // 134차: 저장된 값과 입력칸 값을 분리해서 들고 있는다 — 예전엔 글자를 칠 때마다 곧바로 저장·판정해서,
+    // 방지 시간대 밖에서 "11" → "10"으로 고치는 도중의 중간값("1" = 1~23시)이 잠깐 저장되며 그 순간
+    // 지금이 방지 시간대가 돼버렸고, 이어지는 타이핑이 확인 질문 20개에 막혔다(사용자 지적).
+    var savedProtectionStart by remember { mutableIntStateOf(prefs.editProtectionStartHour) }
+    var savedProtectionEnd by remember { mutableIntStateOf(prefs.editProtectionEndHour) }
     // 방지를 끄거나 시간대를 좁혀 "지금"이 방지 밖으로 빠지는 변경은 그 한 번으로 모든 보호를 걷어내는
     // 새 우회로라, 79차 "종료 확인 절차 끄기"와 같이 회유 멘트 20개로 게이트한다(반대로 켜거나 넓히는
     // 방향은 즉시 적용). null이 아니면 게이트 진행 중이고, 끝까지 통과해야 실제로 저장된다.
@@ -199,6 +207,8 @@ fun SettingsScreen(
         editProtectionEnabled = prefs.editProtectionEnabled
         editProtectionStartText = prefs.editProtectionStartHour.toString()
         editProtectionEndText = prefs.editProtectionEndHour.toString()
+        savedProtectionStart = prefs.editProtectionStartHour
+        savedProtectionEnd = prefs.editProtectionEndHour
     }
 
     // 저장된 값 기준으로 되돌리기(게이트 취소 시) / 실제 저장.
@@ -206,6 +216,8 @@ fun SettingsScreen(
         editProtectionEnabled = prefs.editProtectionEnabled
         editProtectionStartText = prefs.editProtectionStartHour.toString()
         editProtectionEndText = prefs.editProtectionEndHour.toString()
+        savedProtectionStart = prefs.editProtectionStartHour
+        savedProtectionEnd = prefs.editProtectionEndHour
     }
 
     fun saveProtection(enabled: Boolean, startHour: Int, endHour: Int) {
@@ -213,6 +225,11 @@ fun SettingsScreen(
         prefs.editProtectionStartHour = startHour
         prefs.editProtectionEndHour = endHour
         editProtectionEnabled = enabled
+        savedProtectionStart = startHour
+        savedProtectionEnd = endHour
+        editProtectionStartText = startHour.toString()
+        editProtectionEndText = endHour.toString()
+        // 다른 기기에도 바로 반영(설정 문서 LWW) — 방지 시간대 밖에서 바꾼 값도 그대로 동기화된다.
         repository.pushSettingsToFirebase()
     }
 
@@ -230,6 +247,39 @@ fun SettingsScreen(
             saveProtection(enabled, startHour, endHour)
         }
     }
+    // 미니멀 모드는 그냥 켜고 끄는 표시 설정이라 아무 절차 없이 바로 적용한다(131차 사용자 요청 —
+    // 130차엔 끌 때 회유 멘트 20개를 거치게 했었다). 반면 **기본 런처를 이 앱에서 다른 앱으로 되돌리는 건**
+    // 지금 걸려 있는 제한을 통째로 걷어내는 행동이라 수정·삭제 방지 시간대 안에서는 그대로 회유 멘트를
+    // 거친다. 단, 시스템 설정 > 기본 앱에서 직접 바꾸는 경로는 앱이 막을 수 없다([[BUGS.md]] 130차).
+    var minimalMode by remember { mutableStateOf(prefs.minimalMode) }
+    var pendingLauncherGate by remember { mutableStateOf(false) }
+    var pendingMinimalMessageIndex by remember { mutableIntStateOf(0) }
+    val launcherRoleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { /* 결과는 쓰지 않는다 — "지금 기본 런처" 표시는 설정에 다시 들어올 때 갱신된다 */ }
+
+    fun isEditProtectedNow(): Boolean = isEditProtectionHour(
+        prefs.editProtectionEnabled,
+        prefs.editProtectionStartHour,
+        prefs.editProtectionEndHour,
+        java.time.LocalTime.now().hour
+    )
+
+    fun applyMinimalMode(enabled: Boolean) {
+        prefs.minimalMode = enabled
+        minimalMode = enabled
+        onThemeChange(prefs.effectiveThemeMode)
+        RoutineWidgetProvider.updateAll(context)
+    }
+
+    fun openLauncherChooser() {
+        runCatching {
+            launcherRoleLauncher.launch(com.phonelock.app.ui.launcher.buildSetDefaultLauncherIntent(context))
+        }.onFailure {
+            Toast.makeText(context, "이 기기에서는 설정 > 앱 > 기본 앱에서 홈 앱을 바꿔주세요", Toast.LENGTH_LONG).show()
+        }
+    }
+
     var loginId by remember { mutableStateOf(AuthManager.currentLoginId) }
     var showRestoreConfirmDialog by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
@@ -260,6 +310,7 @@ fun SettingsScreen(
             SettingsCategory.SOCIAL.takeIf { prefs.permSocial },
             SettingsCategory.DATA,
             SettingsCategory.SYSTEM,
+            SettingsCategory.HELP,
             SettingsCategory.ADMIN.takeIf { isAdmin }
         )
     }
@@ -388,6 +439,39 @@ fun SettingsScreen(
                                 pendingProtectionMessageIndex = 0
                             } else {
                                 pendingProtectionMessageIndex++
+                            }
+                        }
+                    )
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    if (pendingLauncherGate) {
+        val isLast = pendingMinimalMessageIndex == PERSUASION_MESSAGES.lastIndex
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("기본 런처를 다시 고르려 합니다") },
+            text = {
+                Column {
+                    PersuasionStepper(
+                        stepKey = "launcher_change",
+                        messageIndex = pendingMinimalMessageIndex,
+                        headerText = "(%d/%d)".format(pendingMinimalMessageIndex + 1, PERSUASION_MESSAGES.size),
+                        message = PERSUASION_MESSAGES[pendingMinimalMessageIndex],
+                        confirmLabel = if (isLast) "진행" else "예",
+                        onCancel = {
+                            pendingLauncherGate = false
+                            pendingMinimalMessageIndex = 0
+                        },
+                        onConfirmStep = {
+                            if (isLast) {
+                                openLauncherChooser()
+                                pendingLauncherGate = false
+                                pendingMinimalMessageIndex = 0
+                            } else {
+                                pendingMinimalMessageIndex++
                             }
                         }
                     )
@@ -862,6 +946,322 @@ fun SettingsScreen(
                             }
                         }
                     }
+
+                    Spacer(Modifier.height(Spacing.md))
+                    SectionCard("미니멀 모드") {
+                        ToggleRow(
+                            title = "미니멀 모드",
+                            description = "앱 전체를 흑백으로 바꾸고, 홈의 움직이는 식물 대신 요약 카드만 보여주며, 탭에서 이모지를 뺍니다. " +
+                                "위에서 고른 테마는 그대로 남아 있어 끄면 바로 돌아옵니다.",
+                            checked = minimalMode,
+                            onCheckedChange = { checked -> applyMinimalMode(checked) }
+                        )
+                    }
+
+                    Spacer(Modifier.height(Spacing.md))
+                    SectionCard("미니멀 런처") {
+                        val isDefaultLauncher = com.phonelock.app.ui.launcher.isDefaultLauncher(context)
+                        var hiddenPackages by remember { mutableStateOf(prefs.launcherHiddenPackages) }
+
+                        Text(
+                            "기본 런처로 지정하면 홈 버튼을 눌렀을 때 아이콘 없는 텍스트 홈 화면이 뜹니다. " +
+                                "그 홈에는 레벨·먼저 할 루틴·공부 시간·먼저 할 일정 요약과 아래에서 고른 디데이, " +
+                                "그리고 앱 탭 5개(홈/루틴/공부/규칙/모임) 바로가기가 함께 올라옵니다. " +
+                                "즐겨찾기(최대 ${com.phonelock.app.ui.launcher.LAUNCHER_FAVORITE_MAX}개)와 앱 이름 바꾸기/숨기기는 " +
+                                "런처의 \"모든 앱\"에서 앱을 길게 눌러 설정합니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(
+                            "지금 기본 런처: " +
+                                if (isDefaultLauncher) "갓생살기종합세트"
+                                else (com.phonelock.app.ui.launcher.currentLauncherLabel(context) ?: "선택 안 함"),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        Button(onClick = {
+                            // 이 앱이 이미 기본 런처인 상태에서 다시 고르는 건 "런처에서 빠져나가는" 행동이라
+                            // 방지 시간대 안에서는 회유 절차를 거친다. 아직 기본이 아니면 바로 연다.
+                            if (isDefaultLauncher && isEditProtectedNow()) {
+                                pendingLauncherGate = true
+                                pendingMinimalMessageIndex = 0
+                            } else {
+                                openLauncherChooser()
+                            }
+                        }) {
+                            Text(if (isDefaultLauncher) "기본 런처 다시 고르기" else "기본 런처로 지정")
+                        }
+                        if (isDefaultLauncher) {
+                            Spacer(Modifier.height(Spacing.xs))
+                            Text(
+                                "참고: 시스템 설정 > 앱 > 기본 앱에서 홈 앱을 직접 바꾸는 건 앱이 막을 수 없습니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(Modifier.height(Spacing.md))
+                        Text("숨긴 앱 (${hiddenPackages.size}개)", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(Spacing.xs))
+                        if (hiddenPackages.isEmpty()) {
+                            Text(
+                                "없음",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Text(
+                                "눌러서 다시 보이게 합니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.xs))
+                            androidx.compose.foundation.layout.FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                            ) {
+                                hiddenPackages.sorted().forEach { packageName ->
+                                    val label = remember(packageName) {
+                                        runCatching {
+                                            val pm = context.packageManager
+                                            pm.getApplicationInfo(packageName, 0).loadLabel(pm).toString()
+                                        }.getOrDefault(packageName)
+                                    }
+                                    FilterChip(
+                                        selected = true,
+                                        onClick = {
+                                            val next = hiddenPackages - packageName
+                                            hiddenPackages = next
+                                            prefs.launcherHiddenPackages = next
+                                        },
+                                        label = { Text("$label ✕") }
+                                    )
+                                }
+                            }
+                        }
+
+                        // 홈 화면 디데이(133차, 사용자 요청) — 후보를 여러 개 만들어두고 그중 하나만 홈에 띄운다.
+                        // 캘린더 일정에서 가져오면 이름/날짜를 복사해 담는다(가져온 뒤엔 일정이 바뀌거나
+                        // 지워져도 디데이는 그대로 남는다 — 홈 화면 표시가 일정 관리에 끌려다니지 않게).
+                        var ddays by remember {
+                            mutableStateOf(com.phonelock.app.ui.launcher.parseLauncherDdays(prefs.launcherDdaysText))
+                        }
+                        var pinnedDdayId by remember { mutableStateOf(prefs.launcherPinnedDdayId) }
+                        var showDdayAdd by remember { mutableStateOf(false) }
+                        var ddayName by remember { mutableStateOf("") }
+                        var ddayDate by remember { mutableStateOf("") }
+                        var showDdayCalendarPick by remember { mutableStateOf(false) }
+                        var ddayCalendarPicks by remember {
+                            mutableStateOf<List<com.phonelock.app.data.CalendarTask>>(emptyList())
+                        }
+
+                        fun saveDdays(next: List<com.phonelock.app.ui.launcher.LauncherDday>) {
+                            ddays = next
+                            prefs.launcherDdaysText = com.phonelock.app.ui.launcher.launcherDdaysToText(next)
+                        }
+
+                        fun addDday(name: String, date: String) {
+                            val item = com.phonelock.app.ui.launcher.LauncherDday(
+                                id = "dday_" + System.currentTimeMillis(),
+                                name = name.trim(),
+                                date = date.trim()
+                            )
+                            saveDdays(ddays + item)
+                            // 첫 후보는 곧바로 홈에 띄운다 — 만들었는데 아무 일도 안 일어나면 왜 안 뜨는지 알기 어렵다.
+                            if (pinnedDdayId == null) {
+                                pinnedDdayId = item.id
+                                prefs.launcherPinnedDdayId = item.id
+                            }
+                        }
+
+                        Spacer(Modifier.height(Spacing.md))
+                        Text("홈 화면 디데이 (" + ddays.size + "개)", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text(
+                            "후보를 여러 개 만들어두고 그중 하나만 런처 홈 화면에 뜹니다. " +
+                                "칩을 누르면 홈에 띄울 디데이가 되고, 다시 누르면 홈에서 내려갑니다. 뒤의 ✕는 후보를 지웁니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(Spacing.xs))
+                        if (ddays.isEmpty()) {
+                            Text(
+                                "없음",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            androidx.compose.foundation.layout.FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                            ) {
+                                ddays.forEach { dday ->
+                                    FilterChip(
+                                        selected = dday.id == pinnedDdayId,
+                                        onClick = {
+                                            val next = if (dday.id == pinnedDdayId) null else dday.id
+                                            pinnedDdayId = next
+                                            prefs.launcherPinnedDdayId = next
+                                        },
+                                        label = { Text(dday.name + " · " + dday.date) },
+                                        trailingIcon = {
+                                            Text("✕", modifier = Modifier.clickable {
+                                                saveDdays(ddays.filterNot { it.id == dday.id })
+                                                if (pinnedDdayId == dday.id) {
+                                                    pinnedDdayId = null
+                                                    prefs.launcherPinnedDdayId = null
+                                                }
+                                            })
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(Spacing.sm))
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            OutlinedButton(onClick = { ddayName = ""; ddayDate = ""; showDdayAdd = true }) {
+                                Text("직접 추가")
+                            }
+                            OutlinedButton(onClick = {
+                                scope.launch {
+                                    val todayKey = java.time.LocalDate.now().toString()
+                                    ddayCalendarPicks = runCatching {
+                                        repository.getAllCalendarTasksOnce()
+                                            .filter { it.dateKey >= todayKey }
+                                            .sortedWith(compareBy({ it.dateKey }, { it.sortOrder }))
+                                            .take(30)
+                                    }.getOrDefault(emptyList())
+                                    showDdayCalendarPick = true
+                                }
+                            }) { Text("캘린더에서 가져오기") }
+                        }
+
+                        if (showDdayAdd) {
+                            AlertDialog(
+                                onDismissRequest = { showDdayAdd = false },
+                                title = { Text("디데이 추가") },
+                                text = {
+                                    Column {
+                                        OutlinedTextField(
+                                            value = ddayName,
+                                            onValueChange = { ddayName = it },
+                                            label = { Text("이름") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        Spacer(Modifier.height(Spacing.sm))
+                                        com.phonelock.app.ui.components.DatePickerField(
+                                            value = ddayDate,
+                                            onValueChange = { ddayDate = it },
+                                            label = "날짜"
+                                        )
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(
+                                        enabled = ddayName.isNotBlank() && ddayDate.isNotBlank(),
+                                        onClick = { addDday(ddayName, ddayDate); showDdayAdd = false }
+                                    ) { Text("추가") }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showDdayAdd = false }) { Text("취소") }
+                                }
+                            )
+                        }
+
+                        if (showDdayCalendarPick) {
+                            AlertDialog(
+                                onDismissRequest = { showDdayCalendarPick = false },
+                                title = { Text("캘린더에서 가져오기") },
+                                text = {
+                                    if (ddayCalendarPicks.isEmpty()) {
+                                        Text(
+                                            "오늘 이후로 등록된 캘린더 일정이 없습니다. 아래 \"직접 추가\"로 날짜를 고르세요.",
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    } else {
+                                        Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                                            ddayCalendarPicks.forEach { task ->
+                                                Text(
+                                                    task.dateKey + " · " + task.name,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                        .clickable {
+                                                            addDday(task.name, task.dateKey)
+                                                            showDdayCalendarPick = false
+                                                        }
+                                                        .padding(vertical = Spacing.sm)
+                                                )
+                                            }
+                                        }
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = { showDdayCalendarPick = false }) { Text("닫기") }
+                                }
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(Spacing.md))
+                    SectionCard("알림 필터 · 묶음 요약") {
+                        var digestTimesText by remember { mutableStateOf(prefs.notificationDigestTimesCsv) }
+                        val hasNotificationAccess =
+                            com.phonelock.app.service.BackgroundMediaGuard.hasSessionAccess(context)
+
+                        Text(
+                            "고른 앱의 알림은 뜨는 즉시 사라지고, 아래 시각에 \"읽지 않은 알림 N건\" 한 줄로 한 번에 옵니다. " +
+                                "전화·문자·알람과 진행 중인 알림(음악 재생 등)은 골라도 거르지 않습니다. " +
+                                "지운 알림은 되돌릴 수 없어 제목만 요약에 담기니, 중요한 앱은 고르지 마세요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (!hasNotificationAccess) {
+                            Spacer(Modifier.height(Spacing.sm))
+                            Text(
+                                "알림 접근 권한이 꺼져 있어 지금은 동작하지 않습니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(Modifier.height(Spacing.xs))
+                            OutlinedButton(onClick = {
+                                com.phonelock.app.service.BackgroundMediaGuard.openAccessSettings(context)
+                            }) { Text("알림 접근 설정 열기") }
+                        }
+
+                        Spacer(Modifier.height(Spacing.sm))
+                        OutlinedTextField(
+                            value = digestTimesText,
+                            onValueChange = { text ->
+                                digestTimesText = text
+                                prefs.notificationDigestTimesCsv = text
+                                RoutineAlarmScheduler.scheduleNotificationDigest(context)
+                            },
+                            label = { Text("요약 시각 (쉼표로 구분, 예: 12:30, 18:30)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        val parsedTimes = com.phonelock.app.service.parseDigestTimes(digestTimesText)
+                        Text(
+                            if (parsedTimes.isEmpty()) "시각을 하나도 못 읽어서 요약이 발송되지 않습니다."
+                            else "적용됨: " + parsedTimes.joinToString(", ") { "%02d:%02d".format(it.hour, it.minute) },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (parsedTimes.isEmpty()) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text("알림을 거를 앱", style = MaterialTheme.typography.titleSmall)
+                        AppMultiSelectPicker(
+                            initialSelection = prefs.notificationFilterPackages,
+                            onChange = { selected ->
+                                prefs.notificationFilterPackages = selected
+                                RoutineAlarmScheduler.scheduleNotificationDigest(context)
+                            },
+                            searchLabel = "앱 검색 (고른 앱만 걸러집니다)"
+                        )
+                    }
                 }
 
                 SettingsCategory.RULES -> {
@@ -902,40 +1302,50 @@ fun SettingsScreen(
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                             OutlinedTextField(
                                 value = editProtectionStartText,
-                                onValueChange = { text ->
-                                    editProtectionStartText = text
-                                    val start = text.toIntOrNull() ?: return@OutlinedTextField
-                                    if (start !in 0..23) return@OutlinedTextField
-                                    requestProtection(
-                                        editProtectionEnabled,
-                                        start,
-                                        editProtectionEndText.toIntOrNull() ?: prefs.editProtectionEndHour
-                                    )
-                                },
+                                onValueChange = { text -> editProtectionStartText = text.filter { it.isDigit() }.take(2) },
                                 label = { Text("시작 (0~23시)") },
                                 modifier = Modifier.weight(1f)
                             )
                             OutlinedTextField(
                                 value = editProtectionEndText,
-                                onValueChange = { text ->
-                                    editProtectionEndText = text
-                                    val end = text.toIntOrNull() ?: return@OutlinedTextField
-                                    if (end !in 0..23) return@OutlinedTextField
-                                    requestProtection(
-                                        editProtectionEnabled,
-                                        editProtectionStartText.toIntOrNull() ?: prefs.editProtectionStartHour,
-                                        end
-                                    )
-                                },
+                                onValueChange = { text -> editProtectionEndText = text.filter { it.isDigit() }.take(2) },
                                 label = { Text("끝 (0~23시)") },
                                 modifier = Modifier.weight(1f)
                             )
                         }
+                        // 입력칸은 값만 담아두고, 아래 버튼을 눌러야 저장·판정한다(타이핑 중간값으로 잠기지 않게).
+                        val typedStart = editProtectionStartText.toIntOrNull()
+                        val typedEnd = editProtectionEndText.toIntOrNull()
+                        val rangeValid = typedStart in 0..23 && typedEnd in 0..23
+                        val rangeChanged = rangeValid && (typedStart != savedProtectionStart || typedEnd != savedProtectionEnd)
+                        Spacer(Modifier.height(Spacing.xs))
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                enabled = rangeChanged,
+                                onClick = { requestProtection(editProtectionEnabled, typedStart!!, typedEnd!!) }
+                            ) { Text("시간대 적용") }
+                            if (rangeChanged) {
+                                TextButton(onClick = { revertProtectionFields() }) { Text("되돌리기") }
+                            } else if (!rangeValid) {
+                                Text("0~23 사이 숫자를 넣어주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                        Spacer(Modifier.height(Spacing.xs))
+                        val protectedNow = isEditProtectionHour(
+                            editProtectionEnabled, savedProtectionStart, savedProtectionEnd, java.time.LocalTime.now().hour
+                        )
                         Text(
-                            "이 시간대 안에서는 지금 차단 중인 규칙을 약하게 바꾸거나 지우거나 끄려면 확인 질문 " +
-                                "${PERSUASION_MESSAGES.size}개를 통과해야 합니다. 시간대 밖에서는 바로 적용됩니다. " +
-                                "끝 시각은 포함하지 않으며(예: 11~23이면 23시부터 자유), 시작과 끝이 같으면 하루 종일 적용됩니다. " +
-                                "방지를 끄거나 시간대를 좁혀 지금이 빠지게 하는 변경은 그 자체가 확인 질문을 거칩니다.",
+                            if (protectedNow) {
+                                "지금은 방지 시간대(${savedProtectionStart}시~${savedProtectionEnd}시)입니다 — 지금 차단 중인 규칙을 약하게 바꾸거나 지우거나 끄려면 확인 질문 ${PERSUASION_MESSAGES.size}개를 통과해야 합니다."
+                            } else {
+                                "지금은 방지 시간대가 아닙니다 — 차단 규칙도, 이 방지 설정도 확인 질문 없이 바로 수정되고 다른 기기에도 그대로 동기화됩니다."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (protectedNow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "끝 시각은 포함하지 않으며(예: 11~23이면 23시부터 자유), 시작과 끝이 같으면 하루 종일 적용됩니다. " +
+                                "방지 시간대 안에서 방지를 끄거나 시간대를 좁혀 지금이 빠지게 하는 변경은 그 자체가 확인 질문을 거칩니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1116,7 +1526,7 @@ fun SettingsScreen(
                             )
                             ToggleRow(
                                 title = "일정 지연 알림",
-                                description = "마감이 지났거나, 지금 페이스면 목표 일정을 못 맞출 때.",
+                                description = "마감이 지났거나, 요일별 목표대로 해도 마감까지 다 못 끝낼 때(하루치 이상 모자랄 때만).",
                                 checked = studyAlertSchedule,
                                 onCheckedChange = { checked ->
                                     studyAlertSchedule = checked
@@ -1290,40 +1700,6 @@ fun SettingsScreen(
                     }
                     Spacer(Modifier.height(Spacing.md))
 
-                    SectionCard("자동 백업 (Firebase)") {
-                        var cloudBackupEnabled by remember { mutableStateOf(prefs.cloudBackupEnabled) }
-                        ToggleRow(
-                            title = "매일 자동으로 클라우드에 백업",
-                            checked = cloudBackupEnabled,
-                            onCheckedChange = { checked -> cloudBackupEnabled = checked; prefs.cloudBackupEnabled = checked }
-                        )
-                        Text(
-                            "로그인이 필요하며, Firebase 콘솔에서 Storage를 먼저 활성화해야 동작합니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (prefs.lastCloudBackupResult.isNotBlank()) {
-                            Spacer(Modifier.height(Spacing.xs))
-                            Text(
-                                "마지막 결과(${prefs.lastCloudBackupDate}): ${prefs.lastCloudBackupResult}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (prefs.lastCloudBackupResult.startsWith("성공")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                            )
-                        }
-                        Spacer(Modifier.height(Spacing.sm))
-                        OutlinedButton(onClick = {
-                            scope.launch {
-                                val json = repository.exportBackupJson()
-                                val result = com.phonelock.app.service.CloudBackupClient.uploadBackup(prefs.fbDatabaseUrl, json)
-                                Toast.makeText(
-                                    context,
-                                    if (result.isSuccess) "백업 업로드 완료" else "백업 실패: ${result.exceptionOrNull()?.message}",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }) { Text("지금 클라우드에 백업") }
-                    }
-                    Spacer(Modifier.height(Spacing.md))
 
                     SectionCard("오래된 사용 기록 정리") {
                         var lastResult by remember { mutableStateOf<Int?>(null) }
@@ -1472,6 +1848,21 @@ fun SettingsScreen(
                             }
                         }
                     }
+                }
+
+                SettingsCategory.HELP -> {
+                    // 도움말 본문은 shared/HelpContent.kt(데스크탑과 공유), 그리기는 HelpScreen.kt.
+                    // 관리자가 꺼둔 기능 영역의 주제는 숨긴다(설정 카테고리를 숨기는 것과 같은 기준).
+                    HelpCenter(
+                        visibleAreas = buildSet {
+                            add(com.phonelock.shared.HelpContent.Area.GENERAL)
+                            if (prefs.permPlant) add(com.phonelock.shared.HelpContent.Area.HOME)
+                            if (prefs.permRoutine) add(com.phonelock.shared.HelpContent.Area.ROUTINE)
+                            if (prefs.permStudy) add(com.phonelock.shared.HelpContent.Area.STUDY)
+                            if (prefs.permManage) add(com.phonelock.shared.HelpContent.Area.RULES)
+                            if (prefs.permSocial) add(com.phonelock.shared.HelpContent.Area.SOCIAL)
+                        }
+                    )
                 }
 
                 SettingsCategory.ADMIN -> {

@@ -1,6 +1,13 @@
 package com.phonelock.desktop.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import com.phonelock.shared.routine.RoutineRepeat
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,6 +56,51 @@ private fun RoutineDayMaskRow(mask: Int, onMaskChange: (Int) -> Unit) {
     }
 }
 
+/** 매월 반복에서 쓰는 1~31일 + "말일" 고르기(안드로이드판과 대칭) — 좁은 다이얼로그라 작은 정사각형 칸으로 그린다. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun MonthDayPicker(selected: Set<String>, onToggle: (String) -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        (1..31).forEach { day ->
+            val token = day.toString()
+            val on = token in selected
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable { onToggle(token) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    token,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        val lastOn = RoutineRepeat.LAST_DAY in selected
+        Box(
+            Modifier
+                .height(30.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (lastOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                .clickable { onToggle(RoutineRepeat.LAST_DAY) }
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "말일",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (lastOn) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
 private fun isValidTimeSlot(text: String): Boolean {
     val parts = text.split(":")
     if (parts.size != 2) return false
@@ -74,6 +126,9 @@ fun RoutineEditDialog(
     var timeSlotEnabled by remember { mutableStateOf(routine?.timeSlot != null) }
     var timeSlotText by remember { mutableStateOf(routine?.timeSlot ?: "") }
     var daysMask by remember { mutableStateOf(routine?.daysMask ?: 127) }
+    var repeatMode by remember { mutableStateOf(routine?.repeatMode ?: RoutineRepeat.MODE_WEEKLY) }
+    var intervalText by remember { mutableStateOf((routine?.repeatIntervalDays ?: 3).toString()) }
+    var monthDays by remember { mutableStateOf(RoutineRepeat.parseMonthDays(routine?.repeatMonthDaysCsv ?: "1").toSet()) }
     var notifyEnabled by remember { mutableStateOf(routine?.notifyEnabled ?: false) }
     var periodEnabled by remember { mutableStateOf(routine?.startDate != null || routine?.endDate != null) }
     var startDateText by remember { mutableStateOf(routine?.startDate ?: "") }
@@ -132,8 +187,59 @@ fun RoutineEditDialog(
                 }
                 Spacer(Modifier.height(Spacing.sm))
 
-                Text("적용 요일", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                RoutineDayMaskRow(daysMask) { daysMask = it }
+                Text("반복", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row {
+                    listOf(
+                        RoutineRepeat.MODE_WEEKLY to "요일마다",
+                        RoutineRepeat.MODE_INTERVAL to "며칠마다",
+                        RoutineRepeat.MODE_MONTHLY to "매월 날짜"
+                    ).forEach { (mode, label) ->
+                        FilterChip(
+                            selected = repeatMode == mode,
+                            onClick = { repeatMode = mode },
+                            label = { Text(label) },
+                            modifier = Modifier.padding(2.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(Spacing.xs))
+                when (repeatMode) {
+                    RoutineRepeat.MODE_INTERVAL -> {
+                        OutlinedTextField(
+                            value = intervalText,
+                            onValueChange = { text -> intervalText = text.filter { it.isDigit() }.take(3) },
+                            label = { Text("며칠마다") },
+                            modifier = Modifier.width(140.dp)
+                        )
+                        Text(
+                            "기준일부터 이 간격으로 반복됩니다(기준일 = 아래 기간 설정의 시작일, 비워두면 저장할 때 오늘로 잡힙니다).",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    RoutineRepeat.MODE_MONTHLY -> {
+                        Row {
+                            TextButton(onClick = { monthDays = setOf("1") }) { Text("월초") }
+                            TextButton(onClick = { monthDays = setOf(RoutineRepeat.LAST_DAY) }) { Text("월말") }
+                            TextButton(onClick = { monthDays = setOf("1", RoutineRepeat.LAST_DAY) }) { Text("월초+월말") }
+                        }
+                        MonthDayPicker(selected = monthDays) { token ->
+                            monthDays = if (token in monthDays) monthDays - token else monthDays + token
+                        }
+                        Text(
+                            "고른 날짜마다 반복됩니다. 31일처럼 그 달에 없는 날짜는 그 달의 마지막 날에 실행됩니다.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    else -> RoutineDayMaskRow(daysMask) { daysMask = it }
+                }
+                Spacer(Modifier.height(Spacing.xs))
+                Text(
+                    "\u2192 " + RoutineRepeat.describe(repeatMode, daysMask, intervalText.toIntOrNull() ?: 3, RoutineRepeat.toMonthDaysCsv(monthDays)),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
                 Spacer(Modifier.height(Spacing.sm))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -190,7 +296,11 @@ fun RoutineEditDialog(
             TextButton(
                 onClick = {
                     val timeSlot = if (timeSlotEnabled && isValidTimeSlot(timeSlotText)) timeSlotText.trim() else null
-                    val startDate = if (periodEnabled && isValidDate(startDateText)) startDateText.trim() else null
+                    val startDateInput = if (periodEnabled && isValidDate(startDateText)) startDateText.trim() else null
+                    // "며칠마다"는 기준일이 없으면 언제 돌아오는지 알 수 없다 — 비어 있으면 오늘부터 센다.
+                    val startDate =
+                        if (repeatMode == RoutineRepeat.MODE_INTERVAL && startDateInput == null) LocalDate.now().toString()
+                        else startDateInput
                     val endDate = if (periodEnabled && isValidDate(endDateText)) endDateText.trim() else null
                     onSave(
                         (routine ?: Routine(id = 0)).copy(
@@ -198,13 +308,17 @@ fun RoutineEditDialog(
                             icon = icon.trim(),
                             timeSlot = timeSlot,
                             daysMask = daysMask,
+                            repeatMode = repeatMode,
+                            repeatIntervalDays = (intervalText.toIntOrNull() ?: 3)
+                                .coerceIn(RoutineRepeat.MIN_INTERVAL_DAYS, RoutineRepeat.MAX_INTERVAL_DAYS),
+                            repeatMonthDaysCsv = RoutineRepeat.toMonthDaysCsv(monthDays).ifBlank { "1" },
                             notifyEnabled = timeSlot != null && notifyEnabled,
                             startDate = startDate,
                             endDate = endDate
                         )
                     )
                 },
-                enabled = title.isNotBlank()
+                enabled = title.isNotBlank() && (repeatMode != RoutineRepeat.MODE_MONTHLY || monthDays.isNotEmpty())
             ) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }

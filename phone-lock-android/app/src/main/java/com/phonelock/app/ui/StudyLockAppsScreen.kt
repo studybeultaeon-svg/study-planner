@@ -80,8 +80,26 @@ fun StudyLockAppsScreen() {
  */
 @Composable
 fun AllowedAppsPickerBody(prefs: AppPreferences, modifier: Modifier = Modifier) {
+    AppMultiSelectPicker(
+        initialSelection = prefs.studyLockAllowedPackages,
+        onChange = { prefs.studyLockAllowedPackages = it },
+        modifier = modifier
+    )
+}
+
+/**
+ * 설치된 앱 중 여러 개를 고르는 공통 목록(130차에 [AllowedAppsPickerBody]에서 뽑아냄) — 어떤 설정에
+ * 저장할지는 호출부가 [onChange]로 정한다. 알림 필터(설정 > 화면)도 이 목록을 그대로 쓴다.
+ */
+@Composable
+fun AppMultiSelectPicker(
+    initialSelection: Set<String>,
+    onChange: (Set<String>) -> Unit,
+    modifier: Modifier = Modifier,
+    searchLabel: String = "앱 검색"
+) {
     val context = LocalContext.current
-    var selectedPackages by remember { mutableStateOf(prefs.studyLockAllowedPackages) }
+    var selectedPackages by remember { mutableStateOf(initialSelection) }
     var searchQuery by remember { mutableStateOf("") }
 
     val installedApps = remember { getLaunchableApps(context) }
@@ -95,7 +113,7 @@ fun AllowedAppsPickerBody(prefs: AppPreferences, modifier: Modifier = Modifier) 
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            label = { Text("앱 검색") },
+            label = { Text(searchLabel) },
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(Spacing.xs))
@@ -112,7 +130,7 @@ fun AllowedAppsPickerBody(prefs: AppPreferences, modifier: Modifier = Modifier) 
                         onCheckedChange = { checked ->
                             selectedPackages = if (checked) selectedPackages + app.packageName
                             else selectedPackages - app.packageName
-                            prefs.studyLockAllowedPackages = selectedPackages
+                            onChange(selectedPackages)
                         }
                     )
                     AppIcon(app.packageName, modifier = Modifier.size(32.dp))

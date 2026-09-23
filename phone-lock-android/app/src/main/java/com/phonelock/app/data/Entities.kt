@@ -1,5 +1,7 @@
 package com.phonelock.app.data
 
+import com.phonelock.shared.routine.RoutineRepeat
+
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.phonelock.shared.calc.PassSchedule
@@ -268,7 +270,14 @@ data class Routine(
     /** 루틴 기간 설정(52차, yyyy-MM-dd, 포함) — 둘 다 null이면 기간 제한 없음(상시). daysMask와
      *  별개로 이 범위 밖이면 "오늘" 탭 예정 목록/스트릭 집계에서 제외된다. */
     val startDate: String? = null,
-    val endDate: String? = null
+    val endDate: String? = null,
+    /** 반복 방식(134차) — "WEEKLY"(요일마다, 기존) | "INTERVAL"(N일마다) | "MONTHLY"(매월 정해진 날짜).
+     *  판정은 `shared/routine/RoutineRepeat.kt` 하나에서만 한다. */
+    val repeatMode: String = RoutineRepeat.MODE_WEEKLY,
+    /** repeatMode="INTERVAL"일 때 며칠마다인지(2~365). 기준일은 [startDate](없으면 고정 기준일). */
+    val repeatIntervalDays: Int = 3,
+    /** repeatMode="MONTHLY"일 때 실행할 날짜들("1,15,L" — L은 그 달의 마지막 날). */
+    val repeatMonthDaysCsv: String = "1"
 )
 
 /** Routine의 날짜별 완료 기록 — 존재 자체가 "그날 완료"를 의미한다(웹앱 studyLog 등과 동일하게 완료된 것만 insert). */
