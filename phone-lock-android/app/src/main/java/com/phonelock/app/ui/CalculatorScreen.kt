@@ -101,7 +101,9 @@ fun CalculatorScreen(repository: PhoneLockRepository) {
 
     val onChanged: () -> Unit = { scope.launch { tasks = repository.getCalcTasks() } }
     val onCalculate: () -> Unit = {
-        results = tasks.map { it to CalcEngine.calculate(it.toCalcInput()) }
+        // 141차: 남은 일수·필요 페이스도 "하루 시작 기준"의 오늘부터 센다(공부 알림 StudyAlertChecker와 같은 기준).
+        val today = java.time.LocalDate.parse(repository.todayCalendarDateKey())
+        results = tasks.map { it to CalcEngine.calculate(it.toCalcInput(), today) }
         subTab = 1
     }
     val onSaved: () -> Unit = { scope.launch { savedCount = repository.getCalcSaved().size } }

@@ -711,7 +711,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
             Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(Spacing.md))
             accessibilityBanner()
-            TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
+            TodaySummaryCard(today = LocalDate.parse(repository.todayCalendarDateKey()), todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
             Spacer(Modifier.height(Spacing.md))
             com.phonelock.app.ui.components.ResponsiveSplit(
                 modifier = Modifier.weight(1f),
@@ -727,7 +727,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
             Spacer(Modifier.height(Spacing.md))
             accessibilityBanner()
 
-            TodaySummaryCard(todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
+            TodaySummaryCard(today = LocalDate.parse(repository.todayCalendarDateKey()), todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
             Spacer(Modifier.height(Spacing.md))
 
             timerCardContent()
@@ -744,10 +744,10 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
  * 상단에 나란히 보여주기만 한다(전문가 종합분석 보고서 #11, 순수 UI 집계, 판정 로직과 무관, 데스크탑판과 대칭).
  */
 @Composable
-private fun TodaySummaryCard(todayTasks: List<CalendarTask>, calcTasks: List<CalcTask>, todayLogSeconds: Long) {
+private fun TodaySummaryCard(today: LocalDate, todayTasks: List<CalendarTask>, calcTasks: List<CalcTask>, todayLogSeconds: Long) {
     val doneCount = todayTasks.count { it.status == "O" }
     val totalCount = todayTasks.size
-    val todayCalcTargetTotal = calcTasks.sumOf { parseTodayCalcTarget(it) }
+    val todayCalcTargetTotal = calcTasks.sumOf { parseTodayCalcTarget(it, today) }
     SectionCard("📌 오늘 한눈에") {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TodaySummaryStat("캘린더 일정", "${totalCount}개(완료 $doneCount)")
@@ -767,8 +767,8 @@ private fun TodaySummaryStat(label: String, value: String) {
 }
 
 /** 오늘 요일에 해당하는 계산기 업무의 목표량(mon~sun 중 하나)을 숫자로 파싱, 비어있거나 잘못된 값은 0. */
-private fun parseTodayCalcTarget(task: CalcTask): Double {
-    val jsDow = LocalDate.now().dayOfWeek.value % 7 // java DayOfWeek: 월=1..일=7 -> js식 일=0..토=6로 변환
+private fun parseTodayCalcTarget(task: CalcTask, today: LocalDate): Double {
+    val jsDow = today.dayOfWeek.value % 7 // java DayOfWeek: 월=1..일=7 -> js식 일=0..토=6로 변환
     val raw = when (jsDow) {
         0 -> task.sun; 1 -> task.mon; 2 -> task.tue; 3 -> task.wed
         4 -> task.thu; 5 -> task.fri; else -> task.sat
@@ -971,7 +971,7 @@ private fun WeekBarChart(days: List<Pair<LocalDate, Long>>) {
     ) {
         days.forEach { (date, seconds) ->
             val fraction = (seconds.toFloat() / maxSeconds.toFloat()).coerceIn(0f, 1f)
-            val isToday = date == LocalDate.now()
+            val isToday = date == days.last().first // 마지막 칸이 "하루 시작 기준"의 오늘(refreshStreakAndWeek)
             Column(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 horizontalAlignment = Alignment.CenterHorizontally,

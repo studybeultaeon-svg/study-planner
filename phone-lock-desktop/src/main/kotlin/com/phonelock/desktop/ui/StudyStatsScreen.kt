@@ -81,7 +81,8 @@ fun StudyStatsScreen(repository: Repository) {
         return
     }
 
-    val today = LocalDate.now()
+    // 141차: 캘린더와 같은 "하루 시작 기준"의 오늘(dailyResetHour).
+    val today = LocalDate.parse(repository.todayCalendarDateKey())
     val byDate = allTasks.groupBy { it.dateKey }
 
     // 51차: 전체 누적이 아니라 오늘 하루 일정 기준으로 바꿈(사용자 요청).

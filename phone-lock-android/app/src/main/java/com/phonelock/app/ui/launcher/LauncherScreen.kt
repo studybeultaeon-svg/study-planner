@@ -702,18 +702,20 @@ private suspend fun loadGodsaengStatus(context: Context): LauncherStatus = withC
         lines += LauncherStatusLine("⏱️", "오늘 공부 ${formatStudySeconds(seconds)}")
     }
     runCatching {
+        // 141차: 일정의 "오늘"은 루틴(자정)과 달리 "하루 시작 기준" — 캘린더 화면과 같은 날을 보여준다.
+        val calendarDateKey = repository.todayCalendarDateKey()
         val all = repository.getAllCalendarTasksOnce()
-        val todays = todayCalendarTasks(all, dateKey)
+        val todays = todayCalendarTasks(all, calendarDateKey)
         if (todays.isNotEmpty()) {
             val done = todays.count { it.status == CALENDAR_DONE }
             val next = todays.firstOrNull { it.status != CALENDAR_DONE }
             lines += LauncherStatusLine("📅", "${next?.name ?: "오늘 일정 완료"} $done/${todays.size}")
         } else {
             // 오늘 일정이 아예 없을 때만 예전처럼 "가장 가까운 다음 일정"을 D-day로 알려준다.
-            all.filter { it.status != CALENDAR_DONE && it.dateKey > dateKey }
+            all.filter { it.status != CALENDAR_DONE && it.dateKey > calendarDateKey }
                 .minByOrNull { it.dateKey }
                 ?.let { task ->
-                    val days = ChronoUnit.DAYS.between(today, LocalDate.parse(task.dateKey))
+                    val days = ChronoUnit.DAYS.between(LocalDate.parse(calendarDateKey), LocalDate.parse(task.dateKey))
                     lines += LauncherStatusLine("📅", "${task.name} D-$days")
                 }
         }

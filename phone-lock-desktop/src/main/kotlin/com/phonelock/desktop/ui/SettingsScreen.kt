@@ -429,7 +429,7 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        "이 시각에 앱의 \"오늘\"이 바뀝니다 — 차단 규칙의 오늘 사용 시간·잠깐 풀기 횟수, 캘린더·공부 기록의 오늘이 이 시각부터 새로 시작돼요. 루틴은 이 설정과 상관없이 자정 기준이에요.\n$alsoIn",
+                        "이 시각에 앱의 \"오늘\"이 바뀝니다 — 차단 규칙의 오늘 사용 시간·잠깐 풀기 횟수, 캘린더·일정표·공부 기록의 오늘이 이 시각부터 새로 시작돼요. 루틴은 이 설정과 상관없이 자정 기준이에요.\n$alsoIn",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

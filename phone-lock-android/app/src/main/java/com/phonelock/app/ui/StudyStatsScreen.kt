@@ -68,12 +68,12 @@ fun StudyStatsScreen(repository: PhoneLockRepository) {
 
     // 당겨서 새로고침 추가(사용자 요청, 98차 6개 화면과 같은 패턴).
     com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = { load() }) {
-        StudyStatsContent(allTasks, allStudyLog)
+        StudyStatsContent(allTasks, allStudyLog, LocalDate.parse(repository.todayCalendarDateKey()))
     }
 }
 
 @Composable
-private fun StudyStatsContent(allTasks: List<CalendarTask>, allStudyLog: List<com.phonelock.app.data.StudyLogEntry>) {
+private fun StudyStatsContent(allTasks: List<CalendarTask>, allStudyLog: List<com.phonelock.app.data.StudyLogEntry>, today: LocalDate) {
     if (allTasks.isEmpty()) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text(
@@ -86,7 +86,6 @@ private fun StudyStatsContent(allTasks: List<CalendarTask>, allStudyLog: List<co
         return
     }
 
-    val today = LocalDate.now()
     val byDate = allTasks.groupBy { it.dateKey }
 
     // 51차: 전체 누적이 아니라 오늘 하루 일정 기준으로 바꿈(사용자 요청, 데스크탑판과 대칭).

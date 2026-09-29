@@ -87,7 +87,8 @@ fun TimetableScreen(repository: Repository) {
 
     LaunchedEffect(Unit) { refresh() }
 
-    val today = LocalDate.now()
+    // 141차: 캘린더·타이머와 같은 "하루 시작 기준"의 오늘(자정이 아니라 dailyResetHour에 날짜가 바뀐다).
+    val today = LocalDate.parse(repository.todayCalendarDateKey())
     val currentSunday = today.minusDays(today.dayOfWeek.value.toLong() % 7)
     val sunday = currentSunday.plusWeeks(weekOffset.toLong())
     val weekDates = (0..6).map { sunday.plusDays(it.toLong()) }

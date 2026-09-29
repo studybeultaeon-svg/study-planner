@@ -956,6 +956,8 @@ private suspend fun loadHomeTodaySummary(repository: PhoneLockRepository): HomeT
     val routines = repository.getAllRoutines()
     val completedByRoutine = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
     val scheduledToday = routines.filter { RoutineEngine.isScheduledOn(it, today) }
+    // 141차: 일정의 "오늘"은 루틴(자정)과 달리 "하루 시작 기준" — 캘린더 화면과 같은 날을 D-day로 센다.
+    val calendarTodayKey = repository.todayCalendarDateKey()
     HomeTodaySummary(
         routineStreak = RoutineEngine.currentStreak(routines, completedByRoutine, today),
         routineDoneToday = scheduledToday.count { dateKey in (completedByRoutine[it.id] ?: emptySet()) },
@@ -968,10 +970,10 @@ private suspend fun loadHomeTodaySummary(repository: PhoneLockRepository): HomeT
         },
         studySecondsToday = repository.getTodayStudyLog().sumOf { it.seconds },
         nextCalendarEvent = repository.getAllCalendarTasksOnce()
-            .filter { it.status != "O" && it.dateKey >= dateKey }
+            .filter { it.status != "O" && it.dateKey >= calendarTodayKey }
             .minByOrNull { it.dateKey }
             ?.let { task ->
-                val days = java.time.temporal.ChronoUnit.DAYS.between(today, java.time.LocalDate.parse(task.dateKey))
+                val days = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.parse(calendarTodayKey), java.time.LocalDate.parse(task.dateKey))
                 task.name to (if (days == 0L) "D-day" else "D-$days")
             }
     )

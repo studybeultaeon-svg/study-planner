@@ -114,8 +114,10 @@ internal fun TaskChip(task: CalendarTask, modifier: Modifier = Modifier) =
  */
 @Composable
 fun CalendarScreen(repository: Repository) {
-    var year by remember { mutableStateOf(LocalDate.now().year) }
-    var month by remember { mutableStateOf(LocalDate.now().monthValue - 1) }
+    // 141차: "오늘"은 달력 날짜가 아니라 "하루 시작 기준"(dailyResetHour) — 타이머·공부 기록과 같은 날을 가리킨다.
+    val today = LocalDate.parse(repository.todayCalendarDateKey())
+    var year by remember { mutableStateOf(today.year) }
+    var month by remember { mutableStateOf(today.monthValue - 1) }
     var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
     var monthTasks by remember { mutableStateOf<List<CalendarTask>>(emptyList()) }
     var dayRefreshTick by remember { mutableStateOf(0) }
@@ -189,7 +191,6 @@ fun CalendarScreen(repository: Repository) {
                 val firstDow = firstOfMonth.dayOfWeek.value % 7
                 val daysInMonth = firstOfMonth.lengthOfMonth()
                 val rows = (firstDow + daysInMonth + 6) / 7
-                val today = LocalDate.now()
                 val tasksByDate = monthTasks.groupBy { it.dateKey }
 
                 // 그리드 영역이 남는 세로 공간을 다 차지하도록(웹앱 .calendar-grid도 flex:1) 행마다

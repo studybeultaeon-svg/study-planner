@@ -146,7 +146,11 @@ fun CalculatorScreen(repository: Repository) {
                                 repository = repository,
                                 tasks = tasks,
                                 onChanged = { refreshTasks() },
-                                onCalculate = { results = tasks.map { it to CalcEngine.calculate(it.toCalcInput()) } }
+                                // 141차: 남은 일수·필요 페이스도 "하루 시작 기준"의 오늘부터 센다(공부 알림과 같은 기준).
+                                onCalculate = {
+                                    val today = java.time.LocalDate.parse(repository.todayCalendarDateKey())
+                                    results = tasks.map { it to CalcEngine.calculate(it.toCalcInput(), today) }
+                                }
                             )
                             // 98차 버그 수정: "저장됨" 탭에서 불러오기(loadCalcSavedItemAsDraft)해도
                             // 저장됨 목록만 새로고침되고 왼쪽 "업무 입력" 탭의 draft 목록(tasks)은 안

@@ -73,7 +73,7 @@ private data class WeekTaskRow(val task: CalcTask, val start: LocalDate, val dda
 @Composable
 fun TimetableScreen(repository: PhoneLockRepository) {
     var tasks by remember { mutableStateOf<List<CalcTask>>(emptyList()) }
-    var cursor by remember { mutableStateOf(LocalDate.now()) }
+    var cursor by remember { mutableStateOf(LocalDate.parse(repository.todayCalendarDateKey())) }
 
     suspend fun load() {
         repository.syncCalculatorFromFirebase()
@@ -95,7 +95,8 @@ private fun TimetableContent(
     cursor: LocalDate,
     onCursorChange: (LocalDate) -> Unit
 ) {
-    val today = LocalDate.now()
+    // 141차: 캘린더·타이머와 같은 "하루 시작 기준"의 오늘(자정이 아니라 dailyResetHour에 날짜가 바뀐다).
+    val today = LocalDate.parse(repository.todayCalendarDateKey())
     val isToday = cursor == today
     val jsDow = cursor.dayOfWeek.value % 7
     val dateLabel = "${cursor.monthValue}월 ${cursor.dayOfMonth}일 (${WEEKDAYS_KO[jsDow]})" + if (isToday) " · 오늘" else ""

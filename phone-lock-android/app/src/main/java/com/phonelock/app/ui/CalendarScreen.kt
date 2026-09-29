@@ -92,8 +92,10 @@ private fun dowLabel(date: LocalDate): String = WEEKDAYS_KO[date.dayOfWeek.value
  */
 @Composable
 fun CalendarScreen(repository: PhoneLockRepository) {
-    var year by remember { mutableStateOf(LocalDate.now().year) }
-    var month by remember { mutableStateOf(LocalDate.now().monthValue - 1) }
+    // 141차: "오늘"은 달력 날짜가 아니라 "하루 시작 기준"(dailyResetHour) — 타이머·공부 기록과 같은 날을 가리킨다.
+    val today = LocalDate.parse(repository.todayCalendarDateKey())
+    var year by remember { mutableStateOf(today.year) }
+    var month by remember { mutableStateOf(today.monthValue - 1) }
     var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
     var monthTasks by remember { mutableStateOf<List<CalendarTask>>(emptyList()) }
     var dayRefreshTick by remember { mutableStateOf(0) }
@@ -135,7 +137,7 @@ fun CalendarScreen(repository: PhoneLockRepository) {
                 left = {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                         CalendarMonthGrid(
-                            year = year, month = month, selectedDate = selectedDate, monthTasks = monthTasks,
+                            year = year, month = month, today = today, selectedDate = selectedDate, monthTasks = monthTasks,
                             onPrevMonth = { if (month == 0) { month = 11; year-- } else month-- },
                             onNextMonth = { if (month == 11) { month = 0; year++ } else month++ },
                             onSelectDate = { selectedDate = it },
@@ -154,7 +156,7 @@ fun CalendarScreen(repository: PhoneLockRepository) {
         Spacer(Modifier.height(Spacing.md))
 
         CalendarMonthGrid(
-            year = year, month = month, selectedDate = selectedDate, monthTasks = monthTasks,
+            year = year, month = month, today = today, selectedDate = selectedDate, monthTasks = monthTasks,
             onPrevMonth = { if (month == 0) { month = 11; year-- } else month-- },
             onNextMonth = { if (month == 11) { month = 0; year++ } else month++ },
             onSelectDate = { selectedDate = it },
@@ -173,6 +175,7 @@ fun CalendarScreen(repository: PhoneLockRepository) {
 private fun CalendarMonthGrid(
     year: Int,
     month: Int,
+    today: LocalDate,
     selectedDate: LocalDate?,
     monthTasks: List<CalendarTask>,
     onPrevMonth: () -> Unit,
@@ -207,7 +210,6 @@ private fun CalendarMonthGrid(
     val firstDow = firstOfMonth.dayOfWeek.value % 7
     val daysInMonth = firstOfMonth.lengthOfMonth()
     val rows = (firstDow + daysInMonth + 6) / 7
-    val today = LocalDate.now()
     val tasksByDate = monthTasks.groupBy { it.dateKey }
 
     for (row in 0 until rows) {

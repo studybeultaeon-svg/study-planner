@@ -170,12 +170,13 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
     }
     // 118차: 다가오는 캘린더 일정 미리보기 — 완료 안 된 일정 중 오늘 이후로 가장 가까운 것 하나.
     val nextCalendarEvent = remember(refreshTick) {
-        val todayKey = java.time.LocalDate.now().toString()
+        // 141차: 일정의 "오늘"은 루틴(자정)과 달리 "하루 시작 기준" — 캘린더 화면과 같은 날을 D-day로 센다.
+        val todayKey = repository.todayCalendarDateKey()
         repository.getAllCalendarTasks()
             .filter { it.status != "O" && it.dateKey >= todayKey }
             .minByOrNull { it.dateKey }
             ?.let { task ->
-                val days = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.now(), java.time.LocalDate.parse(task.dateKey))
+                val days = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.parse(todayKey), java.time.LocalDate.parse(task.dateKey))
                 val ddayLabel = if (days == 0L) "D-day" else "D-$days"
                 task.name to ddayLabel
             }
