@@ -98,11 +98,10 @@ fun AppMultiSelectPicker(
     modifier: Modifier = Modifier,
     searchLabel: String = "앱 검색"
 ) {
-    val context = LocalContext.current
     var selectedPackages by remember { mutableStateOf(initialSelection) }
     var searchQuery by remember { mutableStateOf("") }
 
-    val installedApps = remember { getLaunchableApps(context) }
+    val installedApps = rememberLaunchableApps()
     val filteredApps = remember(installedApps, searchQuery, selectedPackages) {
         val base = if (searchQuery.isBlank()) installedApps
         else installedApps.filter { it.label.contains(searchQuery, ignoreCase = true) }
@@ -123,6 +122,10 @@ fun AppMultiSelectPicker(
         // 펼치는 방식이라 이 문제가 없었다). weight 없이 heightIn(max)만으로 고정 높이를 줘서
         // 어느 부모 안에서도 항상 뜨게 한다.
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+            // 설치 앱 목록은 IO에서 읽어오므로(rememberLaunchableApps) 첫 프레임엔 아직 비어 있다.
+            if (installedApps.isEmpty()) {
+                item { Text("앱 목록을 불러오는 중…", style = MaterialTheme.typography.bodySmall) }
+            }
             items(filteredApps, key = { it.packageName }) { app ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(

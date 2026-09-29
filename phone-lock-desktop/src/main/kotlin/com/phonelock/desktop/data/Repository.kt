@@ -90,6 +90,13 @@ class Repository {
     internal val lock = Any()
     internal var data: AppData = JsonStore.load()
 
+    /** [checkForUpdateIfNeeded] 자동 확인 주기(안드로이드판 updateCheckIntervalMs와 같은 값) — 새 빌드가
+     *  올라오면 이 주기 안에 배너가 뜨도록 짧게 잡되, GitHub 비인증 API 요청 한도(시간당 60회)는 넘지 않게. */
+    private val updateCheckIntervalMs = 15 * 60 * 1000L
+
+    /** 확인이 실패했을 때 다음 재시도까지 기다리는 시간 — 네트워크 오류 한 번에 15분을 통째로 버리지 않도록. */
+    private val updateRecheckAfterFailureMs = 60 * 1000L
+
     // 겹치는 그룹 중 "지금 실제로 제한 중인" 그룹을 우선하는 데 쓴다. LockEvaluator는 이 repository의
     // 공개 메서드만 호출하므로 지연 초기화로 만들어도 순환 문제가 없다.
     private val evaluator by lazy { com.phonelock.desktop.monitor.LockEvaluator(this) }
@@ -191,16 +198,19 @@ class Repository {
     }
 
     /**
-     * GitHub Releases(공부앱과 같은 저장소)에 새 데스크탑 설치파일이 올라왔는지 하루 1회(dailyResetHour
-     * 기준 "오늘"이 바뀔 때) 확인한다 — applyDailyGroupResetIfNeeded와 동일한 lastXxxDate 가드 패턴.
+     * GitHub Releases(공부앱과 같은 저장소)에 새 데스크탑 설치파일이 올라왔는지 [updateCheckIntervalMs]
+     * 주기로 확인한다. 135차 이전엔 하루 1회(dailyResetHour 기준)였는데, 가드 날짜를 네트워크 호출
+     * **전에** 찍는 데다 앱이 켜지면 2초 안에 그날 몫을 써버려서 — 그날 늦게 올라온 릴리스는 다음 날
+     * 초기화 시각(6시)까지 배너가 아예 안 떴다. 안드로이드는 같은 이유로 2026-09-05에 이미 시각 기반
+     * 주기로 바꿨고 데스크탑만 남아 있었다.
      * 실제 GitHub API 호출(최대 수초)은 pushUsageToFirebase 등과 같은 이유로 락 밖 백그라운드 스레드에서
      * 수행한다 — 락 안에서 하면 그동안 다른 그룹 감시 전체가 멈춘다.
      */
     fun checkForUpdateIfNeeded() {
+        val now = System.currentTimeMillis()
         val shouldCheck = synchronized(lock) {
-            val today = effectiveDate(data.dailyResetHour).toString()
-            if (data.lastUpdateCheckDate == today) return@synchronized false
-            data.lastUpdateCheckDate = today
+            if (now - data.lastUpdateCheckAtMillis < updateCheckIntervalMs) return@synchronized false
+            data.lastUpdateCheckAtMillis = now
             persist()
             true
         }
@@ -209,6 +219,7 @@ class Repository {
             val result = com.phonelock.desktop.monitor.DesktopUpdateChecker.checkLatestDesktopRelease()
             val latest = result.getOrNull()
             synchronized(lock) {
+                if (result.isSuccess) updateCheckFailureStreak = 0
                 if (latest != null && latest.buildTimestamp > com.phonelock.desktop.BuildInfo.BUILD_TIMESTAMP) {
                     data.updateAvailableBuildTimestamp = latest.buildTimestamp
                     data.updateAvailableInstallerUrl = latest.installerUrl
@@ -219,9 +230,28 @@ class Repository {
                     data.updateAvailableBuildTimestamp = 0L
                     data.updateAvailableInstallerUrl = null
                     persist()
+                } else {
+                    // 실패했으면 다음 정기 확인까지 통째로 버리지 않도록 가드를 되감는다(안드로이드판과 동일).
+                    data.lastUpdateCheckAtMillis = now - updateCheckIntervalMs + nextUpdateRetryDelayMs()
+                    persist()
                 }
             }
         }.start()
+    }
+
+    /** 연속 실패 횟수(프로세스 메모리) — 앱을 껐다 켜면 다시 짧은 간격부터 시작한다. */
+    private var updateCheckFailureStreak = 0
+
+    /**
+     * 136차: 실패 후 재시도 간격을 1분 고정에서 1→2→4→8→15분(정기 주기에서 멈춤) 지수 백오프로 바꾼다.
+     * 1분 고정 재시도는 실패가 계속되는 상황(특히 GitHub 시간당 한도 60회를 이미 넘긴 경우)에서 시간당
+     * 60번을 계속 두드려 스스로 한도를 물고 늘어진다. 첫 재시도는 그대로 1분이라 일시적 오류에서 빨리
+     * 회복하는 성질은 유지된다(안드로이드판 PhoneLockRepository와 같은 규칙).
+     */
+    private fun nextUpdateRetryDelayMs(): Long {
+        updateCheckFailureStreak = (updateCheckFailureStreak + 1).coerceAtMost(10)
+        val backoff = updateRecheckAfterFailureMs shl (updateCheckFailureStreak - 1)
+        return backoff.coerceAtMost(updateCheckIntervalMs)
     }
 
     /** 지금 실행 중인 빌드보다 새 릴리스가 있으면 그 설치파일 다운로드 URL, 없으면 null. 네트워크 호출
@@ -250,7 +280,7 @@ class Repository {
             val result = com.phonelock.desktop.monitor.DesktopUpdateChecker.checkLatestDesktopRelease()
             val latest = result.getOrNull()
             val outcome = synchronized(lock) {
-                data.lastUpdateCheckDate = effectiveDate(data.dailyResetHour).toString()
+                data.lastUpdateCheckAtMillis = System.currentTimeMillis()
                 if (latest != null && latest.buildTimestamp > com.phonelock.desktop.BuildInfo.BUILD_TIMESTAMP) {
                     data.updateAvailableBuildTimestamp = latest.buildTimestamp
                     data.updateAvailableInstallerUrl = latest.installerUrl
@@ -1062,7 +1092,7 @@ class Repository {
         data.studyLog.add(StudyLogEntry(today, taskName.ifBlank { "이름 없는 공부" }, seconds, startedAt, note, tag))
         persist()
         pushStudyLogToFirebase(today)
-        awardStudyPoints(seconds, today)
+        awardStudyPoints(seconds, today, startedAt)
     }
 
     /** 통계 탭 태그별 집계용(82차, §9). */

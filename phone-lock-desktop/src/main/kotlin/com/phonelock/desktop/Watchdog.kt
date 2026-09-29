@@ -34,6 +34,16 @@ private fun exeLauncherPath(): String? =
     ProcessHandle.current().info().command().orElse(null)
 
 /**
+ * 지금 실행 중인 app-image가 설치된 폴더(런처 exe가 들어있는 폴더 — `PhoneLockDesktop.exe` / `app` /
+ * `runtime`). 135차 자체 업데이트가 이 폴더를 통째로 새 버전으로 바꿔치기하는 데 쓴다
+ * ([com.phonelock.desktop.ui.UpdateBanner] 참고). 런처 경로를 못 구하면 null.
+ */
+fun currentAppImageDir(): File? = exeLauncherPath()?.let { File(it).parentFile }
+
+/** 지금 실행 중인 런처 exe의 절대 경로 — 업데이트 후 새 버전을 다시 띄울 때 쓴다. */
+fun currentLauncherExePath(): String? = exeLauncherPath()
+
+/**
  * 지정한 잠금 파일이 지금 이 순간 아무도 안 잡고 있는지(즉 그 프로세스가 죽어있는지) 확인한다.
  * Windows의 파일 잠금은 프로세스가 죽으면(강제종료 포함) OS가 자동으로 해제하므로,
  * 별도의 heartbeat 없이 이 잠금 상태만으로 생사를 판단할 수 있다.

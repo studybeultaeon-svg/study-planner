@@ -180,7 +180,8 @@ object AccountSyncClient {
 
     /**
      * 아이디 변경(118차) — 호출 순서는 반드시: (1) [claimUsername]으로 새 아이디 선점 성공 확인 →
-     * (2) [AuthManager.changeCustomId]로 로그인 이메일 교체 → (3) 이 함수로 profile.customId를 PATCH.
+     * (2) 아이디 로그인 조회표(`loginIds`)에 새 아이디 등록·옛 아이디 은퇴(140차부터 로그인 이메일은 바꾸지 않는다,
+     *     `AccountSecuritySection`의 changeMyId) → (3) 이 함수로 profile.customId를 PATCH.
      * `usernames/{oldId}`는 규칙상(create-only) 영구히 지울 수 없으므로 그대로 남겨둔다 — 같은 uid를
      * 계속 가리키므로 사칭 위험은 없지만, 옛 아이디로 검색해도 여전히 이 사람이 나온다.
      */

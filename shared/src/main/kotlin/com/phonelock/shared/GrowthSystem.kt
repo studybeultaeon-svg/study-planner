@@ -110,18 +110,49 @@ object GrowthSystem {
      *  다시 익숙한 수준(50 단위)으로 유지한다. */
     fun rebirthRequiredLevel(rebirthIndex: Int): Int = 50 * rebirthIndex
 
-    /** 환생 n회 완료 후 적용되는 EXP 획득 배율 — 지수 증가(`6.64^n`). 위 expRequiredForLevel의 복리율
+    /** 환생 n회 완료 후 적용되는 EXP 획득 배율 — 지수 증가(`6.32^n`). 위 expRequiredForLevel의 복리율
      *  (4%)과 짝을 이뤄 "환생 직후 이전 임계점까지는 순식간에, 그 이후 다음 임계점까지는 힘들게"를
      *  만든다 — 복리율만으로는 사이클 하나의 총 소요 시간이 계속 늘어나기만 하므로, 배율이 그만큼
      *  빠르게 따라와야 총 9개월이 유지된다(선형 배율로 억지로 맞추면 사이클 사이에 절벽이 생김,
      *  [[DECISIONS.md]] 참고 시뮬레이션). 지수 배율이라 숫자 자체는 후반 회차에서 아주 커 보이지만
-     *  (9회차 ≈2500만배) Double 정밀도 안에서 문제없이 동작하며, 사이클 사이 소요 시간은 매끄럽게
-     *  이어진다(16.9→20.7→22.6→...→36.4일). */
-    fun expMultiplier(rebirthCount: Int): Double = Math.pow(6.64, rebirthCount.toDouble())
+     *  Double 정밀도 안에서 문제없이 동작한다.
+     *
+     *  138차에 밑을 6.64 → 6.32로 낮췄다: 상점 성장 물약이 생기면서 "하루 2.5시간 공부 + 루틴·일정 성실 +
+     *  물약 성실"(하루 raw 약 231)이 설계 기준이 됐는데, 6.64 그대로면 그 경로가 7개월(210일)에 끝나 9개월 의도가
+     *  깨졌다. 6.32면 같은 경로가 약 273일(9.0개월), 물약을 전혀 안 써도 약 332일(10.9개월)로 1년 시즌 안에
+     *  들어온다. 사이클별 소요일(물약 성실): 13.1→16.9→19.3→21.6→24.3→27.2→30.5→34.2→38.3→42.9일
+     *  ([[DECISIONS.md]] 138차). 배율만 바꿨으므로 이미 쌓은 누적 EXP·레벨은 그대로다(레벨 곡선을 건드리면
+     *  지금 레벨이 깎인다). */
+    fun expMultiplier(rebirthCount: Int): Double = Math.pow(6.32, rebirthCount.toDouble())
 
     /** 현재 레벨로 환생 가능한지(완료한 환생 횟수 기준 다음 환생 요구 레벨과 비교). */
     fun canRebirth(currentLevel: Int, rebirthCount: Int): Boolean =
         currentLevel >= rebirthRequiredLevel(rebirthCount + 1)
+
+    /** 경험치 양 표기(138차) — 환생 배율이 지수라 후반엔 하루치 대기 EXP가 수십억이 돼 "+3700000000.0"처럼
+     *  카드 한 줄을 넘쳤다. 1만 미만은 소수 한 자리 그대로, 그 위는 만/억/조 단위로 줄인다(예: 3.7억). */
+    fun formatExp(value: Double): String = when {
+        value < 10_000 -> "%.1f".format(value)
+        value < 100_000_000 -> "%.1f만".format(value / 10_000)
+        value < 1_000_000_000_000.0 -> "%.1f억".format(value / 100_000_000)
+        else -> "%.1f조".format(value / 1_000_000_000_000.0)
+    }
+
+    // ---- 하루 달성 비율 적립(138차) ----
+
+    /** 그날 예정된 루틴을 전부 끝냈을 때 받는 포인트(=raw EXP) — 루틴이 몇 개든 이 안에서 나눠 가진다. */
+    const val ROUTINE_DAY_POOL = 20
+
+    /** 그날 캘린더 일정을 전부 끝냈을 때 받는 포인트(=raw EXP) — 일정이 몇 개든 이 안에서 나눠 가진다. */
+    const val CALENDAR_DAY_POOL = 10
+
+    /**
+     * 루틴/일정 완료 적립량 = 하루 몫([pool]) × 그날 달성 비율(반올림). 137차까지는 완료 1개당 5를 줘서 루틴·일정을
+     * 잘게 쪼개거나 늘리기만 해도 경험치가 끝없이 불었다(사용자 지적 — 루틴 20개면 시즌이 5.6개월로 줄어든다).
+     * 하루 몫을 고정하고 비율로 나누면 개수를 늘려도 총량은 그대로고, "오늘 계획을 얼마나 지켰나"만 남는다.
+     */
+    fun dayRatioReward(pool: Int, done: Int, total: Int): Int =
+        if (total <= 0) 0 else Math.round(pool.toDouble() * done.coerceIn(0, total) / total).toInt()
 
     // ---- 경험치 적용(108차 후속: 획득한 EXP는 즉시 반영되지 않고 누적됐다가 사용자가 "적용"할 때 반영) ----
 

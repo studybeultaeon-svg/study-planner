@@ -15,6 +15,22 @@ val keystoreProps = Properties().apply {
     }
 }
 
+// 다중 로그인(140차): google-services.json의 웹 클라이언트 ID(oauth_client, client_type 3)를 BuildConfig로 넘긴다
+// (출시용 프로젝트와 같은 방식). 비어 있으면 앱은 구글 로그인 버튼을 숨긴다 — google-services 플러그인의
+// R.string.default_web_client_id는 값이 없으면 생성되지 않아 컴파일이 깨지므로 직접 읽는다.
+val googleWebClientId: String = run {
+    val json = file("google-services.json")
+    if (!json.exists()) return@run ""
+    @Suppress("UNCHECKED_CAST")
+    val clients = (groovy.json.JsonSlurper().parse(json) as Map<String, Any?>)["client"] as? List<Map<String, Any?>>
+    @Suppress("UNCHECKED_CAST")
+    clients.orEmpty()
+        .filter { ((it["client_info"] as? Map<String, Any?>)?.get("android_client_info") as? Map<String, Any?>)?.get("package_name") == "com.phonelock.app" }
+        .flatMap { (it["oauth_client"] as? List<Map<String, Any?>>).orEmpty() }
+        .firstOrNull { it["client_type"]?.toString() == "3" }
+        ?.get("client_id")?.toString().orEmpty()
+}
+
 android {
     namespace = "com.phonelock.app"
     compileSdk = 34
@@ -26,6 +42,7 @@ android {
         // 빌드할 때마다 자동으로 증가시켜서, 기존 앱을 지우지 않고도 새 APK를 그냥 설치(업데이트)할 수 있게 한다.
         versionCode = (System.currentTimeMillis() / 1000).toInt()
         versionName = "1.0"
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
     }
 
     signingConfigs {
@@ -113,6 +130,10 @@ dependencies {
 
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
     implementation("com.google.firebase:firebase-auth")
+    // 다중 로그인(140차): 구글 로그인 — Credential Manager + Sign in with Google(출시용과 같은 버전).
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 

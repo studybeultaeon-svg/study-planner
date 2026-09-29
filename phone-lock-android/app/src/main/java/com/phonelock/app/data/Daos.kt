@@ -297,6 +297,13 @@ interface PointsLedgerDao {
     @Query("DELETE FROM points_ledger WHERE reason = :reason AND refId = :refId AND dateKey = :dateKey")
     suspend fun deleteBy(reason: String, refId: String, dateKey: String)
 
+    /** 138차 "하루 달성 비율" 적립 — 그 날짜의 같은 종류 항목 전부(옛 규칙의 완료 1개당 항목 포함). */
+    @Query("SELECT * FROM points_ledger WHERE reason = :reason AND dateKey = :dateKey")
+    suspend fun getByReasonAndDate(reason: String, dateKey: String): List<PointsLedgerEntry>
+
+    @Query("DELETE FROM points_ledger WHERE reason = :reason AND dateKey = :dateKey")
+    suspend fun deleteByReasonAndDate(reason: String, dateKey: String)
+
     @Query("DELETE FROM points_ledger")
     suspend fun deleteAll()
 }

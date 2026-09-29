@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -82,6 +83,68 @@ internal fun mergeRemoteStudyLog(
 }
 
 /**
+ * 다른 기기가 올린 그날 공부 기록의 표시용 캐시(날짜 -> 그 날짜의 다른 기기 기록) — 로컬 DB엔 병합하지 않는다
+ * (dailyUsage와 같은 "기기별 키" 패턴, 경쟁 없음).
+ *
+ * 138차(사용자 보고: "동기화가 됐었는데 나갔다 들어오면 초기화되고, 새로고침을 몇 번 해야 다시 된다"):
+ * 예전엔 이 캐시가 [PhoneLockRepository] 인스턴스 필드(메모리)였다. 캘린더·루틴·포인트 같은 다른 동기화는
+ * 받은 값을 Room/SharedPreferences에 저장하는데 공부 기록만 메모리에 있었고, 안드로이드는 화면마다
+ * (MainActivity·잠금 화면·런처·접근성 서비스) repository를 새로 만들어서 앱을 다시 열 때마다 빈 캐시로
+ * 시작했다 — 다음 동기화 전까지 이 기기 기록만 보였던 원인. 그래서 프로세스 전역으로 두고 마지막 수신본을
+ * 저장해, 어느 화면이든 다시 열자마자 직전 값이 보이게 한다(동기화가 오면 그 값으로 바뀐다).
+ */
+private object RemoteStudyLogCache {
+    /** 저장본에 남길 최근 날짜 수 — 타이머 화면 스트릭이 최대 60일까지 거슬러 올라간다. */
+    private const val KEEP_DAYS = 62
+
+    @Volatile private var cache: Map<String, List<StudyLogEntry>>? = null
+
+    fun peek(): Map<String, List<StudyLogEntry>>? = cache
+
+    /** 처음 한 번만 저장본을 파싱한다 — 호출부가 IO 스레드에서 부를 것. */
+    fun load(preferences: AppPreferences): Map<String, List<StudyLogEntry>> = cache ?: synchronized(this) {
+        cache ?: decode(preferences.remoteStudyLogCacheJson).also { cache = it }
+    }
+
+    /** 값이 실제로 바뀌었을 때만 저장한다(5초 주기로 불려도 대부분 쓰기 없음) — 호출부가 IO 스레드에서 부를 것. */
+    fun put(preferences: AppPreferences, dateKey: String, entries: List<StudyLogEntry>) = synchronized(this) {
+        val current = load(preferences)
+        if (current[dateKey] == entries) return@synchronized
+        val next = current + (dateKey to entries)
+        cache = next
+        // 메모리엔 전부 두고(캘린더에서 옛 날짜를 보는 중일 수 있다) 저장본만 최근 날짜로 줄인다.
+        preferences.remoteStudyLogCacheJson = encode(next.keys.sortedDescending().take(KEEP_DAYS).associateWith { next.getValue(it) })
+    }
+
+    private fun encode(map: Map<String, List<StudyLogEntry>>): String {
+        val root = JSONObject()
+        map.forEach { (dateKey, entries) ->
+            val arr = JSONArray()
+            entries.forEach { e ->
+                arr.put(JSONObject().apply {
+                    put("taskName", e.taskName); put("seconds", e.seconds); put("startedAt", e.startedAt); put("note", e.note); put("tag", e.tag)
+                })
+            }
+            root.put(dateKey, arr)
+        }
+        return root.toString()
+    }
+
+    private fun decode(json: String): Map<String, List<StudyLogEntry>> = runCatching {
+        val root = JSONObject(json)
+        root.keys().asSequence().associateWith { dateKey ->
+            val arr = root.optJSONArray(dateKey) ?: JSONArray()
+            (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i) }.map { obj ->
+                StudyLogEntry(
+                    dateKey = dateKey, taskName = obj.optString("taskName", ""), seconds = obj.optInt("seconds", 0),
+                    startedAt = obj.optLong("startedAt", 0L), note = obj.optString("note", ""), tag = obj.optString("tag", "")
+                )
+            }
+        }
+    }.getOrDefault(emptyMap())
+}
+
+/**
  * 일일 한도 판정용 — 기기별 사용시간 칸(칸 이름 -> 그 기기의 오늘 누적 초) 중 **내 칸을 뺀 나머지의 합**.
  * 옛 칸도 아직 업데이트 안 된 기기가 쓰고 있을 수 있으므로 남겨서 합산한다(한도는 덜 세는 쪽이 위험하다).
  * 내 옛 칸은 push 때 한 번 지우므로 내 몫이 두 번 세어지지 않는다(127차).
@@ -109,6 +172,11 @@ class PhoneLockRepository(context: Context) {
     /** [checkForUpdateIfNeeded] 자동 확인 주기 — 새 빌드가 올라오면 하루 초기화를 기다리지 않고
      *  이 주기 안에 배너가 뜨도록 짧게 잡되, GitHub 비인증 API 요청 한도(시간당 60회)를 넘지 않게 한다. */
     private val updateCheckIntervalMs = 15 * 60 * 1000L
+
+    /** 확인이 **실패**했을 때 다음 재시도까지 기다리는 시간(135차). 성공/실패를 가리지 않고 15분을
+     *  적용하면, 이동통신망 공용 IP에서 흔한 GitHub 요청 한도 초과나 순간적인 네트워크 오류 한 번에
+     *  15분 동안 아무 확인도 안 하게 된다 — 실패는 훨씬 짧게 다시 시도한다. */
+    private val updateRecheckAfterFailureMs = 60 * 1000L
 
     internal val appContext = context.applicationContext
     internal val db = AppDatabase.getInstance(context)
@@ -243,6 +311,7 @@ class PhoneLockRepository(context: Context) {
         preferences.lastUpdateCheckAtMillis = now
         val result = com.phonelock.app.service.UpdateChecker.checkLatestAndroidRelease()
         val latest = result.getOrNull()
+        if (result.isSuccess) updateCheckFailureStreak = 0
         if (latest != null && latest.versionCode > BuildConfig.VERSION_CODE) {
             preferences.updateAvailableVersionCode = latest.versionCode
             preferences.updateAvailableApkUrl = latest.apkUrl
@@ -251,7 +320,26 @@ class PhoneLockRepository(context: Context) {
             // 한도 등) 이전에 남아있던 "업데이트 있음" 상태를 함부로 지우지 않는다.
             preferences.updateAvailableVersionCode = 0L
             preferences.updateAvailableApkUrl = null
+        } else {
+            // 135차: 실패했으면 다음 정기 확인까지 15분을 통째로 버리지 않도록 가드를 되감는다.
+            preferences.lastUpdateCheckAtMillis = now - updateCheckIntervalMs + nextUpdateRetryDelayMs()
         }
+    }
+
+    /** 연속 실패 횟수(프로세스 메모리) — 앱을 껐다 켜면 다시 짧은 간격부터 시작한다. */
+    private var updateCheckFailureStreak = 0
+
+    /**
+     * 136차: 실패 후 재시도 간격을 1분 고정에서 1→2→4→8→15분(정기 주기에서 멈춤) 지수 백오프로 바꾼다.
+     * 135차에 넣은 1분 고정 재시도는 "순간적인 네트워크 오류로 15분을 통째로 버리지 않는다"는 의도는
+     * 맞지만, 실패가 계속되는 상황(특히 이동통신망 공용 IP에서 GitHub 시간당 한도 60회를 이미 넘긴
+     * 경우)에선 시간당 60번을 계속 두드려서 **스스로 한도를 물고 늘어지는** 모양이 된다. 첫 재시도는
+     * 그대로 1분이라 일시적 오류에서 빨리 회복하는 성질은 유지된다.
+     */
+    private fun nextUpdateRetryDelayMs(): Long {
+        updateCheckFailureStreak = (updateCheckFailureStreak + 1).coerceAtMost(10)
+        val backoff = updateRecheckAfterFailureMs shl (updateCheckFailureStreak - 1)
+        return backoff.coerceAtMost(updateCheckIntervalMs)
     }
 
     /**
@@ -841,18 +929,18 @@ class PhoneLockRepository(context: Context) {
         }
     }
 
-    /** 다른 기기가 올린 그날 공부 기록의 표시용 캐시(날짜 -> 그 날짜의 다른 기기 기록) — 로컬 DB엔
-     *  병합해 쓰지 않는다. dailyUsage와 같은 "기기별 키" 패턴(경쟁 없음) 참고. */
-    private var remoteStudyLogCache: Map<String, List<StudyLogEntry>> = emptyMap()
+    /** 다른 기기 기록([RemoteStudyLogCache], 프로세스 전역·저장됨) 중 그 날짜 몫 — 첫 호출만 저장본을 IO에서 읽는다. */
+    private suspend fun remoteStudyLogFor(dateKey: String): List<StudyLogEntry> =
+        ((RemoteStudyLogCache.peek() ?: withContext(Dispatchers.IO) { RemoteStudyLogCache.load(preferences) })[dateKey]) ?: emptyList()
 
     suspend fun getTodayStudyLog(): List<StudyLogEntry> {
         val today = effectiveDate(preferences.dailyResetHour).toString()
-        return studyLogEntryDao.getByDate(today) + (remoteStudyLogCache[today] ?: emptyList())
+        return studyLogEntryDao.getByDate(today) + remoteStudyLogFor(today)
     }
 
     /** 캘린더 날짜 상세에서 임의 날짜(dateKey, yyyy-MM-dd)의 타이머 기록을 보여줄 때 사용. */
     suspend fun getStudyLogForDate(dateKey: String): List<StudyLogEntry> =
-        studyLogEntryDao.getByDate(dateKey) + (remoteStudyLogCache[dateKey] ?: emptyList())
+        studyLogEntryDao.getByDate(dateKey) + remoteStudyLogFor(dateKey)
 
     /** 타이머가 "오늘 캘린더 일정"을 고를 때 쓰는 오늘 날짜 키 — 사용시간 기록과 같은 dailyResetHour 기준. */
     fun todayCalendarDateKey(): String = effectiveDate(preferences.dailyResetHour).toString()
@@ -866,7 +954,7 @@ class PhoneLockRepository(context: Context) {
         ioScope.launch {
             studyLogEntryDao.insert(StudyLogEntry(dateKey = today, taskName = taskName.ifBlank { "이름 없는 공부" }, seconds = seconds, startedAt = startedAt, note = note, tag = tag))
             pushStudyLogToFirebase(today)
-            awardStudyPoints(seconds, today)
+            awardStudyPoints(seconds, today, startedAt)
         }
     }
 
@@ -883,7 +971,7 @@ class PhoneLockRepository(context: Context) {
     }
 
     /**
-     * 타이머/캘린더 화면 진입 시 호출 — 다른 기기가 올린 그날 공부 기록을 읽어와 [remoteStudyLogCache]에
+     * 타이머/캘린더 화면 진입 시 호출 — 다른 기기가 올린 그날 공부 기록을 읽어와 [RemoteStudyLogCache]에
      * 채운다. 로컬 DB엔 병합하지 않으므로(재호출해도 중복 안 생김) 부담 없이 반복 호출 가능하다.
      */
     suspend fun syncStudyLogFromFirebase(dateKey: String) {
@@ -893,7 +981,7 @@ class PhoneLockRepository(context: Context) {
             .map { studyLogFingerprint(it.startedAt, it.seconds, it.taskName) }
             .toSet()
         val others = mergeRemoteStudyLog(remote, dateKey, ownKey, localFingerprints)
-        remoteStudyLogCache = remoteStudyLogCache + (dateKey to others)
+        withContext(Dispatchers.IO) { RemoteStudyLogCache.put(preferences, dateKey, others) }
     }
 
     /** 스톱워치/뽀모도로를 새로 시작한다. 이미 실행 중이면 아무 일도 하지 않는다. */

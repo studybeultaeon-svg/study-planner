@@ -210,7 +210,6 @@ suspend fun PhoneLockRepository.setCalendarTaskStatus(task: CalendarTask, target
         if (task.linkedCalc != null && task.color == "red") {
             adjustLinkedCalcProgress(task.linkedCalc, -linkedProgressAmount(task))
         }
-        onCalendarTaskCompletionChanged(task.id, task.dateKey, completed = false)
     }
     if (task.status == "X") revertIncompleteCarryOver(task.dateKey, task)
     if (task.status == targetStatus) {
@@ -223,10 +222,11 @@ suspend fun PhoneLockRepository.setCalendarTaskStatus(task: CalendarTask, target
             if (updated.linkedCalc != null && updated.color == "red") {
                 adjustLinkedCalcProgress(updated.linkedCalc, linkedProgressAmount(updated))
             }
-            onCalendarTaskCompletionChanged(task.id, task.dateKey, completed = true)
         }
         if (targetStatus == "X") applyIncompleteCarryOver(task.dateKey, updated)
     }
+    // 138차: 완료 1개당 적립 대신 그날 일정 달성 비율로 다시 맞춘다(상태가 어떻게 바뀌었든 한 번).
+    refreshCalendarDayReward(task.dateKey)
     pushCalendarToFirebase()
 }
 

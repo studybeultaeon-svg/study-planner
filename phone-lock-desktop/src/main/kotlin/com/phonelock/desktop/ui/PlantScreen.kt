@@ -89,9 +89,12 @@ import com.phonelock.desktop.data.syncPointsFromFirebase
 import com.phonelock.desktop.data.purchaseDecoration
 import com.phonelock.desktop.data.rebirth
 import com.phonelock.desktop.data.setEquippedDecorationIds
+import com.phonelock.desktop.data.activeGrowthBoost
+import com.phonelock.desktop.data.purchasePotion
 import com.phonelock.desktop.monitor.GrowthSoundPlayer
 import com.phonelock.desktop.routine.RoutineEngine
 import com.phonelock.desktop.ui.theme.Spacing
+import com.phonelock.shared.GrowthBoost
 import com.phonelock.shared.GrowthSystem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -177,8 +180,14 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
                 task.name to ddayLabel
             }
     }
-    var showDecorationShop by remember { mutableStateOf(false) }
+    var showShop by remember { mutableStateOf(false) }
     val equippedDecorations = remember(growthTick) { repository.getEquippedDecorationIds() }
+    // 138차 상점 물약 — 지금 켜진 효과와 남은 시간. 2초 tick마다 다시 읽어 남은 시간이 줄어드는 게 보이고,
+    // 효과가 끝나면 다음 tick에 표시가 사라진다(안드로이드판과 대칭).
+    val activeBoost = remember(growthTick) { repository.activeGrowthBoost() }
+    val boostNowMillis = remember(growthTick) { System.currentTimeMillis() }
+    // 138차: "오늘" 카드에 공부 시간(다른 기기 기록 포함)을 더했다 — 로컬 목록을 거르는 가벼운 조회라 2초 tick에 묶는다.
+    val studySecondsToday = remember(growthTick) { repository.getTodayStudyLog().sumOf { it.seconds } }
 
     var displayedExp by remember { mutableDoubleStateOf(repository.getGrowthExpTotal()) }
     var displayedLevel by remember { mutableIntStateOf(GrowthSystem.levelForExp(displayedExp)) }
@@ -285,8 +294,11 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
             growthExpPending = growthExpPending,
             isApplying = isApplying,
             toastMessage = toastMessage,
+            activeBoost = activeBoost,
+            boostNowMillis = boostNowMillis,
             onApplyExp = { applyPendingExp() },
             onRebirth = { showRebirthDialog = true },
+            onOpenShop = { showShop = true },
             modifier = m
         )
     }
@@ -297,7 +309,8 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
             routineScheduledToday = routineSummary.third,
             weekCompletionRates = weekCompletionRates,
             nextCalendarEvent = nextCalendarEvent,
-            onOpenDecorations = { showDecorationShop = true },
+            studySecondsToday = studySecondsToday,
+            onOpenShop = { showShop = true },
             modifier = m
         )
     }
@@ -380,7 +393,13 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
             onDismissRequest = { showRebirthDialog = false },
             title = { Text("환생하시겠습니까?") },
             text = {
-                Text("현재 레벨과 경험치가 초기화되고 씨앗부터 다시 시작합니다. 대신 EXP 획득 배율이 ×${"%.1f".format(GrowthSystem.expMultiplier(rebirthCount + 1))}로 영구히 올라갑니다.")
+                // 138차: 배율이 지수라 후반엔 "×15913789.3"처럼 길어져 만/억 표기로 줄이고, 적용 안 한 대기 경험치는
+                // 환생과 함께 사라지는데 그걸 알려주지 않아 모르고 잃을 수 있어서 있을 때만 한 줄 덧붙인다.
+                Text(
+                    "현재 레벨과 경험치가 초기화되고 씨앗부터 다시 시작합니다. 대신 앞으로 얻는 경험치 배율이 " +
+                        "×${formatMultiplier(GrowthSystem.expMultiplier(rebirthCount + 1))}로 영구히 올라갑니다." +
+                        if (growthExpPending > 0.0) "\n\n아직 적용하지 않은 대기 경험치 +${GrowthSystem.formatExp(growthExpPending)}도 함께 사라집니다. 먼저 \"✨ 경험치 적용\"을 누르면 레벨에 반영돼요." else ""
+                )
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -394,69 +413,27 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
         )
     }
 
-    if (showDecorationShop) {
-        val ownedIds = remember(growthTick) { repository.getOwnedDecorationIds() }
-        val equippedIds = remember(growthTick) { repository.getEquippedDecorationIds() }
-        AlertDialog(
-            onDismissRequest = { showDecorationShop = false },
-            title = { Text("🎨 나무 꾸미기") },
-            text = {
-                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                    Text("보유 ${balance}P · 배치 ${equippedIds.size}/$MAX_EQUIPPED_DECORATIONS", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(Spacing.sm))
-                    DECORATION_CATALOG.forEach { deco ->
-                        val owned = deco.id in ownedIds
-                        val equipped = deco.id in equippedIds
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = Spacing.xs),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                // 121차: 이모지 대신 실제로 홈 화면에 그려질 그림 그대로를 미리보기로 보여준다.
-                                DecorationPreview(deco)
-                                Spacer(Modifier.width(Spacing.sm))
-                                Column(Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(deco.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                        if (deco.kind == DecorationKind.SCENERY) {
-                                            Spacer(Modifier.width(Spacing.xs))
-                                            Text(
-                                                "배경",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.tertiary
-                                            )
-                                        }
-                                    }
-                                    Text(
-                                        deco.description,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            when {
-                                !owned -> TextButton(
-                                    enabled = balance >= deco.cost,
-                                    onClick = { if (repository.purchaseDecoration(deco.id, deco.cost)) refresh() }
-                                ) { Text("${deco.cost}P 구매") }
-                                equipped -> TextButton(onClick = {
-                                    repository.setEquippedDecorationIds(equippedIds - deco.id)
-                                    refresh()
-                                }) { Text("배치 해제") }
-                                else -> TextButton(
-                                    enabled = equippedIds.size < MAX_EQUIPPED_DECORATIONS,
-                                    onClick = {
-                                        repository.setEquippedDecorationIds(equippedIds + deco.id)
-                                        refresh()
-                                    }
-                                ) { Text("배치") }
-                            }
-                        }
-                    }
+    if (showShop) {
+        HomeShopDialog(
+            balance = balance,
+            ownedIds = remember(growthTick) { repository.getOwnedDecorationIds() },
+            equippedIds = remember(growthTick) { repository.getEquippedDecorationIds() },
+            activeBoost = activeBoost,
+            nowMillis = boostNowMillis,
+            onBuyPotion = { potion ->
+                val extending = activeBoost?.potionId == potion.id
+                if (repository.purchasePotion(potion.id)) {
+                    toastMessage = if (extending) "${potion.emoji} ${potion.label} 효과 시간이 ${GrowthBoost.durationLabel(potion.durationMinutes)} 늘었어요"
+                    else "${potion.emoji} ${potion.label} 효과 시작 — 지금부터 공부 경험치 ${GrowthBoost.multiplierLabel(potion.multiplier)}"
+                    refresh()
                 }
             },
-            confirmButton = { TextButton(onClick = { showDecorationShop = false }) { Text("닫기") } }
+            onBuyDecoration = { deco -> if (repository.purchaseDecoration(deco.id, deco.cost)) refresh() },
+            onSetEquipped = { ids ->
+                repository.setEquippedDecorationIds(ids)
+                refresh()
+            },
+            onDismiss = { showShop = false }
         )
     }
 }
@@ -609,8 +586,9 @@ private fun HomeTodayLine(emoji: String, text: String) {
 
 /**
  * 홈 좌상단 "오늘" 카드 — 116차(스트릭/오늘 루틴)·118차(다음 일정/주간 스파크라인)에 하나씩 덧붙던
- * 정보를 122차에 하나의 정보 계층으로 정리했다: 머리말("오늘" + 꾸미기 진입) → 대표 수치(연속 기록) →
+ * 정보를 122차에 하나의 정보 계층으로 정리했다: 머리말("오늘" + 상점 진입) → 대표 수치(연속 기록) →
  * 보조 정보 줄 → 최근 7일 미니 그래프. 폭은 놓이는 자리(씬 위 오버레이/사이드 패널)에서 정한다.
+ * 138차: 머리말 버튼을 "🎨 꾸미기"에서 "🛒 상점"으로 바꾸고, 보조 줄에 오늘 공부 시간을 더했다.
  */
 @Composable
 private fun HomeTodayCard(
@@ -619,7 +597,8 @@ private fun HomeTodayCard(
     routineScheduledToday: Int,
     weekCompletionRates: List<Int>,
     nextCalendarEvent: Pair<String, String>?,
-    onOpenDecorations: () -> Unit,
+    studySecondsToday: Int,
+    onOpenShop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     HomeCard(modifier) {
@@ -632,7 +611,7 @@ private fun HomeTodayCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.weight(1f))
-                HomePillButton("🎨 꾸미기", onOpenDecorations)
+                HomePillButton("🛒 상점", onOpenShop)
             }
             Spacer(Modifier.height(Spacing.xs))
             Text(
@@ -645,6 +624,8 @@ private fun HomeTodayCard(
                 Spacer(Modifier.height(3.dp))
                 HomeTodayLine("✅", "루틴 $routineDoneToday/$routineScheduledToday")
             }
+            Spacer(Modifier.height(3.dp))
+            HomeTodayLine("⏱️", "공부 ${GrowthBoost.durationLabel(studySecondsToday / 60)}")
             nextCalendarEvent?.let { (title, ddayLabel) ->
                 Spacer(Modifier.height(3.dp))
                 HomeTodayLine("📅", "$title ($ddayLabel)")
@@ -729,7 +710,7 @@ private fun HomeStatTile(
     }
 }
 
-/** 환생 EXP 배율 표기 — 배율이 지수로 커져서(6.64^n) 후반엔 수천만 배가 되므로, 타일 한 줄에
+/** 환생 EXP 배율 표기 — 배율이 지수로 커져서(6.32^n) 후반엔 수천만 배가 되므로, 타일 한 줄에
  *  들어가도록 만/억 단위로 줄여 쓴다(예: 37,780,000 → "3,778만"). */
 private fun formatMultiplier(value: Double): String = when {
     value < 1_000 -> "%.1f".format(value)
@@ -767,8 +748,11 @@ private fun HomeGrowthPanel(
     growthExpPending: Double,
     isApplying: Boolean,
     toastMessage: String?,
+    activeBoost: GrowthBoost.Window?,
+    boostNowMillis: Long,
     onApplyExp: () -> Unit,
     onRebirth: () -> Unit,
+    onOpenShop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // 경험치 적용 애니메이션이 한 스텝씩 값을 밀어넣을 때 바가 계단처럼 튀지 않도록 살짝 따라가게 한다.
@@ -840,7 +824,7 @@ private fun HomeGrowthPanel(
             HomeStatTile("🪙", "포인트", "${balance}P", Modifier.weight(1f))
             HomeStatTile(
                 "✨", "대기 경험치",
-                if (growthExpPending > 0.0) "+${"%.1f".format(growthExpPending)}" else "없음",
+                if (growthExpPending > 0.0) "+${GrowthSystem.formatExp(growthExpPending)}" else "없음",
                 Modifier.weight(1f),
                 caption = if (rebirthCount > 0) "EXP ×${formatMultiplier(multiplier)}" else null,
                 highlight = growthExpPending > 0.0
@@ -856,6 +840,9 @@ private fun HomeGrowthPanel(
                 highlight = canRebirth
             )
         }
+        // 138차: 상점 물약 효과 칸 — 켜져 있으면 남은 시간, 아니면 상점 안내(누르면 상점).
+        Spacer(Modifier.height(Spacing.sm))
+        HomeBoostStatus(activeBoost, boostNowMillis, onOpenShop, Modifier.fillMaxWidth())
         Spacer(Modifier.height(Spacing.sm))
         Row(
             Modifier.fillMaxWidth(),
@@ -888,6 +875,257 @@ private fun HomeGrowthPanel(
             Spacer(Modifier.height(Spacing.xs))
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
+    }
+}
+
+/**
+ * 물약 효과 칸(138차, 안드로이드 태블릿 카드와 같은 모양) — 켜져 있으면 어떤 물약이 몇 배로 얼마나 남았는지,
+ * 없으면 상점 안내로 자리를 지킨다. 누르면 상점이 열린다(연장하거나 다른 물약을 볼 때 바로 가게).
+ */
+@Composable
+private fun HomeBoostStatus(
+    active: GrowthBoost.Window?,
+    nowMillis: Long,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val potion = active?.let { GrowthBoost.potionById(it.potionId) }
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = if (active != null) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f)
+        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    ) {
+        Row(Modifier.padding(horizontal = Spacing.sm, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(potion?.emoji ?: "🧪", fontSize = 16.sp)
+            Spacer(Modifier.width(Spacing.xs))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (active != null) "${potion?.label ?: "성장 물약"} ${GrowthBoost.multiplierLabel(active.multiplier)}" else "사용 중인 물약 없음",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (active != null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    if (active != null) "${GrowthBoost.remainingLabel(active.endMillis - nowMillis)} 남음 · 공부 경험치에 적용 중"
+                    else "상점에서 물약을 사면 그동안 공부 경험치가 늘어나요",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 홈 "상점"(138차, 사용자 요청: 꾸미기 → 상점 개편, 안드로이드판과 대칭). 두 칸으로 나눈다.
+ * - 🧪 물약: 사는 즉시 효과가 시작되는 소모품([GrowthBoost.POTIONS]). 한 번에 하나, 같은 물약은 시간 연장.
+ * - 🎨 꾸미기: 한 번 사면 영구 소유하고 최대 [MAX_EQUIPPED_DECORATIONS]개까지 홈 장면에 배치(116·121차 그대로).
+ * 물약 칸을 먼저 연다 — 꾸미기는 다 사고 나면 더 쓸 데가 없지만 물약은 매일 쓰는 포인트 소비처라 상점을 여는
+ * 이유의 대부분이 된다.
+ */
+@Composable
+private fun HomeShopDialog(
+    balance: Int,
+    ownedIds: Set<String>,
+    equippedIds: List<String>,
+    activeBoost: GrowthBoost.Window?,
+    nowMillis: Long,
+    onBuyPotion: (GrowthBoost.Potion) -> Unit,
+    onBuyDecoration: (DecorationItem) -> Unit,
+    onSetEquipped: (List<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var tab by remember { mutableIntStateOf(0) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("🛒 상점") },
+        text = {
+            Column {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ShopTabChip("🧪 물약", tab == 0) { tab = 0 }
+                    ShopTabChip("🎨 꾸미기", tab == 1) { tab = 1 }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "🪙 ${balance}P",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1
+                    )
+                }
+                Spacer(Modifier.height(Spacing.sm))
+                Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) {
+                    if (tab == 0) {
+                        val activePotion = activeBoost?.let { GrowthBoost.potionById(it.potionId) }
+                        Text(
+                            if (activeBoost != null) "지금 ${activePotion?.label ?: "물약"} 효과 중 · ${GrowthBoost.remainingLabel(activeBoost.endMillis - nowMillis)} 남음\n같은 물약을 사면 시간이 늘어나요(최대 ${GrowthBoost.durationLabel(GrowthBoost.MAX_REMAINING_MINUTES)})."
+                            else "사면 바로 효과가 시작돼요(한 번에 하나).\n효과 시간 동안 공부로 얻는 경험치가 늘어나요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        GrowthBoost.POTIONS.forEach { potion ->
+                            val check = GrowthBoost.checkPurchase(listOfNotNull(activeBoost), potion, nowMillis)
+                            val buyable = check == GrowthBoost.PurchaseCheck.NEW || check == GrowthBoost.PurchaseCheck.EXTEND
+                            ShopItemRow(
+                                icon = {
+                                    Box(
+                                        Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) { Text(potion.emoji, fontSize = 24.sp) }
+                                },
+                                title = potion.label,
+                                tag = "${GrowthBoost.multiplierLabel(potion.multiplier)} · ${GrowthBoost.durationLabel(potion.durationMinutes)}",
+                                description = potion.description,
+                                // 살 수 없는 이유는 버튼에 긴 글자로 넣지 않고 버튼 옆 짧은 안내로 — 좁은 폰에서 버튼 글자가 깨졌다.
+                                note = when {
+                                    check == GrowthBoost.PurchaseCheck.OTHER_ACTIVE -> "다른 물약 효과 중"
+                                    check == GrowthBoost.PurchaseCheck.TOO_LONG -> "이미 최대 ${GrowthBoost.durationLabel(GrowthBoost.MAX_REMAINING_MINUTES)}"
+                                    balance < potion.cost -> "${potion.cost - balance}P 부족"
+                                    else -> null
+                                },
+                                actionLabel = if (check == GrowthBoost.PurchaseCheck.EXTEND) "${potion.cost}P 연장" else "${potion.cost}P 구매",
+                                actionEnabled = buyable && balance >= potion.cost,
+                                onAction = { onBuyPotion(potion) }
+                            )
+                        }
+                    } else {
+                        Text(
+                            "한 번 사면 계속 가져요.\n홈에 ${MAX_EQUIPPED_DECORATIONS}개까지 놓을 수 있어요 · 지금 ${equippedIds.size}개",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        DECORATION_CATALOG.forEach { deco ->
+                            val owned = deco.id in ownedIds
+                            val equipped = deco.id in equippedIds
+                            ShopItemRow(
+                                // 121차: 이모지 대신 실제로 홈 화면에 그려질 그림 그대로를 미리보기로 보여준다.
+                                icon = { DecorationPreview(deco, Modifier.size(48.dp)) },
+                                title = deco.label,
+                                tag = if (deco.kind == DecorationKind.SCENERY) "배경" else null,
+                                description = deco.description,
+                                note = when {
+                                    equipped -> "홈에 놓여 있어요"
+                                    owned && equippedIds.size >= MAX_EQUIPPED_DECORATIONS -> "자리가 꽉 찼어요"
+                                    owned -> "보유 중"
+                                    balance < deco.cost -> "${deco.cost - balance}P 부족"
+                                    else -> null
+                                },
+                                actionLabel = when {
+                                    !owned -> "${deco.cost}P 구매"
+                                    equipped -> "빼기"
+                                    else -> "놓기"
+                                },
+                                actionEnabled = when {
+                                    !owned -> balance >= deco.cost
+                                    equipped -> true
+                                    else -> equippedIds.size < MAX_EQUIPPED_DECORATIONS
+                                },
+                                onAction = {
+                                    when {
+                                        !owned -> onBuyDecoration(deco)
+                                        equipped -> onSetEquipped(equippedIds - deco.id)
+                                        else -> onSetEquipped(equippedIds + deco.id)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } }
+    )
+}
+
+/**
+ * 상점 한 줄(138차) — 그림 | 이름·태그·설명, 그 아래 줄에 안내 문구와 버튼. 버튼을 이름 옆에 두면 좁은 폰에서
+ * 이름·배율 태그·설명이 글자 단위로 줄바꿈돼 읽기 어려웠다(사용자 지적) — 글 영역이 그림 오른쪽 폭을 전부 쓰게 했다.
+ */
+@Composable
+private fun ShopItemRow(
+    icon: @Composable () -> Unit,
+    title: String,
+    tag: String?,
+    description: String,
+    note: String?,
+    actionLabel: String,
+    actionEnabled: Boolean,
+    onAction: () -> Unit
+) {
+    Row(Modifier.fillMaxWidth().padding(top = Spacing.md), verticalAlignment = Alignment.Top) {
+        icon()
+        Spacer(Modifier.width(Spacing.sm))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                tag?.let {
+                    Spacer(Modifier.width(6.dp))
+                    Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f)) {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // 안내는 한 줄로 끝나는 짧은 말만 쓴다(길면 버튼 옆에서 두 줄로 접혀 버튼과 어긋났다).
+                Text(
+                    note.orEmpty(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = onAction, enabled = actionEnabled) {
+                    Text(actionLabel, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                }
+            }
+        }
+    }
+}
+
+/** 상점 칸 전환 칩 — 고른 칸은 채운 색, 나머지는 옅은 색. */
+@Composable
+private fun ShopTabChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(50),
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+        )
     }
 }
 

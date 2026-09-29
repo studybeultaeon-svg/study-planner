@@ -29,7 +29,10 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TICK_MS = 2000L
-// ?ㅻⅨ 湲곌린媛 ?щ┛ "怨듬? ??대㉧ ?ㅽ뻾 以? ?좏샇媛 ?대낫???ㅻ옒 媛깆떊 ???먯쑝硫?臾댁떆?쒕떎(StudyTimerScreen??// 誘몃윭 ?쒖떆? 媛숈? 媛? ?곗뒪?ы깙??EnforcementService.REMOTE_STUDY_SIGNAL_STALE_MS? ?숈씪) ???좏샇瑜?// ?щ━??湲곌린媛 ?뺤? ?놁씠 爰쇱졇??timerActive:true媛 ?좊졊泥섎읆 ?⑥븘 ??湲곌린媛 ?곴뎄???좉린??嫄?留됰뒗??
+// 다른 기기가 올린 "공부 타이머 실행 중" 신호가 이 시간보다 오래 갱신되지 않았으면 무시한다
+// (StudyTimerScreen의 미러 표시와 같은 값이고, 데스크탑 EnforcementService.REMOTE_STUDY_SIGNAL_STALE_MS와도 동일).
+// 신호를 올리던 기기가 타이머를 정지하지 않고 꺼지면 timerActive:true가 유령처럼 남아 이 기기가
+// 영구히 잠길 수 있는데, 그걸 막는 신선도 컷오프다.
 private const val REMOTE_STUDY_SIGNAL_STALE_MS = 20 * 60 * 1000L
 // 잠긴 앱 백그라운드 재생 차단(125차): 루프가 잠깐 밀려도 재생 시간을 한 번에 과하게 더하지 않도록 한 번에 셀 최대 간격,
 // 사용자가 계속 다시 재생을 눌러도 안내 토스트가 도배되지 않도록 앱별 최소 간격.
@@ -46,19 +49,17 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     private var lastReelsShortsCheckAt: Long = 0
     private var lastSiteCheckAt: Long = 0
 
-    // tick()/checkReelsShorts()/checkSites()???щ윭 寃쎈줈(二쇨린??polling, ?묎렐???대깽?? 李??꾪솚 ?대깽???먯꽌
-    // 寃뱀퀜 ?몄텧?????덇퀬 ?쒕줈 ?ㅻⅨ ?ㅻ젅??Dispatchers.Default???ㅻ젅???)?먯꽌 ?ㅽ뻾?????덉뼱?? ?쇰컲
-    // Boolean/Job 蹂?섎줈??"吏湲??ㅽ뻾 以묒씤吏" 泥댄겕 ?먯껜媛 寃쎌웳 ?곹깭(race condition)??嫄몃┛??寃????뿉??    // 媛먯?媛 源⑥????먯씤). AtomicBoolean??compareAndSet?쇰줈 "?ㅽ뻾 ?쒖옉"???먯옄?곸쑝濡?泥섎━?댁꽌, ??긽
-    // 理쒕? ?섎굹???ㅽ뻾留??뚭쾶 ?쒕떎.
+    // tick()/checkReelsShorts()/checkSites()는 여러 경로(주기적 polling, 접근성 이벤트, 창 전환 이벤트)에서
+    // 겹쳐 호출될 수 있고 서로 다른 스레드(Dispatchers.Default의 스레드 풀)에서 실행될 수도 있다. 일반
+    // Boolean/Job 변수로는 "지금 실행 중인지" 확인과 표시 사이가 갈라져 경쟁 상태(race condition)에 걸린다
+    // (겹침 감지가 깨지는 원인). AtomicBoolean의 compareAndSet으로 "실행 시작"을 원자적으로 처리해서, 언제나
+    // 최대 하나만 실행되게 한다.
     private val reelsCheckInFlight = AtomicBoolean(false)
     private val siteCheckInFlight = AtomicBoolean(false)
     private val tickInFlight = AtomicBoolean(false)
 
-    // 怨듬? ?좉툑???몄젣遺???쒖꽦 ?곹깭??붿?(寃쎄낵?쒓컙 洹쇱궗移??쒖떆?? ??鍮꾪솢?깊솕?섎㈃ 珥덇린??
+    // 공부 잠금이 언제부터 활성 상태였는지(경과시간 근사치 표시용). 잠금이 비활성화되면 초기화한다.
     @Volatile private var studyLockStartedAt: Long? = null
-
-    // 공부 페이즈가 방금 끝났는지(true -> false 전환) 감지해 StudyNotificationGate에 쌓인 큐를 비우기 위한 상태.
-    @Volatile private var wasStudying = false
 
     // 잠긴 앱 백그라운드 재생 차단(125차) — 재생 시간 적립용 기준 시각/그룹별 1초 미만 나머지, 앱별 안내 토스트 시각.
     private var lastBackgroundMediaCheckAt = 0L
@@ -138,18 +139,19 @@ class AppMonitorAccessibilityService : AccessibilityService() {
 
     private suspend fun tickInternal() {
         val packageName = rootInActiveWindow?.packageName?.toString() ?: return
-        // 怨듬? ?좉툑? shouldIgnore()蹂대떎 癒쇱? ?뺤씤?쒕떎 ??shouldIgnore()???곗쿂(???붾㈃)瑜?臾댁떆 ??곸뿉
-        // ?ы븿?섎뒗?? 洹몃９ 李⑤떒(?먮옒遺???뱀젙 ?깅쭔 李⑤떒?섎뒗 湲곕뒫)?먮뒗 留욌뒗 ?덉쇅吏留?怨듬? ?좉툑(?ъ슜?먭?
-        // "?댄뭹?泥섎읆 ???붾㈃??踰쀬뼱?섏? 紐삵븯寃? ?붿껌??湲곕뒫)?먮뒗 ??留욌뒗???????붾㈃?쇰줈 ?꾨쭩媛硫?        // 臾댁젣?쒖쑝濡?癒몃Ъ ???덇쾶 ?섏뼱踰꾨━湲??뚮Ц. checkStudyLock()? ?????먯떊留?蹂꾨룄濡??덉쇅 泥섎━?쒕떎.
+        // 공부 잠금은 shouldIgnore()보다 먼저 확인한다 — shouldIgnore()는 내 앱 자신(잠금 화면)을 무시 대상에
+        // 포함하는데, 그룹 차단(원래부터 특정 앱만 차단하는 기능)에는 맞는 예외지만 공부 잠금(사용자가
+        // "감옥처럼 이 화면을 벗어나지 못하게" 요청한 기능)에는 맞지 않는다 — 내 앱 화면으로 도망가서
+        // 무제한으로 머물 수 있게 되어버리기 때문. checkStudyLock()은 내 앱 자신을 따로 예외 처리한다.
         if (checkStudyLock(packageName)) return
 
         if (shouldIgnore(packageName)) {
-            // ?곕━ ???먯떊(李⑤떒/?뺤씤 ?붾㈃ ?????꾨㈃???덉쓣 ???⑥? ?쒓컙 ?ㅻ쾭?덉씠??媛숈씠 ?대┛??
+            // 우리 앱 자신(차단/확인 화면 등)이 떠 있을 땐 남은 시간 오버레이도 같이 내린다.
             hideUsageOverlay()
             return
         }
 
-        // ?대깽??湲곕컲 媛먯?(onAccessibilityEvent)媛 ?볦튇 寃쎌슦瑜??鍮꾪븳 二쇨린???덉쟾留?
+        // 이벤트 기반 감지(onAccessibilityEvent)가 놓친 경우를 대비한 주기적 안전망.
         checkReelsShorts(packageName)
 
         val groups = repository.findGroupsForPackage(packageName)
@@ -158,9 +160,11 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 寃뱀튂??洹몃９ 以??꾩쭅 ?뺤씤????諛쏆? 洹몃９???덉쑝硫???踰덉뿉 ?섎굹???뺤씤諛쏅뒗??
-        // (?뺤씤 ???ㅼ쓬 tick?먯꽌 ?⑥? 洹몃９???ㅼ떆 寃?ы븳??) 媛숈? ?대쫫??洹몃９??媛吏??ㅻⅨ 湲곌린媛 諛⑷툑
-        // ?뺤씤?덈떎硫?isRecentlyConfirmedAnyDevice) ??湲곌린???ы솗???놁씠 ?댁뼱???????덈떎 ???ъ슜??        // ?붿껌: "?쒖そ?먯꽌 ?꾩옄 踰꾪듉???꾨Ⅴ硫?媛숈? ?대쫫??洹몃９??媛吏??ㅻⅨ 湲곌린??媛숈? ?쒓컙?瑜?媛吏怨?        // ?쒕룞??吏꾪뻾".
+        // 겹치는 그룹 중 아직 확인을 안 받은 그룹이 있으면 그 중 하나만 확인받는다
+        // (확인 후 다음 tick에서 남은 그룹을 다시 검사한다). 같은 이름의 그룹을 가진 다른 기기가 방금
+        // 확인했다면(isRecentlyConfirmedAnyDevice) 이 기기에서는 다시 확인받지 않고 들어갈 수 있다 —
+        // 한쪽에서 확인을 통과했으면 같은 이름의 그룹은 다른 기기에서도 같은 시간만큼 열려 있게 한다는,
+        // 사용자가 요청한 동작이다.
         // 스케줄 => 일일 한도 => 실행 확인 우선순위: 겹치는 그룹 중 하나라도 지금 스케줄/한도 조건이면
         // (evaluate()가 스케줄을 한도보다 먼저 검사한다) 확인창 없이 곧바로 잠근다.
         for (group in groups) {
@@ -185,22 +189,26 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 寃뱀튂??洹몃９ 以??섎굹?쇰룄 吏湲??좉툑 議곌굔?대㈃ ?좉렐??
+        // 여기까지 왔으면 잠긴 그룹도, 확인이 필요한 그룹도 없다는 뜻 — 겹치는 그룹 전부에 사용시간을 적립한다.
         groups.forEach { group -> repository.addUsageSeconds(group.id, (TICK_MS / 1000L).toInt()) }
         refreshUsageOverlay(groups)
     }
 
     /**
-     * 怨듬?????대㉧媛 "怨듬?" ?섏씠利덈줈 吏꾪뻾 以묒씠硫??댁떇 以묒뿏 ?좉렇吏 ?딆쓬) ?ㅼ젙?먯꽌 怨좊Ⅸ ?덉슜 ????     * 紐⑤뱺 ???곗쿂/???붾㈃ ?ы븿)??媛먯??댁꽌 ?좉툑 ?붾㈃?쇰줈 ?섎룎由곕떎. 湲곌린 ?뚯쑀??沅뚰븳 ?놁씠??吏꾩쭨
-     * ?ㅽ뻾 李⑤떒??遺덇??ν븯誘濡?"?대━??嫄?媛먯??댁꽌 ?ㅼ떆 ?좉툑 ?붾㈃???꾩슦?? 踰좎뒪???먰룷??諛⑹떇?대떎.
-     * ?좉툑??嫄몄뿀?쇰㈃ true瑜?諛섑솚???댄썑 由댁뒪/洹몃９ ?먯젙??嫄대꼫?대떎.
+     * 공부 타이머가 "공부" 페이즈로 진행 중이면(휴식 중엔 잠그지 않음) 설정에서 고른 허용 앱 밖의
+     * 모든 앱(런처/홈 화면 포함)을 감지해서 잠금 화면으로 되돌린다. 기기 소유자 권한 없이는 진짜
+     * 실행 차단이 불가능하므로, "열리는 걸 감지해서 즉시 잠금 화면을 띄운다"는 베스트 에포트 방식이다.
+     * 잠금을 걸었으면 true를 반환해 이후 릴스/그룹 판정을 건너뛴다.
      *
-     * ??湲곌린??濡쒖뺄 ??대㉧肉??꾨땲?? 媛숈? 怨꾩젙???곗뒪?ы깙??怨듬? ?섏씠利덈? ?ㅽ뻾 以묒씠?쇰뒗 ?좏샇
-     * (PomodoroSyncClient.isStudyTimerActive)媛 ????묎컳???좉렐?????ъ슜???붿껌: "?쒖そ?먯꽌 ??대㉧瑜?     * ?ㅽ뻾?섎㈃ ?ㅻⅨ履쎌뿉?쒕룄 怨듬? ?좉툑???ㅽ뻾?섍쾶". ??湲곌린 ?먯떊????대㉧ ?먯젙(isStudyLockActive)?
-     * 洹몃?濡??먭퀬 OR濡??볧엳湲곕쭔 ?쒕떎. ?먭꺽 ?좏샇??REMOTE_STUDY_SIGNAL_STALE_MS ?섍쾶 媛깆떊???놁쑝硫?     * ?좊졊 ?곹깭濡?蹂닿퀬 臾댁떆?쒕떎.
+     * 이 기기의 로컬 타이머만이 아니라, 같은 계정의 다른 기기에서 공부 페이즈가 진행 중이라는 신호
+     * (PomodoroSyncClient.isStudyTimerActive)가 있어도 똑같이 잠근다 — 한쪽에서 타이머를 실행하면
+     * 다른 쪽에서도 공부 잠금이 걸리게 하라는 사용자 요청. 이 기기 자신의 타이머 판정(isStudyLockActive)은
+     * 그대로 두고 OR로 얹기만 한다. 원격 신호가 REMOTE_STUDY_SIGNAL_STALE_MS 넘게 갱신되지 않았으면
+     * 유령 상태로 보고 무시한다.
      */
     private suspend fun checkStudyLock(packageName: String): Boolean {
-        // ?????먯떊(?좉툑 ?붾㈃ ?ы븿)留??덉쇅 ??systemui/?곗쿂源뚯? ?덉쇅濡??먮㈃ ???붾㈃?쇰줈 ?꾨쭩移???        // ?덉쑝誘濡??ш린 ?ы븿?섏? ?딅뒗??
+        // 내 앱 자신(잠금 화면 포함)과 systemui/android는 예외 — 런처까지 예외로 두면 홈 화면으로
+        // 도망가 버틸 수 있으므로 런처는 일부러 넣지 않는다.
         if (packageName == applicationContext.packageName ||
             packageName == "com.android.systemui" || packageName == "android"
         ) {
@@ -241,13 +249,22 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         return updatedAt > 0 && System.currentTimeMillis() - updatedAt < REMOTE_STUDY_SIGNAL_STALE_MS
     }
 
-    /** 공부 페이즈가 방금 끝났으면(true -> false) StudyNotificationGate에 미뤄둔 알림을 전부 다시 띄운다. */
+    /**
+     * 공부 페이즈 동안 StudyNotificationGate가 미뤄둔 알림이 있으면, 공부가 끝나는 대로 전부 다시 띄운다.
+     *
+     * 136차에 "직전 tick이 공부 중이었는지(wasStudying)"를 보던 방식에서 "미뤄둔 알림이 실제로 있는지"를
+     * 먼저 보는 방식으로 바꿨다. 두 가지가 같이 해결된다.
+     * 1) **네트워크**: 예전엔 큐가 비어 있어도 매 tick(2초) 공부 여부를 물었고, 로컬 타이머가 꺼져 있으면
+     *    그 판정이 [isRemoteStudyTimerActive] → Firebase HTTPS까지 갔다. 5초 캐시가 있어도 결국
+     *    **5초에 한 번씩, 하루 종일** 요청이 나가서 배터리와 데이터를 계속 먹었다. 이제 미뤄둔 알림이
+     *    있을 때만(= 공부 중에 일회성 알림이 실제로 도착했을 때만) 묻는다.
+     * 2) **누락**: 전환(true -> false)이 일어난 그 tick을 놓치면(서비스 재시작, 코루틴 취소 등) 큐가
+     *    영영 안 비워졌다. 이제는 "큐가 남아 있고 지금 공부 중이 아니면" 언제든 비우므로 그 틈이 없다.
+     */
     private suspend fun checkStudyNotificationFlush() {
-        val studying = repository.isStudyLockActive() || isRemoteStudyTimerActive()
-        if (wasStudying && !studying) {
-            StudyNotificationGate.flushQueued(applicationContext)
-        }
-        wasStudying = studying
+        if (!preferences.hasQueuedStudyNotifications) return
+        if (repository.isStudyLockActive() || isRemoteStudyTimerActive()) return
+        StudyNotificationGate.flushQueued(applicationContext)
     }
 
     /**

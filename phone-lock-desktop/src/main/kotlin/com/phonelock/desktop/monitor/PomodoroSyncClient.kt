@@ -40,7 +40,17 @@ object PomodoroSyncClient {
         val breakActive: Boolean, val phaseEndAt: Long, val timerActive: Boolean, val mode: String,
         val phaseStartedAt: Long, val taskName: String, val remoteUpdatedAt: Long, val fetchedAtMillis: Long
     )
-    private var statusCache: StatusCache? = null
+    /**
+     * 136차: `@Volatile`을 붙이고 갱신을 [statusLock]으로 직렬화한다.
+     * 1) 이 값은 감시 루프(EnforcementService), 백그라운드 재생 루프, 로컬 API 핸들러(SiteEnforcement),
+     *    화면(StudyTimerScreen 미러)에서 각각 다른 스레드로 읽고 쓰는데 그냥 `var`였다 — 다른 스레드가
+     *    갱신한 값을 못 보거나, 아직 다 만들어지지 않은 객체를 볼 수 있는 자료 경쟁이다.
+     * 2) 캐시가 만료된 순간 여러 스레드가 겹치면 캐시를 네트워크 왕복이 **끝난 뒤에** 채우는 구조라
+     *    각자 똑같은 GET을 따로 보냈다. 뒤에 온 쪽은 앞선 요청을 기다렸다가 그 결과를 그대로 쓴다
+     *    (자기 요청을 보내도 어차피 같은 시간을 기다렸을 것이다).
+     */
+    @Volatile private var statusCache: StatusCache? = null
+    private val statusLock = Any()
 
     /** 공부앱의 뽀모도로 휴식이 지금 유효하게 진행 중인지. 설정이 비어있거나 어떤 오류가 나도 false를 반환한다. */
     fun isBreakActive(databaseUrl: String?, apiKey: String?): Boolean {
@@ -87,10 +97,18 @@ object PomodoroSyncClient {
 
     private fun refreshStatusCache(databaseUrl: String?, apiKey: String?): StatusCache? {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
-        val now = System.currentTimeMillis()
-        val cached = statusCache
-        if (cached != null && now - cached.fetchedAtMillis < CACHE_TTL_MS) return cached
+        freshCache()?.let { return it }
+        return synchronized(statusLock) {
+            // 락을 기다리는 사이 앞선 호출이 이미 갱신해뒀으면 그 결과를 그대로 쓴다.
+            freshCache() ?: fetchStatusCache(databaseUrl, apiKey)
+        }
+    }
 
+    private fun freshCache(): StatusCache? =
+        statusCache?.takeIf { System.currentTimeMillis() - it.fetchedAtMillis < CACHE_TTL_MS }
+
+    private fun fetchStatusCache(databaseUrl: String, apiKey: String): StatusCache {
+        val now = System.currentTimeMillis()
         var phaseEndAt = 0L
         var timerActive = false
         var mode = "plain"

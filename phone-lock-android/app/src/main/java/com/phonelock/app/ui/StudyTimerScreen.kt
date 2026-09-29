@@ -216,6 +216,9 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     suspend fun refresh() {
         repository.syncCalendarFromFirebase()
         repository.syncCalculatorFromFirebase()
+        // 138차: 새로고침이 오늘 공부 기록은 동기화하지 않아서, 5초 주기 동기화가 돌 때까지 몇 번을
+        // 당겨도 그대로였다.
+        repository.syncStudyLogFromFirebase(repository.todayCalendarDateKey())
         todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
         calcTasksForSummary = repository.getCalcTasks()
         todayLog = repository.getTodayStudyLog()
@@ -223,9 +226,14 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     }
 
     LaunchedEffect(Unit) {
+        // 저장해둔 다른 기기 기록까지 합쳐 곧바로 보여준 뒤(138차),
         todayLog = repository.getTodayStudyLog()
         todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
         calcTasksForSummary = repository.getCalcTasks()
+        // 첫 5초 tick을 기다리지 않고 진입 즉시 오늘 기록을 동기화한다 — 예전엔 주간 그래프/스트릭이
+        // 동기화 전 값(이 기기 기록만)으로 계산된 채 30초 동안 남아 "초기화"된 것처럼 보였다(138차).
+        repository.syncStudyLogFromFirebase(repository.todayCalendarDateKey())
+        todayLog = repository.getTodayStudyLog()
         refreshStreakAndWeek()
         while (true) {
             delay(1000)
@@ -263,7 +271,8 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
                 todayTasks = repository.getCalendarTasks(repository.todayCalendarDateKey())
             }
             // 30초마다 스트릭/주간 그래프 갱신 — 과거 날짜 동기화는 매 5초씩 하기엔 비용이 커서 더 낮은 주기로.
-            if (tickCount % 30 == 0) {
+            // 138차: 오늘 합계가 그래프와 달라졌으면(다른 기기 기록 도착 등) 30초를 기다리지 않고 바로 맞춘다.
+            if (tickCount % 30 == 0 || last7Days.lastOrNull()?.second?.let { it != todayLog.sumOf { e -> e.seconds }.toLong() } == true) {
                 refreshStreakAndWeek()
             }
         }

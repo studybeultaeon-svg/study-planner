@@ -53,6 +53,7 @@ import com.phonelock.app.routine.RoutineAlarmScheduler
 import com.phonelock.app.service.AccessibilityWatchdogWorker
 import com.phonelock.app.ui.theme.PhoneLockTheme
 import com.phonelock.app.ui.theme.applyThemeWindowBackground
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
@@ -291,10 +292,18 @@ private fun PhoneLockApp(
         // 이동을 마친 뒤에 비운다 — 먼저 비우면 재구성이 이 이펙트를 취소할 여지가 생긴다.
         onStartRequestHandled()
     }
+    // 135차: 예전엔 여기서 딱 한 번만 읽어서, 백그라운드(AppMonitorAccessibilityService)가 새 릴리스를
+    // 찾아 저장해 둬도 이 화면이 살아 있는 동안엔 배너가 끝내 안 떴다 — 앱을 껐다 켜서 액티비티가 새로
+    // 만들어져야만 보였으니 "새 버전이 나오면 알려준다"는 기능이 사실상 죽어 있었다. 확인 호출 자체는
+    // checkForUpdateIfNeeded의 주기 가드(15분)가 막아주므로, 이 루프가 실제로 하는 일은 저장된 값을
+    // 다시 읽는 것뿐이다(SharedPreferences 읽기 한 번).
     LaunchedEffect(Unit) {
-        repository.checkForUpdateIfNeeded()
-        pendingUpdateApkUrl = repository.pendingUpdateApkUrl()
         repository.runDailyMaintenanceIfNeeded()
+        while (true) {
+            repository.checkForUpdateIfNeeded()
+            pendingUpdateApkUrl = repository.pendingUpdateApkUrl()
+            delay(60_000)
+        }
     }
 
     // 83차: 태블릿(sw600dp 이상)은 하단 NavigationBar 대신 데스크탑 MainScreen.kt와 같은 좌측

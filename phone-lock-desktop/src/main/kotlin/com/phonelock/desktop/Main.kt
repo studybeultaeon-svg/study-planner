@@ -58,7 +58,9 @@ import com.phonelock.desktop.ui.StudyLockScreen
 import com.phonelock.desktop.ui.UsageOverlayContent
 import com.phonelock.desktop.ui.theme.PhoneLockTheme
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * "chrome.exe" 같은 맨 이름만으로 실행 파일을 찾는다. `ProcessBuilder(appName)`은 PATH만 뒤지고,
@@ -172,22 +174,32 @@ private fun startApp() = application {
     var lockStopNoteText by remember { mutableStateOf("") }
     var lockStopTagText by remember { mutableStateOf("") }
 
+    // 135차(사용자 제보 "홈 화면이 6초마다 렉 걸린다"): 이 블록을 그냥 LaunchedEffect 안에서 돌리면
+    // 감시 루프 전체가 **Compose UI 스레드**에서 실행된다. EnforcementService.tick()은 2초마다
+    // isRemoteStudyTimerActive() → PomodoroSyncClient를 부르는데 그 캐시 TTL이 5초라, 2초 틱 × 5초 캐시
+    // = 정확히 6초마다 동기 HTTPS 요청(연결 타임아웃 3초)이 UI 스레드를 통째로 막았다. 홈 탭은
+    // withFrameNanos로 매 프레임 애니메이션을 돌리고 있어서 그 멈춤이 그대로 렉으로 보였다.
+    // 감시 루프는 네트워크·Win32·디스크 I/O를 모두 하므로 통째로 IO 디스패처로 옮긴다. 콜백들이 건드리는
+    // Compose 상태(blockRequest 등)는 백그라운드 스레드에서 써도 안전하다(스냅샷 상태, 재구성은 UI
+    // 스레드에서 예약됨 — Repository.checkForUpdateNow의 콜백이 이미 같은 방식으로 쓰이고 있다).
     LaunchedEffect(Unit) {
-        val apiServer = LocalApiServer(repository)
-        apiServer.start()
+        withContext(Dispatchers.IO) {
+            val apiServer = LocalApiServer(repository)
+            apiServer.start()
 
-        val service = EnforcementService(
-            repository = repository,
-            onBlock = { processName, reason, blockAttempts -> blockRequest = BlockRequest(processName, reason, blockAttempts) },
-            onConfirm = { processName, groupId, waitSeconds ->
-                val deferred = CompletableDeferred<Boolean>()
-                confirmRequest = ConfirmRequest(processName, groupId, waitSeconds, deferred)
-                deferred.await()
-            },
-            onOverlayUpdate = { status -> overlayStatus = status },
-            onStudyLockUpdate = { status -> studyLockStatus = status }
-        )
-        service.run()
+            val service = EnforcementService(
+                repository = repository,
+                onBlock = { processName, reason, blockAttempts -> blockRequest = BlockRequest(processName, reason, blockAttempts) },
+                onConfirm = { processName, groupId, waitSeconds ->
+                    val deferred = CompletableDeferred<Boolean>()
+                    confirmRequest = ConfirmRequest(processName, groupId, waitSeconds, deferred)
+                    deferred.await()
+                },
+                onOverlayUpdate = { status -> overlayStatus = status },
+                onStudyLockUpdate = { status -> studyLockStatus = status }
+            )
+            service.run()
+        }
     }
 
     val trayState = rememberTrayState()
@@ -199,17 +211,22 @@ private fun startApp() = application {
         DesktopNotifier.trayState = trayState
         var msSinceSlowTick = 0L
         while (true) {
-            VoiceMessageNotifier.tick(repository)
-            ChatNotifier.tick(repository) // 채팅 알림 신규(2026-09-10) — 무전기와 같은 7초 주기.
-            msSinceSlowTick += 7_000L
-            // 안드로이드는 AlarmManager로 정확히 예약하지만 데스크탑엔 그런 API가 없어 직접 경과시간을 비교한다(52차).
-            if (msSinceSlowTick >= 30_000L) {
-                msSinceSlowTick = 0L
-                RoutineNotifier.tick(repository)
-                SocialGroupNotifier.tick(repository)
-                runCatching { WeeklySummaryNotifier.tick(repository) } // 82차: 매주 일요일 20시, 내부적으로 날짜 가드됨
-                runCatching { StudyAlertNotifier.tick(repository) } // 122차: 공부 알림, 내부적으로 1시간 간격+종류별 하루 1회 가드됨
-                runCatching { repository.runDailyMaintenanceIfNeeded() } // 82차: 12개월 정리+클라우드 백업 자동화, 내부적으로 날짜 가드됨
+            // 135차: 이 틱도 원래 Compose UI 스레드에서 돌았다. 무전기/채팅 알림은 스스로 별도 스레드를
+            // 띄우지만 아래 30초짜리 묶음(루틴·주간요약·공부알림·일일유지보수)은 네트워크/디스크 작업을
+            // 그 자리에서 해서, 감시 루프와 같은 이유로 30초마다 화면을 멈추게 한다 — IO로 옮긴다.
+            withContext(Dispatchers.IO) {
+                VoiceMessageNotifier.tick(repository)
+                ChatNotifier.tick(repository) // 채팅 알림 신규(2026-09-10) — 무전기와 같은 7초 주기.
+                msSinceSlowTick += 7_000L
+                // 안드로이드는 AlarmManager로 정확히 예약하지만 데스크탑엔 그런 API가 없어 직접 경과시간을 비교한다(52차).
+                if (msSinceSlowTick >= 30_000L) {
+                    msSinceSlowTick = 0L
+                    RoutineNotifier.tick(repository)
+                    SocialGroupNotifier.tick(repository)
+                    runCatching { WeeklySummaryNotifier.tick(repository) } // 82차: 매주 일요일 20시, 내부적으로 날짜 가드됨
+                    runCatching { StudyAlertNotifier.tick(repository) } // 122차: 공부 알림, 내부적으로 1시간 간격+종류별 하루 1회 가드됨
+                    runCatching { repository.runDailyMaintenanceIfNeeded() } // 82차: 12개월 정리, 내부적으로 날짜 가드됨
+                }
             }
             delay(7_000L)
         }

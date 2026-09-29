@@ -7,6 +7,9 @@
 -keep class com.google.android.libraries.identity.googleid.** { *; }
 -keep class com.google.android.gms.auth.** { *; }
 -keepattributes Signature, *Annotation*, InnerClasses, EnclosingMethod
+# Credential Manager는 Play 서비스 구현체를 리플렉션으로 찾는다(androidx.credentials 공식 안내 규칙)
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** { *; }
 
 # Room 엔티티/DB — ksp가 생성한 코드가 엔티티 필드명을 직접 참조하므로 데이터 클래스 필드는 보존
 -keep class com.phonelock.app.data.** { *; }

@@ -432,8 +432,10 @@ data class AppData(
     var permSocial: Boolean = true,
     var permPlant: Boolean = true,
     // ---- 자체 업데이트 확인(GitHub Releases, 2026-08-30) ----
-    /** 마지막으로 GitHub Releases를 확인한 날짜(effectiveDate 기준) — 안드로이드판 lastUpdateCheckDate와 동일 패턴. */
-    var lastUpdateCheckDate: String? = null,
+    /** 마지막으로 GitHub Releases를 확인한 시각(epoch millis) — 안드로이드판 lastUpdateCheckAtMillis와 동일 패턴.
+     *  135차 이전엔 날짜 문자열(하루 1회 가드)이었는데, 그러면 그날 늦게 올라온 릴리스가 다음 날 초기화
+     *  시각까지 배너로 안 떴다(안드로이드는 2026-09-05에 이미 시각 기반으로 바꿨고 데스크탑만 남아 있었다). */
+    var lastUpdateCheckAtMillis: Long = 0L,
     /** GitHub Releases에서 발견한 최신 데스크탑 릴리스의 빌드 타임스탬프(BuildInfo.BUILD_TIMESTAMP와 비교). 0이면 "새 버전 없음". */
     var updateAvailableBuildTimestamp: Long = 0L,
     /** 위 빌드 타임스탬프에 대응하는 설치파일(exe/msi) 다운로드 URL. */
@@ -467,5 +469,7 @@ data class AppData(
     /** 나무 주변 장식 아이템(116차, 포인트 소비처 — IDEAS.md "보유 포인트 새 소비처 검토" 해소) — 구매한 장식 id 집합. */
     val ownedDecorationIds: MutableSet<String> = mutableSetOf(),
     /** 현재 홈 화면에 표시 중인 장식(최대 3개, 리스트 순서=배치 슬롯 순서). */
-    val equippedDecorationIds: MutableList<String> = mutableListOf()
+    val equippedDecorationIds: MutableList<String> = mutableListOf(),
+    /** 상점 성장 물약의 효과 구간 기록(138차) — 지금 켜진 효과와, 완료 취소 회수에 쓸 지난 구간이 함께 있다. */
+    val growthBoosts: MutableList<com.phonelock.shared.GrowthBoost.Window> = mutableListOf()
 )

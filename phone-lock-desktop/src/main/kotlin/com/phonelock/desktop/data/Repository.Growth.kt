@@ -1,5 +1,6 @@
 package com.phonelock.desktop.data
 
+import com.phonelock.shared.GrowthBoost
 import com.phonelock.shared.GrowthSystem
 import org.json.JSONArray
 import org.json.JSONObject
@@ -16,10 +17,11 @@ import org.json.JSONObject
  */
 
 /** 포인트 적립과 같은 raw 양(공부 분, 혹은 루틴/캘린더/스트릭 지급량)에 환생 배율을 곱해 "대기 EXP"에 적립.
+ *  [boost]는 상점 물약 배율 — 공부 적립만 [GrowthBoost.averageMultiplier]로 구해 넘긴다(138차, 물약은 공부 경험치에만 건다).
  *  호출부(Repository.Points.kt)가 이미 lock을 쥐고 있어야 한다. */
-internal fun Repository.awardGrowthExp(rawAmount: Double) {
+internal fun Repository.awardGrowthExp(rawAmount: Double, boost: Double = 1.0) {
     if (rawAmount <= 0.0) return
-    data.growthExpPending += rawAmount * GrowthSystem.expMultiplier(data.rebirthCount)
+    data.growthExpPending += rawAmount * boost * GrowthSystem.expMultiplier(data.rebirthCount)
     persist()
     pushGrowthToFirebase()
 }
@@ -41,6 +43,27 @@ internal fun Repository.revokeGrowthExp(rawAmount: Double) {
     persist()
     pushGrowthToFirebase()
 }
+
+// ---- 상점 성장 물약(138차, 안드로이드판과 대칭) — 판정은 전부 shared [GrowthBoost], 여기선 효과 구간 기록만 다룬다. ----
+
+/** 지금 켜져 있는 물약 효과(없으면 null) — 홈 화면 표시용. */
+fun Repository.activeGrowthBoost(): GrowthBoost.Window? = synchronized(lock) {
+    GrowthBoost.activeWindow(data.growthBoosts, System.currentTimeMillis())
+}
+
+/** data.json(JsonStore)과 Firebase 성장 문서가 같은 모양을 쓴다. */
+internal fun growthBoostWindowsToJson(windows: List<GrowthBoost.Window>): JSONArray = JSONArray().apply {
+    windows.forEach { w ->
+        put(JSONObject().apply {
+            put("potionId", w.potionId); put("start", w.startMillis); put("end", w.endMillis); put("multiplier", w.multiplier)
+        })
+    }
+}
+
+internal fun growthBoostWindowsFromJson(arr: JSONArray): List<GrowthBoost.Window> =
+    (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i) }.map { o ->
+        GrowthBoost.Window(o.optString("potionId"), o.optLong("start"), o.optLong("end"), o.optDouble("multiplier", 1.0))
+    }.filter { it.endMillis > it.startMillis && it.multiplier >= 1.0 }
 
 fun Repository.getGrowthExpTotal(): Double = synchronized(lock) { data.growthExpTotal }
 
@@ -121,6 +144,7 @@ private fun Repository.growthStateToJson(): JSONObject = JSONObject().apply {
     put("lifetimeRebirthCount", data.lifetimeRebirthCount)
     put("ownedDecorations", JSONArray(data.ownedDecorationIds.toList()))
     put("equippedDecorations", JSONArray(data.equippedDecorationIds.toList()))
+    put("boosts", growthBoostWindowsToJson(data.growthBoosts))
 }
 
 /**
@@ -137,7 +161,7 @@ private fun Repository.growthStateToJson(): JSONObject = JSONObject().apply {
 internal fun Repository.pushGrowthToFirebase() {
     val neverSynced = data.growthTs == 0L
     val nothingToShare = data.growthExpTotal <= 0.0 && data.growthExpPending <= 0.0 &&
-        data.rebirthCount == 0 && data.ownedDecorationIds.isEmpty()
+        data.rebirthCount == 0 && data.ownedDecorationIds.isEmpty() && data.growthBoosts.isEmpty()
     if (neverSynced && nothingToShare) return
     val ts = System.currentTimeMillis()
     data.growthTs = ts
@@ -171,6 +195,11 @@ fun Repository.syncGrowthFromFirebase(): Boolean {
             json.optJSONArray("equippedDecorations")?.let { arr ->
                 data.equippedDecorationIds.clear()
                 for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { data.equippedDecorationIds.add(it) }
+            }
+            // 138차 이전 빌드가 올린 문서엔 "boosts"가 없다 — 그땐 로컬 기록을 그대로 둔다(지우면 방금 산 물약이 사라진다).
+            json.optJSONArray("boosts")?.let { arr ->
+                data.growthBoosts.clear()
+                data.growthBoosts.addAll(growthBoostWindowsFromJson(arr))
             }
             data.growthTs = result.ts
             persist()

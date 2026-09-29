@@ -19,6 +19,9 @@ gradle-app.setting
 phone-lock-android/keystore.properties
 phone-lock-android/keystore/
 
+# Desktop Google OAuth client (140차) - never commit (see google-oauth.properties.example)
+phone-lock-desktop/google-oauth.properties
+
 # Android
 **/*.apk
 **/*.aab

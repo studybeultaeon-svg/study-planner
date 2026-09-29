@@ -337,7 +337,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 Spacer(Modifier.height(Spacing.sm))
                 Text(
                     "차단 규칙 목록 화면의 \"😴 잠깐 풀기\" 버튼으로 확인 질문 절차 없이 즉시 임시 해제할 수 있습니다. " +
-                        "남용을 막기 위해 아래 설정한 횟수까지만 쓸 수 있습니다(자정이 아니라 위 일일 한도 초기화 시각 기준).",
+                        "남용을 막기 위해 아래 설정한 횟수까지만 쓸 수 있습니다(자정이 아니라 설정의 \"하루 시작 기준\" 시각 기준).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -198,7 +198,8 @@ object AccountSyncClient {
 
     /**
      * 아이디 변경(118차, 데스크탑판과 대칭) — 호출 순서: (1) [claimUsername]으로 새 아이디 선점 →
-     * (2) [AuthManager.changeCustomId]로 로그인 이메일 교체 → (3) 이 함수로 profile.customId를 PATCH.
+     * (2) 아이디 로그인 조회표(`loginIds`)에 새 아이디 등록·옛 아이디 은퇴(140차부터 로그인 이메일은 바꾸지 않는다,
+     *     `AccountSecuritySection`의 changeMyId) → (3) 이 함수로 profile.customId를 PATCH.
      * `usernames/{oldId}`는 규칙상(create-only) 영구히 지울 수 없으므로 그대로 남겨둔다.
      */
     suspend fun updateCustomId(databaseUrl: String?, apiKey: String?, newCustomId: String): Result<Unit> {
@@ -385,7 +386,8 @@ object AccountSyncClient {
         val customId = profile?.optString("customId", "")?.takeIf { it.isNotBlank() }
         val user = AuthManager.currentUser
         return nickname ?: customId ?: user?.displayName?.takeIf { it.isNotBlank() }
-            ?: user?.email?.takeIf { it.isNotBlank() } ?: user?.uid ?: "사용자"
+            // 140차: 실제 이메일이 로그인 이메일일 수 있어 다른 사람에게 보일 이름으로는 가짜 이메일(아이디)만 쓴다.
+            ?: com.phonelock.shared.auth.AuthPolicy.idFromSyntheticEmail(user?.email) ?: user?.uid ?: "사용자"
     }
 
     /**

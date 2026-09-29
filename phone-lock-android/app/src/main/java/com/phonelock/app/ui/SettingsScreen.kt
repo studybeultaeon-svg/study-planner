@@ -71,7 +71,6 @@ import com.phonelock.app.routine.RoutineAlarmScheduler
 import com.phonelock.app.routine.StudyAlertChecker
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.service.AccessibilityServiceChecker
-import com.phonelock.app.service.ADMIN_USERNAME
 import com.phonelock.app.service.AccountSyncClient
 import com.phonelock.app.service.AuthManager
 import com.phonelock.app.service.BackgroundMediaGuard
@@ -280,20 +279,12 @@ fun SettingsScreen(
         }
     }
 
-    var loginId by remember { mutableStateOf(AuthManager.currentLoginId) }
     var showRestoreConfirmDialog by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
     val autoBackups = remember { PreMigrationBackup.listBackups(context) }
     var groupRestoreResult by remember { mutableStateOf<String?>(null) }
     var showRoutineRestoreConfirmDialog by remember { mutableStateOf(false) }
     var pendingRoutineRestoreUri by remember { mutableStateOf<Uri?>(null) }
-
-    // 아이디 변경(118차 신규)
-    var currentCustomId by remember { mutableStateOf(AuthManager.currentLoginId ?: "") }
-    var newIdText by remember { mutableStateOf("") }
-    var idCurrentPasswordText by remember { mutableStateOf("") }
-    var idSaving by remember { mutableStateOf(false) }
-    var idMessage by remember { mutableStateOf<String?>(null) }
 
     var isAdmin by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -493,6 +484,29 @@ fun SettingsScreen(
         return
     }
 
+    // 138차(사용자 요청): "일일 사용 한도 초기화 시각"을 "하루 시작 기준"으로 이름을 바꾸고 공부 탭에도 둔다 —
+    // 이 값은 한도뿐 아니라 캘린더·공부 기록의 "오늘"도 정하는데, 규칙 탭에 한도 이름으로만 있어서 공부 쪽에선
+    // 찾을 수 없었다. 두 탭이 같은 입력 상태(dailyResetHourText)와 같은 저장을 쓴다. 루틴은 이 값을 따르지 않고
+    // 자정 기준이라(RoutineScreen의 LocalDate.now()) 루틴 탭엔 두지 않았다 — 두면 루틴도 바뀌는 것처럼 보인다.
+    val dayStartCard: @Composable (String) -> Unit = { alsoIn ->
+        SectionCard("하루 시작 기준") {
+            OutlinedTextField(
+                value = dailyResetHourText,
+                onValueChange = { text ->
+                    dailyResetHourText = text
+                    text.toIntOrNull()?.let { if (it in 0..23) { prefs.dailyResetHour = it; repository.pushSettingsToFirebase() } }
+                },
+                label = { Text("하루 시작 시각 (0~23시)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                "이 시각에 앱의 \"오늘\"이 바뀝니다 — 차단 규칙의 오늘 사용 시간·잠깐 풀기 횟수, 캘린더·공부 기록의 오늘이 이 시각부터 새로 시작돼요. 루틴은 이 설정과 상관없이 자정 기준이에요.\n$alsoIn",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
     // 카테고리별 세부 설정 — 태블릿의 우측 패널과 폰의 드로어 본문이 같은 람다를 재사용한다
     // (MainActivity.kt의 navHostContent와 같은 패턴).
     val detailContent: @Composable (Modifier) -> Unit = { modifier ->
@@ -583,147 +597,8 @@ fun SettingsScreen(
                     }
                     Spacer(Modifier.height(Spacing.md))
 
-                    if (loginId != null) {
-                        SectionCard("아이디 변경") {
-                            val isAdminAccount = currentCustomId.equals(ADMIN_USERNAME, ignoreCase = true)
-                            Text("현재 아이디: ${currentCustomId.ifBlank { "-" }}", style = MaterialTheme.typography.bodyMedium)
-                            Spacer(Modifier.height(Spacing.sm))
-                            if (isAdminAccount) {
-                                Text(
-                                    "관리자 계정은 아이디를 바꿀 수 없습니다.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            } else {
-                                Text(
-                                    "이전 아이디는 이후 본인을 포함해 아무도 다시 쓸 수 없게 영구히 잠기며, 다른 사람이 " +
-                                        "검색하면 옛 아이디로도 여전히 본인이 나옵니다.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.height(Spacing.sm))
-                                OutlinedTextField(
-                                    value = newIdText,
-                                    onValueChange = { newIdText = it; idMessage = null },
-                                    label = { Text("새 아이디 (영문/숫자 3~20자)") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Spacer(Modifier.height(Spacing.sm))
-                                OutlinedTextField(
-                                    value = idCurrentPasswordText,
-                                    onValueChange = { idCurrentPasswordText = it; idMessage = null },
-                                    label = { Text("현재 비밀번호 확인") },
-                                    singleLine = true,
-                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Spacer(Modifier.height(Spacing.sm))
-                                val idValid = idPattern.matches(newIdText.trim().uppercase()) && idCurrentPasswordText.isNotBlank()
-                                Button(
-                                    enabled = idValid && !idSaving,
-                                    onClick = {
-                                        idSaving = true
-                                        idMessage = null
-                                        val loginIdForVerify = currentCustomId
-                                        val newId = newIdText.trim()
-                                        val passwordForVerify = idCurrentPasswordText
-                                        scope.launch {
-                                            // 본인 확인 — 현재 아이디+비밀번호로 다시 로그인해본다.
-                                            val verify = AuthManager.signIn(loginIdForVerify, passwordForVerify)
-                                            if (verify.isFailure) {
-                                                idSaving = false
-                                                idMessage = "비밀번호가 올바르지 않습니다."
-                                                return@launch
-                                            }
-                                            val claimResult = AccountSyncClient.claimUsername(prefs.fbDatabaseUrl, prefs.fbApiKey, newId)
-                                            if (claimResult.isFailure) {
-                                                idSaving = false
-                                                idMessage = claimResult.exceptionOrNull()?.message ?: "이미 사용 중인 아이디입니다."
-                                                return@launch
-                                            }
-                                            val emailResult = AuthManager.changeCustomId(newId)
-                                            if (emailResult.isFailure) {
-                                                idSaving = false
-                                                idMessage = emailResult.exceptionOrNull()?.message ?: "변경 실패"
-                                                return@launch
-                                            }
-                                            val profileResult = AccountSyncClient.updateCustomId(prefs.fbDatabaseUrl, prefs.fbApiKey, newId)
-                                            idSaving = false
-                                            profileResult.onSuccess {
-                                                currentCustomId = newId.uppercase()
-                                                loginId = AuthManager.currentLoginId
-                                                newIdText = ""
-                                                idCurrentPasswordText = ""
-                                                idMessage = "아이디가 ${newId.uppercase()}(으)로 변경되었습니다."
-                                            }
-                                            profileResult.onFailure { e ->
-                                                idMessage = e.message ?: "프로필 갱신 실패 — 로그인 아이디는 이미 바뀌었으니 다시 로그인해 재시도하세요."
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) { Text(if (idSaving) "변경 중..." else "아이디 변경") }
-                                idMessage?.let { msg ->
-                                    Spacer(Modifier.height(Spacing.xs))
-                                    Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(Spacing.md))
-
-                        SectionCard("비밀번호 변경") {
-                            var newPassword by remember { mutableStateOf("") }
-                            var newPasswordConfirm by remember { mutableStateOf("") }
-                            var pwSaving by remember { mutableStateOf(false) }
-                            var pwResult by remember { mutableStateOf<String?>(null) }
-                            val pwValid = newPassword.length in 6..50 && newPassword == newPasswordConfirm
-
-                            OutlinedTextField(
-                                value = newPassword,
-                                onValueChange = { newPassword = it; pwResult = null },
-                                label = { Text("새 비밀번호 (6자 이상)") },
-                                singleLine = true,
-                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(Spacing.sm))
-                            OutlinedTextField(
-                                value = newPasswordConfirm,
-                                onValueChange = { newPasswordConfirm = it; pwResult = null },
-                                label = { Text("새 비밀번호 확인") },
-                                singleLine = true,
-                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(Spacing.sm))
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        pwSaving = true
-                                        pwResult = null
-                                        val result = AuthManager.changePassword(newPassword)
-                                        pwSaving = false
-                                        result.onSuccess {
-                                            pwResult = "변경되었습니다."
-                                            newPassword = ""
-                                            newPasswordConfirm = ""
-                                        }
-                                        result.onFailure { e ->
-                                            pwResult = e.message ?: "변경 실패 — 오래 전에 로그인했다면 로그아웃 후 다시 로그인해서 시도해주세요."
-                                        }
-                                    }
-                                },
-                                enabled = pwValid && !pwSaving,
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text(if (pwSaving) "변경 중..." else "비밀번호 변경") }
-                            pwResult?.let {
-                                Spacer(Modifier.height(Spacing.sm))
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        Spacer(Modifier.height(Spacing.md))
-                    }
+                    AccountSecuritySection(prefs)
+                    Spacer(Modifier.height(Spacing.md))
 
                     // 98차(사용자 요청): 온라인/오프라인 모드 — 네트워크가 실제로 끊기면 자동으로 오프라인
                     // 전환되지만(NetworkMonitor), 필요하면 연결돼 있어도 수동으로 강제 오프라인 가능.
@@ -755,90 +630,6 @@ fun SettingsScreen(
                             )
                         }
                         Spacer(Modifier.height(Spacing.md))
-                    }
-
-                    SectionCard("계정 동기화 (로그인 필수)") {
-                        Text(
-                            "동기화(실행 전 대기 단계/잠깐 풀기/일일사용량/캘린더/계산기/루틴)는 이제 로그인이 있어야만 " +
-                                "작동합니다. 같은 계정으로 로그인한 기기끼리 자동으로 연결됩니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(Spacing.sm))
-                        if (loginId != null) {
-                            Text("로그인됨: $loginId", style = MaterialTheme.typography.bodyLarge)
-                            Spacer(Modifier.height(Spacing.sm))
-                            Button(
-                                onClick = {
-                                    AuthManager.signOut()
-                                    loginId = null
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("로그아웃") }
-                        } else {
-                            Text(
-                                AuthManager.currentUser?.let { "게스트로 로그인되어 있습니다." }
-                                    ?: "로그아웃되었습니다. 앱을 다시 시작해서 로그인해주세요.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        if (AuthManager.currentUser != null) {
-                            Spacer(Modifier.height(Spacing.sm))
-                            var showDeleteConfirm by remember { mutableStateOf(false) }
-                            var deleteError by remember { mutableStateOf<String?>(null) }
-                            var deleting by remember { mutableStateOf(false) }
-                            Button(
-                                onClick = { showDeleteConfirm = true },
-                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("계정 삭제") }
-                            deleteError?.let { msg ->
-                                Spacer(Modifier.height(Spacing.xs))
-                                Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                            }
-                            if (showDeleteConfirm) {
-                                AlertDialog(
-                                    onDismissRequest = { if (!deleting) showDeleteConfirm = false },
-                                    title = { Text("계정을 삭제할까요?") },
-                                    text = {
-                                        Text(
-                                            "루틴/캘린더/계산기/모임 기록이 이 기기에서 로그아웃되며, 서버의 계정 데이터도 " +
-                                                "삭제됩니다(되돌릴 수 없음). 사용하던 아이디는 이후 본인을 포함해 아무도 다시 " +
-                                                "쓸 수 없게 영구히 잠깁니다."
-                                        )
-                                    },
-                                    confirmButton = {
-                                        Button(
-                                            enabled = !deleting,
-                                            onClick = {
-                                                scope.launch {
-                                                    deleting = true
-                                                    deleteError = null
-                                                    val delResult = AccountSyncClient.deleteMyData(prefs.fbDatabaseUrl, prefs.fbApiKey)
-                                                    val authResult = AuthManager.deleteAccount()
-                                                    deleting = false
-                                                    if (authResult.isSuccess) {
-                                                        showDeleteConfirm = false
-                                                        loginId = null
-                                                        android.widget.Toast.makeText(
-                                                            context, "계정이 삭제되었습니다. 앱을 다시 시작해주세요.", android.widget.Toast.LENGTH_LONG
-                                                        ).show()
-                                                    } else {
-                                                        deleteError = delResult.exceptionOrNull()?.message
-                                                            ?: authResult.exceptionOrNull()?.message
-                                                            ?: "삭제 실패 — 오래 전에 로그인했다면 로그아웃 후 다시 로그인해서 시도해주세요."
-                                                    }
-                                                }
-                                            }
-                                        ) { Text(if (deleting) "삭제 중..." else "삭제") }
-                                    },
-                                    dismissButton = {
-                                        TextButton(onClick = { showDeleteConfirm = false }, enabled = !deleting) { Text("취소") }
-                                    }
-                                )
-                            }
-                        }
                     }
                 }
 
@@ -1265,22 +1056,7 @@ fun SettingsScreen(
                 }
 
                 SettingsCategory.RULES -> {
-                    SectionCard("일일 사용 한도 초기화 시각") {
-                        OutlinedTextField(
-                            value = dailyResetHourText,
-                            onValueChange = { text ->
-                                dailyResetHourText = text
-                                text.toIntOrNull()?.let { if (it in 0..23) { prefs.dailyResetHour = it; repository.pushSettingsToFirebase() } }
-                            },
-                            label = { Text("초기화 시각 (0~23시)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            "이 시각이 되면 차단 규칙별 오늘 사용 시간이 초기화됩니다. (캘린더/공부기록의 \"오늘\" 판정도 이 시각을 기준으로 함께 바뀝니다.)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    dayStartCard("📘 공부 탭에서도 같은 값을 바꿀 수 있어요.")
                     Spacer(Modifier.height(Spacing.md))
 
                     SectionCard("차단 규칙 수정·삭제 방지") {
@@ -1410,6 +1186,8 @@ fun SettingsScreen(
                 }
 
                 SettingsCategory.STUDY -> {
+                    dayStartCard("🗂️ 규칙 탭의 같은 항목과 같은 값이에요.")
+                    Spacer(Modifier.height(Spacing.md))
                     SectionCard("캘린더 복습 기본값") {
                         ToggleRow(
                             title = "새 일정을 복습으로 시작",
@@ -1808,7 +1586,7 @@ fun SettingsScreen(
                         var apkUrl by remember { mutableStateOf(repository.pendingUpdateApkUrl()) }
                         var lastOutcome by remember { mutableStateOf<PhoneLockRepository.UpdateCheckOutcome?>(null) }
                         Text(
-                            "현재 버전: ${repository.currentVersionCode()} · 초기화 시각이 지나면 하루 1회 자동으로도 확인합니다.",
+                            "현재 버전: ${repository.currentVersionCode()} · 하루 시작 시각이 지나면 하루 1회 자동으로도 확인합니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

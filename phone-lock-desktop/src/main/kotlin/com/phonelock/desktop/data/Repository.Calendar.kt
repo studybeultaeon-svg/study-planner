@@ -214,7 +214,6 @@ fun Repository.setCalendarTaskStatus(dateKey: String, ordinal: Int, targetStatus
         if (current.linkedCalc != null && current.color == "red") {
             adjustLinkedCalcProgress(current.linkedCalc, -linkedProgressAmount(current))
         }
-        onCalendarTaskCompletionChanged("calendar:$dateKey:$ordinal", dateKey, completed = false)
     }
     if (current.status == "X") revertIncompleteCarryOver(dateKey, current)
     if (current.status == targetStatus) {
@@ -227,10 +226,11 @@ fun Repository.setCalendarTaskStatus(dateKey: String, ordinal: Int, targetStatus
             if (updated.linkedCalc != null && updated.color == "red") {
                 adjustLinkedCalcProgress(updated.linkedCalc, linkedProgressAmount(updated))
             }
-            onCalendarTaskCompletionChanged("calendar:$dateKey:$ordinal", dateKey, completed = true)
         }
         if (targetStatus == "X") applyIncompleteCarryOver(dateKey, updated)
     }
+    // 138차: 완료 1개당 적립 대신 그날 일정 달성 비율로 다시 맞춘다(상태가 어떻게 바뀌었든 한 번).
+    refreshCalendarDayReward(dateKey)
     persist()
     pushCalendarToFirebase()
 }

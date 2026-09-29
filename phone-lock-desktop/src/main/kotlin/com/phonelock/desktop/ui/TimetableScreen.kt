@@ -191,7 +191,6 @@ fun TimetableScreen(repository: Repository) {
                                             // 웹앱 .tt-val.tt-today-val — 오늘 칸 값은 빨강으로 강조(마감 임박 신호), 달성 시엔 초록.
                                             val cellColor = when {
                                                 achieved -> Color(0xFF34D399)
-                                                isToday -> Color(0xFFF87171)
                                                 else -> null
                                             }
                                             TtCell(label, dayColWidth, highlight = isToday, textColor = cellColor)
@@ -201,14 +200,14 @@ fun TimetableScreen(repository: Repository) {
                                     }
                                 }
                                 // 웹앱 .tt-total — 합계 열은 항상 accent 파랑
-                                TtCell("${fmtDec(rowTotal)}${row.task.unit}", totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
+                                TtCell("${fmtDec(rowTotal)}${row.task.unit}", totalColWidth, bold = true)
                             }
                         }
                         // 합계 행
                         Row(Modifier.border(1.dp, border)) {
                             TtCell("합계", nameColWidth, bold = true)
                             dayTotals.forEach { v -> TtCell(fmtDec(v), dayColWidth, bold = true) }
-                            TtCell(fmtDec(dayTotals.sum()), totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
+                            TtCell(fmtDec(dayTotals.sum()), totalColWidth, bold = true)
                         }
                     }
                 }
@@ -243,7 +242,7 @@ fun TimetableScreen(repository: Repository) {
                                                 "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✅" else "",
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 fontWeight = FontWeight.Bold,
-                                                color = if (achieved) Color(0xFF34D399) else Color(0xFFF87171)
+                                                color = if (achieved) Color(0xFF34D399) else MaterialTheme.colorScheme.onSurface
                                             )
                                         }
                                     }

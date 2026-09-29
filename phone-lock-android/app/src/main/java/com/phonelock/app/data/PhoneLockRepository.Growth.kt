@@ -1,5 +1,6 @@
 package com.phonelock.app.data
 
+import com.phonelock.shared.GrowthBoost
 import com.phonelock.shared.GrowthSystem
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -16,10 +17,11 @@ import org.json.JSONObject
  * 탭에서 사용자가 "적용" 버튼을 눌러야 [applyPendingGrowthExp]가 그 순간 레벨에 반영한다.
  */
 
-/** 포인트 적립과 같은 raw 양에 환생 배율을 곱해 "대기 EXP"에 적립. */
-internal fun PhoneLockRepository.awardGrowthExp(rawAmount: Double) {
+/** 포인트 적립과 같은 raw 양에 환생 배율을 곱해 "대기 EXP"에 적립. [boost]는 상점 물약 배율 — 공부 적립만
+ *  [GrowthBoost.averageMultiplier]로 구해 넘긴다(138차, 물약은 공부 경험치에만 건다). */
+internal fun PhoneLockRepository.awardGrowthExp(rawAmount: Double, boost: Double = 1.0) {
     if (rawAmount <= 0.0) return
-    preferences.growthExpPending += rawAmount * GrowthSystem.expMultiplier(preferences.rebirthCount)
+    preferences.growthExpPending += rawAmount * boost * GrowthSystem.expMultiplier(preferences.rebirthCount)
     pushGrowthToFirebase()
 }
 
@@ -38,6 +40,32 @@ internal fun PhoneLockRepository.revokeGrowthExp(rawAmount: Double) {
     if (remaining > 0.0) preferences.growthExpTotal = (preferences.growthExpTotal - remaining).coerceAtLeast(0.0)
     pushGrowthToFirebase()
 }
+
+// ---- 상점 성장 물약(138차) — 판정은 전부 shared [GrowthBoost], 여기선 효과 구간 기록의 저장만 맡는다. ----
+
+internal fun PhoneLockRepository.growthBoostWindows(): List<GrowthBoost.Window> =
+    boostWindowsFromJson(runCatching { JSONArray(preferences.growthBoostsJson) }.getOrDefault(JSONArray()))
+
+internal fun PhoneLockRepository.setGrowthBoostWindows(windows: List<GrowthBoost.Window>) {
+    preferences.growthBoostsJson = boostWindowsToJson(windows).toString()
+}
+
+/** 지금 켜져 있는 물약 효과(없으면 null) — 홈 화면 표시용. */
+fun PhoneLockRepository.activeGrowthBoost(): GrowthBoost.Window? =
+    GrowthBoost.activeWindow(growthBoostWindows(), System.currentTimeMillis())
+
+private fun boostWindowsToJson(windows: List<GrowthBoost.Window>): JSONArray = JSONArray().apply {
+    windows.forEach { w ->
+        put(JSONObject().apply {
+            put("potionId", w.potionId); put("start", w.startMillis); put("end", w.endMillis); put("multiplier", w.multiplier)
+        })
+    }
+}
+
+private fun boostWindowsFromJson(arr: JSONArray): List<GrowthBoost.Window> =
+    (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i) }.map { o ->
+        GrowthBoost.Window(o.optString("potionId"), o.optLong("start"), o.optLong("end"), o.optDouble("multiplier", 1.0))
+    }.filter { it.endMillis > it.startMillis && it.multiplier >= 1.0 }
 
 fun PhoneLockRepository.getGrowthExpTotal(): Double = preferences.growthExpTotal
 
@@ -116,6 +144,7 @@ internal fun PhoneLockRepository.growthStateToJson(): JSONObject = JSONObject().
     put("lifetimeRebirthCount", preferences.lifetimeRebirthCount)
     put("ownedDecorations", JSONArray(ownedDecorationIds.toList()))
     put("equippedDecorations", JSONArray(equippedDecorationIds))
+    put("boosts", boostWindowsToJson(growthBoostWindows()))
 }
 
 /**
@@ -130,7 +159,7 @@ internal fun PhoneLockRepository.growthStateToJson(): JSONObject = JSONObject().
 internal fun PhoneLockRepository.pushGrowthToFirebase() {
     val neverSynced = preferences.growthTs == 0L
     val nothingToShare = preferences.growthExpTotal <= 0.0 && preferences.growthExpPending <= 0.0 &&
-        preferences.rebirthCount == 0 && ownedDecorationIds.isEmpty()
+        preferences.rebirthCount == 0 && ownedDecorationIds.isEmpty() && growthBoostWindows().isEmpty()
     if (neverSynced && nothingToShare) return
     val ts = System.currentTimeMillis()
     preferences.growthTs = ts
@@ -158,6 +187,8 @@ suspend fun PhoneLockRepository.syncGrowthFromFirebase(): Boolean {
         json.optJSONArray("equippedDecorations")?.let { arr ->
             preferences.equippedDecorationIdsCsv = (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotBlank() }.joinToString(",")
         }
+        // 138차 이전 빌드가 올린 문서엔 "boosts"가 없다 — 그땐 로컬 기록을 그대로 둔다(지우면 방금 산 물약이 사라진다).
+        json.optJSONArray("boosts")?.let { arr -> setGrowthBoostWindows(boostWindowsFromJson(arr)) }
         preferences.growthTs = result.ts
         return true
     }

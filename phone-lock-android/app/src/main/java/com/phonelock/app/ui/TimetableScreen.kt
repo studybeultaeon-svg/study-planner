@@ -221,7 +221,6 @@ private fun TimetableContent(
                                         val label = "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✅" else ""
                                         val cellColor = when {
                                             achieved -> Color(0xFF34D399)
-                                            isTodayCol -> Color(0xFFF87171)
                                             else -> null
                                         }
                                         TtCell(label, dayColWidth, highlight = isTodayCol, textColor = cellColor)
@@ -230,13 +229,13 @@ private fun TimetableContent(
                                     }
                                 }
                             }
-                            TtCell("${fmtDec(rowTotal)}${row.task.unit}", totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
+                            TtCell("${fmtDec(rowTotal)}${row.task.unit}", totalColWidth, bold = true)
                         }
                     }
                     Row(Modifier.border(1.dp, border)) {
                         TtCell("합계", nameColWidth, bold = true)
                         dayTotals.forEach { v -> TtCell(fmtDec(v), dayColWidth, bold = true) }
-                        TtCell(fmtDec(dayTotals.sum()), totalColWidth, bold = true, textColor = MaterialTheme.colorScheme.primary)
+                        TtCell(fmtDec(dayTotals.sum()), totalColWidth, bold = true)
                     }
                 }
             }
@@ -303,7 +302,7 @@ private fun TimetableContent(
                             fontWeight = if (v > 0) FontWeight.Bold else FontWeight.Normal,
                             color = if (v <= 0) MaterialTheme.colorScheme.onSurfaceVariant
                                 else if (achieved) Color(0xFF34D399)
-                                else if (isToday) Color(0xFFF87171) else MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface
                         )
                     }
                     HorizontalDivider()
@@ -313,7 +312,7 @@ private fun TimetableContent(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("합계", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(fmtDec(dayTotal), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Text(fmtDec(dayTotal), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                 }
             }
         }

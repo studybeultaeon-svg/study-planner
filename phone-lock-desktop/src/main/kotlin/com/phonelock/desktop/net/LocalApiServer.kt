@@ -8,6 +8,7 @@ import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.net.URLDecoder
 import java.security.MessageDigest
+import java.util.concurrent.Executors
 
 /**
  * 브라우저 확장프로그램이 사이트 차단 여부를 물어보는 로컬 전용 HTTP API.
@@ -33,6 +34,20 @@ class LocalApiServer(private val repository: Repository) {
         route(s, "/reels-shorts-config") { handleReelsShortsConfig(it) }
         route(s, "/overlay-status") { handleOverlayStatus(it) }
         route(s, "/theme") { handleTheme(it) }
+        // 136차: executor를 안 주면 HttpServer는 요청을 **한 스레드에서 순서대로** 처리한다. 그런데
+        // /check·/tick·/overlay-status는 SiteEnforcement를 거쳐 판정하면서 Firebase HTTPS 호출
+        // (PomodoroSyncClient의 원격 공부 신호, 스누즈/다른 기기 사용시간 병합 — 각각 연결 타임아웃 3초)을
+        // 그 자리에서 할 수 있다. 그 한 번이 느려지면 그동안 들어온 다른 탭의 사이트 판정 요청이 전부
+        // 줄을 서서, 확장은 응답을 못 받고(fetch 타임아웃) 사이트 차단이 조용히 열려버린다. 확장은
+        // 탭마다 오버레이 상태를 2초 주기로, tick을 1분 주기로, 그리고 이동할 때마다 /check를 부르므로
+        // 탭이 여러 개면 이 줄서기가 실제로 생긴다.
+        // Repository(synchronized(lock))·ConfirmationGate·OverlayLevelRatchet(@Synchronized)은 이미
+        // 스레드 안전하고, 감시 루프(EnforcementService)가 이미 다른 스레드에서 같은 객체를 쓰고 있으므로
+        // 여기서 동시성이 새로 생기는 건 아니다. 숫자는 확장이 동시에 띄우는 요청 수(탭당 1개 수준)를
+        // 고려한 값이고, 앱 종료를 막지 않도록 데몬 스레드로 만든다.
+        s.executor = Executors.newFixedThreadPool(4) { r ->
+            Thread(r, "LocalApiServer").apply { isDaemon = true }
+        }
         s.start()
         server = s
     }

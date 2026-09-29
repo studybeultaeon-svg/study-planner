@@ -87,6 +87,16 @@ class AppPreferences(context: Context) {
         get() = prefs.getString("queued_study_notifications_json", "[]") ?: "[]"
         set(value) = prefs.edit().putString("queued_study_notifications_json", value).apply()
 
+    /** 다른 기기가 올린 공부 기록의 마지막 수신본(날짜 -> 기록 배열) JSON — [PhoneLockRepository]의 표시용
+     *  캐시를 앱을 다시 열어도 곧바로 보여주려고 저장해둔다(138차). */
+    var remoteStudyLogCacheJson: String
+        get() = prefs.getString("remote_study_log_cache_json", "{}") ?: "{}"
+        set(value) = prefs.edit().putString("remote_study_log_cache_json", value).apply()
+
+    /** 미뤄둔 알림이 하나라도 있는지 — JSON을 파싱하지 않고 확인한다(2초 tick에서 매번 불린다, 136차). */
+    val hasQueuedStudyNotifications: Boolean
+        get() = queuedStudyNotificationsJson.length > 2
+
     fun queuedStudyNotifications(): List<QueuedNotification> {
         val arr = org.json.JSONArray(queuedStudyNotificationsJson)
         return (0 until arr.length()).map { i ->
@@ -511,6 +521,12 @@ class AppPreferences(context: Context) {
         get() = prefs.getString("equipped_decoration_ids", "") ?: ""
         set(value) = prefs.edit().putString("equipped_decoration_ids", value).apply()
 
+    /** 상점 성장 물약의 효과 구간 기록(138차, [com.phonelock.shared.GrowthBoost.Window] 배열) JSON —
+     *  지금 켜진 효과와, 완료 취소 회수에 쓸 지난 구간이 함께 들어 있다. */
+    var growthBoostsJson: String
+        get() = prefs.getString("growth_boosts_json", "[]") ?: "[]"
+        set(value) = prefs.edit().putString("growth_boosts_json", value).apply()
+
     /** 온라인/오프라인 모드(98차, 사용자 요청) — 사용자가 수동으로 강제 오프라인 전환. 기본 꺼짐(자동
      *  감지 우선) — 켜면 실제 네트워크 연결 여부와 무관하게 항상 오프라인으로 취급한다. */
     var offlineModeOverride: Boolean
@@ -750,6 +766,34 @@ class AppPreferences(context: Context) {
     var permPlant: Boolean
         get() = prefs.getBoolean("perm_plant", true)
         set(value) = prefs.edit().putBoolean("perm_plant", value).apply()
+
+    // ---- 다중 로그인 · 계정 보안(140차) ----
+    /** 이 설치본의 고정 식별자 — "로그인된 기기" 목록(`authMeta/{uid}/sessions/{id}`)의 키. 기기 정보가 아니라 무작위 값이다. */
+    val authInstallId: String
+        get() = prefs.getString("auth_install_id", null) ?: java.util.UUID.randomUUID().toString().also {
+            prefs.edit().putString("auth_install_id", it).apply()
+        }
+
+    /** 이 기기에서 연속으로 실패한 로그인 횟수와 마지막 실패 시각 — [com.phonelock.shared.auth.AuthPolicy.loginCooldownMs]. */
+    var loginFailureCount: Int
+        get() = prefs.getInt("login_failure_count", 0)
+        set(value) = prefs.edit().putInt("login_failure_count", value).apply()
+    var loginFailureAtMillis: Long
+        get() = prefs.getLong("login_failure_at_millis", 0L)
+        set(value) = prefs.edit().putLong("login_failure_at_millis", value).apply()
+
+    /** 인증을 기다리는 새 이메일(아이디가 없는 계정은 `loginIds`에 적을 곳이 없어 여기에만 둔다)과 보낸 시각. */
+    var pendingEmailChange: String?
+        get() = prefs.getString("pending_email_change", null)
+        set(value) = prefs.edit().putString("pending_email_change", value).apply()
+    var emailMailSentAtMillis: Long
+        get() = prefs.getLong("email_mail_sent_at_millis", 0L)
+        set(value) = prefs.edit().putLong("email_mail_sent_at_millis", value).apply()
+
+    /** 새 기기 로그인 알림 — 이미 본(알림을 띄웠거나 이 기기 자신인) 세션 ID들, 쉼표로 구분. */
+    var knownSessionIds: String
+        get() = prefs.getString("known_session_ids", "") ?: ""
+        set(value) = prefs.edit().putString("known_session_ids", value).apply()
 
     // ---- 자체 업데이트 확인(GitHub Releases, 2026-08-30) ----
     /** 마지막으로 GitHub Releases를 확인한 시각(epoch millis) — 하루 1회(날짜 기준) 가드였던 것을

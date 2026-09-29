@@ -1,5 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import java.io.File
+import java.util.Properties
 
 plugins {
     kotlin("jvm") version "1.9.24"
@@ -34,6 +35,18 @@ tasks.test {
 // 매 빌드마다 수동으로 버전을 올리지 않아도 항상 이전 빌드보다 큰 값을 갖도록 컴파일 시점에 생성한다.
 val generatedBuildInfoDir = layout.buildDirectory.dir("generated/buildinfo/kotlin")
 
+// 다중 로그인(140차): 데스크탑 구글 로그인용 OAuth 클라이언트("데스크톱 앱" 유형) — git에 올리지 않는
+// google-oauth.properties(googleDesktopClientId / googleDesktopClientSecret)에서 읽어 BuildInfo에 굽는다.
+// 설치형 앱의 클라이언트 시크릿은 Google 정책상 비밀로 취급되지 않지만, 공개 저장소에 올리지 않으려고 분리했다.
+// 파일이 없으면 빈 값이 되고 앱은 구글 로그인 버튼을 숨긴다.
+val googleOAuthProps = Properties().apply {
+    val f = rootProject.file("google-oauth.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+// 클라이언트 ID/시크릿은 영문·숫자·-_. 뿐이라 그 밖의 글자는 버린다(생성 코드의 문자열 이스케이프 걱정 없이).
+fun kotlinStringLiteral(value: String?): String =
+    "\"" + value.orEmpty().trim().filter { it.isLetterOrDigit() || it in "-_." } + "\""
+
 val generateBuildInfo by tasks.registering {
     val outputDir = generatedBuildInfoDir
     outputs.dir(outputDir)
@@ -52,6 +65,8 @@ val generateBuildInfo by tasks.registering {
             |
             |object BuildInfo {
             |    const val BUILD_TIMESTAMP = ${timestamp}L
+            |    const val GOOGLE_DESKTOP_CLIENT_ID = ${kotlinStringLiteral(googleOAuthProps.getProperty("googleDesktopClientId"))}
+            |    const val GOOGLE_DESKTOP_CLIENT_SECRET = ${kotlinStringLiteral(googleOAuthProps.getProperty("googleDesktopClientSecret"))}
             |}
             |""".trimMargin()
         )
@@ -97,4 +112,20 @@ compose.desktop {
             }
         }
     }
+}
+
+/**
+ * 135차: 자체 업데이트용 app-image zip. 지금까지 릴리스에 올리던 건 MSI뿐이었는데, 이 호스트에서 실제로
+ * 돌아가는 건 MSI 설치본이 아니라 `createDistributable`이 만든 app-image를 통째로 복사해 둔 폴더
+ * (`C:\Users\sunae\PhoneLockDesktopApp`)라서 — MSI를 받아 실행해도 `Program Files`에 딴 살림만 차리고
+ * 정작 실행 중인 앱은 그대로였다(게다가 packageVersion이 매 빌드 "1.0.0" 고정이라 Windows Installer가
+ * 같은 버전으로 보고 업그레이드 자체를 안 한다). 그래서 업데이트는 이 zip을 받아 app-image 폴더를
+ * 통째로 바꿔치기하는 방식으로 바꿨다([com.phonelock.desktop.ui.UpdateBanner] 참고).
+ * zip의 루트가 곧 app-image 폴더의 내용(PhoneLockDesktop.exe / app / runtime)이 되도록 담는다.
+ */
+val packageAppImageZip by tasks.registering(Zip::class) {
+    dependsOn("createDistributable")
+    from(layout.buildDirectory.dir("compose/binaries/main/app/PhoneLockDesktop"))
+    archiveFileName.set("PhoneLockDesktop-app-image.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("compose/binaries/main/app-zip"))
 }

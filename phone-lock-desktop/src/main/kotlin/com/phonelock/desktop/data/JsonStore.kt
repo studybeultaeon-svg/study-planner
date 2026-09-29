@@ -144,7 +144,7 @@ object JsonStore {
             permManage = json.optBoolean("permManage", true),
             permPlant = json.optBoolean("permPlant", true),
             permSocial = json.optBoolean("permSocial", true),
-            lastUpdateCheckDate = if (json.isNull("lastUpdateCheckDate")) null else json.optString("lastUpdateCheckDate", null),
+            lastUpdateCheckAtMillis = json.optLong("lastUpdateCheckAtMillis", 0L),
             updateAvailableBuildTimestamp = json.optLong("updateAvailableBuildTimestamp", 0L),
             updateAvailableInstallerUrl = if (json.isNull("updateAvailableInstallerUrl")) null else json.optString("updateAvailableInstallerUrl", null)
         )
@@ -310,6 +310,7 @@ object JsonStore {
                 Group(
                     id = g.getLong("id"),
                     name = g.getString("name"),
+                    description = g.optString("description", ""),
                     dailyLimitSeconds = when {
                         g.has("dailyLimitSeconds") && !g.isNull("dailyLimitSeconds") -> g.getInt("dailyLimitSeconds")
                         g.has("dailyLimitMinutes") && !g.isNull("dailyLimitMinutes") -> g.getInt("dailyLimitMinutes") * 60
@@ -431,6 +432,8 @@ object JsonStore {
         for (i in 0 until ownedDecorationsJson.length()) data.ownedDecorationIds.add(ownedDecorationsJson.getString(i))
         val equippedDecorationsJson = json.optJSONArray("equippedDecorationIds") ?: JSONArray()
         for (i in 0 until equippedDecorationsJson.length()) data.equippedDecorationIds.add(equippedDecorationsJson.getString(i))
+        // 상점 성장 물약 효과 구간(138차).
+        data.growthBoosts.addAll(growthBoostWindowsFromJson(json.optJSONArray("growthBoosts") ?: JSONArray()))
         return data
     }
 
@@ -438,7 +441,15 @@ object JsonStore {
         dataDir.mkdirs()
         val json = toJsonObject(data)
         val tempFile = File(dataDir, "data.json.tmp")
-        tempFile.writeText(json.toString(2))
+        // 교체 전에 임시 파일을 fsync한다(137차). ATOMIC_MOVE는 "반쯤 쓰인 파일이 보이는 일"만 막아주고,
+        // 내용이 아직 OS 캐시에만 있는 상태에서 전원이 끊기면 교체된 data.json이 0바이트나 쓰레기가 될 수
+        // 있다 — 이 호스트에 실제로 data.json.corrupted-* 사례가 남아 있었다.
+        // 실측 비용은 280KB 기준 저장 1회당 +1.4ms(1.5→2.9ms, p90 3ms)로 30초 주기 적립 경로에도 무해하다.
+        java.io.FileOutputStream(tempFile).use { out ->
+            out.write(json.toString(2).toByteArray())
+            out.flush()
+            out.channel.force(true)
+        }
         Files.move(
             tempFile.toPath(),
             dataFile.toPath(),
@@ -504,7 +515,7 @@ object JsonStore {
         json.put("permManage", data.permManage)
         json.put("permPlant", data.permPlant)
         json.put("permSocial", data.permSocial)
-        json.put("lastUpdateCheckDate", data.lastUpdateCheckDate ?: JSONObject.NULL)
+        json.put("lastUpdateCheckAtMillis", data.lastUpdateCheckAtMillis)
         json.put("updateAvailableBuildTimestamp", data.updateAvailableBuildTimestamp)
         json.put("updateAvailableInstallerUrl", data.updateAvailableInstallerUrl ?: JSONObject.NULL)
         val nudgeLastSeenJson = JSONObject()
@@ -636,6 +647,7 @@ object JsonStore {
             val gj = JSONObject()
             gj.put("id", g.id)
             gj.put("name", g.name)
+            gj.put("description", g.description)
             gj.put("dailyLimitSeconds", g.dailyLimitSeconds ?: JSONObject.NULL)
             gj.put("dailyLimitApplyStartMinute", g.dailyLimitApplyStartMinute ?: JSONObject.NULL)
             gj.put("dailyLimitApplyEndMinute", g.dailyLimitApplyEndMinute ?: JSONObject.NULL)
@@ -746,6 +758,7 @@ object JsonStore {
         json.put("lifetimeRebirthCount", data.lifetimeRebirthCount)
         json.put("ownedDecorationIds", JSONArray(data.ownedDecorationIds.toList()))
         json.put("equippedDecorationIds", JSONArray(data.equippedDecorationIds))
+        json.put("growthBoosts", growthBoostWindowsToJson(data.growthBoosts))
 
         val escalationsJson = JSONArray()
         data.confirmEscalations.forEach { e ->

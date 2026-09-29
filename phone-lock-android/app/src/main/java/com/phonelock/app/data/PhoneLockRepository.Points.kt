@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import com.phonelock.shared.GrowthBoost
+import com.phonelock.shared.GrowthSystem
 import java.time.LocalDate
 
 /**
@@ -14,17 +16,19 @@ import java.time.LocalDate
  * 같은 "매번 다시 훑는 순수 파생값" 패턴). 캘린더/루틴과 동일한 "전체 문서 단위 LWW"로 Firebase 동기화
  * (users/{user}/points, 데스크탑판과 대칭).
  *
- * 적립 기준(사용자 확정):
+ * 적립 기준(사용자 확정, 138차에 루틴·일정을 "하루 달성 비율"로 변경):
  * - 공부 시간 비례: 10분당 1포인트([awardStudyPoints], addStudyLogEntry에서 호출)
- * - 루틴 완료 시 고정 포인트([onRoutineToggled], toggleRoutineLog에서 호출)
- * - 캘린더 일정 완료 시 고정 포인트(setCalendarTaskStatus에서 호출)
+ * - 루틴: 그날 예정된 루틴 달성 비율 × [GrowthSystem.ROUTINE_DAY_POOL]([onRoutineToggled], toggleRoutineLog에서 호출)
+ * - 캘린더 일정: 그날 일정 달성 비율 × [GrowthSystem.CALENDAR_DAY_POOL]([refreshCalendarDayReward], setCalendarTaskStatus에서 호출)
  * - 스트릭(그날 예정된 루틴 전부 완료) 유지 보너스, 날짜당 1회([refreshStreakBonusForDate])
  */
 
 private const val STUDY_SECONDS_PER_POINT = 600 // 10분당 1포인트
-private const val ROUTINE_COMPLETE_POINTS = 5
-private const val CALENDAR_COMPLETE_POINTS = 5
 private const val STREAK_BONUS_POINTS = 10
+
+/** "하루 달성 비율" 적립이 날짜마다 하나씩 두는 원장 항목의 refId — 137차까지의 완료 1개당 항목(refId
+ *  "routine:{id}"/"calendar:{id}")과 구분된다. */
+private const val DAY_RATIO_REF_ID = "day"
 
 private var PhoneLockRepository.pointsTs: Long
     get() = preferences.pointsTs
@@ -42,7 +46,7 @@ fun PhoneLockRepository.observeEarnedPointsTotal(): Flow<Int> = pointsLedgerDao.
 /** 레벨업 시스템(104차) 기준값 — STUDY 원장 항목만 합산해 분으로 환산(포인트 1개 = 10분). */
 fun PhoneLockRepository.observeTotalStudyMinutes(): Flow<Int> = pointsLedgerDao.observeStudyPointsTotal().map { it * 10 }
 
-/** reason+refId+dateKey 조합이 이미 있으면 아무 일도 안 한다(중복 적립 방지) — ROUTINE/CALENDAR/STREAK처럼
+/** reason+refId+dateKey 조합이 이미 있으면 아무 일도 안 한다(중복 적립 방지) — STREAK처럼
  *  "완료 상태"에 매달린 적립에 쓴다. */
 private suspend fun PhoneLockRepository.awardPointsOnce(delta: Int, reason: String, refId: String, dateKey: String) {
     if (pointsLedgerDao.find(reason, refId, dateKey) != null) return
@@ -62,23 +66,47 @@ private suspend fun PhoneLockRepository.revokePointsOnce(reason: String, refId: 
     revokeGrowthExp(entry.delta.toDouble())
 }
 
-/** 공부 시간 비례 적립(10분당 1포인트) — 세션마다 별개 기록이라 중복 판정 없이 매번 insert. */
-suspend fun PhoneLockRepository.awardStudyPoints(seconds: Int, dateKey: String) {
+/**
+ * "하루 달성 비율" 적립(138차) — 그 날짜의 [reason] 적립을 원장 항목 하나([DAY_RATIO_REF_ID])로 두고 [target]에
+ * 맞춘다. 옛 규칙의 완료 1개당 항목이 남아 있으면 그 날짜를 다시 건드린 이 시점에 함께 걷어내 새 규칙으로 옮긴다.
+ * EXP는 차이만큼만 더하거나 뺀다 — 통째로 회수했다 다시 주면, 이미 레벨에 적용된 몫이 빠졌다가 대기 EXP로
+ * 돌아와 루틴을 하나 더 끝냈는데 레벨이 내려가 보이는 일이 생긴다.
+ */
+private suspend fun PhoneLockRepository.setDayRatioReward(reason: String, dateKey: String, target: Int) {
+    val entries = pointsLedgerDao.getByReasonAndDate(reason, dateKey)
+    val current = entries.sumOf { it.delta }
+    val hasLegacy = entries.any { it.refId != DAY_RATIO_REF_ID }
+    if (current == target && !hasLegacy) return
+    db.withTransaction {
+        pointsLedgerDao.deleteByReasonAndDate(reason, dateKey)
+        if (target > 0) {
+            pointsLedgerDao.insert(PointsLedgerEntry(delta = target, reason = reason, refId = DAY_RATIO_REF_ID, dateKey = dateKey, timestampMillis = System.currentTimeMillis()))
+        }
+    }
+    pushPointsToFirebase()
+    if (target > current) awardGrowthExp((target - current).toDouble())
+    else if (target < current) revokeGrowthExp((current - target).toDouble())
+}
+
+/** 공부 시간 비례 적립(10분당 1포인트) — 세션마다 별개 기록이라 중복 판정 없이 매번 insert.
+ *  [startedAt]은 그 공부 구간의 시작 시각 — 물약 효과와 겹친 시간만큼만 EXP 배율을 받는다(138차). */
+suspend fun PhoneLockRepository.awardStudyPoints(seconds: Int, dateKey: String, startedAt: Long) {
     val points = seconds / STUDY_SECONDS_PER_POINT
     if (points <= 0) return
     pointsLedgerDao.insert(PointsLedgerEntry(delta = points, reason = "STUDY", refId = "", dateKey = dateKey, timestampMillis = System.currentTimeMillis()))
     pushPointsToFirebase()
     // "식물 성장" EXP는 1분=1EXP로 더 촘촘하게 — 포인트(10분=1P)와 단위가 달라 seconds에서 직접 계산.
-    awardGrowthExp(seconds / 60.0)
+    awardGrowthExp(seconds / 60.0, GrowthBoost.averageMultiplier(growthBoostWindows(), startedAt, startedAt + seconds * 1000L))
 }
 
-/** 루틴 완료 토글 직후 호출 — 완료 포인트 적립/회수 + 그날 스트릭 보너스 재판정. */
-suspend fun PhoneLockRepository.onRoutineToggled(routineId: Long, dateKey: String, completed: Boolean) {
-    if (completed) {
-        awardPointsOnce(ROUTINE_COMPLETE_POINTS, "ROUTINE", "routine:$routineId", dateKey)
-    } else {
-        revokePointsOnce("ROUTINE", "routine:$routineId", dateKey)
-    }
+/** 루틴 완료 토글 직후 호출 — 그날 루틴 달성 비율 적립 재계산 + 스트릭 보너스 재판정. 138차: 완료 1개당 5를
+ *  주던 방식은 루틴을 늘리기만 해도 경험치가 불어나서, 그날 예정된 루틴 중 끝낸 비율로 바꿨다. */
+suspend fun PhoneLockRepository.onRoutineToggled(dateKey: String) {
+    val date = runCatching { LocalDate.parse(dateKey) }.getOrNull() ?: return
+    val scheduled = routineDao.getAll().filter { com.phonelock.app.routine.RoutineEngine.isScheduledOn(it, date) }
+    val doneIds = routineLogDao.getByDate(dateKey).map { it.routineId }.toSet()
+    val target = GrowthSystem.dayRatioReward(GrowthSystem.ROUTINE_DAY_POOL, scheduled.count { it.id in doneIds }, scheduled.size)
+    setDayRatioReward("ROUTINE", dateKey, target)
     refreshStreakBonusForDate(dateKey)
 }
 
@@ -98,13 +126,12 @@ suspend fun PhoneLockRepository.refreshStreakBonusForDate(dateKey: String) {
     else revokePointsOnce("STREAK", "streak", dateKey)
 }
 
-/** 캘린더 일정 완료 전환 직후 호출(setCalendarTaskStatus) — completed=true면 적립, false면 회수. */
-suspend fun PhoneLockRepository.onCalendarTaskCompletionChanged(taskId: Long, dateKey: String, completed: Boolean) {
-    if (completed) {
-        awardPointsOnce(CALENDAR_COMPLETE_POINTS, "CALENDAR", "calendar:$taskId", dateKey)
-    } else {
-        revokePointsOnce("CALENDAR", "calendar:$taskId", dateKey)
-    }
+/** 캘린더 일정 완료/미완료 전환 직후 호출(setCalendarTaskStatus) — 그날 일정 달성 비율로 적립을 다시 맞춘다
+ *  (138차, 루틴과 같은 이유로 완료 1개당 5에서 변경). */
+suspend fun PhoneLockRepository.refreshCalendarDayReward(dateKey: String) {
+    val tasks = calendarTaskDao.getByDate(dateKey)
+    val target = GrowthSystem.dayRatioReward(GrowthSystem.CALENDAR_DAY_POOL, tasks.count { it.status == "O" }, tasks.size)
+    setDayRatioReward("CALENDAR", dateKey, target)
 }
 
 // ══════════════════════════════════════════════════════
@@ -145,6 +172,24 @@ suspend fun PhoneLockRepository.purchaseDecoration(id: String, cost: Int): Boole
 fun PhoneLockRepository.setEquippedDecorationIds(ids: List<String>) {
     preferences.equippedDecorationIdsCsv = ids.filter { it in ownedDecorationIds }.take(MAX_EQUIPPED_DECORATIONS).joinToString(",")
     pushGrowthToFirebase()
+}
+
+/**
+ * 상점 성장 물약 구매(138차) — 구매 즉시 효과가 시작된다(가방에 넣어뒀다 쓰는 단계를 두지 않았다: "지금부터
+ * 공부할 테니 산다"가 이 아이템의 쓰임새라 한 번의 동작으로 끝나는 게 맞다). 살 수 있는지는
+ * [GrowthBoost.checkPurchase]가 정하고, 포인트가 모자라거나 살 수 없는 상태면 원장도 효과도 건드리지 않고 false.
+ * refId에 구매 시각을 붙여 같은 물약을 여러 번 사도 원장 항목이 서로 구분되게 한다.
+ */
+suspend fun PhoneLockRepository.purchasePotion(potionId: String): Boolean {
+    val potion = GrowthBoost.potionById(potionId) ?: return false
+    if (getPointsBalance() < potion.cost) return false
+    val now = System.currentTimeMillis()
+    val next = GrowthBoost.applyPurchase(growthBoostWindows(), potion, now) ?: return false
+    pointsLedgerDao.insert(PointsLedgerEntry(delta = -potion.cost, reason = "POTION", refId = "${potion.id}:$now", dateKey = LocalDate.now().toString(), timestampMillis = now))
+    setGrowthBoostWindows(next)
+    pushPointsToFirebase()
+    pushGrowthToFirebase()
+    return true
 }
 
 // ══════════════════════════════════════════════════════

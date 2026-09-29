@@ -177,5 +177,16 @@ async function refreshOverlayStatus() {
   }
 }
 
-refreshOverlayStatus();
-setInterval(refreshOverlayStatus, OVERLAY_POLL_MS);
+// 136차: 이 스크립트는 <all_urls>에 들어가므로 열어둔 모든 탭에서 2초마다 로컬 API를 불렀다. 보이지
+// 않는 탭은 오버레이를 그릴 일 자체가 없는데도 그랬고, 그 요청은 전부 데스크탑 앱의 로컬 API 한 곳으로
+// 모인다(브라우저가 백그라운드 탭의 타이머를 늦춰주긴 해도 없애주지는 않는다). 숨겨진 동안엔 건너뛰고,
+// 다시 보이는 순간 곧바로 한 번 갱신해서 사용자가 실제로 보는 화면의 동작은 그대로 유지한다.
+function refreshOverlayStatusIfVisible() {
+  if (document.hidden) return;
+  refreshOverlayStatus();
+}
+
+document.addEventListener("visibilitychange", refreshOverlayStatusIfVisible);
+
+refreshOverlayStatusIfVisible();
+setInterval(refreshOverlayStatusIfVisible, OVERLAY_POLL_MS);

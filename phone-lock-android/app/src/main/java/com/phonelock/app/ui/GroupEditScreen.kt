@@ -48,7 +48,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -130,7 +129,6 @@ fun GroupEditScreen(
     groupId: Long?,
     onDone: () -> Unit
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val evaluator = remember { LockEvaluator(repository) }
 
@@ -279,7 +277,7 @@ fun GroupEditScreen(
         }
     }
 
-    val installedApps = remember { getLaunchableApps(context) }
+    val installedApps = rememberLaunchableApps()
     val filteredApps = remember(installedApps, searchQuery, selectedPackages) {
         val base = if (searchQuery.isBlank()) installedApps
         else installedApps.filter { it.label.contains(searchQuery, ignoreCase = true) }
@@ -590,7 +588,7 @@ fun GroupEditScreen(
                         Spacer(Modifier.height(Spacing.sm))
                         Text(
                             "차단 규칙 목록 화면의 \"😴 잠깐 풀기\" 버튼으로 확인 질문 절차 없이 즉시 임시 해제할 수 있습니다. " +
-                                "남용을 막기 위해 아래 설정한 횟수까지만 쓸 수 있습니다(자정이 아니라 위 일일 한도 초기화 시각 기준).",
+                                "남용을 막기 위해 아래 설정한 횟수까지만 쓸 수 있습니다(자정이 아니라 설정의 \"하루 시작 기준\" 시각 기준).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -883,6 +881,16 @@ fun GroupEditScreen(
             }
 
             if (memberTab == 0) {
+                // 설치 앱 목록은 IO에서 읽어오므로(rememberLaunchableApps) 첫 프레임엔 아직 비어 있다.
+                if (installedApps.isEmpty()) {
+                    item {
+                        Text(
+                            "앱 목록을 불러오는 중…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 items(filteredApps, key = { it.packageName }) { app ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(

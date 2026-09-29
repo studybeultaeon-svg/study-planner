@@ -4,6 +4,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -43,6 +45,17 @@ object PomodoroSyncClient {
     )
     @Volatile
     private var statusCache: StatusCache? = null
+
+    /**
+     * 136차: 캐시가 만료된 순간에 여러 호출이 겹치면 **각자** 같은 요청을 날리던 걸 막는다.
+     * [refreshStatusCache]는 네트워크 왕복이 끝난 뒤에야 캐시를 채우므로, 그 왕복(연결 타임아웃 3초)
+     * 동안 도착한 다른 호출은 전부 캐시 미스가 되어 똑같은 GET을 또 보냈다. 실제로 겹친다:
+     * [com.phonelock.app.service.AppMonitorAccessibilityService]의 주기 tick(2초)과 창 전환 이벤트로
+     * 불리는 tick이 동시에 돌고, 한 tick 안에서도 알림 큐 확인·공부 잠금 판정·백그라운드 재생 판정이
+     * 차례로 이 값을 묻는다. 뒤에 온 호출은 앞선 요청이 끝나길 기다렸다가 그 결과를 그대로 쓴다
+     * (어차피 자기 요청을 보내도 같은 시간을 기다렸을 것이다).
+     */
+    private val statusMutex = Mutex()
 
     /** 공부앱의 뽀모도로 휴식이 지금 유효하게 진행 중인지. 설정이 비어있거나 어떤 오류가 나도 false를 반환한다. */
     suspend fun isBreakActive(databaseUrl: String?, apiKey: String?): Boolean {
@@ -132,10 +145,18 @@ object PomodoroSyncClient {
 
     private suspend fun refreshStatusCache(databaseUrl: String?, apiKey: String?): StatusCache? {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
-        val now = System.currentTimeMillis()
-        val cached = statusCache
-        if (cached != null && now - cached.fetchedAtMillis < CACHE_TTL_MS) return cached
+        freshCache()?.let { return it }
+        return statusMutex.withLock {
+            // 락을 기다리는 사이 앞선 호출이 이미 갱신해뒀으면 그 결과를 그대로 쓴다.
+            freshCache() ?: fetchStatusCache(databaseUrl, apiKey)
+        }
+    }
 
+    private fun freshCache(): StatusCache? =
+        statusCache?.takeIf { System.currentTimeMillis() - it.fetchedAtMillis < CACHE_TTL_MS }
+
+    private suspend fun fetchStatusCache(databaseUrl: String, apiKey: String): StatusCache {
+        val now = System.currentTimeMillis()
         var phaseEndAt = 0L
         var timerActive = false
         var mode = "plain"

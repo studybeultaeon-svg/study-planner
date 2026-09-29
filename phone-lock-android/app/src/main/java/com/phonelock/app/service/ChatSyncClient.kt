@@ -98,6 +98,39 @@ object ChatSyncClient {
         }
     }
 
+    /**
+     * 내 아이디(customId)를 바꿨을 때, 나와 DM 중인 상대들의 대화 목록에 박혀 있는 "내 라벨"을 새 아이디로
+     * 밀어준다(111차부터 이월된 버그 — 상대 목록에 옛 아이디가 그대로 남았다). 읽는 쪽에서 상대 프로필을
+     * 라이브로 조회하는 방식은 보안 규칙상 불가능하다(`users/{uid}/profile`은 본인/관리자만 읽을 수 있다) —
+     * 그래서 "바꾼 쪽이 밀어주는" 방향으로 고쳤다. 상대의 `dmChatIds/{chatId}`는 규칙상 그 방의 참여자면
+     * 쓸 수 있어서([ensureDmChat]/[sendDmMessage]가 이미 쓰는 경로) 추가 권한이 필요 없다.
+     * 라벨 표시만의 문제라 실패해도 아이디 변경 자체를 되돌리지 않는 best-effort다(기존 updatedAtMillis
+     * 갱신과 같은 수준) — 밀지 못한 방은 상대가 DM을 다시 열거나 내가 아이디를 또 바꿀 때 따라잡는다.
+     */
+    suspend fun updateMyDmLabel(databaseUrl: String?, apiKey: String?, newLabel: String) {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank() || newLabel.isBlank()) return
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, uid) = resolveIdentity(apiKey) ?: return@runCatching
+                val base = databaseUrl.trimEnd('/')
+                val text = getRaw(URL("$base/users/$uid/dmChatIds.json?auth=$token"))
+                if (text.isNullOrBlank() || text == "null") return@runCatching
+                val json = JSONObject(text)
+                for (chatId in json.keys()) {
+                    val peerUid = json.optJSONObject(chatId)?.optString("peerUid", "").orEmpty()
+                    if (peerUid.isBlank()) continue
+                    runCatching {
+                        putJson(
+                            URL("$base/users/$peerUid/dmChatIds/$chatId/peerLabel.json?auth=$token"),
+                            JSONObject.quote(newLabel),
+                            raw = true
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     /** DM 메시지 전송 — 성공 시 양쪽 dmChatIds의 updatedAtMillis도 갱신해 대화 목록이 최신순으로 유지되게 한다. */
     suspend fun sendDmMessage(databaseUrl: String?, apiKey: String?, chatId: String, peerUid: String, text: String): Result<Unit> {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) {
