@@ -256,9 +256,9 @@ private fun CalendarMonthGrid(
                         if (dayTasks.isNotEmpty()) {
                             val doneCount = dayTasks.count { it.status == "O" }
                             val badgeColor = when {
-                                doneCount == dayTasks.size -> palette.success
-                                doneCount > 0 -> palette.warning
-                                else -> palette.error
+                                doneCount == dayTasks.size -> palette.fillGood
+                                doneCount > 0 -> palette.fillPartial
+                                else -> palette.fillBad
                             }
                             Spacer(Modifier.height(4.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {

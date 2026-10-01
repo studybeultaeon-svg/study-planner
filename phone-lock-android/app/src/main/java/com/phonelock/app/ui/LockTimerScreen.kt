@@ -446,8 +446,9 @@ private fun LockTimerRunning(timer: LockTimer, nowMillis: Long, onUnlocked: () -
     // 144차 히어로: 남은 시간을 화면 폭에 맞춰 아주 크게, 그 아래 이번 단계가 얼마나 지났는지 막대 하나.
     val palette = LocalPhoneLockPalette.current
     val phaseColor = if (locked) MaterialTheme.colorScheme.primary else palette.warning
+    val phaseFill = if (locked) MaterialTheme.colorScheme.primary else palette.fillPartial
     Row(verticalAlignment = Alignment.CenterVertically) {
-        LiveDot(phaseColor)
+        LiveDot(phaseFill)
         Spacer(Modifier.width(8.dp))
         Text(if (locked) "잠금 중" else "자유 시간", style = MaterialTheme.typography.labelLarge, color = phaseColor)
     }
@@ -467,7 +468,7 @@ private fun LockTimerRunning(timer: LockTimer, nowMillis: Long, onUnlocked: () -
     val phaseEnd = if (locked) timer.lockEndAtMillis else timer.lockStartAtMillis
     ProgressLine(
         if (phaseEnd > phaseStart) ((nowMillis - phaseStart).toFloat() / (phaseEnd - phaseStart)).coerceIn(0f, 1f) else 1f,
-        color = phaseColor
+        color = phaseFill
     )
     Spacer(Modifier.height(Spacing.xl))
 

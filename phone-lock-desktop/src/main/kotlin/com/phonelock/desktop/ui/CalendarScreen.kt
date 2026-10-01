@@ -251,9 +251,9 @@ fun CalendarScreen(repository: Repository) {
                                                 Spacer(Modifier.width(4.dp))
                                                 val doneCount = dayTasks.count { it.status == "O" }
                                                 val badgeColor = when {
-                                                    doneCount == dayTasks.size -> palette.success
-                                                    doneCount > 0 -> palette.warning
-                                                    else -> palette.error
+                                                    doneCount == dayTasks.size -> palette.fillGood
+                                                    doneCount > 0 -> palette.fillPartial
+                                                    else -> palette.fillBad
                                                 }
                                                 Box(Modifier.size(6.dp).background(badgeColor, CircleShape))
                                                 Spacer(Modifier.width(3.dp))

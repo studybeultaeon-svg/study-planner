@@ -210,8 +210,8 @@ private fun UsageRow(row: GroupUsage, compact: Boolean) {
             ProgressLine(
                 progress,
                 color = when {
-                    row.usedSeconds >= row.limitSeconds -> palette.error
-                    progress >= 0.8f -> palette.warning
+                    row.usedSeconds >= row.limitSeconds -> palette.fillBad
+                    progress >= 0.8f -> palette.fillPartial
                     else -> MaterialTheme.colorScheme.primary
                 }
             )

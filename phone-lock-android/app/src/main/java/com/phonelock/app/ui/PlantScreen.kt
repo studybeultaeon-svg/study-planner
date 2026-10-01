@@ -886,9 +886,9 @@ private fun HomeTodayCard(repository: PhoneLockRepository, refreshKey: Int, modi
                 s.weekCompletionRates.forEach { pct ->
                     val barColor = when {
                         pct < 0 -> MaterialTheme.colorScheme.outlineVariant
-                        pct == 100 -> palette.success
-                        pct > 0 -> palette.warning
-                        else -> palette.error
+                        pct == 100 -> palette.fillGood
+                        pct > 0 -> palette.fillPartial
+                        else -> palette.fillBad
                     }
                     val heightFrac = if (pct < 0) 0.15f else (pct / 100f).coerceAtLeast(0.15f)
                     Box(

@@ -205,9 +205,9 @@ private fun StudyStatsContent(
                 val pct = if (ds.cnt > 0) Math.round(ds.done * 100.0 / ds.cnt).toInt() else 0
                 val barColor = when {
                     ds.cnt == 0 -> MaterialTheme.colorScheme.outlineVariant
-                    pct == 100 -> palette.success
-                    pct > 0 -> palette.warning
-                    else -> palette.error
+                    pct == 100 -> palette.fillGood
+                    pct > 0 -> palette.fillPartial
+                    else -> palette.fillBad
                 }
                 val isToday = ds.date == today
                 val columnModifier = if (isTablet) Modifier.weight(1f) else Modifier.width(20.dp)
@@ -305,9 +305,9 @@ private fun StudyStatsContent(
                             val achieved = target > 0 && done >= target
                             val barColor = when {
                                 target <= 0 -> MaterialTheme.colorScheme.outlineVariant
-                                achieved -> palette.success
-                                done > 0 -> palette.warning
-                                else -> palette.error
+                                achieved -> palette.fillGood
+                                done > 0 -> palette.fillPartial
+                                else -> palette.fillBad
                             }
                             Column(Modifier.width(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Column(Modifier.fillMaxWidth().height(50.dp), verticalArrangement = Arrangement.Bottom) {

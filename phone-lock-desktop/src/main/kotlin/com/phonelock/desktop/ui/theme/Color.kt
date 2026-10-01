@@ -40,7 +40,19 @@ data class PhoneLockPalette(
     val errorContainer: Color,
     val onBackground: Color,
     val muted: Color,
-    val outline: Color
+    val outline: Color,
+    /**
+     * 그래프 막대·점·진행 막대처럼 "채우는" 상태 색(144차 후속, 사용자 지적 "라이트도 다크와 같은 색으로"). [success]/[warning]/[error]는
+     * 라이트 테마에서 글자 대비(4.5:1)를 맞추느라 어둡게 잡혀 있어 막대에 쓰면 탁하고 다크와 딴판이었다. 채움은 테마와 무관하게 다크 테마의
+     * 밝은 색을 그대로 쓰고(흑백 팔레트만 회색 농도), 글자에는 계속 success/warning/error를 쓴다.
+     */
+    val fillGood: Color = Color(0xFF3DD68C),
+    val fillPartial: Color = Color(0xFFF5B83D),
+    val fillBad: Color = Color(0xFFFF7A7A),
+    /** 항목을 색으로 구분하는 그래프(분야별 도넛 등)의 색 — 앞에서부터 쓰고, 테마와 무관하게 같은 밝은 색이다. */
+    val categorical: List<Color> = listOf(
+        Color(0xFF6AA4FF), Color(0xFF3DD68C), Color(0xFFF5B83D), Color(0xFFA78BFA), Color(0xFFFF7A7A), Color(0xFF2DD4BF)
+    )
 )
 
 // ── 144차 리디자인 "Ledger" 팔레트(DECISIONS.md 144차, 안드로이드판과 같은 값) ─────────────────────────
@@ -191,7 +203,12 @@ val MonoPalette = PhoneLockPalette(
     errorContainer = Color(0xFFE0E0E0),
     onBackground = Color(0xFF111111),
     muted = Color(0xFF666666),
-    outline = Color(0xFFE2E2E2)
+    outline = Color(0xFFE2E2E2),
+    // 흑백 모드의 채움은 농도로만 구분한다 — 다 함(먹) > 일부(중간 회색) > 안 함(옅은 회색).
+    fillGood = Color(0xFF111111),
+    fillPartial = Color(0xFF8A8A8A),
+    fillBad = Color(0xFFC8C8C8),
+    categorical = listOf(Color(0xFF111111), Color(0xFF555555), Color(0xFF8A8A8A), Color(0xFFB0B0B0), Color(0xFF333333), Color(0xFFD0D0D0))
 )
 
 fun paletteFor(themeMode: String): PhoneLockPalette = when (themeMode) {

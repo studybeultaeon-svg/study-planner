@@ -453,9 +453,9 @@ private fun RoutineStatsTab(
                     val pct = if (ds.scheduled > 0) Math.round(ds.done * 100.0 / ds.scheduled).toInt() else 0
                     val barColor = when {
                         ds.scheduled == 0 -> MaterialTheme.colorScheme.outlineVariant
-                        pct == 100 -> palette.success
-                        pct > 0 -> palette.warning
-                        else -> palette.error
+                        pct == 100 -> palette.fillGood
+                        pct > 0 -> palette.fillPartial
+                        else -> palette.fillBad
                     }
                     val isToday = ds.date == today
                     val columnModifier = if (isTablet) Modifier.weight(1f) else Modifier.width(18.dp)

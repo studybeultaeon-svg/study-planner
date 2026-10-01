@@ -489,6 +489,8 @@ fun StudyTimerScreen(repository: Repository) {
         )
         val isBreak = current.phase == "break"
         val phaseColor = if (isBreak) palette.success else MaterialTheme.colorScheme.primary
+        // 점·막대(채움)는 테마와 무관한 밝은 색, 글자·큰 숫자는 대비용 색(144차 후속).
+        val phaseFill = if (isBreak) palette.fillGood else MaterialTheme.colorScheme.primary
         val displaySec = if (current.mode == "pomodoro") {
             ((current.phaseEndAt - nowMillis) / 1000L).coerceAtLeast(0L)
         } else {
@@ -515,7 +517,7 @@ fun StudyTimerScreen(repository: Repository) {
 
         Column(Modifier.fillMaxWidth()) {
             Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
-                LiveDot(phaseColor)
+                LiveDot(phaseFill)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     if (isBreak) "휴식 중" else "집중 중",
@@ -547,7 +549,7 @@ fun StudyTimerScreen(repository: Repository) {
             )
             if (barProgress != null) {
                 Spacer(Modifier.height(Spacing.sm))
-                ProgressLine(barProgress, color = phaseColor)
+                ProgressLine(barProgress, color = phaseFill)
             }
             if (goalProgress != null) {
                 val tier = StudyProgressQuotes.tierFor(goalProgress)
@@ -826,13 +828,12 @@ private fun WeekBarChart(days: List<Pair<LocalDate, Long>>) {
 }
 
 /**
- * 92차: 오늘 분야(태그)별 집중 시간 도넛 + 범례. 144차: 색은 테마에서 꺼낸다(미니멀 모드면 자동으로 먹색 농도 차이로
- * 구분된다), 범례는 이름과 시간을 한 줄씩 정렬. 안드로이드판과 대칭.
+ * 92차: 오늘 분야(태그)별 집중 시간 도넛 + 범례. 144차: 색은 팔레트의 `categorical`(테마와 무관한 밝은 색 6개, 미니멀 모드면 먹색 농도 차이), 범례는 이름과 시간을 한 줄씩 정렬. 안드로이드판과 대칭.
  */
 @Composable
 private fun SubjectPieChart(subjects: List<Pair<String, Long>>) {
     val p = LocalPhoneLockPalette.current
-    val colors = listOf(p.primary, p.success, p.warning, p.secondary, p.muted, p.error)
+    val colors = p.categorical
     val total = subjects.sumOf { it.second }.coerceAtLeast(1L)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.foundation.Canvas(Modifier.size(104.dp)) {

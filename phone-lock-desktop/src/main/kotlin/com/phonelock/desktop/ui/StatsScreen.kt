@@ -134,8 +134,8 @@ fun StatsScreen(repository: Repository) {
                                 com.phonelock.desktop.ui.components.ProgressLine(
                                     progress,
                                     color = when {
-                                        row.usedSeconds >= row.limitSeconds -> palette.error
-                                        progress >= 0.8f -> palette.warning
+                                        row.usedSeconds >= row.limitSeconds -> palette.fillBad
+                                        progress >= 0.8f -> palette.fillPartial
                                         else -> MaterialTheme.colorScheme.primary
                                     }
                                 )
@@ -177,7 +177,7 @@ fun StatsScreen(repository: Repository) {
                         Spacer(Modifier.height(Spacing.sm))
                         com.phonelock.desktop.ui.components.ProgressLine(
                             progress,
-                            color = if (detail.usedSeconds >= detail.limitSeconds) palette.error else if (progress >= 0.8f) palette.warning else MaterialTheme.colorScheme.primary
+                            color = if (detail.usedSeconds >= detail.limitSeconds) palette.fillBad else if (progress >= 0.8f) palette.fillPartial else MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.height(Spacing.xs))
                         Text("하루 한도 ${formatHms(detail.limitSeconds)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
