@@ -1,5 +1,6 @@
 package com.phonelock.app.ui
 
+import com.phonelock.app.ui.components.LedgerAlertDialog
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -438,7 +438,7 @@ fun AccountGate(repository: PhoneLockRepository, content: @Composable () -> Unit
     }
 
     foundIdToShow?.let { id ->
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { foundIdToShow = null },
             title = { Text("아이디 찾기") },
             text = { Text("이 계정의 아이디는 $id 입니다.") },
@@ -724,7 +724,7 @@ private fun FindIdDialog(
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = { if (!loading) onDismiss() },
         title = { Text("아이디 찾기") },
         text = {
@@ -752,7 +752,6 @@ private fun FindIdDialog(
                 TextButton(onClick = onForgotPassword, enabled = !loading) { Text("비밀번호도 기억나지 않아요") }
             }
         },
-        confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss, enabled = !loading) { Text("닫기") } }
     )
 }
@@ -771,13 +770,13 @@ private fun PasswordResetDialog(repository: PhoneLockRepository, onDismiss: () -
     var message by remember { mutableStateOf<String?>(null) }
     var sent by remember { mutableStateOf(false) }
 
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = { if (!sending) onDismiss() },
         title = { Text("비밀번호 찾기") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 Text(
-                    "아이디 또는 등록한 이메일을 입력하면, 등록된 이메일로 비밀번호 재설정 링크를 보내 드립니다.",
+                    "아이디나 이메일을 넣으면 등록된 이메일로 재설정 링크를 보냅니다.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 OutlinedTextField(
@@ -811,9 +810,8 @@ private fun PasswordResetDialog(repository: PhoneLockRepository, onDismiss: () -
                             result.onSuccess {
                                 prefs.emailMailSentAtMillis = System.currentTimeMillis()
                                 sent = true
-                                message = "입력한 정보로 등록된 이메일이 있으면 재설정 링크를 보냈습니다. 몇 분 안에 오지 않으면 " +
-                                    "스팸함을 확인해 주세요. 이메일을 등록하지 않은 계정은 연결된 구글 계정으로 로그인한 뒤 " +
-                                    "설정에서 비밀번호를 바꿀 수 있습니다."
+                                message = "등록된 이메일이 있으면 링크를 보냈습니다. 안 오면 스팸함을 보세요. " +
+                                    "이메일이 없는 계정은 구글로 로그인해 설정에서 바꾸세요."
                             }
                             result.onFailure { e -> message = e.message }
                         }
@@ -874,7 +872,7 @@ private fun GoogleChoiceScreen(
 @Composable
 private fun NewDeviceAlert(sessions: List<AccountSecurityClient.Session>, onDismiss: () -> Unit) {
     val formatter = remember { java.text.SimpleDateFormat("M/d HH:mm", java.util.Locale.KOREA) }
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("새 기기에서 로그인") },
         text = {
@@ -890,7 +888,7 @@ private fun NewDeviceAlert(sessions: List<AccountSecurityClient.Session>, onDism
                     }
                 }
                 Text(
-                    "본인이 아니라면 설정 > 로그인 및 보안에서 비밀번호를 바꾸고 '다른 기기 모두 로그아웃'을 눌러 주세요.",
+                    "본인이 아니면 비밀번호를 바꾸고 다른 기기를 모두 로그아웃하세요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -12,6 +12,9 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +35,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +67,11 @@ import com.phonelock.desktop.data.CalendarTask
 import com.phonelock.desktop.data.*
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.ui.components.SectionCard
+import com.phonelock.desktop.ui.components.BigNumber
+import com.phonelock.desktop.ui.components.CompactField
+import com.phonelock.desktop.ui.components.Hairline
+import com.phonelock.desktop.ui.components.Overline
+import com.phonelock.desktop.ui.theme.LocalPhoneLockPalette
 import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -295,6 +307,13 @@ fun CalendarScreen(repository: Repository) {
     }
 }
 
+/**
+ * 고른 날짜의 상세(폰은 월 그리드 아래, 태블릿은 오른쪽 칸).
+ *
+ * 146차: 흰 판 안에 일정마다 상자 + 이모지 색 버튼 5개였던 구조를 기준 화면(차단 규칙 목록)과 같은 문법으로 —
+ * 위에 "완료 n / 전체"를 큰 숫자로, 아래는 가는 선으로 나뉜 일정 줄. 줄마다 완료·미완료는 아이콘 두 개로 바로 누르고,
+ * 나머지(이름·회차·연결·반복·순서·이동·복사·삭제)는 더보기 메뉴에 둔다.
+ */
 @Composable
 private fun DayDetailSection(repository: Repository, date: LocalDate, onChanged: () -> Unit) {
     val dateKey = date.toString()
@@ -312,20 +331,42 @@ private fun DayDetailSection(repository: Repository, date: LocalDate, onChanged:
         }
     }
 
-    val secondsByTaskName = remember(studyLog) { studyLog.groupBy { it.taskName }.mapValues { (_, entries) -> entries.sumOf { it.seconds } } }
-    val totalSeconds = secondsByTaskName.values.sum()
-
     fun refreshDay() {
         tasks = repository.getCalendarTasks(dateKey)
         onChanged()
     }
 
-    val title = "${date.year}년 ${date.monthValue}월 ${date.dayOfMonth}일 (${dowLabel(date)})" +
-        if (totalSeconds > 0) " · ⏱ 총 ${formatHmsLog(totalSeconds.toLong())}" else ""
+    val secondsByTaskName = remember(studyLog) { studyLog.groupBy { it.taskName }.mapValues { (_, entries) -> entries.sumOf { it.seconds } } }
+    val totalSeconds = secondsByTaskName.values.sum()
+    val doneCount = tasks.count { it.status == "O" }
 
-    SectionCard(title) {
+    Column(Modifier.fillMaxWidth()) {
+        Overline("${date.year}년 ${date.monthValue}월 ${date.dayOfMonth}일 · ${dowLabel(date)}요일")
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            BigNumber(
+                "$doneCount",
+                unit = "/ ${tasks.size} 완료",
+                style = MaterialTheme.typography.displaySmall,
+                color = if (tasks.isNotEmpty() && doneCount == tasks.size) LocalPhoneLockPalette.current.success else MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f)
+            )
+            if (totalSeconds > 0) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Overline("집중")
+                    Text(focusDurationLabel(totalSeconds), style = MaterialTheme.typography.titleMedium, maxLines = 1, softWrap = false)
+                }
+            }
+        }
+        Spacer(Modifier.height(Spacing.md))
+        Hairline()
         if (tasks.isEmpty()) {
-            Text("등록된 업무가 없습니다.", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "등록된 업무가 없습니다.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = Spacing.md)
+            )
         } else {
             tasks.forEachIndexed { ordinal, task ->
                 CalendarTaskRow(
@@ -338,15 +379,15 @@ private fun DayDetailSection(repository: Repository, date: LocalDate, onChanged:
                     loggedSeconds = secondsByTaskName[task.name],
                     onChanged = { refreshDay() }
                 )
-                Spacer(Modifier.height(Spacing.xs))
+                Hairline()
             }
         }
-        Spacer(Modifier.height(Spacing.sm))
+        Spacer(Modifier.height(Spacing.md))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
+            CompactField(
                 value = newTaskName,
                 onValueChange = { newTaskName = it },
-                label = { Text("새 업무 이름") },
+                placeholder = "새 업무 이름",
                 modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(Spacing.sm))
@@ -356,11 +397,23 @@ private fun DayDetailSection(repository: Repository, date: LocalDate, onChanged:
                     newTaskName = ""
                     refreshDay()
                 }
-            }) { Text("+ 추가") }
+            }) { Text("추가", maxLines = 1, softWrap = false) }
         }
     }
-    Spacer(Modifier.height(Spacing.md))
+    Spacer(Modifier.height(Spacing.lg))
     LinkedCalcSection(repository = repository, dateKey = dateKey, onChanged = { refreshDay() })
+}
+
+/** "1시간 5분" / "45분" / "1분 미만" — 날짜 상세의 집중 시간 표기(146차). */
+private fun focusDurationLabel(seconds: Int): String {
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    return when {
+        h > 0 && m > 0 -> "${h}시간 ${m}분"
+        h > 0 -> "${h}시간"
+        m > 0 -> "${m}분"
+        else -> "1분 미만"
+    }
 }
 
 /**
@@ -372,54 +425,53 @@ private fun DayDetailSection(repository: Repository, date: LocalDate, onChanged:
 @Composable
 private fun LinkedCalcSection(repository: Repository, dateKey: String, onChanged: () -> Unit) {
     val calcTasks = remember(dateKey) { repository.getCalcTasks().filter { it.name.isNotBlank() } }
-    if (calcTasks.isEmpty()) return
     var selected by remember(dateKey) { mutableStateOf<String?>(null) }
     var fromText by remember(dateKey) { mutableStateOf("") }
     var toText by remember(dateKey) { mutableStateOf("") }
+    if (calcTasks.isEmpty()) return
 
-    SectionCard("📊 계산기 업무 연결") {
+    SectionCard("계산기 업무에서 추가") {
         Text(
-            "계산기 업무의 범위를 이 날 일정으로 만듭니다. 완료 체크하면 계산기 진행량에 자동으로 더해집니다.",
+            "완료하면 계산기 진행량에 더해집니다.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(Spacing.sm))
-        // 업무가 많으면 가로 스크롤은 잘려 보인다는 인상을 줘서(사용자 실기기 확인) 줄바꿈 방식으로 변경 —
+        // 업무가 많으면 가로 스크롤은 잘려 보인다는 인상을 줘서(사용자 실기기 확인) 줄바꿈 방식으로 —
         // 스크롤 없이 전부 보이도록 필요한 만큼 여러 줄로 흘러내려간다.
         androidx.compose.foundation.layout.FlowRow(
             horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
             verticalArrangement = Arrangement.spacedBy(Spacing.xs)
         ) {
             calcTasks.forEach { t ->
-                val isSelected = selected == t.name
-                OutlinedButton(
+                FilterChip(
+                    selected = selected == t.name,
                     onClick = { selected = t.name },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                    colors = if (isSelected) {
-                        ButtonDefaults.outlinedButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.primary
-                        )
-                    } else ButtonDefaults.outlinedButtonColors()
-                ) { Text("${t.name} (${t.qty}${t.unit})", style = MaterialTheme.typography.labelSmall) }
+                    label = { Text("${t.name} · ${t.qty}${t.unit}", maxLines = 1, softWrap = false) }
+                )
             }
         }
         selected?.let { name ->
             Spacer(Modifier.height(Spacing.sm))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                OutlinedTextField(
+                CompactField(
                     value = fromText,
                     onValueChange = { fromText = it.filter { c -> c.isDigit() } },
-                    label = { Text("시작") },
-                    modifier = Modifier.width(90.dp)
+                    label = "시작",
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                    centerValue = true,
+                    modifier = Modifier.width(88.dp)
                 )
                 Text("~")
-                OutlinedTextField(
+                CompactField(
                     value = toText,
                     onValueChange = { toText = it.filter { c -> c.isDigit() } },
-                    label = { Text("끝") },
-                    modifier = Modifier.width(90.dp)
+                    label = "끝",
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                    centerValue = true,
+                    modifier = Modifier.width(88.dp)
                 )
+                Spacer(Modifier.weight(1f))
                 Button(onClick = {
                     val from = fromText.toIntOrNull()
                     val to = toText.toIntOrNull()
@@ -429,18 +481,17 @@ private fun LinkedCalcSection(repository: Repository, dateKey: String, onChanged
                         toText = ""
                         onChanged()
                     }
-                }) { Text("추가") }
+                }) { Text("추가", maxLines = 1, softWrap = false) }
             }
         }
     }
 }
 
 /**
- * 캘린더 일정 하나의 계산기 연동 설정 편집(86차 신규, 안드로이드판 LinkEditorPanel과 대칭) — 생성 시
- * (LinkedCalcSection)에만 정할 수 있던 연결을 업무마다 나중에 바꿀 수 있게 하는 작은 패널. 다른 계산기
- * 업무로 재연결, 완전 해제, 완료 시 반영될 할당량(progressStep) 수정을 한 곳에서 처리한다. "적용"은
- * 선택된 업무가 지금 연결과 같아도 실행되므로, 그 업무의 회독 설정이 나중에 바뀐 경우 다시 맞추는
- * 초기화 용도로도 쓰인다.
+ * 캘린더 일정 하나의 계산기 연동 설정 편집(86차 신규) — 생성 시(LinkedCalcSection)에만 정할 수 있던
+ * 연결을 업무마다 나중에 바꿀 수 있게 하는 작은 패널. 다른 계산기 업무로 재연결, 완전 해제, 완료 시
+ * 반영될 할당량(progressStep) 수정을 한 곳에서 처리한다. "적용"은 선택된 업무가 지금 연결과 같아도
+ * 실행되므로, 그 업무의 회독 설정이 나중에 바뀐 경우 다시 맞추는 초기화 용도로도 쓰인다.
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -456,15 +507,7 @@ private fun LinkEditorPanel(
     var selected by remember(task) { mutableStateOf(task.linkedCalc) }
     var amountText by remember(task) { mutableStateOf(task.progressStep ?: "") }
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), MaterialTheme.shapes.small)
-            .padding(Spacing.sm)
-            .padding(top = Spacing.xs)
-    ) {
-        Text("업무 연결 설정", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(Spacing.xs))
+    InlinePanel("업무 연결") {
         if (calcTasks.isEmpty()) {
             Text("등록된 계산기 업무가 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
@@ -473,30 +516,23 @@ private fun LinkEditorPanel(
                 verticalArrangement = Arrangement.spacedBy(Spacing.xs)
             ) {
                 calcTasks.forEach { t ->
-                    val isSelected = selected == t.name
-                    OutlinedButton(
+                    FilterChip(
+                        selected = selected == t.name,
                         onClick = { selected = t.name },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        colors = if (isSelected) {
-                            ButtonDefaults.outlinedButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.primary
-                            )
-                        } else ButtonDefaults.outlinedButtonColors()
-                    ) { Text(t.name, style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(t.name, maxLines = 1, softWrap = false) }
+                    )
                 }
             }
         }
         Spacer(Modifier.height(Spacing.xs))
-        OutlinedTextField(
+        CompactField(
             value = amountText,
             onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' } },
-            label = { Text("완료 시 반영될 할당량") },
-            enabled = selected != null,
-            modifier = Modifier.fillMaxWidth()
+            label = "완료하면 더할 양",
+            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
         )
         Spacer(Modifier.height(Spacing.xs))
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs), verticalAlignment = Alignment.CenterVertically) {
             Button(
                 onClick = {
                     val name = selected ?: return@Button
@@ -504,13 +540,44 @@ private fun LinkEditorPanel(
                     onChanged()
                 },
                 enabled = selected != null
-            ) { Text("적용") }
-            OutlinedButton(onClick = {
+            ) { Text("적용", maxLines = 1, softWrap = false) }
+            TextButton(onClick = {
                 repository.setCalendarTaskLink(dateKey, ordinal, null, null)
                 onChanged()
-            }) { Text("연결 해제") }
-            TextButton(onClick = onCancel) { Text("취소") }
+            }) { Text("연결 해제", maxLines = 1, softWrap = false) }
+            TextButton(onClick = onCancel) { Text("취소", maxLines = 1, softWrap = false) }
         }
+    }
+}
+
+/** 일정 줄 아래에 펼쳐지는 작은 편집 칸(146차) — 차단 규칙 목록의 "끄기 확인" 칸과 같은 옅은 바탕 + 작은 라벨. */
+@Composable
+private fun InlinePanel(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = Spacing.sm)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+            .padding(Spacing.md)
+    ) {
+        Overline(title)
+        Spacer(Modifier.height(Spacing.xs))
+        content()
+    }
+}
+
+/** 완료(O)·미완료(X) 상태를 바로 고르는 둥근 아이콘 버튼 — 고른 상태면 그 색의 옅은 원 안에 진하게(146차). */
+@Composable
+private fun StatusToggle(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: Boolean, color: Color, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(if (selected) color.copy(alpha = 0.16f) else Color.Transparent)
+            .clickable(onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = label, tint = if (selected) color else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -527,138 +594,100 @@ private fun CalendarTaskRow(
 ) {
     var editingName by remember(task) { mutableStateOf(false) }
     var nameText by remember(task) { mutableStateOf(task.name) }
-    var showColorPicker by remember(task) { mutableStateOf(false) }
+    var showPassPicker by remember(task) { mutableStateOf(false) }
     var showMoveCopy by remember(task) { mutableStateOf<String?>(null) }
     var targetDateText by remember(task) { mutableStateOf("") }
     var showLinkEditor by remember(task) { mutableStateOf(false) }
+    var menuOpen by remember(task) { mutableStateOf(false) }
+    val palette = LocalPhoneLockPalette.current
 
-    Column(
-        Modifier.fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.small)
-            .padding(Spacing.sm)
-    ) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column {
-                com.phonelock.desktop.ui.components.IconChip(
-                    Icons.Filled.KeyboardArrowUp, enabled = !isFirst,
-                    onClick = { repository.moveCalendarTaskOrder(dateKey, ordinal, -1); onChanged() }
-                )
-                com.phonelock.desktop.ui.components.IconChip(
-                    Icons.Filled.KeyboardArrowDown, enabled = !isLast,
-                    onClick = { repository.moveCalendarTaskOrder(dateKey, ordinal, 1); onChanged() }
-                )
-            }
+            // 회차 색 점 — 누르면 회차를 바꾼다(웹앱에서 이름을 눌러 색을 고르던 동작과 같다).
+            Box(
+                Modifier.size(28.dp).clip(CircleShape).clickable { showPassPicker = !showPassPicker },
+                contentAlignment = Alignment.Center
+            ) { Box(Modifier.size(10.dp).background(passAccentColor(task), CircleShape)) }
             Spacer(Modifier.width(Spacing.xs))
-            if (editingName) {
-                Box(Modifier.size(10.dp).background(passAccentColor(task), CircleShape))
-                Spacer(Modifier.width(Spacing.xs))
-                OutlinedTextField(
-                    value = nameText,
-                    onValueChange = { nameText = it },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
+            Column(Modifier.weight(1f).clickable { showPassPicker = !showPassPicker }) {
+                Text(
+                    task.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
-            } else {
-                // 웹앱 상세 목록(.task-name-modal)은 월 그리드 배지와 달리 배경/테두리 없는 색 텍스트다.
-                Column(Modifier.weight(1f).clickable { showColorPicker = !showColorPicker }) {
-                    Text(
-                        task.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = passAccentColor(task)
+                // 회차 · 반복 · 잰 시간 · 연결 — 한 줄 메타(이모지 없이).
+                val meta = buildList {
+                    add(passLabel(task))
+                    if (task.multiPassEnabled) add("반복")
+                    if (loggedSeconds != null && loggedSeconds > 0) add(focusDurationLabel(loggedSeconds))
+                    task.linkedCalc?.let { add("연결: $it") }
+                }.joinToString(" · ")
+                Text(meta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
+            StatusToggle(Icons.Filled.Check, "완료", task.status == "O", palette.success) {
+                repository.setCalendarTaskStatus(dateKey, ordinal, "O"); onChanged()
+            }
+            StatusToggle(Icons.Filled.Close, "미완료", task.status == "X", MaterialTheme.colorScheme.error) {
+                repository.setCalendarTaskStatus(dateKey, ordinal, "X"); onChanged()
+            }
+            Box {
+                IconButton(onClick = { menuOpen = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "더보기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text("이름 바꾸기") }, onClick = { menuOpen = false; editingName = true })
+                    DropdownMenuItem(text = { Text("회차 바꾸기") }, onClick = { menuOpen = false; showPassPicker = true })
+                    DropdownMenuItem(text = { Text(if (task.linkedCalc != null) "업무 연결 바꾸기" else "계산기 업무 연결") }, onClick = { menuOpen = false; showLinkEditor = true })
+                    // 79차: 완료(O) 시 다음 회차를 자동으로 만들지 업무마다 켜고 끈다(기본 off).
+                    DropdownMenuItem(
+                        text = { Text(if (task.multiPassEnabled) "반복 끄기" else "반복 켜기 (완료하면 다음 회차)") },
+                        onClick = { menuOpen = false; repository.setCalendarTaskMultiPass(dateKey, ordinal, !task.multiPassEnabled); onChanged() }
                     )
-                    // 이름 아래 회독 라벨 옆 빈 공간에 이 업무를 실제로 잰 시간을 붙여 보여준다.
-                    val metaLine = passLabel(task)
-                    val timeLine = if (loggedSeconds != null && loggedSeconds > 0) " · ⏱ ${formatHmsLog(loggedSeconds.toLong())}" else ""
-                    Text("$metaLine$timeLine", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!isFirst) DropdownMenuItem(text = { Text("위로") }, onClick = { menuOpen = false; repository.moveCalendarTaskOrder(dateKey, ordinal, -1); onChanged() })
+                    if (!isLast) DropdownMenuItem(text = { Text("아래로") }, onClick = { menuOpen = false; repository.moveCalendarTaskOrder(dateKey, ordinal, 1); onChanged() })
+                    DropdownMenuItem(text = { Text("다른 날로 옮기기") }, onClick = { menuOpen = false; showMoveCopy = "move" })
+                    DropdownMenuItem(text = { Text("다른 날로 복사") }, onClick = { menuOpen = false; showMoveCopy = "copy" })
+                    DropdownMenuItem(
+                        text = { Text("삭제", color = MaterialTheme.colorScheme.error) },
+                        onClick = { menuOpen = false; repository.deleteCalendarTask(dateKey, ordinal); onChanged() }
+                    )
                 }
             }
-            Spacer(Modifier.width(Spacing.xs))
-            // 79차: 완료(O) 시 다음 회독을 자동 생성할지 업무마다 켜고 끌 수 있는 토글(기본 off, 사용자 요청).
-            // 꺼져 있으면 아래 ⏱(nextDays) 입력은 의미가 없으므로 숨긴다.
-            Text(
-                if (task.multiPassEnabled) "🔁반복" else "🔁off",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .background(
-                        (if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.15f),
-                        RoundedCornerShape(50)
-                    )
-                    .clickable { repository.setCalendarTaskMultiPass(dateKey, ordinal, !task.multiPassEnabled); onChanged() }
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            )
-            Spacer(Modifier.width(Spacing.xs))
-            // 85차: 스마트폰에서 업무 이름이 과하게 줄바꿈되는 문제 해결을 위해 다회독/미완 버튼 사이의
-            // "다음 회독 주기" 입력칸을 제거해 이름에 폭을 더 준다(사용자 요청, 안드로이드판과 대칭) —
-            // task.nextDays 자체는 여전히 CalendarTask에 남아 자동 회독 생성 시(applyCalendarAutoSchedule)
-            // 커스텀 간격으로 쓰이지만, 그 값을 직접 입력하는 UI만 뺐다.
-            val statusLabel = task.status ?: "미완"
-            val statusColor = when (task.status) {
-                "O" -> Color(0xFF34D399)
-                "X" -> Color(0xFFF87171)
-                else -> MaterialTheme.colorScheme.onSurfaceVariant
-            }
-            Text(
-                statusLabel,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = statusColor,
-                modifier = Modifier
-                    .background(statusColor.copy(alpha = 0.15f), RoundedCornerShape(50))
-                    .clickable { showColorPicker = !showColorPicker }
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-            )
         }
 
-        if (showColorPicker) {
+        if (showPassPicker) {
             // 83차: 회독 수가 업무마다 다를 수 있으므로(3~8) 고정 3개가 아니라 task.passTotal만큼 보여준다.
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
-                modifier = Modifier.padding(top = Spacing.xs).horizontalScroll(rememberScrollState())
-            ) {
-                (task.passTotal - 1 downTo 0).forEach { idx ->
-                    val stageColor = Color(com.phonelock.shared.calc.PassSchedule.passColor(idx, task.passTotal))
-                    OutlinedButton(
-                        onClick = { repository.setCalendarTaskPassIndex(dateKey, ordinal, idx); showColorPicker = false; onChanged() },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = stageColor),
-                        border = BorderStroke(1.dp, stageColor.copy(alpha = 0.5f))
-                    ) { Text("${idx + 1}회차", style = MaterialTheme.typography.labelSmall) }
+            InlinePanel("회차") {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
+                ) {
+                    (task.passTotal - 1 downTo 0).forEach { idx ->
+                        val stageColor = Color(com.phonelock.shared.calc.PassSchedule.passColor(idx, task.passTotal))
+                        OutlinedButton(
+                            onClick = {
+                                repository.setCalendarTaskPassIndex(dateKey, ordinal, idx); showPassPicker = false; onChanged()
+                            },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = stageColor),
+                            border = BorderStroke(1.dp, stageColor.copy(alpha = 0.6f))
+                        ) { Text("${idx + 1}회차", maxLines = 1, softWrap = false) }
+                    }
                 }
             }
         }
 
         if (editingName) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = Spacing.xs)) {
-                TextButton(onClick = {
-                    if (nameText.isNotBlank()) repository.renameCalendarTask(dateKey, ordinal, nameText)
-                    editingName = false
-                    onChanged()
-                }) { Text("저장") }
-                TextButton(onClick = { editingName = false; nameText = task.name }) { Text("취소") }
-            }
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    onClick = { editingName = true },
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                    modifier = Modifier.padding(top = 2.dp)
-                ) { Text("✏️ 이름 수정", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                // 86차: 계산기 업무 연결은 생성 시(LinkedCalcSection)에만 설정할 수 있었는데, 업무마다
-                // 개별적으로 연결 해제/변경/할당량 수정이 가능하도록 작은 버튼 하나만 추가(안드로이드판과
-                // 대칭, 사용자 요청 — 공간을 많이 차지하지 않게).
-                TextButton(
-                    onClick = { showLinkEditor = !showLinkEditor },
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                    modifier = Modifier.padding(top = 2.dp)
-                ) {
-                    Text(
-                        if (task.linkedCalc != null) "🔗 ${task.linkedCalc}" else "🔗 업무 연결",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (task.linkedCalc != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            InlinePanel("이름 바꾸기") {
+                CompactField(value = nameText, onValueChange = { nameText = it })
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = {
+                        if (nameText.isNotBlank()) repository.renameCalendarTask(dateKey, ordinal, nameText)
+                        editingName = false
+                        onChanged()
+                    }) { Text("저장") }
+                    TextButton(onClick = { editingName = false; nameText = task.name }) { Text("취소") }
                 }
             }
         }
@@ -674,79 +703,33 @@ private fun CalendarTaskRow(
             )
         }
 
-        // 웹앱 .modal-actions .modal-btn — 버튼 5개가 flex:1로 균등하게 폭을 나눠 차지하고,
-        // 각각 다른 틴트색(.btn-done/.btn-undone/.btn-move/.btn-copy/.btn-remove).
-        val green = Color(0xFF34D399)
-        val red = Color(0xFFF87171)
-        val purple = MaterialTheme.colorScheme.secondary
-        val actionButtonPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(top = Spacing.xs)) {
-            OutlinedButton(
-                onClick = { repository.setCalendarTaskStatus(dateKey, ordinal, "O"); onChanged() },
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = green.copy(alpha = 0.15f), contentColor = green),
-                border = BorderStroke(1.dp, green.copy(alpha = 0.35f)),
-                contentPadding = actionButtonPadding,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
-            ) { Text("✔ 완료", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-            OutlinedButton(
-                onClick = { repository.setCalendarTaskStatus(dateKey, ordinal, "X"); onChanged() },
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = red.copy(alpha = 0.15f), contentColor = red),
-                border = BorderStroke(1.dp, red.copy(alpha = 0.35f)),
-                contentPadding = actionButtonPadding,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
-            ) { Text("✘ 미완료", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-            OutlinedButton(
-                onClick = { showMoveCopy = "move" },
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), contentColor = MaterialTheme.colorScheme.primary),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-                contentPadding = actionButtonPadding,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
-            ) { Text("↔ 이동", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-            OutlinedButton(
-                onClick = { showMoveCopy = "copy" },
-                colors = ButtonDefaults.outlinedButtonColors(containerColor = purple.copy(alpha = 0.1f), contentColor = purple),
-                border = BorderStroke(1.dp, purple.copy(alpha = 0.3f)),
-                contentPadding = actionButtonPadding,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
-            ) { Text("⎘ 복사", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-            OutlinedButton(
-                onClick = { repository.deleteCalendarTask(dateKey, ordinal); onChanged() },
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = red),
-                contentPadding = actionButtonPadding,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.weight(1f)
-            ) { Text("✕ 삭제", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-        }
-
         if (showMoveCopy != null) {
-            Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = Spacing.xs)) {
-                // 92차: 수동 "YYYY-MM-DD" 텍스트 입력 대신 계산기 업무 입력(83차)과 같은 미니 캘린더
-                // 날짜 선택 버튼(DatePickerField)으로 교체(안드로이드판 CalendarScreen.kt와 대칭).
-                com.phonelock.desktop.ui.components.DatePickerField(
-                    value = targetDateText,
-                    onValueChange = { targetDateText = it },
-                    label = "대상 날짜",
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(Spacing.xs))
-                Button(
-                    onClick = {
-                        val target = targetDateText.trim()
-                        if (target.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
-                            if (showMoveCopy == "move") repository.moveCalendarTaskToDate(dateKey, ordinal, target)
-                            else repository.copyCalendarTaskToDate(dateKey, ordinal, target)
-                            showMoveCopy = null
-                            targetDateText = ""
-                            onChanged()
-                        }
-                    },
-                    modifier = Modifier.height(56.dp)
-                ) { Text("확인") }
-                TextButton(onClick = { showMoveCopy = null; targetDateText = "" }, modifier = Modifier.height(56.dp)) { Text("취소") }
+            InlinePanel(if (showMoveCopy == "move") "다른 날로 옮기기" else "다른 날로 복사") {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    // 92차: 수동 "YYYY-MM-DD" 텍스트 입력 대신 미니 캘린더 날짜 선택 버튼(DatePickerField) —
+                    // 직접 타이핑하다 형식이 틀려 조용히 무시되던 문제도 함께 해소된다(항상 유효한 날짜만 돌려준다).
+                    com.phonelock.desktop.ui.components.DatePickerField(
+                        value = targetDateText,
+                        onValueChange = { targetDateText = it },
+                        label = "날짜",
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(Spacing.xs))
+                    Button(
+                        onClick = {
+                            val target = targetDateText.trim()
+                            if (target.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
+                                if (showMoveCopy == "move") repository.moveCalendarTaskToDate(dateKey, ordinal, target)
+                                else repository.copyCalendarTaskToDate(dateKey, ordinal, target)
+                                showMoveCopy = null
+                                targetDateText = ""
+                                onChanged()
+                            }
+                        },
+                        modifier = Modifier.height(56.dp)
+                    ) { Text("확인", maxLines = 1, softWrap = false) }
+                    TextButton(onClick = { showMoveCopy = null; targetDateText = "" }, modifier = Modifier.height(56.dp)) { Text("취소") }
+                }
             }
         }
     }

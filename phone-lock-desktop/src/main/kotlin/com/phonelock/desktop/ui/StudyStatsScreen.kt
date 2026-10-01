@@ -82,7 +82,7 @@ fun StudyStatsScreen(repository: Repository) {
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(Spacing.sm))
-            IconButton(onClick = { scope.launch { refresh() } }) { Text("🔄") }
+            IconButton(onClick = { scope.launch { refresh() } }) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.Refresh, contentDescription = "새로고침") }
         }
         return
     }
@@ -345,8 +345,7 @@ private fun StudyAverageCard(summary: StudyStats.Summary) {
         StudyAverageRow("집중한 날 평균", summary.activeDayAverageSeconds?.let { StudyStats.durationLabel(it) } ?: "—")
         Spacer(Modifier.height(Spacing.xs))
         Text(
-            "평균은 오늘을 포함한 기간의 합계를 날짜 수로 나눈 값입니다(쉰 날도 0으로 포함, 쓰기 시작한 지 얼마 안 됐으면 첫 기록일부터). " +
-                "\"집중한 날 평균\"은 최근 ${StudyStats.LONG_WINDOW_DAYS}일 중 기록이 있는 날만으로 나눕니다.",
+            "쉰 날도 0으로 셉니다. \"집중한 날 평균\"은 기록 있는 날만으로 나눕니다.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -1,5 +1,6 @@
 ﻿package com.phonelock.app.ui
 
+import com.phonelock.app.ui.components.LedgerAlertDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -19,7 +20,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -235,7 +235,7 @@ fun SocialGroupScreen(
 
     if (showCreateDialog) {
         var nameText by remember { mutableStateOf("") }
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showCreateDialog = false },
             title = { Text("모임 만들기") },
             text = {
@@ -265,7 +265,7 @@ fun SocialGroupScreen(
 
     if (showJoinDialog) {
         var codeText by remember { mutableStateOf("") }
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showJoinDialog = false },
             title = { Text("모임 참여하기") },
             text = {

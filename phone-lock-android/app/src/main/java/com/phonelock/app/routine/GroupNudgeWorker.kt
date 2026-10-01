@@ -79,7 +79,7 @@ class GroupNudgeWorker(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_star)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(pendingIntent)

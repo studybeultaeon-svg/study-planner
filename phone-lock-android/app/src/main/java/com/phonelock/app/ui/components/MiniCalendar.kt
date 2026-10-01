@@ -18,10 +18,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -59,70 +60,85 @@ fun MiniCalendarDialog(
     var month by remember { mutableStateOf((initialDate ?: LocalDate.now()).monthValue - 1) }
     var selected by remember { mutableStateOf(initialDate) }
 
+    // 146차: 톤 입힌 둥근 판 → 떠 있는 창 공용 판(LedgerDialogSurface), 고정 hex 주말색 → 팔레트(일요일 오류색·토요일 saturdayInk),
+    // 고른 날은 테두리 대신 강조색 원, 버튼 줄은 확인 창과 같게 가는 선 아래.
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
-            Column(Modifier.padding(Spacing.md)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        LedgerDialogSurface {
+            Column(Modifier.padding(top = Spacing.md)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     IconButton(onClick = { if (month == 0) { month = 11; year-- } else month-- }) {
                         Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전 달")
                     }
-                    Text("${year}년 ${MINI_CAL_MONTHS_KO[month]}", style = MaterialTheme.typography.titleMedium)
+                    Text("${year}년 ${MINI_CAL_MONTHS_KO[month]}", style = MaterialTheme.typography.titleLarge, maxLines = 1)
                     IconButton(onClick = { if (month == 11) { month = 0; year++ } else month++ }) {
                         Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음 달")
                     }
                 }
                 Spacer(Modifier.height(Spacing.sm))
-                Row(Modifier.fillMaxWidth()) {
-                    MINI_CAL_WEEKDAYS_KO.forEachIndexed { i, d ->
-                        val c = when (i) { 0 -> Color(0xFFF87171); 6 -> Color(0xFF6B9FFF); else -> MaterialTheme.colorScheme.onSurface }
-                        Text(d, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium, color = c)
-                    }
-                }
-                val firstOfMonth = LocalDate.of(year, month + 1, 1)
-                val firstDow = firstOfMonth.dayOfWeek.value % 7
-                val daysInMonth = firstOfMonth.lengthOfMonth()
-                val rows = (firstDow + daysInMonth + 6) / 7
-                val today = LocalDate.now()
-                for (row in 0 until rows) {
+                val sundayColor = MaterialTheme.colorScheme.error
+                val saturdayColor = saturdayInk()
+                Column(Modifier.padding(horizontal = Spacing.md)) {
                     Row(Modifier.fillMaxWidth()) {
-                        for (col in 0 until 7) {
-                            val dayNum = row * 7 + col - firstDow + 1
-                            if (dayNum in 1..daysInMonth) {
-                                val date = LocalDate.of(year, month + 1, dayNum)
-                                val isToday = date == today
-                                val isSelected = selected == date
-                                Box(
-                                    Modifier.weight(1f).padding(1.dp).size(40.dp)
-                                        .border(if (isSelected) 2.dp else 0.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                                        .clickable { selected = date },
-                                    contentAlignment = Alignment.Center
-                                ) {
+                        MINI_CAL_WEEKDAYS_KO.forEachIndexed { i, d ->
+                            val c = when (i) { 0 -> sundayColor; 6 -> saturdayColor; else -> MaterialTheme.colorScheme.onSurfaceVariant }
+                            Text(d, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium, color = c)
+                        }
+                    }
+                    Spacer(Modifier.height(Spacing.xs))
+                    val firstOfMonth = LocalDate.of(year, month + 1, 1)
+                    val firstDow = firstOfMonth.dayOfWeek.value % 7
+                    val daysInMonth = firstOfMonth.lengthOfMonth()
+                    val rows = (firstDow + daysInMonth + 6) / 7
+                    val today = LocalDate.now()
+                    for (row in 0 until rows) {
+                        Row(Modifier.fillMaxWidth()) {
+                            for (col in 0 until 7) {
+                                val dayNum = row * 7 + col - firstDow + 1
+                                if (dayNum in 1..daysInMonth) {
+                                    val date = LocalDate.of(year, month + 1, dayNum)
+                                    val isToday = date == today
+                                    val isSelected = selected == date
                                     Box(
-                                        Modifier.size(28.dp)
-                                            .background(if (isToday) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent, CircleShape),
+                                        Modifier.weight(1f).size(40.dp).clickable { selected = date },
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        val dayColor = when {
-                                            date.dayOfWeek == DayOfWeek.SUNDAY -> Color(0xFFF87171)
-                                            date.dayOfWeek == DayOfWeek.SATURDAY -> Color(0xFF6B9FFF)
-                                            else -> MaterialTheme.colorScheme.onSurface
+                                        Box(
+                                            Modifier.size(32.dp)
+                                                .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            val dayColor = when {
+                                                isSelected -> MaterialTheme.colorScheme.onPrimary
+                                                isToday -> MaterialTheme.colorScheme.primary
+                                                date.dayOfWeek == DayOfWeek.SUNDAY -> sundayColor
+                                                date.dayOfWeek == DayOfWeek.SATURDAY -> saturdayColor
+                                                else -> MaterialTheme.colorScheme.onBackground
+                                            }
+                                            Text(
+                                                "$dayNum",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = dayColor,
+                                                fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
                                         }
-                                        Text(
-                                            "$dayNum",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = dayColor,
-                                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
-                                        )
                                     }
+                                } else {
+                                    Box(Modifier.weight(1f).size(40.dp))
                                 }
-                            } else {
-                                Box(Modifier.weight(1f).size(40.dp))
                             }
                         }
                     }
                 }
-                Spacer(Modifier.height(Spacing.sm))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Spacer(Modifier.height(Spacing.md))
+                Hairline()
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+                    horizontalArrangement = Arrangement.End
+                ) {
                     TextButton(onClick = onDismiss) { Text("취소") }
                     TextButton(onClick = { selected?.let(onConfirm) }, enabled = selected != null) { Text("확인") }
                 }
@@ -138,7 +154,8 @@ fun CompactDateField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "날짜 선택"
+    placeholder: String = "날짜 선택",
+    clearable: Boolean = false
 ) {
     var showDialog by remember { mutableStateOf(false) }
     Box(
@@ -149,15 +166,25 @@ fun CompactDateField(
             .padding(horizontal = 12.dp, vertical = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("📅", style = calcFieldTextStyle())
+            // 146차: 📅 이모지 대신 벡터 아이콘. [clearable]이면 값이 있을 때 오른쪽 ×로 비울 수 있다(비운 날짜 = 제한 없음).
+            Icon(Icons.Outlined.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Text(
                 value.ifBlank { placeholder },
                 style = calcFieldTextStyle(),
                 color = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
+                maxLines = 1,
                 modifier = Modifier.weight(1f)
             )
+            if (clearable && value.isNotBlank()) {
+                Icon(
+                    Icons.Outlined.Close,
+                    contentDescription = "날짜 지우기",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp).clickable { onValueChange("") }
+                )
+            }
         }
     }
     if (showDialog) {

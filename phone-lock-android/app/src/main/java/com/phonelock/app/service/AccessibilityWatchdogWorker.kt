@@ -57,7 +57,7 @@ class AccessibilityWatchdogWorker(
         )
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_star)
             .setContentTitle("접근성 서비스가 꺼져 있습니다")
             .setContentText("지금 어떤 앱/사이트도 차단되지 않고 있습니다. 눌러서 다시 켜세요.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)

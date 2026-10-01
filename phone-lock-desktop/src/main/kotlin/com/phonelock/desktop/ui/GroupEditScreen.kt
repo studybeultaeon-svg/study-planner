@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.components.LedgerAlertDialog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,12 +15,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +27,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,6 +56,9 @@ import com.phonelock.desktop.ui.components.CompactField
 import com.phonelock.desktop.ui.components.CompactNumberField
 import com.phonelock.desktop.ui.components.DurationFieldsRow
 import com.phonelock.desktop.ui.components.SectionCard
+import com.phonelock.desktop.ui.components.SegmentedTabs
+import com.phonelock.desktop.ui.components.Hairline
+import com.phonelock.desktop.ui.components.Overline
 import com.phonelock.desktop.ui.components.ToggleRow
 import com.phonelock.desktop.ui.components.hmsTextToSeconds
 import com.phonelock.desktop.ui.components.secondsToHmsText
@@ -101,11 +107,30 @@ private fun DayMaskRow(mask: Int, onMaskChange: (Int) -> Unit) {
             }
         }
     }
-    Text(
-        "체크된 요일에만 적용됩니다.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
+}
+
+/** "09:00 ~ 18:00" 시간대 입력 두 칸(146차, 스케줄·한도·실행 전 대기 공용 — 안드로이드판과 대칭). 비워 두면 그 시간대를 쓰지 않는다. */
+@Composable
+private fun TimeRangeFields(start: String, onStartChange: (String) -> Unit, end: String, onEndChange: (String) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        CompactField(
+            value = start,
+            onValueChange = onStartChange,
+            placeholder = "시작",
+            leadingIcon = Icons.Outlined.Schedule,
+            centerValue = true,
+            modifier = Modifier.weight(1f)
+        )
+        Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
+        CompactField(
+            value = end,
+            onValueChange = onEndChange,
+            placeholder = "끝",
+            leadingIcon = Icons.Outlined.Schedule,
+            centerValue = true,
+            modifier = Modifier.weight(1f)
+        )
+    }
 }
 
 @Composable
@@ -165,6 +190,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
     var pendingMessageIndex by remember { mutableIntStateOf(0) }
     var pendingMessage by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf(false) }
+    var confirmPlainDelete by remember { mutableStateOf(false) }
     var pendingDeleteMessageIndex by remember { mutableIntStateOf(0) }
     // 동기화(94차 신규, 안드로이드판과 대칭) — on/off 스위치 자체는 95차부터 이 편집 화면이 아니라
     // GroupListScreen(잠깐 풀기 버튼 옆)에 있다 — 여기서는 저장 시 기존 값을 그대로 유지해 전달하는
@@ -255,13 +281,37 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.md)
     ) {
+        // 146차: 편집형 머리 — 작은 경로 라벨(오른쪽에 복사·삭제 아이콘) + 큰 제목(규칙 이름) + 가는 선. 아래엔 "저장" 하나만.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Overline(if (groupId == null) "관리 · 새 차단 규칙" else "관리 · 차단 규칙 편집", Modifier.weight(1f))
+            if (groupId != null && pendingGroup == null && !pendingDelete) {
+                IconButton(onClick = { repository.copyGroup(groupId); onDone() }) {
+                    Icon(Icons.Outlined.ContentCopy, contentDescription = "복사")
+                }
+                IconButton(onClick = {
+                    val original = originalGroup
+                    if (original != null && evaluator.requiresDeleteGate(original)) {
+                        pendingDelete = true
+                        pendingMessage = null
+                    } else {
+                        // 작은 아이콘이 된 만큼 잘못 눌러 바로 지워지지 않게 한 번 묻는다(146차).
+                        confirmPlainDelete = true
+                    }
+                }) {
+                    Icon(Icons.Outlined.Delete, contentDescription = "삭제", tint = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
         Text(
-            if (groupId == null) "차단 규칙 추가" else "차단 규칙 편집",
-            style = MaterialTheme.typography.headlineMedium
+            name.ifBlank { if (groupId == null) "새 차단 규칙" else "차단 규칙" },
+            style = MaterialTheme.typography.headlineMedium,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
         )
-        Spacer(Modifier.height(Spacing.md))
+        Spacer(Modifier.height(Spacing.sm))
+        Hairline()
 
-        SectionCard("기본 정보", emoji = "📝") {
+        SectionCard("기본 정보", divider = false) {
             CompactField(
                 value = name,
                 onValueChange = { name = it },
@@ -271,76 +321,54 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
             CompactField(
                 value = description,
                 onValueChange = { description = it },
-                label = "설명 (선택, \"모임\"에 이 차단 규칙 이름과 함께 표시됩니다)",
+                label = "설명 (선택 · 모임에 함께 표시)",
                 placeholder = "선택 입력"
             )
             Spacer(Modifier.height(Spacing.sm))
             CompactField(
                 value = selfMessageText,
                 onValueChange = { selfMessageText = it },
-                label = "미래의 나에게",
-                placeholder = "예: 오늘 밤 11시 이후엔 진짜 그만 봐. 내일 시험이야."
-            )
-            Text(
-                "선택 사항입니다. 이 차단 규칙이 잠길 때 문구와 함께 보여줍니다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                label = "미래의 나에게 (선택 · 잠길 때 표시)",
+                placeholder = "예: 오늘 밤 11시 이후엔 진짜 그만 봐."
             )
         }
         Spacer(Modifier.height(Spacing.md))
 
         // 142차(사용자 요청): 프로그램을 특정해서 막는 방식 말고, PC 전체를 잠그고 허용한 프로그램만 쓰는 방식.
-        SectionCard("차단 방식", emoji = "🔒") {
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                FilterChip(
-                    selected = !allowlistMode,
-                    onClick = { allowlistMode = false },
-                    label = { Text("고른 것만 차단") }
-                )
-                FilterChip(
-                    selected = allowlistMode,
-                    onClick = { allowlistMode = true },
-                    label = { Text("전체 잠금") }
-                )
-            }
+        SectionCard("차단 방식") {
+            SegmentedTabs(
+                labels = listOf("고른 것만 차단", "전체 잠금"),
+                selectedIndex = if (allowlistMode) 1 else 0,
+                onSelect = { allowlistMode = it == 1 },
+                modifier = Modifier.widthIn(max = 420.dp)
+            )
+            Spacer(Modifier.height(Spacing.xs))
             Text(
-                if (allowlistMode) {
-                    "시간대나 일일 한도에 걸린 동안 PC 전체가 잠기고, 아래에서 고른 프로그램·사이트만 쓸 수 있습니다. " +
-                        "바탕화면(탐색기)은 항상 열리고, 허용 안 된 프로그램을 열면 허용한 프로그램 목록이 있는 잠금 화면이 뜹니다."
-                } else {
-                    "아래에서 고른 프로그램·사이트만 막습니다."
-                },
+                if (allowlistMode) "걸린 동안 고른 프로그램·사이트와 바탕화면(탐색기)만 열립니다." else "고른 프로그램·사이트만 막습니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Spacer(Modifier.height(Spacing.md))
 
-        SectionCard("관리 종류", emoji = "🗂️") {
-            Text(
-                "이 차단 규칙에 적용할 관리 종류를 선택하세요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(Spacing.sm))
+        SectionCard("관리 종류") {
             ToggleRow(
                 title = "스케줄",
-                description = "설정한 시간대/요일에 차단합니다.",
+                description = "정한 시간·요일에 막습니다.",
                 checked = scheduleEnabled,
                 onCheckedChange = { scheduleEnabled = it }
             )
-            Spacer(Modifier.height(Spacing.sm))
             ToggleRow(
                 title = "일일 사용 한도",
+                description = "정한 시간을 다 쓰면 막습니다.",
                 checked = dailyLimitEnabled,
                 onCheckedChange = { dailyLimitEnabled = it }
             )
             // 전체 잠금 방식엔 실행 전 대기를 쓰지 않는다 — PC의 모든 프로그램에 확인창이 뜨게 된다.
             if (!allowlistMode) {
-                Spacer(Modifier.height(Spacing.sm))
                 ToggleRow(
                     title = "실행 전 대기",
-                    description = "켜면 실행할 때마다 확인창이 뜨고, 확인할 때마다 대기시간이 늘어납니다.",
+                    description = "열 때마다 기다리고, 열수록 길어집니다.",
                     checked = confirmEnabled,
                     onCheckedChange = { confirmEnabled = it }
                 )
@@ -348,71 +376,12 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
         Spacer(Modifier.height(Spacing.md))
 
-        SectionCard("뽀모도로 연동", emoji = "🍅") {
-            ToggleRow(
-                title = "뽀모도로 휴식 시 자동 해제",
-                description = "집중 타이머(설정 메뉴에서 로그인 필요)의 뽀모도로 휴식 시간 동안 이 차단 규칙의 잠금을 임시로 해제합니다. 실행 전 대기 on/off와 무관하게 작동합니다.",
-                checked = pomodoroUnlockEnabled,
-                onCheckedChange = { pomodoroUnlockEnabled = it }
-            )
-        }
-        Spacer(Modifier.height(Spacing.md))
-
-        // "관리 종류"(스케줄/일일한도/실행 전 대기)와 성격이 달라 별도 섹션으로 분리(95차, 사용자
-        // 지적) — 켜고 끄는 스위치와 세부 설정(시간/횟수)을 한 카드에 같이 둔다. 동기화 on/off 스위치는
-        // 편집 화면이 아니라 목록 화면(잠깐 풀기 버튼 옆)으로 이동했다.
-        SectionCard("잠깐 풀기", emoji = "😴") {
-            ToggleRow(
-                title = "잠깐 풀기 사용",
-                description = "차단 규칙 목록 화면에서 확인 질문 절차 없이 즉시 임시 해제할 수 있는 버튼을 켭니다.",
-                checked = snoozeEnabled,
-                onCheckedChange = { snoozeEnabled = it }
-            )
-            if (snoozeEnabled) {
-                Spacer(Modifier.height(Spacing.sm))
-                Text(
-                    "차단 규칙 목록 화면의 \"😴 잠깐 풀기\" 버튼으로 확인 질문 절차 없이 즉시 임시 해제할 수 있습니다. " +
-                        "남용을 막기 위해 아래 설정한 횟수까지만 쓸 수 있습니다(자정이 아니라 설정의 \"하루 시작 기준\" 시각 기준).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                CompactNumberField(
-                    value = snoozeMinutesText,
-                    onValueChange = { snoozeMinutesText = it },
-                    label = "잠깐 풀기 시간(분)"
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                CompactNumberField(
-                    value = snoozeDailyLimitText,
-                    onValueChange = { snoozeDailyLimitText = it },
-                    label = "하루 잠깐 풀기 횟수"
-                )
-            }
-        }
-        Spacer(Modifier.height(Spacing.md))
-
         if (scheduleEnabled) {
-            SectionCard("스케줄", emoji = "🗓️") {
-                Text("적용 시간대 (비워두면 미적용, HH:mm)", style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(Spacing.xs))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CompactField(
-                        value = scheduleStartText,
-                        onValueChange = { scheduleStartText = it },
-                        leadingEmoji = "🕐",
-                        centerValue = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
-                    CompactField(
-                        value = scheduleEndText,
-                        onValueChange = { scheduleEndText = it },
-                        leadingEmoji = "🕐",
-                        centerValue = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+            SectionCard("스케줄") {
+                TimeRangeFields(
+                    start = scheduleStartText, onStartChange = { scheduleStartText = it },
+                    end = scheduleEndText, onEndChange = { scheduleEndText = it }
+                )
                 Spacer(Modifier.height(Spacing.sm))
                 DayMaskRow(mask = daysMask, onMaskChange = { daysMask = it })
             }
@@ -420,9 +389,9 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
 
         if (dailyLimitEnabled) {
-            SectionCard("일일 사용 한도", emoji = "⏱️") {
+            SectionCard("일일 사용 한도") {
                 DurationFieldsRow(
-                    label = "일일 사용 한도",
+                    label = "한도",
                     hoursText = dailyLimitHoursText,
                     onHoursChange = { dailyLimitHoursText = it },
                     minutesText = dailyLimitMinutesText,
@@ -430,28 +399,15 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                     secondsText = dailyLimitSecondsText,
                     onSecondsChange = { dailyLimitSecondsText = it }
                 )
-                Spacer(Modifier.height(Spacing.sm))
-                Text("적용 시간대 (비워두면 하루 종일 적용, HH:mm)", style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(Spacing.md))
+                Text("적용 시간대 (비우면 하루 종일)", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(Spacing.xs))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CompactField(
-                        value = dailyLimitApplyStartText,
-                        onValueChange = { dailyLimitApplyStartText = it },
-                        leadingEmoji = "🕐",
-                        centerValue = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
-                    CompactField(
-                        value = dailyLimitApplyEndText,
-                        onValueChange = { dailyLimitApplyEndText = it },
-                        leadingEmoji = "🕐",
-                        centerValue = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                TimeRangeFields(
+                    start = dailyLimitApplyStartText, onStartChange = { dailyLimitApplyStartText = it },
+                    end = dailyLimitApplyEndText, onEndChange = { dailyLimitApplyEndText = it }
+                )
                 Text(
-                    "이 시간대 안에 있을 때만 한도 초과로 잠깁니다. 사용 시간 누적 자체는 시간대와 무관하게 항상 기록됩니다.",
+                    "이 시간대에만 잠기고, 사용 시간은 늘 쌓입니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -462,36 +418,23 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
 
         if (confirmEnabled && !allowlistMode) {
-            SectionCard("실행 전 대기", emoji = "🛑") {
-                Text("적용 시간대 (비워두면 하루 종일 적용, HH:mm)", style = MaterialTheme.typography.bodySmall)
+            SectionCard("실행 전 대기") {
+                Text("적용 시간대 (비우면 하루 종일)", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(Spacing.xs))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CompactField(
-                        value = confirmApplyStartText,
-                        onValueChange = { confirmApplyStartText = it },
-                        leadingEmoji = "🕐",
-                        centerValue = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
-                    CompactField(
-                        value = confirmApplyEndText,
-                        onValueChange = { confirmApplyEndText = it },
-                        leadingEmoji = "🕐",
-                        centerValue = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                TimeRangeFields(
+                    start = confirmApplyStartText, onStartChange = { confirmApplyStartText = it },
+                    end = confirmApplyEndText, onEndChange = { confirmApplyEndText = it }
+                )
                 Text(
-                    "이 시간대 밖에서는 실행해도 확인창 없이 그냥 허용됩니다.",
+                    "시간대 밖에선 묻지 않고 열립니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(Spacing.sm))
                 DayMaskRow(mask = confirmDaysMask, onMaskChange = { confirmDaysMask = it })
-                Spacer(Modifier.height(Spacing.sm))
+                Spacer(Modifier.height(Spacing.md))
                 DurationFieldsRow(
-                    label = "처음 대기시간",
+                    label = "처음 대기",
                     hoursText = initialWaitHoursText,
                     onHoursChange = { initialWaitHoursText = it },
                     minutesText = initialWaitMinutesText,
@@ -501,7 +444,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 )
                 Spacer(Modifier.height(Spacing.sm))
                 DurationFieldsRow(
-                    label = "재확인마다 늘어나는 시간",
+                    label = "다시 열 때마다 늘어나는 시간",
                     hoursText = waitIncrementHoursText,
                     onHoursChange = { waitIncrementHoursText = it },
                     minutesText = waitIncrementMinutesText,
@@ -520,19 +463,19 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                     onSecondsChange = { confirmCooldownSecondsText = it }
                 )
                 Text(
-                    "이 시간 동안은 같은 차단 규칙의 다른 프로그램/사이트도 다시 묻지 않습니다.",
+                    "그동안 이 규칙의 다른 프로그램·사이트도 묻지 않습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(Spacing.sm))
                 ToggleRow(
                     title = "시간 지나면 자동 완화",
-                    description = "켜면 마지막 진행 완료 이후 아래 간격이 지날 때마다 대기시간이 한 단계씩 자연히 줄어듭니다.",
+                    description = "마지막 확인부터 간격마다 한 단계씩 줄어듭니다.",
                     checked = levelDecayEnabled,
                     onCheckedChange = { levelDecayEnabled = it }
                 )
                 if (levelDecayEnabled) {
-                    Spacer(Modifier.height(Spacing.sm))
+                    Spacer(Modifier.height(Spacing.xs))
                     DurationFieldsRow(
                         label = "완화 간격",
                         hoursText = levelDecayHoursText,
@@ -542,56 +485,74 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                         secondsText = levelDecaySecondsText,
                         onSecondsChange = { levelDecaySecondsText = it }
                     )
-                    Text(
-                        "정해진 시각이 아니라, 마지막 진행 완료 시점부터 이 간격이 지날 때마다 대기시간이 한 단계씩 줄어듭니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
                 Spacer(Modifier.height(Spacing.sm))
                 ToggleRow(
-                    title = "사용 중 남은 시간 화면 덮개 표시",
-                    description = "확인을 통과한 뒤 다시 묻지 않는 시간 동안 프로그램을 쓰는 중에 화면 구석에 남은 시간을 표시합니다.",
+                    title = "남은 시간 화면 덮개",
+                    description = "다시 묻지 않는 동안 화면 구석에 표시합니다.",
                     checked = usageOverlayEnabled,
                     onCheckedChange = { usageOverlayEnabled = it }
                 )
                 if (usageOverlayEnabled) {
-                    Spacer(Modifier.height(Spacing.sm))
+                    Spacer(Modifier.height(Spacing.xs))
                     CompactNumberField(
                         value = overlayLevelStepsToMaxText,
                         onValueChange = { overlayLevelStepsToMaxText = it },
-                        label = "몇 번 재확인하면 화면이 가장 진해질지"
-                    )
-                    Text(
-                        "재확인을 이 횟수만큼 반복하면 화면 덮개가 가장 진해집니다. 한 번 재확인할 때마다 진해지는 폭은 이 값에 맞춰 자동으로 계산됩니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        label = "몇 번 다시 열면 가장 진해질지"
                     )
                 }
             }
             Spacer(Modifier.height(Spacing.md))
         }
 
-        TextButton(onClick = { weakeningInfoExpanded = !weakeningInfoExpanded }) {
-            Text(if (weakeningInfoExpanded) "제한을 약하게 바꿀 때 생기는 일 접기" else "제한을 약하게 바꿀 때 생기는 일 자세히 보기")
+        // "관리 종류"(스케줄/일일한도/실행 전 대기)와 성격이 달라 별도 섹션으로 분리(95차, 사용자
+        // 지적) — 켜고 끄는 스위치와 세부 설정(시간/횟수)을 한 묶음에 같이 둔다. 동기화 on/off 스위치는
+        // 편집 화면이 아니라 목록 화면(잠깐 풀기 버튼 옆)으로 이동했다.
+        SectionCard("잠깐 풀기") {
+            ToggleRow(
+                title = "잠깐 풀기 사용",
+                description = "목록에서 확인 없이 바로 잠시 풉니다.",
+                checked = snoozeEnabled,
+                onCheckedChange = { snoozeEnabled = it }
+            )
+            if (snoozeEnabled) {
+                Spacer(Modifier.height(Spacing.xs))
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    CompactNumberField(
+                        value = snoozeMinutesText,
+                        onValueChange = { snoozeMinutesText = it },
+                        label = "한 번에 (분)",
+                        modifier = Modifier.weight(1f)
+                    )
+                    CompactNumberField(
+                        value = snoozeDailyLimitText,
+                        onValueChange = { snoozeDailyLimitText = it },
+                        label = "하루 횟수",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Text(
+                    "횟수는 하루 시작 기준 시각에 다시 채워집니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
-        AnimatedVisibility(weakeningInfoExpanded) {
-            Text(
-                "지금 차단 중인 도중에 제한을 약화시키는 수정(한도 늘리기, 시간대 바꾸기, 오늘 요일 빼기, " +
-                    "늘어나는 시간 줄이기, 다시 묻지 않는 시간 늘리기, 자동 완화를 새로 켜거나 완화 간격 줄이기, 항목 삭제, " +
-                    "적용 시간대 좁히기, 스케줄 관리 끄기 등)을 " +
-                    "하면 확인 질문 20개에 하나씩 \"예\"를 눌러야 적용됩니다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        Spacer(Modifier.height(Spacing.md))
+
+        SectionCard("뽀모도로") {
+            ToggleRow(
+                title = "휴식 시간엔 풀기",
+                description = "집중 타이머 휴식 동안 이 규칙을 풉니다.",
+                checked = pomodoroUnlockEnabled,
+                onCheckedChange = { pomodoroUnlockEnabled = it }
             )
         }
         Spacer(Modifier.height(Spacing.md))
 
-
-        SectionCard("이 기간엔 끄기 금지 (시험기간 등)", emoji = "🚫") {
+        SectionCard("끄기 금지 기간") {
             Text(
-                "이 날짜 범위 안에서는 위 \"차단 규칙 전체 사용\" 스위치를 꺼도 실제로는 계속 켜진 것으로 취급됩니다" +
-                    "(시간대/한도/실행 전 대기 설정 자체는 그대로 따릅니다). 비워두면 평소처럼 스위치를 그대로 따릅니다.",
+                "시험기간처럼, 이 기간엔 꺼도 켜진 채로 둡니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -612,12 +573,26 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 )
             }
         }
+        Spacer(Modifier.height(Spacing.sm))
+
+        TextButton(onClick = { weakeningInfoExpanded = !weakeningInfoExpanded }) {
+            Text(if (weakeningInfoExpanded) "접기" else "차단 중에 제한을 약하게 바꾸면?", maxLines = 1, softWrap = false)
+        }
+        AnimatedVisibility(weakeningInfoExpanded) {
+            Text(
+                "지금 차단 중인 규칙을 약하게 바꾸면(한도 늘리기, 시간대·요일 줄이기, 대기 줄이기, 항목 빼기, 끄기 등) " +
+                    "확인 질문 ${PERSUASION_MESSAGES.size}개를 거쳐야 저장됩니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Spacing.sm)
+            )
+        }
         Spacer(Modifier.height(Spacing.md))
 
-        SectionCard(if (allowlistMode) "허용할 프로그램·사이트" else "차단 대상", emoji = if (allowlistMode) "✅" else "🎯") {
+        SectionCard(if (allowlistMode) "허용할 프로그램·사이트" else "막을 프로그램·사이트") {
             Text(
-                if (allowlistMode) "허용할 프로그램 (실행파일 이름, 예: chrome.exe)" else "포함할 프로그램 (실행파일 이름, 예: chrome.exe)",
-                style = MaterialTheme.typography.bodySmall
+                if (allowlistMode) "허용할 프로그램 (실행파일 이름, 예: chrome.exe)" else "막을 프로그램 (실행파일 이름, 예: chrome.exe)",
+                style = MaterialTheme.typography.titleSmall
             )
             Spacer(Modifier.height(Spacing.xs))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -635,29 +610,30 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                         newProcessName = ""
                     }
                 }) {
-                    Text("추가")
+                    Text("추가", maxLines = 1, softWrap = false)
                 }
             }
             processNames.sorted().forEach { processName ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(processName, modifier = Modifier.weight(1f))
                     IconButton(onClick = { processNames = processNames - processName }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "삭제")
+                        Icon(Icons.Outlined.Close, contentDescription = "빼기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+                Hairline()
             }
 
             Spacer(Modifier.height(Spacing.md))
             Text(
-                if (allowlistMode) "허용할 사이트 (도메인, 예: youtube.com)" else "포함할 사이트 (도메인, 예: youtube.com)",
-                style = MaterialTheme.typography.bodySmall
+                if (allowlistMode) "허용할 사이트 (도메인, 예: youtube.com)" else "막을 사이트 (도메인, 예: youtube.com)",
+                style = MaterialTheme.typography.titleSmall
             )
             Spacer(Modifier.height(Spacing.xs))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CompactField(
                     value = newDomain,
                     onValueChange = { newDomain = it },
-                    placeholder = "도메인 (예: youtube.com)",
+                    placeholder = "예: youtube.com",
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(Spacing.sm))
@@ -668,12 +644,11 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                         newDomain = ""
                     }
                 }) {
-                    Text("추가")
+                    Text("추가", maxLines = 1, softWrap = false)
                 }
             }
             Text(
-                "Chrome 확장프로그램(별도 설치 필요)이 켜져 있어야 사이트 차단이 동작합니다." +
-                    if (allowlistMode) " 브라우저를 허용했다면 허용할 사이트도 적어 주세요 — 비워 두면 브라우저 안의 모든 사이트가 막힙니다." else "",
+                if (allowlistMode) "비워 두면 브라우저 안 사이트는 모두 막힙니다(브라우저 확장 필요)." else "브라우저 확장이 켜져 있어야 막힙니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -681,12 +656,13 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(domain, modifier = Modifier.weight(1f))
                     IconButton(onClick = { domains = domains - domain }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "삭제")
+                        Icon(Icons.Outlined.Close, contentDescription = "빼기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+                Hairline()
             }
         }
-        Spacer(Modifier.height(Spacing.md))
+        Spacer(Modifier.height(Spacing.lg))
 
         val staged = pendingGroup
         if (staged != null) {
@@ -885,52 +861,36 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().height(52.dp)
             ) {
-                Text("저장")
-            }
-
-            if (groupId != null) {
-                Spacer(Modifier.height(Spacing.sm))
-                OutlinedButton(
-                    onClick = {
-                        repository.copyGroup(groupId)
-                        onDone()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("복사")
-                }
-                Spacer(Modifier.height(Spacing.sm))
-                OutlinedButton(
-                    onClick = {
-                        val original = originalGroup
-                        if (original != null && evaluator.requiresDeleteGate(original)) {
-                            pendingDelete = true
-                            pendingMessage = null
-                        } else {
-                            repository.deleteGroup(groupId)
-                            onDone()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("삭제")
-                }
+                Text("저장", style = MaterialTheme.typography.titleMedium, maxLines = 1, softWrap = false)
             }
         }
+    }
+
+    if (confirmPlainDelete && groupId != null) {
+        LedgerAlertDialog(
+            onDismissRequest = { confirmPlainDelete = false },
+            title = { Text("차단 규칙 삭제") },
+            text = { Text("\"${name.ifBlank { "이름 없는 그룹" }}\" 규칙을 삭제할까요?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmPlainDelete = false
+                    repository.deleteGroup(groupId)
+                    onDone()
+                }) { Text("삭제", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmPlainDelete = false }) { Text("취소") } }
+        )
     }
 
     // 새 규칙 이름이 불러오기 목록(원격)과 겹칠 때(94차) — "예"면 불러온 설정으로 만들고 동기화를 켜고,
     // "아니오"면 지금 입력한 내용 그대로 동기화 꺼짐으로 만든다.
     pendingCreateCollisionEntry?.let { remoteEntry ->
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { pendingCreateCollisionEntry = null },
-            title = { Text("동기화") },
-            text = {
-                Text("이미 같은 이름의 차단 규칙이 불러오기 목록에 있습니다. 동기화하시겠습니까? " +
-                    "\"예\"를 선택하면 지금 입력한 내용 대신 불러온 설정으로 만들어집니다.")
-            },
+            title = { Text("같은 이름의 규칙이 있습니다") },
+            text = { Text("불러오기 목록에 있는 규칙과 동기화할까요? \"예\"면 지금 입력 대신 불러온 설정으로 만듭니다.") },
             confirmButton = {
                 TextButton(onClick = {
                     val finalName = name.ifBlank { "이름 없는 그룹" }

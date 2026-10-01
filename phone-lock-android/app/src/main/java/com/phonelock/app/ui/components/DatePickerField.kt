@@ -5,15 +5,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,9 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
 
 /**
  * "YYYY-MM-DD" 문자열을 다루는 날짜 입력칸(83차 재설계). 처음엔 읽기전용 OutlinedTextField+floating
@@ -54,7 +51,8 @@ fun DatePickerField(
             shape = RoundedCornerShape(12.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
         ) {
-            Text("📅", modifier = Modifier.padding(end = 4.dp))
+            // 146차: 📅 이모지 대신 벡터 아이콘(Ledger 규칙 — 버튼에 이모지 금지).
+            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.CalendarToday, contentDescription = null, modifier = Modifier.padding(end = 6.dp).size(18.dp))
             // 85차(사용자 지적): 스마트폰에서 "시작"/"마감"을 좌우로 나란히 두면 폭이 좁아 계산기
             // 필드와 같은 bodyLarge로는 "YYYY-MM-DD" 10글자가 다 안 보이고 말줄임됐다 — 이 버튼만
             // bodyMedium으로 줄여 날짜 전체가 항상 다 보이게 했다.
@@ -70,22 +68,14 @@ fun DatePickerField(
         }
     }
     if (showDialog) {
-        val initialMillis = runCatching {
-            LocalDate.parse(value).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-        }.getOrNull()
-        val state = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
-        DatePickerDialog(
-            onDismissRequest = { showDialog = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    state.selectedDateMillis?.let { millis ->
-                        val date = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
-                        onValueChange(date.toString())
-                    }
-                    showDialog = false
-                }) { Text("확인") }
-            },
-            dismissButton = { TextButton(onClick = { showDialog = false }) { Text("취소") } }
-        ) { DatePicker(state = state) }
+        // 146차: Material 날짜 창(톤 입힌 판·큰 머리) → 앱 자체 달력 창(떠 있는 창 공용 판, 주말색 팔레트).
+        MiniCalendarDialog(
+            initialDate = runCatching { LocalDate.parse(value) }.getOrNull(),
+            onDismiss = { showDialog = false },
+            onConfirm = { date ->
+                onValueChange(date.toString())
+                showDialog = false
+            }
+        )
     }
 }

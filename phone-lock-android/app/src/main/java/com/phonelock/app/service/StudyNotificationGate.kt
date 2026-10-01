@@ -69,7 +69,7 @@ object StudyNotificationGate {
             context, id, openIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_star)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(pendingIntent)

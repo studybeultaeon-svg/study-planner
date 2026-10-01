@@ -184,7 +184,7 @@ object StudyAlertChecker {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val builder = NotificationCompat.Builder(context, if (vibrate) CHANNEL_ID_VIBRATE else CHANNEL_ID_SILENT)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_star)
             .setContentTitle(alert.title)
             .setContentText(alert.text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(alert.text))

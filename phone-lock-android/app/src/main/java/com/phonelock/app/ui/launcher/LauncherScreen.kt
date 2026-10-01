@@ -1,5 +1,6 @@
 package com.phonelock.app.ui.launcher
 
+import com.phonelock.app.ui.components.LedgerAlertDialog
 import com.phonelock.app.ui.components.ProgressLine
 import com.phonelock.app.ui.components.Overline
 import com.phonelock.app.ui.components.Hairline
@@ -37,7 +38,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -504,7 +504,7 @@ private fun LauncherAppDrawer(
 
     menuTarget?.let { app ->
         val isFavorite = app.packageName in favorites
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { menuTarget = null },
             title = { Text(app.label) },
             text = {
@@ -523,7 +523,7 @@ private fun LauncherAppDrawer(
 
     renameTarget?.let { app ->
         var text by remember(app.packageName) { mutableStateOf(app.label) }
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { renameTarget = null },
             title = { Text("이름 바꾸기") },
             text = {
@@ -536,7 +536,7 @@ private fun LauncherAppDrawer(
                     )
                     Spacer(Modifier.height(Spacing.xs))
                     Text(
-                        "비워두면 원래 앱 이름으로 돌아갑니다. 이 런처 안에서만 바뀝니다.",
+                        "비우면 원래 이름으로. 이 런처 안에서만 바뀝니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

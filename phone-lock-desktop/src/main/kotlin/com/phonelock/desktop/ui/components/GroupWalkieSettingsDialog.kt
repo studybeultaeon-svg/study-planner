@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui.components
 
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
 import androidx.compose.material3.FilterChip
@@ -55,9 +55,9 @@ fun GroupWalkieSettingsDialog(
     var voiceGender by remember { mutableStateOf(initial.voiceGender) }
     var schedules by remember { mutableStateOf(initial.schedules) }
 
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("🎙️ 깨우기 메시지 설정") },
+        title = { Text("깨우기 메시지 설정") },
         text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -158,7 +158,7 @@ private fun WalkieScheduleRow(
                     )
                 }
             }
-            TextButton(onClick = onDelete) { Text("✕") }
+            androidx.compose.material3.IconButton(onClick = onDelete) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Close, contentDescription = "일정 삭제") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             OutlinedTextField(

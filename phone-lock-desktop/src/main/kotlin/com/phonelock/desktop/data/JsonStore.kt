@@ -74,7 +74,7 @@ object JsonStore {
             growthSeasonYear = json.optInt("growthSeasonYear", 0),
             lifetimeMaxLevel = json.optInt("lifetimeMaxLevel", 0),
             lifetimeRebirthCount = json.optInt("lifetimeRebirthCount", 0),
-            themeMode = json.optString("themeMode", "LIGHT_ORANGE"),
+            themeMode = json.optString("themeMode", "DARK_BLUE"),
             customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
             exitConfirmEnabled = json.optBoolean("exitConfirmEnabled", false),

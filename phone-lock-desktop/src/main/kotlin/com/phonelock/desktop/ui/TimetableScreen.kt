@@ -185,9 +185,9 @@ fun TimetableScreen(repository: Repository) {
                                             rowTotal += v
                                             dayTotals[i] += v
                                             // 계산기 연동(51차, 웹앱 isCalTaskLinkedDone 이식) — 그날 연결된 일정이
-                                            // 목표량만큼 완료됐으면 ✅로 "달성" 표시.
+                                            // 목표량만큼 완료됐으면 ✓로 "달성" 표시.
                                             val achieved = repository.isLinkedGoalAchieved(d.toString(), row.task.name, v)
-                                            val label = "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✅" else ""
+                                            val label = "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✓" else ""
                                             // 웹앱 .tt-val.tt-today-val — 오늘 칸 값은 빨강으로 강조(마감 임박 신호), 달성 시엔 초록.
                                             val cellColor = when {
                                                 achieved -> Color(0xFF34D399)
@@ -239,7 +239,7 @@ fun TimetableScreen(repository: Repository) {
                                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                             Text(row.task.name, style = MaterialTheme.typography.bodyMedium)
                                             Text(
-                                                "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✅" else "",
+                                                "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✓" else "",
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (achieved) Color(0xFF34D399) else MaterialTheme.colorScheme.onSurface
@@ -255,7 +255,7 @@ fun TimetableScreen(repository: Repository) {
                     SectionCard("표 보는 법") {
                         Text(
                             "· 값은 계산기 업무의 요일별 목표량입니다.\n" +
-                                "· 오늘 칸은 빨강, 캘린더 연동 목표를 달성한 칸은 초록 ✅으로 표시됩니다.\n" +
+                                "· 오늘 칸은 빨강, 캘린더 연동 목표를 달성한 칸은 초록 ✓로 표시됩니다.\n" +
                                 "· 목표량은 할당량 계산기 \"업무 입력\"에서 바꿉니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

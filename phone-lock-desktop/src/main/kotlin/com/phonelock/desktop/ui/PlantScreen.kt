@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.components.LedgerAlertDialog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
@@ -32,7 +33,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -407,7 +407,7 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
     }
 
     if (showRebirthDialog) {
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showRebirthDialog = false },
             title = { Text("환생하시겠습니까?") },
             text = {
@@ -907,7 +907,7 @@ private fun HomeShopDialog(
     onDismiss: () -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("🛒 상점") },
         text = {

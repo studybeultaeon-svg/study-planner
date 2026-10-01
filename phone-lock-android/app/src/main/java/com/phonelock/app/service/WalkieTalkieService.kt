@@ -232,7 +232,7 @@ class WalkieTalkieService : Service() {
             this, 0, openIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(this, SERVICE_CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_star)
             .setContentTitle("깨우기 메시지 대기 중")
             .setContentText("모임 멤버의 음성메시지를 받을 수 있습니다")
             .setPriority(NotificationCompat.PRIORITY_MIN)
@@ -249,7 +249,7 @@ class WalkieTalkieService : Service() {
             this, requestCode, openIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val notification = NotificationCompat.Builder(this, MESSAGE_CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_star)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(pendingIntent)
@@ -269,7 +269,7 @@ class WalkieTalkieService : Service() {
             this, requestCode, openIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val notification = NotificationCompat.Builder(this, CHAT_CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_star)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(pendingIntent)

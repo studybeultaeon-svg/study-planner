@@ -1,5 +1,6 @@
 package com.phonelock.desktop
 
+import com.phonelock.desktop.ui.components.LedgerAlertDialog
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
@@ -8,7 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -356,7 +356,7 @@ private fun startApp() = application {
                     // 92차(사용자 요청): 39차 회고 입력이 이 잠금 화면의 "정지" 경로엔 빠져있었다 —
                     // 이 창(공부 잠금 Window) 위에 그대로 다이얼로그를 띄운다(별도 창 불필요).
                     if (showLockStopNoteDialog) {
-                        AlertDialog(
+                        LedgerAlertDialog(
                             onDismissRequest = {},
                             title = { Text("집중 종료") },
                             text = {

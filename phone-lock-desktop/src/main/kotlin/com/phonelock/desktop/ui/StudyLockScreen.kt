@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.components.LedgerAlertDialog
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.BorderStroke
@@ -22,7 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -221,7 +221,7 @@ fun StudyLockScreen(
     }
 
     if (showAllowedAppsDialog) {
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showAllowedAppsDialog = false },
             title = { Text("허용된 프로그램") },
             text = {

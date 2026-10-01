@@ -1,5 +1,6 @@
 package com.phonelock.app.ui
 
+import com.phonelock.app.ui.components.LedgerAlertDialog
 import androidx.compose.foundation.clickable
 import com.phonelock.shared.routine.RoutineRepeat
 import androidx.compose.ui.draw.clip
@@ -19,13 +20,35 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.phonelock.app.ui.components.CompactDateField
+import com.phonelock.app.ui.components.CompactField
+import com.phonelock.app.ui.components.Hairline
+import com.phonelock.app.ui.components.LedgerBackButton
+import com.phonelock.app.ui.components.Overline
+import com.phonelock.app.ui.components.SectionCard
+import com.phonelock.app.ui.components.SegmentedTabs
+import com.phonelock.app.ui.components.ToggleRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,17 +66,27 @@ private val ROUTINE_ICON_PALETTE = listOf("💪", "🏃", "📚", "💧", "🧘"
 
 private fun isValidDate(text: String): Boolean = runCatching { LocalDate.parse(text.trim()) }.isSuccess
 
+// 146차: 사각 FilterChip → 차단 규칙 편집과 같은 동그란 요일 칸(고른 날 = 강조색 채움).
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RoutineDayMaskRow(mask: Int, onMaskChange: (Int) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ROUTINE_DAY_LABELS.forEachIndexed { index, label ->
             val checked = (mask shr index) and 1 == 1
-            FilterChip(
-                selected = checked,
-                onClick = { onMaskChange(if (checked) mask and (1 shl index).inv() else mask or (1 shl index)) },
-                label = { Text(label) }
-            )
+            Box(
+                Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable { onMaskChange(if (checked) mask and (1 shl index).inv() else mask or (1 shl index)) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -109,12 +142,11 @@ private fun isValidTimeSlot(text: String): Boolean {
 }
 
 /**
- * 루틴 추가/수정 다이얼로그(데스크탑판과 대칭, 47~48차 설계 DECISIONS.md 참고). 그룹 편집처럼 별도
- * 화면이 아니라 다이얼로그 — 필드가 적어 화면 전환이 과함.
+ * 루틴 추가/수정 화면(데스크탑판과 대칭, 47~48차 설계 DECISIONS.md 참고).
  *
- * 태블릿 무대응(의도적 판단, 84차): 데스크탑판도 AlertDialog 안에 세로 Column 하나뿐이고
- * ResponsiveSplit 등 좌우 분할이 없다 — 애초에 필드가 적어 다이얼로그로 처리한다는 설계 자체가
- * 폭에 따라 레이아웃을 바꿀 이유를 없앤다.
+ * 146차: 작은 대화상자 → 차단 규칙 편집과 같은 **전체 화면 상세 페이지**(뒤로 + 작은 경로 라벨 + 큰 제목, 가는 선 묶음,
+ * 아래엔 "저장" 하나, 복사·삭제는 머리 오른쪽 아이콘). 호출부가 그대로 쓰도록 이름·인자는 유지하고 화면만 바꿨다 —
+ * 대화상자 창을 화면 가득 펼치고 시스템 바·키보드 여백은 직접 준다.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -137,190 +169,227 @@ fun RoutineEditDialog(
     var periodEnabled by remember { mutableStateOf(routine?.startDate != null || routine?.endDate != null) }
     var startDateText by remember { mutableStateOf(routine?.startDate ?: "") }
     var endDateText by remember { mutableStateOf(routine?.endDate ?: "") }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val canSave = title.isNotBlank() && (repeatMode != RoutineRepeat.MODE_MONTHLY || monthDays.isNotEmpty())
 
-    AlertDialog(
+    fun save() {
+        val timeSlot = if (timeSlotEnabled && isValidTimeSlot(timeSlotText)) timeSlotText.trim() else null
+        val startDate = if (periodEnabled && isValidDate(startDateText)) startDateText.trim() else null
+        val endDate = if (periodEnabled && isValidDate(endDateText)) endDateText.trim() else null
+        val interval = (intervalText.toIntOrNull() ?: 3)
+            .coerceIn(RoutineRepeat.MIN_INTERVAL_DAYS, RoutineRepeat.MAX_INTERVAL_DAYS)
+        // "며칠마다"는 기준일이 없으면 언제 돌아오는지 알 수 없다 — 비어 있으면 오늘부터 센다.
+        val effectiveStart =
+            if (repeatMode == RoutineRepeat.MODE_INTERVAL && startDate == null) LocalDate.now().toString()
+            else startDate
+        onSave(
+            (routine ?: Routine(id = 0)).copy(
+                title = title.trim(),
+                icon = icon.trim(),
+                timeSlot = timeSlot,
+                daysMask = daysMask,
+                notifyEnabled = timeSlot != null && notifyEnabled,
+                startDate = effectiveStart,
+                endDate = endDate,
+                repeatMode = repeatMode,
+                repeatIntervalDays = interval,
+                repeatMonthDaysCsv = RoutineRepeat.toMonthDaysCsv(monthDays).ifBlank { "1" }
+            )
+        )
+    }
+
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (routine == null) "루틴 추가" else "루틴 수정") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("제목") },
-                    modifier = Modifier.fillMaxWidth()
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
+                // 머리 — 차단 규칙 편집과 같은 모양.
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    LedgerBackButton(onDismiss)
+                    Overline(if (routine == null) "루틴 · 새 루틴" else "루틴 · 수정", Modifier.weight(1f))
+                    if (onCopy != null) {
+                        IconButton(onClick = onCopy) { Icon(Icons.Outlined.ContentCopy, contentDescription = "복사") }
+                    }
+                    if (onDelete != null) {
+                        IconButton(onClick = { confirmDelete = true }) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "삭제", tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+                Text(
+                    listOf(icon.trim(), title.trim().ifBlank { if (routine == null) "새 루틴" else "루틴" }).filter { it.isNotEmpty() }.joinToString(" "),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = Spacing.gutter).padding(bottom = Spacing.sm)
                 )
-                Spacer(Modifier.height(Spacing.sm))
+                Hairline()
 
-                Text("아이콘 (선택)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = icon,
-                        onValueChange = { icon = it.take(2) },
-                        modifier = Modifier.width(72.dp)
-                    )
-                    Spacer(Modifier.width(Spacing.sm))
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        ROUTINE_ICON_PALETTE.forEach { emoji ->
-                            Text(
-                                emoji,
-                                modifier = Modifier
-                                    .clickable { icon = emoji }
-                                    .padding(4.dp)
+                Column(
+                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
+                        .widthIn(max = 760.dp).padding(horizontal = Spacing.gutter).padding(bottom = Spacing.lg)
+                ) {
+                    SectionCard("기본 정보", divider = false) {
+                        CompactField(value = title, onValueChange = { title = it }, label = "제목")
+                        Spacer(Modifier.height(Spacing.md))
+                        Text("아이콘 (선택)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(Spacing.xs))
+                        // 루틴 아이콘은 사용자가 고르는 내용(이모지)이라 그대로 두되, 고른 것은 강조 바탕 원으로 표시한다.
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            IconChoice(selected = icon.isBlank(), onClick = { icon = "" }) {
+                                Text("없음", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                            }
+                            ROUTINE_ICON_PALETTE.forEach { emoji ->
+                                IconChoice(selected = icon == emoji, onClick = { icon = emoji }) { Text(emoji) }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    SectionCard("시간") {
+                        ToggleRow(
+                            title = "시간 정하기",
+                            description = "오늘 탭에서 시간순으로 놓입니다.",
+                            checked = timeSlotEnabled,
+                            onCheckedChange = { timeSlotEnabled = it; if (!it) notifyEnabled = false }
+                        )
+                        if (timeSlotEnabled) {
+                            Spacer(Modifier.height(Spacing.xs))
+                            CompactField(
+                                value = timeSlotText,
+                                onValueChange = { timeSlotText = it },
+                                placeholder = "07:30",
+                                leadingIcon = Icons.Outlined.Schedule,
+                                modifier = Modifier.width(160.dp)
+                            )
+                            ToggleRow(
+                                title = "이 시간에 알림",
+                                checked = notifyEnabled,
+                                onCheckedChange = { notifyEnabled = it }
                             )
                         }
                     }
-                }
-                Spacer(Modifier.height(Spacing.sm))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = timeSlotEnabled, onCheckedChange = { timeSlotEnabled = it; if (!it) notifyEnabled = false })
-                    Text("시간대 지정 (오늘 탭에서 시간순 정렬)", style = MaterialTheme.typography.bodyMedium)
-                }
-                if (timeSlotEnabled) {
-                    OutlinedTextField(
-                        value = timeSlotText,
-                        onValueChange = { timeSlotText = it },
-                        label = { Text("HH:mm") },
-                        modifier = Modifier.width(140.dp)
-                    )
-                    Spacer(Modifier.height(Spacing.xs))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = notifyEnabled, onCheckedChange = { notifyEnabled = it })
-                        Text("이 시간에 알림 받기", style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-                Spacer(Modifier.height(Spacing.sm))
-
-                Text("반복", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(
-                        RoutineRepeat.MODE_WEEKLY to "요일마다",
-                        RoutineRepeat.MODE_INTERVAL to "며칠마다",
-                        RoutineRepeat.MODE_MONTHLY to "매월 날짜"
-                    ).forEach { (mode, label) ->
-                        FilterChip(selected = repeatMode == mode, onClick = { repeatMode = mode }, label = { Text(label) })
-                    }
-                }
-                Spacer(Modifier.height(Spacing.xs))
-                when (repeatMode) {
-                    RoutineRepeat.MODE_INTERVAL -> {
-                        OutlinedTextField(
-                            value = intervalText,
-                            onValueChange = { text -> intervalText = text.filter { it.isDigit() }.take(3) },
-                            label = { Text("며칠마다") },
-                            modifier = Modifier.width(140.dp)
-                        )
-                        Text(
-                            "기준일부터 이 간격으로 반복돼요(기준일 = 아래 기간 설정의 시작일, 비워두면 저장할 때 오늘로 잡혀요).",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    RoutineRepeat.MODE_MONTHLY -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TextButton(onClick = { monthDays = setOf("1") }) { Text("월초") }
-                            TextButton(onClick = { monthDays = setOf(RoutineRepeat.LAST_DAY) }) { Text("월말") }
-                            TextButton(onClick = { monthDays = setOf("1", RoutineRepeat.LAST_DAY) }) { Text("월초+월말") }
-                        }
-                        MonthDayPicker(selected = monthDays) { token ->
-                            monthDays = if (token in monthDays) monthDays - token else monthDays + token
-                        }
-                        Text(
-                            "고른 날짜마다 반복돼요. 31일처럼 그 달에 없는 날짜는 그 달의 마지막 날에 실행해요.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    else -> RoutineDayMaskRow(daysMask) { daysMask = it }
-                }
-                Spacer(Modifier.height(Spacing.xs))
-                Text(
-                    "\u2192 " + RoutineRepeat.describe(repeatMode, daysMask, intervalText.toIntOrNull() ?: 3, RoutineRepeat.toMonthDaysCsv(monthDays)),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(Spacing.sm))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = periodEnabled, onCheckedChange = { periodEnabled = it })
-                    Text("기간 설정 (시작일~종료일에만 적용)", style = MaterialTheme.typography.bodyMedium)
-                }
-                if (periodEnabled) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = startDateText,
-                            onValueChange = { startDateText = it },
-                            label = { Text("시작일") },
-                            placeholder = { Text("yyyy-MM-dd") },
-                            modifier = Modifier.width(160.dp)
-                        )
-                        Spacer(Modifier.width(Spacing.sm))
-                        OutlinedTextField(
-                            value = endDateText,
-                            onValueChange = { endDateText = it },
-                            label = { Text("종료일") },
-                            placeholder = { Text("yyyy-MM-dd") },
-                            modifier = Modifier.width(160.dp)
-                        )
-                    }
-                    Text(
-                        "비워두면 그쪽은 제한 없음(시작일만 있으면 그날부터 계속, 종료일만 있으면 그날까지).",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(Modifier.height(Spacing.sm))
-                Text(
-                    "연속 기록은 하루 단위로 자동 집계됩니다 — 오늘 예정된 루틴을 전부 완료해야 그날이 연속 기록에 더해지고, 하나라도 놓치면 끊깁니다.",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                if (onCopy != null || onDelete != null) {
                     Spacer(Modifier.height(Spacing.md))
-                    Row {
-                        if (onCopy != null) {
-                            TextButton(onClick = onCopy) { Text("루틴 복사") }
+
+                    SectionCard("반복") {
+                        val modes = listOf(RoutineRepeat.MODE_WEEKLY, RoutineRepeat.MODE_INTERVAL, RoutineRepeat.MODE_MONTHLY)
+                        SegmentedTabs(
+                            labels = listOf("요일마다", "며칠마다", "매월 날짜"),
+                            selectedIndex = modes.indexOf(repeatMode).coerceAtLeast(0),
+                            onSelect = { repeatMode = modes[it] }
+                        )
+                        Spacer(Modifier.height(Spacing.sm))
+                        when (repeatMode) {
+                            RoutineRepeat.MODE_INTERVAL -> {
+                                CompactField(
+                                    value = intervalText,
+                                    onValueChange = { text -> intervalText = text.filter { it.isDigit() }.take(3) },
+                                    label = "며칠마다",
+                                    keyboardType = KeyboardType.Number,
+                                    modifier = Modifier.width(160.dp)
+                                )
+                                Text(
+                                    "시작일부터 셉니다(없으면 오늘부터).",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            RoutineRepeat.MODE_MONTHLY -> {
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    TextButton(onClick = { monthDays = setOf("1") }) { Text("월초", maxLines = 1, softWrap = false) }
+                                    TextButton(onClick = { monthDays = setOf(RoutineRepeat.LAST_DAY) }) { Text("월말", maxLines = 1, softWrap = false) }
+                                    TextButton(onClick = { monthDays = setOf("1", RoutineRepeat.LAST_DAY) }) { Text("월초+월말", maxLines = 1, softWrap = false) }
+                                }
+                                MonthDayPicker(selected = monthDays) { token ->
+                                    monthDays = if (token in monthDays) monthDays - token else monthDays + token
+                                }
+                                Spacer(Modifier.height(Spacing.xs))
+                                Text(
+                                    "그 달에 없는 날짜는 마지막 날에 합니다.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            else -> RoutineDayMaskRow(daysMask) { daysMask = it }
                         }
-                        if (onDelete != null) {
-                            TextButton(onClick = onDelete) {
-                                Text("루틴 삭제", color = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.height(Spacing.sm))
+                        Text(
+                            RoutineRepeat.describe(repeatMode, daysMask, intervalText.toIntOrNull() ?: 3, RoutineRepeat.toMonthDaysCsv(monthDays)),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
+                    SectionCard("기간") {
+                        ToggleRow(
+                            title = "기간 정하기",
+                            description = "이 기간에만 합니다. 비운 쪽은 제한 없음.",
+                            checked = periodEnabled,
+                            onCheckedChange = { periodEnabled = it }
+                        )
+                        if (periodEnabled) {
+                            Spacer(Modifier.height(Spacing.xs))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CompactDateField(
+                                    value = startDateText,
+                                    onValueChange = { startDateText = it },
+                                    placeholder = "시작일",
+                                    clearable = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
+                                CompactDateField(
+                                    value = endDateText,
+                                    onValueChange = { endDateText = it },
+                                    placeholder = "종료일",
+                                    clearable = true,
+                                    modifier = Modifier.weight(1f)
+                                )
                             }
                         }
                     }
                 }
+
+                Hairline()
+                Button(
+                    onClick = { save() },
+                    enabled = canSave,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter, vertical = Spacing.sm).height(52.dp)
+                ) {
+                    Text("저장", style = MaterialTheme.typography.titleMedium, maxLines = 1, softWrap = false)
+                }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val timeSlot = if (timeSlotEnabled && isValidTimeSlot(timeSlotText)) timeSlotText.trim() else null
-                    val startDate = if (periodEnabled && isValidDate(startDateText)) startDateText.trim() else null
-                    val endDate = if (periodEnabled && isValidDate(endDateText)) endDateText.trim() else null
-                    val interval = (intervalText.toIntOrNull() ?: 3)
-                        .coerceIn(RoutineRepeat.MIN_INTERVAL_DAYS, RoutineRepeat.MAX_INTERVAL_DAYS)
-                    // "며칠마다"는 기준일이 없으면 언제 돌아오는지 알 수 없다 — 비어 있으면 오늘부터 센다.
-                    val effectiveStart =
-                        if (repeatMode == RoutineRepeat.MODE_INTERVAL && startDate == null) LocalDate.now().toString()
-                        else startDate
-                    onSave(
-                        (routine ?: Routine(id = 0)).copy(
-                            title = title.trim(),
-                            icon = icon.trim(),
-                            timeSlot = timeSlot,
-                            daysMask = daysMask,
-                            notifyEnabled = timeSlot != null && notifyEnabled,
-                            startDate = effectiveStart,
-                            endDate = endDate,
-                            repeatMode = repeatMode,
-                            repeatIntervalDays = interval,
-                            repeatMonthDaysCsv = RoutineRepeat.toMonthDaysCsv(monthDays).ifBlank { "1" }
-                        )
-                    )
-                },
-                enabled = title.isNotBlank() && (repeatMode != RoutineRepeat.MODE_MONTHLY || monthDays.isNotEmpty())
-            ) { Text("저장") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
-    )
+        }
+    }
+
+    if (confirmDelete && onDelete != null) {
+        LedgerAlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("루틴 삭제") },
+            text = { Text("\"${title.ifBlank { "이 루틴" }}\"을(를) 삭제할까요? 지난 기록도 함께 지워집니다.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("삭제", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("취소") } }
+        )
+    }
+}
+
+/** 아이콘 고르기 한 칸 — 고른 칸만 강조 옅은 바탕 원(146차). */
+@Composable
+private fun IconChoice(selected: Boolean, onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { content() }
 }

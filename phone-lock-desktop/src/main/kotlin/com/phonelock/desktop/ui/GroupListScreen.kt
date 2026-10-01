@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.components.LedgerAlertDialog
 import com.phonelock.desktop.ui.theme.LocalPhoneLockPalette
 import com.phonelock.desktop.ui.components.Overline
 import com.phonelock.desktop.ui.components.NoticeTone
@@ -35,7 +36,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -229,13 +229,10 @@ fun GroupListScreen(
     val collisionGroup = pendingSyncToggleGroup
     val collisionEntry = pendingSyncToggleEntry
     if (collisionGroup != null && collisionEntry != null) {
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { pendingSyncToggleGroup = null; pendingSyncToggleEntry = null },
-            title = { Text("동기화") },
-            text = {
-                Text("이미 같은 이름의 차단 규칙이 불러오기 목록에 있습니다. 이 규칙과 동기화하시겠습니까? " +
-                    "\"예\"를 선택하면 이 차단 규칙의 설정이 불러온 내용으로 바뀝니다.")
-            },
+            title = { Text("같은 이름의 규칙이 있습니다") },
+            text = { Text("불러오기 목록에 있는 규칙과 동기화할까요? \"예\"면 이 규칙이 불러온 설정으로 바뀝니다.") },
             confirmButton = {
                 TextButton(onClick = {
                     val updated = collisionGroup.applyGroupSettingsJson(collisionEntry).copy(syncEnabled = true)
@@ -268,13 +265,13 @@ private fun GroupImportDialog(repository: Repository, onDismiss: () -> Unit) {
         loading = false
     }
 
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("불러오기") },
         text = {
             Column {
                 Text(
-                    "다른 기기에서 동기화를 켠 차단 규칙 중, 이 기기엔 아직 없는 것들입니다. 원하는 것만 골라 불러오세요.",
+                    "다른 기기에서 동기화를 켠 규칙 중 이 기기에 없는 것입니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

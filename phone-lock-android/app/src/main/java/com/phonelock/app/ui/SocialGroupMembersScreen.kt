@@ -1,13 +1,21 @@
 package com.phonelock.app.ui
 
+import com.phonelock.app.ui.components.LedgerAlertDialog
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import android.content.Intent
 import android.util.Base64
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.ButtonDefaults
+import com.phonelock.app.ui.theme.LocalPhoneLockPalette
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,25 +35,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab as MaterialTab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -258,7 +260,7 @@ fun SocialGroupMembersScreen(
 
     if (showLeaveConfirm) {
         val isOwner = myUid != null && myUid == ownerUid
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showLeaveConfirm = false },
             title = { Text(if (isOwner) "모임 삭제" else "모임 나가기") },
             text = {
@@ -287,7 +289,7 @@ fun SocialGroupMembersScreen(
     }
 
     if (showAnnouncementDialog) {
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showAnnouncementDialog = false },
             title = { Text("공지 수정") },
             text = {
@@ -313,7 +315,7 @@ fun SocialGroupMembersScreen(
     }
 
     if (showGoalDialog) {
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showGoalDialog = false },
             title = { Text("모임 목표 설정") },
             text = {
@@ -346,48 +348,46 @@ fun SocialGroupMembersScreen(
     // 태블릿에선 카드를 눌러도 별도 화면으로 이동하지 않고 오른쪽 패널에 상세를 띄운다.
     val onMemberClick: (String) -> Unit = if (isTablet) { { uid -> selectedUid = uid } } else onOpenMember
 
-    Scaffold(topBar = {
-        TopAppBar(
-            title = { Text(if (groupName.isNotBlank()) groupName else "모임", style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
-            navigationIcon = { com.phonelock.app.ui.components.LedgerBackButton(onBack) },
-            colors = com.phonelock.app.ui.components.ledgerTopBarColors(),
-            actions = {
+    // 146차: 앱바 → 다른 상세 화면과 같은 머리(뒤로 + 작은 라벨 + 큰 모임 이름), 색 바탕 상자들 → 가는 선 묶음.
+    Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
+        Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.xs, vertical = Spacing.xs), verticalAlignment = Alignment.CenterVertically) {
+                com.phonelock.app.ui.components.LedgerBackButton(onBack)
+                com.phonelock.app.ui.components.Overline("모임", Modifier.weight(1f))
                 Box {
                     IconButton(
                         onClick = { showSettingsMenu = true },
                         modifier = Modifier.semantics { contentDescription = "모임 설정" }
                     ) { Icon(androidx.compose.material.icons.Icons.Outlined.Settings, contentDescription = null) }
-                    // 82차(§6 UX 폴리싱): 밋밋한 AlertDialog 버튼 목록 대신 앵커된 드롭다운 메뉴로 —
-                    // 톱니바퀴 바로 아래에서 펼쳐지는 게 "설정 창"보다 실제 위치와 맞고, Material 기본
-                    // 펼침/접힘 애니메이션이 그대로 적용된다.
+                    // 82차(§6 UX 폴리싱): 톱니바퀴 바로 아래에서 펼쳐지는 앵커 드롭다운 메뉴.
                     androidx.compose.material3.DropdownMenu(
                         expanded = showSettingsMenu,
                         onDismissRequest = { showSettingsMenu = false }
                     ) {
                         androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("🔒 공유 설정") },
+                            text = { Text("공유 설정") },
                             onClick = { showSettingsMenu = false; showShareSettingsDialog = true }
                         )
                         androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("🎙️ 깨우기 메시지") },
+                            text = { Text("깨우기 메시지") },
                             onClick = { showSettingsMenu = false; showWalkieSettingsDialog = true }
                         )
                         androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("🔔 무작위 알림") },
+                            text = { Text("무작위 알림") },
                             onClick = { showSettingsMenu = false; showRandomNudgeDialog = true }
                         )
                         if (isAdmin) {
                             androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("✏️ 모임 이름/코드 수정") },
+                                text = { Text("모임 이름·코드 수정") },
                                 onClick = { showSettingsMenu = false; showEditInfoDialog = true }
                             )
                             androidx.compose.material3.DropdownMenuItem(
-                                text = { Text("👥 멤버 관리") },
+                                text = { Text("멤버 관리") },
                                 onClick = { showSettingsMenu = false; showMemberManageDialog = true }
                             )
-                            // 115차(사용자 요청): 모임 "💬 대화" 채널 자체를 켜고 끌 수 있게.
+                            // 115차(사용자 요청): 모임 대화 채널 자체를 켜고 끌 수 있게.
                             androidx.compose.material3.DropdownMenuItem(
-                                text = { Text(if (chatEnabled) "💬 모임 대화 끄기" else "💬 모임 대화 켜기") },
+                                text = { Text(if (chatEnabled) "모임 대화 끄기" else "모임 대화 켜기") },
                                 onClick = {
                                     showSettingsMenu = false
                                     val next = !chatEnabled
@@ -406,288 +406,226 @@ fun SocialGroupMembersScreen(
                     }
                 }
             }
-        )
+            Text(
+                groupName.ifBlank { "모임" },
+                style = MaterialTheme.typography.headlineMedium,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = Spacing.gutter)
+            )
+            if (groupDescription.isNotBlank()) {
+                Text(
+                    groupDescription,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = Spacing.gutter)
+                )
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            if (chatEnabled) {
+                com.phonelock.app.ui.components.SectionTabs(listOf("멤버", "대화"), channelTab, { channelTab = it })
+            } else {
+                com.phonelock.app.ui.components.Hairline()
+            }
+        }
     }) { padding ->
         if (loading) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else {
-            // 86차(사용자 요청): 공지/목표/랭킹 등 상단 카드들이 스크롤 안 되는 고정 Column, 멤버 목록만
-            // weight(1f) LazyColumn으로 따로 스크롤되던 구조라, 화면이 작으면 카드들이 공간을 다 차지해
-            // 멤버 목록이 거의 안 보이는 문제가 있었다 — 위쪽 카드들도 전부 item으로 넣어 하나의
-            // LazyColumn으로 통합, 전체가 한 스크롤로 이어지게 함.
-            // 98차(사용자 요청): 당겨서 새로고침 — 서버 최신 상태를 다시 받아온다.
+            // 86차(사용자 요청): 위쪽 묶음들도 전부 item으로 넣어 하나의 LazyColumn으로 — 화면이 작아도 멤버 목록이
+            // 묶음들에 밀려 안 보이는 일이 없다. 98차: 당겨서 새로고침.
             com.phonelock.app.ui.components.PullToRefreshBox(onRefresh = { reload() }) {
-            Column(Modifier.fillMaxSize().background(socialGradientBackground()).padding(padding)) {
-            if (groupDescription.isNotBlank()) {
-                Text(
-                    groupDescription,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.xs)
-                )
-            }
-            if (chatEnabled) {
-                com.phonelock.app.ui.components.SectionTabs(listOf("멤버", "대화"), channelTab, { channelTab = it })
-            }
+            Column(Modifier.fillMaxSize().padding(padding)) {
             if (chatEnabled && channelTab == 1) {
                 GroupChatScreen(repository, groupId)
             } else {
             val displayRows = if (viewWeekly) rows.sortedWith(compareBy { it.weekRate ?: -1 }) else rows
             val membersListContent: @Composable (Modifier) -> Unit = { listModifier ->
-            LazyColumn(
-                modifier = listModifier,
-                verticalArrangement = Arrangement.spacedBy(Spacing.md)
-            ) {
-                if (voiceInbox.isNotEmpty()) {
-                    item {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.secondaryContainer
-                        ) {
-                            Column(Modifier.padding(Spacing.md)) {
-                                Text("받은 음성메시지", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                                Spacer(Modifier.height(Spacing.sm))
-                                voiceInbox.forEach { msg ->
-                                    Row(
-                                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(Modifier.weight(1f)) {
-                                            Text((if (msg.textMessage.isNotBlank()) "💬 " else "🎙️ ") + msg.fromName, style = MaterialTheme.typography.bodyMedium)
-                                            if (msg.textMessage.isNotBlank()) {
-                                                Text(msg.textMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            } else {
-                                                Text("${msg.durationMs / 1000}초", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            }
-                                        }
-                                        Button(
-                                            enabled = playingMsgId != msg.msgId,
-                                            onClick = {
-                                                playingMsgId = msg.msgId
-                                                if (msg.textMessage.isNotBlank()) {
-                                                    TtsPlayer.speak(context, msg.textMessage, walkieSettings.volume, walkieSettings.voiceGender) { playingMsgId = null }
-                                                } else {
-                                                    val wavBytes = runCatching { Base64.decode(msg.audioBase64, Base64.NO_WRAP) }.getOrNull()
-                                                    if (wavBytes != null) {
-                                                        VoicePlayer.play(context, wavBytes, walkieSettings.volume) { playingMsgId = null }
-                                                    } else {
-                                                        playingMsgId = null
-                                                    }
-                                                }
-                                                // 들은 즉시 지우지 않고 "들었음"만 표시 — 다시 듣고 싶을 수 있어서
-                                                // 유예시간(24시간) 동안은 남겨두고, 지나면 다음 조회 때 자동으로 지워진다.
-                                                scope.launch { repository.markVoiceMessageListened(msg.groupId, msg) }
-                                            }
-                                        ) {
-                                            if (playingMsgId != msg.msgId) {
-                                                androidx.compose.material3.Icon(
-                                                    Icons.Filled.PlayArrow, contentDescription = null,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                            Text(if (playingMsgId == msg.msgId) "재생 중" else "재생")
-                                        }
-                                        Spacer(Modifier.width(Spacing.xs))
-                                        OutlinedButton(onClick = {
-                                            scope.launch {
-                                                // 서버 삭제가 실제로 성공했을 때만 목록에서 뺀다 — 무조건 빼면 삭제가
-                                                // 서버에서 실패해도(권한 등) 화면상으론 지워진 것처럼 보이다가 다음에
-                                                // 다시 조회하면 그대로 남아있어 "삭제가 안 된다"는 혼란을 준다. 실패
-                                                // 사유(상태코드/응답 본문)를 그대로 보여줘서 "네트워크 확인"처럼
-                                                // 얼버무리지 않는다.
-                                                val result = repository.deleteVoiceMessage(msg.groupId, msg.msgId)
-                                                if (result.isSuccess) {
-                                                    voiceInbox = voiceInbox.filter { it.msgId != msg.msgId }
-                                                } else {
-                                                    Toast.makeText(context, result.exceptionOrNull()?.message ?: "삭제에 실패했습니다.", Toast.LENGTH_LONG).show()
-                                                }
-                                            }
-                                        }) { Text("삭제") }
+            LazyColumn(modifier = listModifier) {
+                // 이 화면의 주인공 숫자 — 오늘 아직 다 못 한 사람 수(처지는 사람을 먼저 챙기는 모임의 목적).
+                item {
+                    Column(Modifier.fillMaxWidth().padding(top = Spacing.md, bottom = Spacing.md)) {
+                        com.phonelock.app.ui.components.Overline("오늘 아직 안 한 사람")
+                        com.phonelock.app.ui.components.BigNumber(
+                            "$notDoneCount",
+                            unit = "/ ${rows.size}명",
+                            style = MaterialTheme.typography.displayMedium,
+                            color = if (notDoneCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground
+                        )
+                        // 82차(§9 "모임 공동 목표") — 관리자가 목표(분)를 정하면 오늘 공유된 멤버들의 집중 시간 합으로 진행선을 그린다.
+                        if (groupGoal != null || isAdmin) {
+                            Spacer(Modifier.height(Spacing.md))
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    groupGoal?.let { "모임 목표 · 오늘 함께 ${groupGoalTodaySeconds / 60}분 / ${it.targetMinutes}분" } ?: "모임 목표가 없습니다",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isAdmin) {
+                                    TextButton(onClick = { goalInput = groupGoal?.targetMinutes?.toString() ?: ""; showGoalDialog = true }) {
+                                        Text("설정", maxLines = 1, softWrap = false)
                                     }
                                 }
                             }
-                        }
-                    }
-                }
-
-                if (inviteCode.isNotBlank()) {
-                    item {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Column(Modifier.padding(Spacing.md)) {
-                                Text("초대 코드", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(inviteCode, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.height(Spacing.sm))
-                                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                    OutlinedButton(onClick = {
-                                        clipboard.setText(AnnotatedString(inviteCode))
-                                        Toast.makeText(context, "복사했습니다", Toast.LENGTH_SHORT).show()
-                                    }) { Text("복사") }
-                                    OutlinedButton(onClick = {
-                                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, "\"$groupName\" 모임 초대 코드: $inviteCode")
-                                        }
-                                        context.startActivity(Intent.createChooser(sendIntent, "초대 코드 공유"))
-                                    }) { Text("공유") }
-                                }
+                            groupGoal?.let { goal ->
+                                val targetSeconds = goal.targetMinutes * 60
+                                com.phonelock.app.ui.components.ProgressLine(
+                                    if (targetSeconds > 0) groupGoalTodaySeconds.toFloat() / targetSeconds else 0f,
+                                    color = LocalPhoneLockPalette.current.fillGood
+                                )
                             }
                         }
-                    }
-                }
-
-                if (rows.isNotEmpty() && notDoneCount > 0) {
-                    item {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.errorContainer
-                        ) {
-                            Text(
-                                "오늘 아직 안 한 사람 ${notDoneCount}명",
-                                modifier = Modifier.fillMaxWidth().padding(Spacing.sm),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
+                        actionMessage?.let { msg ->
+                            Spacer(Modifier.height(Spacing.sm))
+                            com.phonelock.app.ui.components.NoticeStrip(msg)
                         }
                     }
                 }
 
-                actionMessage?.let { msg ->
+                if (voiceInbox.isNotEmpty()) {
                     item {
-                        Text(msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        com.phonelock.app.ui.components.LedgerSection("받은 깨우기 메시지 ${voiceInbox.size}") {
+                            voiceInbox.forEach { msg ->
+                                Row(
+                                    Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        if (msg.textMessage.isNotBlank()) Icons.AutoMirrored.Outlined.Chat else Icons.Outlined.Mic,
+                                        contentDescription = if (msg.textMessage.isNotBlank()) "텍스트 메시지" else "음성 메시지",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.width(Spacing.sm))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(msg.fromName, style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                                        Text(
+                                            if (msg.textMessage.isNotBlank()) msg.textMessage else "${msg.durationMs / 1000}초",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    IconButton(
+                                        enabled = playingMsgId != msg.msgId,
+                                        onClick = {
+                                            playingMsgId = msg.msgId
+                                            if (msg.textMessage.isNotBlank()) {
+                                                TtsPlayer.speak(context, msg.textMessage, walkieSettings.volume, walkieSettings.voiceGender) { playingMsgId = null }
+                                            } else {
+                                                val wavBytes = runCatching { Base64.decode(msg.audioBase64, Base64.NO_WRAP) }.getOrNull()
+                                                if (wavBytes != null) {
+                                                    VoicePlayer.play(context, wavBytes, walkieSettings.volume) { playingMsgId = null }
+                                                } else {
+                                                    playingMsgId = null
+                                                }
+                                            }
+                                            // 들은 즉시 지우지 않고 "들었음"만 표시 — 다시 듣고 싶을 수 있어서
+                                            // 유예시간(24시간) 동안은 남겨두고, 지나면 다음 조회 때 자동으로 지워진다.
+                                            scope.launch { repository.markVoiceMessageListened(msg.groupId, msg) }
+                                        }
+                                    ) {
+                                        Icon(Icons.Filled.PlayArrow, contentDescription = if (playingMsgId == msg.msgId) "재생 중" else "재생", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = {
+                                        scope.launch {
+                                            // 서버 삭제가 실제로 성공했을 때만 목록에서 뺀다 — 무조건 빼면 서버에서 실패해도(권한 등)
+                                            // 지워진 것처럼 보이다가 다음 조회 때 다시 나타난다. 실패 사유는 그대로 보여준다.
+                                            val result = repository.deleteVoiceMessage(msg.groupId, msg.msgId)
+                                            if (result.isSuccess) {
+                                                voiceInbox = voiceInbox.filter { it.msgId != msg.msgId }
+                                            } else {
+                                                Toast.makeText(context, result.exceptionOrNull()?.message ?: "삭제에 실패했습니다.", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }) {
+                                        Icon(Icons.Outlined.Delete, contentDescription = "삭제", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(Spacing.sm))
+                        }
                     }
                 }
 
                 // 82차(§9 "모임장 공지사항") — 있으면 항상 상단에, 관리자만 편집 가능.
                 if (announcement != null || isAdmin) {
                     item {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.tertiaryContainer
+                        com.phonelock.app.ui.components.LedgerSection(
+                            "공지",
+                            trailing = if (isAdmin) ({
+                                TextButton(onClick = { announcementInput = announcement?.text ?: ""; showAnnouncementDialog = true }) {
+                                    Text("수정", maxLines = 1, softWrap = false)
+                                }
+                            }) else null
                         ) {
-                            Row(Modifier.fillMaxWidth().padding(Spacing.md), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("📢 공지", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onTertiaryContainer)
-                                    Text(
-                                        announcement?.text ?: "아직 공지가 없습니다.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onTertiaryContainer
-                                    )
-                                }
-                                if (isAdmin) {
-                                    TextButton(onClick = { announcementInput = announcement?.text ?: ""; showAnnouncementDialog = true }) { Text("수정") }
-                                }
-                            }
+                            Text(
+                                announcement?.text ?: "아직 공지가 없습니다.",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (announcement != null) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(Spacing.md))
                         }
                     }
                 }
 
-                // 82차(§9 "모임 공동 목표") — 관리자가 목표(분)를 정하면 오늘 공유된 멤버들의 공부시간 합으로 진행바를 보여준다.
-                if (groupGoal != null || isAdmin) {
-                    item {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.secondaryContainer
-                        ) {
-                            Column(Modifier.fillMaxWidth().padding(Spacing.md)) {
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    Text("🎯 모임 목표", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
-                                    if (isAdmin) {
-                                        TextButton(onClick = { goalInput = groupGoal?.targetMinutes?.toString() ?: ""; showGoalDialog = true }) { Text("설정") }
-                                    }
-                                }
-                                if (groupGoal != null) {
-                                    val targetSeconds = groupGoal!!.targetMinutes * 60
-                                    val progress = if (targetSeconds > 0) (groupGoalTodaySeconds.toFloat() / targetSeconds).coerceIn(0f, 1f) else 0f
-                                    Spacer(Modifier.height(Spacing.xs))
-                                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)))
-                                    Spacer(Modifier.height(Spacing.xs))
-                                    Text(
-                                        "오늘 함께 ${groupGoalTodaySeconds / 60}분 / 목표 ${groupGoal!!.targetMinutes}분",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                                    )
-                                } else {
-                                    Text("아직 목표가 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 82차(§11 "모임 랭킹") — 회유 멘트 저항률 비교(재미 요소, 딱딱한 통계 톤과 차별화).
-                if (quoteStats.isNotEmpty()) {
-                    item {
-                        Surface(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant) {
-                            Column(Modifier.fillMaxWidth().padding(Spacing.md)) {
-                                Text("😤 모임 랭킹 (확인 질문 저항률)", style = MaterialTheme.typography.labelLarge)
-                                Spacer(Modifier.height(Spacing.xs))
-                                quoteStats.sortedByDescending { it.stopRatePercent }.forEachIndexed { idx, qs ->
-                                    Text(
-                                        "${idx + 1}위 ${qs.displayName} — ${qs.stopRatePercent}% (${qs.totalCount}회 중)",
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 82차(§9 "모임 주간 리더보드"): 오늘/이번 주 토글 — 서버 집계 없이 이미 불러온 rows를 다시 정렬만 한다.
+                // 82차(§9 "모임 주간 리더보드"): 오늘/이번 주 — 서버 집계 없이 이미 불러온 rows를 다시 정렬만 한다.
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                        FilterChip(selected = !viewWeekly, onClick = { viewWeekly = false }, label = { Text("오늘") })
-                        FilterChip(selected = viewWeekly, onClick = { viewWeekly = true }, label = { Text("이번 주") })
-                    }
+                    com.phonelock.app.ui.components.LedgerSection(
+                        "멤버 ${rows.size}명",
+                        trailing = {
+                            com.phonelock.app.ui.components.SegmentedTabs(
+                                listOf("오늘", "이번 주"),
+                                if (viewWeekly) 1 else 0,
+                                { viewWeekly = it == 1 },
+                                Modifier.width(168.dp)
+                            )
+                        }
+                    ) {}
                 }
 
                 items(displayRows, key = { it.uid }) { row ->
                     val rate = if (viewWeekly) row.weekRate else row.todayRate
-                    Surface(
-                        // 82차(§6 UX 폴리싱): "오늘"/"이번 주" 토글로 정렬이 바뀔 때 카드가 순간이동
-                        // 대신 부드럽게 이동하도록 — 신규 의존성 없이 Compose foundation 기본 제공.
-                        modifier = Modifier.fillMaxWidth().animateItemPlacement().clickable { onMemberClick(row.uid) },
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (row.uid == myUid) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant,
-                        border = if (row.uid == myUid) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)) else null
+                    Column(
+                        // 82차(§6 UX 폴리싱): "오늘"/"이번 주"로 정렬이 바뀔 때 줄이 순간이동 대신 부드럽게 이동한다.
+                        Modifier.fillMaxWidth().animateItemPlacement().clickable { onMemberClick(row.uid) }
                     ) {
                         Row(
-                            Modifier.fillMaxWidth().padding(Spacing.md),
+                            Modifier.fillMaxWidth().padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             MemberAvatar(row.displayName, row.profileImage)
-                            Spacer(Modifier.width(Spacing.sm))
+                            Spacer(Modifier.width(Spacing.md))
                             Column(Modifier.weight(1f)) {
                                 MemberDisplayName(
                                     title = row.plantTitle,
                                     name = row.displayName + if (row.uid == myUid) " (나)" else "",
                                     level = row.plantLevel
                                 )
-                                if (row.streak != null && row.streak > 0) {
-                                    Spacer(Modifier.height(2.dp))
-                                    SectionPill("🔥 ${row.streak}일", color = androidx.compose.ui.graphics.Color(0xFFFF9800))
+                                val meta = buildList {
+                                    if (row.streak != null && row.streak > 0) add("연속 ${row.streak}일")
+                                    if (!row.hasStats) add("아직 동기화된 기록 없음")
+                                    else if (rate == null && !row.shareRoutines) add("비공개")
+                                }
+                                if (meta.isNotEmpty()) {
+                                    Text(meta.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 if (row.hasStats && rate != null) {
-                                    Spacer(Modifier.height(4.dp))
-                                    LinearProgressIndicator(
-                                        progress = { rate / 100f },
-                                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
+                                    Spacer(Modifier.height(6.dp))
+                                    com.phonelock.app.ui.components.ProgressLine(
+                                        rate / 100f,
+                                        color = if (rate >= 100) LocalPhoneLockPalette.current.fillGood else MaterialTheme.colorScheme.primary,
+                                        thickness = 3.dp
                                     )
-                                } else if (!row.hasStats) {
-                                    Text("아직 동기화된 통계가 없습니다", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                            Spacer(Modifier.width(Spacing.sm))
-                            if (row.hasStats) {
-                                val percentLabel = if (rate != null) "${rate}%" else if (row.shareRoutines) "-" else "비공개"
-                                SectionPill(percentLabel)
+                            if (row.hasStats && rate != null) {
+                                Spacer(Modifier.width(Spacing.sm))
+                                Text("${rate}%", style = MaterialTheme.typography.titleMedium, maxLines = 1, softWrap = false)
                             }
                             if (row.uid != myUid) {
                                 IconButton(
@@ -701,7 +639,7 @@ fun SocialGroupMembersScreen(
                                     modifier = Modifier.semantics {
                                         contentDescription = "${row.displayName}에게 DM 보내기"
                                     }
-                                ) { Text("💬") }
+                                ) { Icon(Icons.AutoMirrored.Outlined.Chat, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                                 IconButton(
                                     onClick = {
                                         wakeTarget = row.uid to row.displayName
@@ -710,17 +648,65 @@ fun SocialGroupMembersScreen(
                                     modifier = Modifier.semantics {
                                         contentDescription = "${row.displayName} 깨우기"
                                     }
-                                ) { Text(if (nudgeSentUid == row.uid) "보냄!" else "😴") }
+                                ) {
+                                    Icon(
+                                        if (nudgeSentUid == row.uid) Icons.Filled.NotificationsActive else Icons.Outlined.NotificationsActive,
+                                        contentDescription = null,
+                                        tint = if (nudgeSentUid == row.uid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        com.phonelock.app.ui.components.Hairline()
+                    }
+                }
+
+                // 82차(§11 "모임 랭킹") — 확인 질문 저항률 비교(재미 요소).
+                if (quoteStats.isNotEmpty()) {
+                    item {
+                        Spacer(Modifier.height(Spacing.lg))
+                        com.phonelock.app.ui.components.LedgerSection("확인 질문 저항률 순위", divider = false) {
+                            quoteStats.sortedByDescending { it.stopRatePercent }.forEachIndexed { idx, qs ->
+                                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("${idx + 1}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(28.dp))
+                                    Text(qs.displayName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                    Text("${qs.stopRatePercent}% · ${qs.totalCount}회", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (inviteCode.isNotBlank()) {
+                    item {
+                        Spacer(Modifier.height(Spacing.md))
+                        com.phonelock.app.ui.components.LedgerSection("초대 코드") {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(inviteCode, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    clipboard.setText(AnnotatedString(inviteCode))
+                                    Toast.makeText(context, "복사했습니다", Toast.LENGTH_SHORT).show()
+                                }) { Text("복사", maxLines = 1, softWrap = false) }
+                                TextButton(onClick = {
+                                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, "\"$groupName\" 모임 초대 코드: $inviteCode")
+                                    }
+                                    context.startActivity(Intent.createChooser(sendIntent, "초대 코드 공유"))
+                                }) { Text("공유", maxLines = 1, softWrap = false) }
                             }
                         }
                     }
                 }
 
                 item {
-                    Button(
+                    Spacer(Modifier.height(Spacing.lg))
+                    OutlinedButton(
                         onClick = { showLeaveConfirm = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (myUid != null && myUid == ownerUid) "모임 삭제" else "모임 나가기") }
+                    ) { Text(if (myUid != null && myUid == ownerUid) "모임 삭제" else "모임 나가기", maxLines = 1, softWrap = false) }
+                    Spacer(Modifier.height(Spacing.xl))
                 }
             }
             }
@@ -729,17 +715,17 @@ fun SocialGroupMembersScreen(
                 // 84차: 데스크탑 SocialGroupMembersScreen.kt와 같은 좌우 분할 — 오른쪽엔 이미 태블릿
                 // 대응된 SocialGroupMemberDetailScreen을 그대로 내장한다(uid만 바꿔주면 됨, 새 화면
                 // 아님). onBack은 "뒤로 화면 전환"이 아니라 "선택 해제"로 자연스럽게 대응된다.
-                Row(Modifier.fillMaxSize().padding(Spacing.md)) {
+                Row(Modifier.fillMaxSize().padding(horizontal = Spacing.gutter)) {
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                         membersListContent(Modifier.fillMaxSize())
                     }
-                    Spacer(Modifier.width(Spacing.md))
+                    Spacer(Modifier.width(Spacing.lg))
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                         val uid = selectedUid
                         if (uid == null) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Text(
-                                    "멤버를 선택하면 여기서 상세를 볼 수 있습니다.",
+                                    "멤버를 고르면 여기 보입니다.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -750,7 +736,7 @@ fun SocialGroupMembersScreen(
                     }
                 }
             } else {
-                membersListContent(Modifier.fillMaxSize().padding(Spacing.md))
+                membersListContent(Modifier.fillMaxSize().padding(horizontal = Spacing.gutter))
             }
             }
             }
@@ -762,9 +748,9 @@ fun SocialGroupMembersScreen(
         var nameText by remember { mutableStateOf(groupName) }
         var descriptionText by remember { mutableStateOf(groupDescription) }
         var regenMessage by remember { mutableStateOf<String?>(null) }
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showEditInfoDialog = false },
-            title = { Text("✏️ 모임 이름/코드 수정") },
+            title = { Text("모임 이름·코드 수정") },
             text = {
                 Column {
                     OutlinedTextField(
@@ -792,7 +778,7 @@ fun SocialGroupMembersScreen(
                             regenMessage = if (result.isSuccess) "새 코드로 바뀌었습니다." else (result.exceptionOrNull()?.message ?: "재발급에 실패했습니다.")
                             reload()
                         }
-                    }) { Text("🔄 코드 재발급") }
+                    }) { Text("코드 재발급", maxLines = 1, softWrap = false) }
                     regenMessage?.let {
                         Spacer(Modifier.height(Spacing.xs))
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -810,9 +796,9 @@ fun SocialGroupMembersScreen(
     }
 
     if (showMemberManageDialog) {
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showMemberManageDialog = false },
-            title = { Text("👥 멤버 관리") },
+            title = { Text("멤버 관리") },
             text = {
                 Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
                     rows.filter { it.uid != myUid }.forEach { m ->
@@ -829,7 +815,7 @@ fun SocialGroupMembersScreen(
                                 TextButton(onClick = {
                                     scope.launch { repository.setSocialGroupAdmin(groupId, m.uid, !targetIsAdmin); reload() }
                                 }) { Text(if (targetIsAdmin) "관리자 해제" else "관리자 지정") }
-                                TextButton(onClick = { transferTarget = m.uid to m.displayName }) { Text("👑 승계") }
+                                TextButton(onClick = { transferTarget = m.uid to m.displayName }) { Text("모임장 넘기기", maxLines = 1, softWrap = false) }
                             }
                             if (!targetIsOwner) {
                                 TextButton(onClick = {
@@ -845,7 +831,7 @@ fun SocialGroupMembersScreen(
     }
 
     transferTarget?.let { (targetUid, targetName) ->
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { transferTarget = null },
             title = { Text("모임장 넘기기") },
             text = { Text("\"$targetName\"님에게 모임장을 넘길까요? 나는 자동으로 관리자가 됩니다.") },
@@ -895,13 +881,13 @@ fun SocialGroupMembersScreen(
     }
 
     if (showRandomNudgeDialog) {
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showRandomNudgeDialog = false },
-            title = { Text("🔔 무작위 알림") },
+            title = { Text("무작위 알림") },
             text = {
                 Column {
                     Text(
-                        "하루 중 무작위 시각에, 이 모임에서 오늘 할 일을 아직 못 한 멤버가 있으면 이 기기로 알려드립니다. 직접 확인하고 필요하면 깨우기를 보내주세요.",
+                        "하루 한 번 무작위 시각에, 아직 못 한 멤버가 있으면 알려 드립니다.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(Modifier.height(Spacing.sm))

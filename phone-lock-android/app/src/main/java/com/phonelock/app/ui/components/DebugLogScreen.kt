@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -31,7 +30,7 @@ import com.phonelock.app.util.InAppLogger
 fun DebugLogDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val lines = remember { InAppLogger.loadFromFileIfEmpty(context) }
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("디버그 로그 (최근 ${lines.size}줄)") },
         text = {

@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.components.LedgerAlertDialog
 import com.phonelock.desktop.ui.theme.LocalPhoneLockPalette
 import com.phonelock.desktop.ui.components.ProgressLine
 import com.phonelock.desktop.ui.components.Overline
@@ -21,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -29,7 +29,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,6 +53,8 @@ import com.phonelock.desktop.data.syncLockTimer
 import com.phonelock.desktop.ui.components.NumberStepperField
 import com.phonelock.desktop.ui.components.ResponsiveSplit
 import com.phonelock.desktop.ui.components.SectionCard
+import com.phonelock.desktop.ui.components.SegmentedTabs
+import com.phonelock.desktop.ui.components.ToggleRow
 import com.phonelock.desktop.ui.theme.Spacing
 import com.phonelock.shared.PERSUASION_MESSAGES
 import com.phonelock.shared.lock.LockTimer
@@ -155,16 +156,17 @@ private fun LockTimerSetup(repository: Repository, onStart: (LockTimer) -> Unit)
             Text("${formatMinutesKo(preset.lockMinutes)} 잠급니다", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(Spacing.sm))
             // 143차: 약속은 로그인한 다른 기기에도 같이 걸리고(푸는 것도 한 번이면 모든 기기에서 풀린다), 각 기기는
-            // 자기가 마지막으로 고른 허용·잠글 목록을 쓴다.
+            // 자기가 마지막으로 고른 허용·잠글 목록을 쓴다 — 146차에 설명은 한 줄로 줄이고 자세한 내용은 도움말에 둔다.
             Text(
-                "정한 시간만 더 쓰고 그 뒤는 스스로 잠급니다. 같은 계정으로 로그인한 다른 기기에도 같은 약속이 걸리고, 각 기기는 그 기기에서 마지막으로 고른 프로그램·사이트 목록을 씁니다.",
+                "같은 계정의 다른 기기에도 함께 걸립니다.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(Spacing.xl))
-            SectionCard("얼마나 더 쓸까요", emoji = "🙋") {
+            Spacer(Modifier.height(Spacing.lg))
+            // 146차: 흰 판 묶음 → 가는 선 묶음(SectionCard), 질문형 제목 → 짧은 명사, 설명은 한 줄(안드로이드판과 대칭).
+            SectionCard("자유 시간") {
                 NumberStepperField(
-                    label = "자유 시간(분)",
+                    label = "분",
                     value = preset.freeMinutes.toString(),
                     onValueChange = { text ->
                         update(preset.copy(freeMinutes = (text.toIntOrNull() ?: preset.freeMinutes).coerceIn(0, LockTimer.MAX_FREE_MINUTES)))
@@ -183,16 +185,16 @@ private fun LockTimerSetup(repository: Repository, onStart: (LockTimer) -> Unit)
                     }
                 }
                 Text(
-                    "이 시간 동안은 평소처럼 쓰고, 끝나면 바로 잠깁니다. 0으로 두면 시작하자마자 잠깁니다.",
+                    "0분이면 시작하자마자 잠깁니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(Modifier.height(Spacing.md))
 
-            SectionCard("얼마 동안 잠글까요", emoji = "🔒") {
+            SectionCard("잠금 시간") {
                 NumberStepperField(
-                    label = "잠금 시간(분)",
+                    label = "분",
                     value = preset.lockMinutes.toString(),
                     onValueChange = { text ->
                         update(
@@ -216,14 +218,14 @@ private fun LockTimerSetup(repository: Repository, onStart: (LockTimer) -> Unit)
                     }
                 }
                 Text(
-                    "한 번에 최대 ${LockTimer.MAX_LOCK_MINUTES / 60}시간까지 잠글 수 있습니다.",
+                    "최대 ${LockTimer.MAX_LOCK_MINUTES / 60}시간",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(Modifier.height(Spacing.md))
 
-            SectionCard("해제 난이도", emoji = "🧗") {
+            SectionCard("해제 난이도") {
                 (UnlockLevel.MIN..UnlockLevel.MAX).forEach { level ->
                     Row(
                         Modifier.fillMaxWidth().clickable { update(preset.copy(level = level)) }.padding(vertical = 2.dp),
@@ -241,7 +243,7 @@ private fun LockTimerSetup(repository: Repository, onStart: (LockTimer) -> Unit)
                     }
                 }
                 Text(
-                    "시작한 뒤에는 자유 시간 중에 취소할 때도 같은 절차를 거칩니다.",
+                    "자유 시간 중 취소도 같은 절차를 거칩니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -249,44 +251,26 @@ private fun LockTimerSetup(repository: Repository, onStart: (LockTimer) -> Unit)
             Spacer(Modifier.height(Spacing.md))
 
             // 143차: 집중 타이머의 뽀모도로 휴식 동안 이 약속의 잠금을 잠시 푼다(시작할 때만 정할 수 있다).
-            SectionCard("뽀모도로 휴식", emoji = "🍅") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("휴식 중엔 잠금 잠시 풀기", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "집중 타이머가 뽀모도로 휴식 단계인 동안은 잠금이 풀리고, 휴식이 끝나면 남은 잠금 시간이 이어집니다. 시작한 뒤에는 바꿀 수 없습니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = preset.pomodoroBreakUnlock,
-                        onCheckedChange = { update(preset.copy(pomodoroBreakUnlock = it)) }
-                    )
-                }
+            SectionCard("뽀모도로 휴식") {
+                ToggleRow(
+                    title = "휴식 중엔 잠금 잠시 풀기",
+                    description = "시작한 뒤엔 바꿀 수 없습니다.",
+                    checked = preset.pomodoroBreakUnlock,
+                    onCheckedChange = { update(preset.copy(pomodoroBreakUnlock = it)) }
+                )
             }
         }
     }, right = {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            SectionCard("무엇을 잠글까요", emoji = "🎯") {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    FilterChip(
-                        selected = preset.wholeDevice,
-                        onClick = { update(preset.copy(wholeDevice = true)) },
-                        label = { Text("PC 전체") }
-                    )
-                    FilterChip(
-                        selected = !preset.wholeDevice,
-                        onClick = { update(preset.copy(wholeDevice = false)) },
-                        label = { Text("고른 프로그램·사이트만") }
-                    )
-                }
+            SectionCard("잠글 범위", divider = false) {
+                SegmentedTabs(
+                    labels = listOf("PC 전체", "고른 프로그램·사이트만"),
+                    selectedIndex = if (preset.wholeDevice) 0 else 1,
+                    onSelect = { update(preset.copy(wholeDevice = it == 0)) }
+                )
+                Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    if (preset.wholeDevice) {
-                        "PC 전체가 잠기고 아래에서 고른 프로그램·사이트만 쓸 수 있습니다. 바탕화면(탐색기)은 항상 열립니다."
-                    } else {
-                        "아래에서 고른 프로그램·사이트만 잠급니다."
-                    },
+                    if (preset.wholeDevice) "고른 프로그램·사이트와 바탕화면(탐색기)만 열립니다." else "고른 프로그램·사이트만 잠급니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -302,7 +286,7 @@ private fun LockTimerSetup(repository: Repository, onStart: (LockTimer) -> Unit)
 
                 Text(
                     if (preset.wholeDevice) "허용할 프로그램 (실행파일 이름)" else "잠글 프로그램 (실행파일 이름)",
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.titleSmall
                 )
                 Spacer(Modifier.height(Spacing.xs))
                 LockListEditor(
@@ -315,7 +299,7 @@ private fun LockTimerSetup(repository: Repository, onStart: (LockTimer) -> Unit)
                 Spacer(Modifier.height(Spacing.md))
                 Text(
                     if (preset.wholeDevice) "허용할 사이트 (도메인)" else "잠글 사이트 (도메인)",
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.titleSmall
                 )
                 Spacer(Modifier.height(Spacing.xs))
                 LockListEditor(
@@ -326,12 +310,7 @@ private fun LockTimerSetup(repository: Repository, onStart: (LockTimer) -> Unit)
                 )
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    if (preset.wholeDevice) {
-                        "브라우저를 허용했다면 허용할 사이트도 적어 주세요. 비워 두면 브라우저 안의 모든 사이트가 막힙니다. " +
-                            "사이트 판정은 브라우저 확장프로그램이 켜져 있어야 동작합니다."
-                    } else {
-                        "사이트 잠금은 브라우저 확장프로그램이 켜져 있어야 동작합니다."
-                    },
+                    if (preset.wholeDevice) "비워 두면 브라우저 안 사이트는 모두 막힙니다(브라우저 확장 필요)." else "브라우저 확장이 켜져 있어야 막힙니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -355,7 +334,7 @@ private fun LockTimerSetup(repository: Repository, onStart: (LockTimer) -> Unit)
     if (showConfirm) {
         val apps = if (preset.wholeDevice) preset.allowedApps else preset.targetApps
         val sites = if (preset.wholeDevice) preset.allowedSites else preset.targetSites
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showConfirm = false },
             title = { Text("이대로 시작할까요?") },
             text = {
@@ -373,7 +352,7 @@ private fun LockTimerSetup(repository: Repository, onStart: (LockTimer) -> Unit)
                     )
                     if (preset.pomodoroBreakUnlock) {
                         Spacer(Modifier.height(Spacing.xs))
-                        Text("🍅 뽀모도로 휴식 중엔 잠금이 잠시 풀립니다.")
+                        Text("뽀모도로 휴식 중엔 잠금이 잠시 풀립니다.")
                     }
                     Spacer(Modifier.height(Spacing.xs))
                     Text(
@@ -473,34 +452,23 @@ private fun LockTimerRunning(timer: LockTimer, nowMillis: Long, onUnlocked: () -
             )
             Spacer(Modifier.height(Spacing.xl))
 
-            SectionCard("이번 약속", emoji = "📌") {
-                val lockMinutes = (timer.lockEndAtMillis - timer.lockStartAtMillis) / 60_000L
-                Text(
-                    if (timer.wholeDevice) {
-                        "${lockMinutes}분 동안 PC 전체 잠금 · 허용 프로그램 ${timer.apps.size}개 · 사이트 ${timer.sites.size}개"
-                    } else {
-                        "${lockMinutes}분 동안 프로그램 ${timer.apps.size}개 · 사이트 ${timer.sites.size}개 잠금"
-                    },
-                    style = MaterialTheme.typography.bodyMedium
+            // 146차: 약속 내용은 문장 대신 "항목 — 값" 줄로(안드로이드판과 대칭).
+            SectionCard("이번 약속") {
+                val lockMinutes = ((timer.lockEndAtMillis - timer.lockStartAtMillis) / 60_000L).toInt()
+                TimerFactRow("잠금", formatMinutesKo(lockMinutes))
+                TimerFactRow(
+                    "범위",
+                    if (timer.wholeDevice) "PC 전체 · 허용 프로그램 ${timer.apps.size} · 사이트 ${timer.sites.size}"
+                    else "프로그램 ${timer.apps.size} · 사이트 ${timer.sites.size}"
                 )
-                Text(
-                    "${UnlockLevel.label(timer.level)} — ${UnlockLevel.description(timer.level, PERSUASION_MESSAGES.size)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (timer.pomodoroBreakUnlock) {
-                    Text(
-                        "🍅 뽀모도로 휴식 중엔 잠금이 잠시 풀립니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                TimerFactRow("해제", UnlockLevel.label(timer.level))
+                if (timer.pomodoroBreakUnlock) TimerFactRow("휴식", "뽀모도로 휴식 중엔 풀림")
             }
         }
     }, right = {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             if (!UnlockLevel.canUnlock(timer.level)) {
-                SectionCard(actionLabel, emoji = "⛔") {
+                SectionCard(actionLabel) {
                     Text(
                         "${UnlockLevel.label(timer.level)}으로 시작한 약속입니다. 시간이 끝날 때까지 풀 수 없습니다.",
                         style = MaterialTheme.typography.bodyMedium
@@ -508,7 +476,7 @@ private fun LockTimerRunning(timer: LockTimer, nowMillis: Long, onUnlocked: () -
                 }
                 return@Column
             }
-            SectionCard(actionLabel, emoji = "🔓") {
+            SectionCard(actionLabel) {
                 when (step) {
                     UnlockStep.IDLE, UnlockStep.QUESTIONS -> {
                         notice?.let {
@@ -555,6 +523,21 @@ private fun LockTimerRunning(timer: LockTimer, nowMillis: Long, onUnlocked: () -
             }
         }
     })
+}
+
+
+/** 진행 중인 약속의 "항목 — 값" 한 줄(146차). 항목은 흐린 작은 글자, 값은 본문 글자. */
+@Composable
+private fun TimerFactRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.Top) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(56.dp)
+        )
+        Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+    }
 }
 
 /** "90분" → "1시간 30분", "60분" → "1시간" — 히어로 문장용(144차, 안드로이드판과 같은 규칙). */

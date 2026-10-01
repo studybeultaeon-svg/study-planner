@@ -5,67 +5,66 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.painter.Painter
 
 /**
- * 트레이/창 아이콘용 새싹 그림(112차, 옛 일출 컨셉 대체). 안드로이드 `ic_launcher_background.xml`/
- * `ic_launcher_foreground.xml`과 같은 108x108 좌표·같은 디자인(하늘→연두 그라데이션 + 흙 언덕 + 줄기 +
- * 양쪽 잎)을 공유한다. 객체 이름(`SunriseIcon`)은 변경 범위를 줄이려고 그대로 유지 — 실제 그림만 교체.
+ * 트레이/창 아이콘 — 146차: 홈 컨셉이 식물에서 우주로 바뀌면서 "우주 속의 별"(사용자 요청). 안드로이드
+ * `ic_launcher_background.xml`/`ic_launcher_foreground.xml`과 같은 108x108 좌표·같은 색(남색 바탕 + 은은한 빛 +
+ * 네 갈래 별 + 기울어진 궤도 고리 + 작은 점별)을 그린다. 설치 파일 아이콘은 `packaging/app-icon.ico`(같은 그림).
+ * 객체 이름(`SunriseIcon`)은 변경 범위를 줄이려고 그대로 유지 — 실제 그림만 교체.
  */
 object SunriseIcon : Painter() {
     override val intrinsicSize = Size(108f, 108f)
 
-    override fun DrawScope.onDraw() {
-        val scale = size.width / 108f
-        fun pt(x: Float, y: Float) = Offset(x * scale, y * scale)
+    private const val C = 54f
+    private const val STAR_R = 25f
+    private const val STAR_K = 4f
+    private const val ORBIT_RX = 32f
+    private const val ORBIT_RY = 10.5f
+    private const val ORBIT_ROTATION = -24f
+    private val DOTS = listOf(
+        Triple(33f, 34f, 1.9f), Triple(77f, 31f, 1.3f), Triple(74f, 76f, 2.1f),
+        Triple(31f, 74f, 1.2f), Triple(84f, 52f, 1.0f), Triple(46f, 84f, 0.9f)
+    )
 
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(Color(0xFFA5D6E8), Color(0xFFDCEDC8), Color(0xFFC5E1A5))
-            ),
-            size = size
+    override fun DrawScope.onDraw() {
+        val s = size.width / 108f
+        fun pt(x: Float, y: Float) = Offset(x * s, y * s)
+
+        drawRect(brush = Brush.verticalGradient(listOf(Color(0xFF10182E), Color(0xFF0B0E14))), size = size)
+        drawCircle(
+            brush = Brush.radialGradient(listOf(Color(0x556AA4FF), Color(0x006AA4FF)), center = pt(C, C), radius = 30f * s),
+            radius = 30f * s,
+            center = pt(C, C)
         )
 
-        val hills = Path().apply {
-            moveTo(pt(21f, 87f).x, pt(21f, 87f).y)
-            lineTo(pt(21f, 76f).x, pt(21f, 76f).y)
-            val c1 = pt(34f, 66f); val c2 = pt(74f, 66f); val e1 = pt(87f, 76f)
-            cubicTo(c1.x, c1.y, c2.x, c2.y, e1.x, e1.y)
-            lineTo(pt(87f, 87f).x, pt(87f, 87f).y)
-            close()
+        // 궤도 고리는 별 뒤로 지나가는 윗호(어둡게)와 별 앞으로 지나가는 아랫호(강조색)로 나눠 그린다.
+        val orbitTopLeft = pt(C - ORBIT_RX, C - ORBIT_RY)
+        val orbitSize = Size(ORBIT_RX * 2 * s, ORBIT_RY * 2 * s)
+        val orbitStroke = Stroke(width = 2.2f * s, cap = StrokeCap.Round)
+        rotate(ORBIT_ROTATION, pivot = pt(C, C)) {
+            drawArc(Color(0xFF3A5C95), 180f, 180f, useCenter = false, topLeft = orbitTopLeft, size = orbitSize, style = orbitStroke)
         }
-        drawPath(hills, color = Color(0xFF6D4C36))
 
-        val stem = Path().apply {
-            moveTo(pt(52f, 76f).x, pt(52f, 76f).y)
-            val sc1 = pt(52f, 64f); val sc2 = pt(54f, 58f); val se = pt(54f, 50f)
-            cubicTo(sc1.x, sc1.y, sc2.x, sc2.y, se.x, se.y)
-            lineTo(pt(58f, 50f).x, pt(58f, 50f).y)
-            val sc3 = pt(58f, 58f); val sc4 = pt(60f, 64f); val se2 = pt(60f, 76f)
-            cubicTo(sc3.x, sc3.y, sc4.x, sc4.y, se2.x, se2.y)
-            close()
-        }
-        drawPath(stem, color = Color(0xFF2E7D32))
+        DOTS.forEach { (x, y, r) -> drawCircle(Color(0xFFC9D6F2), radius = r * s, center = pt(x, y)) }
 
-        val leftLeaf = Path().apply {
-            moveTo(pt(55f, 54f).x, pt(55f, 54f).y)
-            val lc1 = pt(40f, 54f); val lc2 = pt(30f, 44f); val le1 = pt(30f, 32f)
-            cubicTo(lc1.x, lc1.y, lc2.x, lc2.y, le1.x, le1.y)
-            val lc3 = pt(46f, 32f); val lc4 = pt(56f, 40f); val le2 = pt(56f, 54f)
-            cubicTo(lc3.x, lc3.y, lc4.x, lc4.y, le2.x, le2.y)
+        val star = Path().apply {
+            val top = pt(C, C - STAR_R); val right = pt(C + STAR_R, C); val bottom = pt(C, C + STAR_R); val left = pt(C - STAR_R, C)
+            moveTo(top.x, top.y)
+            pt(C + STAR_K, C - STAR_K).let { quadraticBezierTo(it.x, it.y, right.x, right.y) }
+            pt(C + STAR_K, C + STAR_K).let { quadraticBezierTo(it.x, it.y, bottom.x, bottom.y) }
+            pt(C - STAR_K, C + STAR_K).let { quadraticBezierTo(it.x, it.y, left.x, left.y) }
+            pt(C - STAR_K, C - STAR_K).let { quadraticBezierTo(it.x, it.y, top.x, top.y) }
             close()
         }
-        drawPath(leftLeaf, color = Color(0xFF66BB6A))
+        drawPath(star, color = Color(0xFFF4F7FF))
 
-        val rightLeaf = Path().apply {
-            moveTo(pt(57f, 50f).x, pt(57f, 50f).y)
-            val rc1 = pt(72f, 50f); val rc2 = pt(82f, 40f); val re1 = pt(82f, 28f)
-            cubicTo(rc1.x, rc1.y, rc2.x, rc2.y, re1.x, re1.y)
-            val rc3 = pt(66f, 28f); val rc4 = pt(56f, 36f); val re2 = pt(56f, 50f)
-            cubicTo(rc3.x, rc3.y, rc4.x, rc4.y, re2.x, re2.y)
-            close()
+        rotate(ORBIT_ROTATION, pivot = pt(C, C)) {
+            drawArc(Color(0xFF6AA4FF), 0f, 180f, useCenter = false, topLeft = orbitTopLeft, size = orbitSize, style = orbitStroke)
         }
-        drawPath(rightLeaf, color = Color(0xFF43A047))
     }
 }

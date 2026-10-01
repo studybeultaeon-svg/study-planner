@@ -1,6 +1,9 @@
 package com.phonelock.app.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,12 +16,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,20 +35,29 @@ import com.phonelock.app.ui.theme.Spacing
  * 공부 잠금 중 예외로 허용할 앱을 설치된 앱 목록에서 고르는 화면. GroupEditScreen의 앱 선택 UI와
  * 같은 패턴(검색 + 체크박스 + 선택된 항목 위로 정렬)을 따른다.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StudyLockAppsScreen() {
+fun StudyLockAppsScreen(onBack: () -> Unit = {}) {
     val context = LocalContext.current
     val prefs = remember { AppPreferences(context) }
     var allowedSitesText by remember { mutableStateOf(prefs.studyLockAllowedSites.joinToString("\n")) }
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("집중 잠금 허용 앱", style = MaterialTheme.typography.headlineSmall) }, colors = com.phonelock.app.ui.components.ledgerTopBarColors()) }
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(Spacing.md)) {
+    // 146차: 앱바 → 다른 상세 화면과 같은 머리(뒤로 + 작은 경로 라벨 + 큰 제목 + 가는 선), 설명은 한 줄.
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.xs, vertical = Spacing.xs), verticalAlignment = Alignment.CenterVertically) {
+            com.phonelock.app.ui.components.LedgerBackButton(onBack)
+            com.phonelock.app.ui.components.Overline("설정 · 집중")
+        }
+        Text(
+            "집중 잠금 허용 앱",
+            style = MaterialTheme.typography.headlineMedium,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = Spacing.gutter).padding(bottom = Spacing.sm)
+        )
+        com.phonelock.app.ui.components.Hairline()
+        Column(Modifier.fillMaxSize().padding(horizontal = Spacing.gutter).padding(top = Spacing.md)) {
             Text(
-                "선택한 앱은 집중 타이머가 켜져 있는 동안에도 항상 열 수 있습니다.",
-                style = MaterialTheme.typography.bodySmall,
+                "고른 앱은 집중 중에도 열 수 있습니다.",
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(Spacing.md))
@@ -58,12 +67,12 @@ fun StudyLockAppsScreen() {
                     allowedSitesText = text
                     prefs.studyLockAllowedSites = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
                 },
-                label = { Text("허용 사이트 (한 줄에 하나씩, 예: google.com)") },
+                label = { Text("허용 사이트 (한 줄에 하나)") },
+                placeholder = { Text("예: google.com") },
                 modifier = Modifier.fillMaxWidth()
             )
             Text(
-                "허용된 앱(브라우저)이 열려 있어도 여기 등록 안 된 사이트는 따로 차단됩니다. 이 기기에만 적용되며, " +
-                    "데스크탑에는 데스크탑 앱의 타이머 탭에서 따로 등록해야 합니다.",
+                "허용한 브라우저에서도 여기 없는 사이트는 막습니다(이 기기만).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -113,6 +122,7 @@ fun AppMultiSelectPicker(
             value = searchQuery,
             onValueChange = { searchQuery = it },
             label = { Text(searchLabel) },
+            leadingIcon = { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.Search, contentDescription = null) },
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(Spacing.xs))
@@ -127,7 +137,14 @@ fun AppMultiSelectPicker(
                 item { Text("앱 목록을 불러오는 중…", style = MaterialTheme.typography.bodySmall) }
             }
             items(filteredApps, key = { it.packageName }) { app ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().clickable {
+                        selectedPackages = if (selectedPackages.contains(app.packageName)) selectedPackages - app.packageName
+                        else selectedPackages + app.packageName
+                        onChange(selectedPackages)
+                    },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Checkbox(
                         checked = selectedPackages.contains(app.packageName),
                         onCheckedChange = { checked ->

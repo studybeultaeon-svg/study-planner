@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.components.LedgerAlertDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,7 +10,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -128,8 +128,7 @@ fun AccountSecuritySection(repository: Repository, onSignedOut: () -> Unit) {
         }
         if (methods.isAnonymous) {
             Text(
-                "게스트로 로그인되어 있습니다. 게스트 계정은 로그아웃하거나 이 PC의 앱 데이터를 지우면 다시 들어올 수 없습니다. " +
-                    "구글 계정을 연결해 두면 다른 기기에서도 같은 계정으로 들어올 수 있습니다.",
+                "게스트 계정은 로그아웃하거나 앱 데이터를 지우면 되찾을 수 없습니다. 구글을 연결해 두세요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -219,7 +218,7 @@ fun AccountSecuritySection(repository: Repository, onSignedOut: () -> Unit) {
             if (!methods.hasRealEmail && !methods.hasGoogle) {
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    "지금은 비밀번호를 잊으면 계정을 찾을 방법이 없습니다. 이메일을 등록하거나 구글 계정을 연결해 두세요.",
+                    "비밀번호를 잊으면 찾을 방법이 없습니다. 이메일이나 구글을 연결하세요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -244,7 +243,7 @@ fun AccountSecuritySection(repository: Repository, onSignedOut: () -> Unit) {
                 list.isEmpty() -> Text("기록된 기기가 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else -> list.take(8).forEach { s ->
                     val isThis = s.id == AccountSecurityClient.installId
-                    Column(Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = Spacing.sm)) {
                         Text(
                             s.deviceName.ifBlank { platformLabel(s.platform) } + if (isThis) " (이 기기)" else "",
                             style = MaterialTheme.typography.bodyMedium,
@@ -285,7 +284,7 @@ fun AccountSecuritySection(repository: Repository, onSignedOut: () -> Unit) {
                 }
             }
             Text(
-                "보안 기록은 90일 동안 보관합니다. 모르는 활동이 있으면 비밀번호를 바꾸고 다른 기기를 모두 로그아웃하세요.",
+                "90일 보관. 모르는 활동이 있으면 비밀번호를 바꾸세요.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -293,28 +292,30 @@ fun AccountSecuritySection(repository: Repository, onSignedOut: () -> Unit) {
 
         Spacer(Modifier.height(Spacing.md))
         SectionCard("계정") {
-            Button(
-                onClick = {
-                    if (methods.usableCount == 0) {
-                        dialog = SecurityDialog.GUEST_LOGOUT
-                    } else {
-                        Thread {
-                            AccountSecurityClient.removeSession(dbUrl, apiKey, AccountSecurityClient.installId)
-                            AuthManager.signOut()
-                            onSignedOut()
-                        }.start()
-                    }
-                },
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("로그아웃") }
-            Spacer(Modifier.height(Spacing.sm))
-            Button(
-                onClick = { dialog = SecurityDialog.DELETE },
-                enabled = !busy,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("계정 삭제") }
+            // 146차: 꽉 찬 버튼 두 개(로그아웃이 화면의 주인공처럼 보였다) → 한 줄의 테두리 버튼 두 개(안드로이드판과 대칭).
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                OutlinedButton(
+                    onClick = {
+                        if (methods.usableCount == 0) {
+                            dialog = SecurityDialog.GUEST_LOGOUT
+                        } else {
+                            Thread {
+                                AccountSecurityClient.removeSession(dbUrl, apiKey, AccountSecurityClient.installId)
+                                AuthManager.signOut()
+                                onSignedOut()
+                            }.start()
+                        }
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f)
+                ) { Text("로그아웃", maxLines = 1, softWrap = false) }
+                OutlinedButton(
+                    onClick = { dialog = SecurityDialog.DELETE },
+                    enabled = !busy,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.weight(1f)
+                ) { Text("계정 삭제", maxLines = 1, softWrap = false) }
+            }
         }
     }
 
@@ -400,13 +401,12 @@ fun AccountSecuritySection(repository: Repository, onSignedOut: () -> Unit) {
                 }
             )
         }
-        SecurityDialog.LAST_METHOD -> AlertDialog(
+        SecurityDialog.LAST_METHOD -> LedgerAlertDialog(
             onDismissRequest = { dialog = null },
             title = { Text("구글 연결을 해제할 수 없습니다") },
             text = {
                 Text(
-                    "지금은 구글이 이 계정의 유일한 로그인 수단입니다. 이대로 연결을 해제하면 계정에 들어올 수 없게 됩니다. " +
-                        "먼저 비밀번호를 정하면 연결을 해제할 수 있습니다."
+                    "구글이 유일한 로그인 수단이라 해제하면 계정에 못 들어옵니다. 비밀번호부터 정하세요."
                 )
             },
             confirmButton = { Button(onClick = { dialog = SecurityDialog.SET_PASSWORD_THEN_UNLINK }) { Text("비밀번호 설정 후 해제") } },
@@ -555,7 +555,7 @@ private fun ReauthDialog(repository: Repository, methods: AuthPolicy.LoginMethod
     var checking by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val apiKey = repository.fbApiKey
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = { if (!checking) onDismiss() },
         title = { Text("본인 확인") },
         text = {
@@ -607,14 +607,14 @@ private fun ChangeIdDialog(currentId: String, onDismiss: () -> Unit, onSubmit: (
     var newId by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var working by remember { mutableStateOf(false) }
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = { if (!working) onDismiss() },
         title = { Text("아이디 변경") },
         text = {
             Column(Modifier.widthIn(max = 380.dp), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 Text("현재 아이디: $currentId", style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    "이전 아이디는 로그인에 쓸 수 없게 되고, 이후 본인을 포함해 아무도 다시 쓸 수 없게 영구히 잠깁니다.",
+                    "이전 아이디는 영구히 잠겨 본인도 다시 쓸 수 없습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -640,7 +640,7 @@ private fun EmailChangeDialog(currentEmail: String?, onDismiss: () -> Unit, onSu
     var email by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var working by remember { mutableStateOf(false) }
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = { if (!working) onDismiss() },
         title = { Text(if (currentEmail == null) "이메일 등록" else "이메일 변경") },
         text = {
@@ -650,8 +650,7 @@ private fun EmailChangeDialog(currentEmail: String?, onDismiss: () -> Unit, onSu
                     Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Text(
-                    "입력한 주소로 인증 메일을 보냅니다. 메일의 링크를 눌러야 등록이 끝나며, 그때부터 이메일로 로그인하고 " +
-                        "비밀번호를 잊었을 때 재설정 메일을 받을 수 있습니다.",
+                    "메일의 인증 링크를 눌러야 등록됩니다. 그 뒤로 이메일 로그인·재설정이 됩니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -676,7 +675,7 @@ private fun NewPasswordDialog(title: String, note: String, id: String?, onDismis
     var error by remember { mutableStateOf<String?>(null) }
     var working by remember { mutableStateOf(false) }
     val problem = if (pw.isEmpty()) null else AuthPolicy.newPasswordProblem(pw, id)
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = { if (!working) onDismiss() },
         title = { Text(title) },
         text = {
@@ -708,7 +707,7 @@ private fun NewPasswordDialog(title: String, note: String, id: String?, onDismis
 
 @Composable
 private fun ConfirmDialog(title: String, text: String, confirm: String, danger: Boolean = false, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(text, modifier = Modifier.widthIn(max = 380.dp)) },

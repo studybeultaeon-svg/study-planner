@@ -1,6 +1,7 @@
 package com.phonelock.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -131,7 +132,7 @@ fun ChatThreadScreen(
         if (messages.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(
-                    "아직 대화가 없습니다. 첫 메시지를 보내보세요.",
+                    "아직 대화가 없습니다.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -230,6 +231,7 @@ fun ChatThreadScreen(
                 modifier = Modifier.padding(horizontal = Spacing.sm)
             )
         }
+        com.phonelock.app.ui.components.Hairline()
         Row(
             Modifier.fillMaxWidth().padding(Spacing.sm),
             verticalAlignment = Alignment.CenterVertically
@@ -249,7 +251,12 @@ fun ChatThreadScreen(
             )
             Spacer(Modifier.width(Spacing.xs))
             IconButton(onClick = { sendCurrentInput() }, enabled = input.isNotBlank() && !sending) {
-                Text("➤")
+                // 146차: "➤" 글자 대신 벡터 아이콘(강조색, 보낼 수 없을 땐 흐리게).
+                androidx.compose.material3.Icon(
+                    androidx.compose.material.icons.Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "보내기",
+                    tint = if (input.isNotBlank() && !sending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

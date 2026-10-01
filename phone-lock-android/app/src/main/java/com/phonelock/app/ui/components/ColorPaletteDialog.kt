@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -221,7 +220,7 @@ fun ColorPaletteDialog(
     var saturation by remember { mutableStateOf(initialHsv[1]) }
     var brightness by remember { mutableStateOf(initialHsv[2]) }
 
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {

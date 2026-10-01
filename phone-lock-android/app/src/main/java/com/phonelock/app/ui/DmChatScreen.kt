@@ -55,6 +55,7 @@ fun DmChatScreen(repository: PhoneLockRepository, chatId: String, peerUid: Strin
         )
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            com.phonelock.app.ui.components.Hairline()
             ChatThreadScreen(
                 chatId = chatId,
                 myUid = AuthManager.currentUser?.uid,

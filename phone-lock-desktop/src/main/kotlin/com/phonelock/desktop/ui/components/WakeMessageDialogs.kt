@@ -1,11 +1,15 @@
 package com.phonelock.desktop.ui.components
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -34,7 +38,7 @@ fun WakeOptionsDialog(
     onOpenVoiceRecorder: () -> Unit,
     onOpenTextMessage: () -> Unit
 ) {
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("$targetName 깨우기") },
         text = {
@@ -44,14 +48,22 @@ fun WakeOptionsDialog(
                 // 계속 필요하다. wakeStep이 바뀌면 이 다이얼로그는 어차피 (wakeStep=="options" 조건이
                 // 깨지면서) 화면에서 사라지므로 별도로 닫을 필요가 없다 — 실제로 이걸 부르는 바람에
                 // "선택 후 대상이 사라져서 아무 일도 안 일어나는" 버그가 있었다.
-                Button(onClick = { onDismiss(); onNudge() }, modifier = Modifier.fillMaxWidth()) { Text("😴 알림만 보내기") }
-                Button(onClick = onOpenVoiceRecorder, modifier = Modifier.fillMaxWidth()) { Text("🎙️ 음성 메시지 녹음") }
-                Button(onClick = onOpenTextMessage, modifier = Modifier.fillMaxWidth()) { Text("💬 텍스트 메시지(읽어주기)") }
+                // 146차: 이모지 + 꽉 찬 버튼 세 개 → 벡터 아이콘 + 테두리 버튼(셋이 같은 무게의 선택지라, 안드로이드판과 대칭).
+                WakeOption(Icons.Outlined.NotificationsActive, "알림만 보내기") { onDismiss(); onNudge() }
+                WakeOption(Icons.Outlined.Mic, "음성 메시지 녹음", onOpenVoiceRecorder)
+                WakeOption(Icons.AutoMirrored.Outlined.Chat, "텍스트 메시지 (읽어 주기)", onOpenTextMessage)
             }
         },
-        confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
     )
+}
+
+@Composable
+private fun WakeOption(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    androidx.compose.material3.OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        androidx.compose.material3.Icon(icon, contentDescription = null, modifier = Modifier.padding(end = Spacing.sm))
+        Text(label, maxLines = 1, softWrap = false, modifier = Modifier.weight(1f))
+    }
 }
 
 /** 무전 녹음 다이얼로그 — 시작/정지, 최대 [VoiceRecorder.MAX_DURATION_MS] 자동 종료, 완료 후 보내기/취소. */
@@ -62,9 +74,9 @@ fun VoiceRecordDialog(onDismiss: () -> Unit, onSend: (ByteArray, Long) -> Unit) 
     var finished by remember { mutableStateOf(false) }
     val session = remember { VoiceRecorder.Session() }
 
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("🎙️ 무전 녹음") },
+        title = { Text("무전 녹음") },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -105,13 +117,13 @@ fun VoiceRecordDialog(onDismiss: () -> Unit, onSend: (ByteArray, Long) -> Unit) 
 @Composable
 fun TextMessageDialog(onDismiss: () -> Unit, onSend: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("💬 텍스트 메시지") },
+        title = { Text("텍스트 메시지") },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 Text(
-                    "상대 기기에서 이 문장을 소리내어 읽어줍니다.",
+                    "상대 기기에서 소리 내어 읽어 줍니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -1,5 +1,9 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -197,9 +201,10 @@ private fun <T> CardGrid(items: List<T>, modifier: Modifier = Modifier, card: @C
 }
 
 /**
- * 왼쪽 사이드바 폭에 맞춰 카드를 한 줄씩 세로로 쌓는다(웹앱 사이드바도 좁은 폭에선 1열로 접힘).
+ * 왼쪽 사이드바 폭에 맞춰 업무를 한 줄씩 세로로 쌓는다(웹앱 사이드바도 좁은 폭에선 1열로 접힘).
  * 하단 액션 버튼(추가/계산/초기화)은 스크롤 영역 밖(weight 없는 고정 Column)에 둬서 업무가 많아도
  * 항상 보이게 한다 — 이전엔 스크롤 리스트 맨 끝에 있어 업무가 많으면 스크롤해야만 눌렀다.
+ * 146차(안드로이드판과 대칭): 업무마다 흰 판 → 가는 선으로 나뉜 줄(접으면 목록 한 줄, 펴면 입력칸), 아래는 "계산하기" 하나만 크게.
  */
 @Composable
 private fun CalcInputTab(
@@ -211,14 +216,16 @@ private fun CalcInputTab(
     val collapsedKeys = remember { mutableStateOf(setOf<Int>()) }
 
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.sm)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = Spacing.md)) {
             if (tasks.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs), modifier = Modifier.fillMaxWidth()) {
-                    TextButton(onClick = { collapsedKeys.value = emptySet() }, modifier = Modifier.weight(1f)) { Text("모두 펴기") }
-                    TextButton(onClick = { collapsedKeys.value = tasks.indices.toSet() }, modifier = Modifier.weight(1f)) { Text("모두 접기") }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    com.phonelock.desktop.ui.components.Overline("업무 ${tasks.size}개", Modifier.weight(1f))
+                    TextButton(onClick = { collapsedKeys.value = emptySet() }) { Text("모두 펴기", maxLines = 1, softWrap = false) }
+                    TextButton(onClick = { collapsedKeys.value = tasks.indices.toSet() }) { Text("모두 접기", maxLines = 1, softWrap = false) }
                 }
             }
             tasks.forEachIndexed { index, task ->
+                com.phonelock.desktop.ui.components.Hairline()
                 CalcTaskCard(
                     task = task,
                     isFirst = index == 0,
@@ -232,16 +239,26 @@ private fun CalcInputTab(
                     onMoveUp = { repository.moveCalcTaskOrder(index, -1); onChanged() },
                     onMoveDown = { repository.moveCalcTaskOrder(index, 1); onChanged() }
                 )
-                Spacer(Modifier.height(Spacing.sm))
             }
+            if (tasks.isNotEmpty()) com.phonelock.desktop.ui.components.Hairline()
+            Spacer(Modifier.height(Spacing.md))
         }
-        Column(Modifier.padding(horizontal = Spacing.sm)) {
-            OutlinedButton(onClick = { repository.addCalcTask(); onChanged() }, modifier = Modifier.fillMaxWidth()) { Text("+ 업무 추가") }
-            Spacer(Modifier.height(Spacing.xs))
-            Button(onClick = onCalculate, modifier = Modifier.fillMaxWidth()) { Text("계산하기", style = MaterialTheme.typography.titleMedium) }
-            Spacer(Modifier.height(Spacing.xs))
-            OutlinedButton(onClick = { repository.resetCalcTasks(); onChanged() }, modifier = Modifier.fillMaxWidth()) { Text("↺ 입력 초기화") }
-            Spacer(Modifier.height(Spacing.sm))
+        com.phonelock.desktop.ui.components.Hairline()
+        Column(Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { repository.addCalcTask(); onChanged() }) {
+                    androidx.compose.material3.Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("업무 추가", maxLines = 1, softWrap = false)
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { repository.resetCalcTasks(); onChanged() }) {
+                    Text("입력 초기화", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                }
+            }
+            Button(onClick = onCalculate, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                Text("계산하기", style = MaterialTheme.typography.titleMedium, maxLines = 1, softWrap = false)
+            }
         }
     }
 }
@@ -274,6 +291,7 @@ private fun CalcTaskCard(
         mutableStateOf(com.phonelock.shared.calc.PassSchedule.parsePassIntervals(task.passIntervalsCsv, task.passCount))
     }
     var multiPassUsageEnabled by remember(task) { mutableStateOf(task.multiPassUsageEnabled) }
+    var menuOpen by remember(task) { mutableStateOf(false) }
 
     fun persist() {
         val d = dayValues.value
@@ -288,38 +306,47 @@ private fun CalcTaskCard(
         )
     }
 
-    SectionCard(name.ifBlank { "새 업무" }) {
+    Column(Modifier.fillMaxWidth().padding(vertical = Spacing.sm)) {
+        // 머리 줄 — 접기/펴기 + 이름(접으면 분량·마감도) + 더보기(순서·삭제).
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                com.phonelock.desktop.ui.components.IconChip(Icons.Filled.KeyboardArrowUp, enabled = !isFirst, onClick = onMoveUp)
-                com.phonelock.desktop.ui.components.IconChip(Icons.Filled.KeyboardArrowDown, enabled = !isLast, onClick = onMoveDown)
-            }
-            com.phonelock.desktop.ui.components.IconChip(
-                if (collapsed) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown,
-                modifier = Modifier.padding(horizontal = 4.dp),
-                onClick = onToggleCollapse
-            )
-            if (collapsed) {
-                Text(
-                    "${name.ifBlank { "새 업무" }} · ${qty.ifBlank { "0" }}${unit}",
-                    modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium
-                )
-            } else {
-                OutlinedTextField(
-                    value = name, onValueChange = { name = it; persist() },
-                    label = { Text("업무 이름") }, modifier = Modifier.weight(1f), singleLine = true,
-                    shape = RoundedCornerShape(12.dp), textStyle = com.phonelock.desktop.ui.components.calcFieldTextStyle()
+            androidx.compose.material3.IconButton(onClick = onToggleCollapse) {
+                androidx.compose.material3.Icon(
+                    if (collapsed) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (collapsed) "펴기" else "접기",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(Modifier.width(Spacing.xs))
-            TextButton(onClick = onDelete) { Text("삭제") }
+            Column(Modifier.weight(1f).clickable(onClick = onToggleCollapse)) {
+                Text(name.ifBlank { "새 업무" }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                if (collapsed) {
+                    Text(
+                        listOf("${qty.ifBlank { "0" }}$unit", dday.takeIf { it.isNotBlank() }?.let { "$it 마감" }).filterNotNull().joinToString(" · "),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
+            Box {
+                androidx.compose.material3.IconButton(onClick = { menuOpen = true }) {
+                    androidx.compose.material3.Icon(Icons.Filled.MoreVert, contentDescription = "더보기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    if (!isFirst) DropdownMenuItem(text = { Text("위로") }, onClick = { menuOpen = false; onMoveUp() })
+                    if (!isLast) DropdownMenuItem(text = { Text("아래로") }, onClick = { menuOpen = false; onMoveDown() })
+                    DropdownMenuItem(text = { Text("삭제", color = MaterialTheme.colorScheme.error) }, onClick = { menuOpen = false; onDelete() })
+                }
+            }
         }
         if (!collapsed) {
-            Spacer(Modifier.height(Spacing.sm))
-            androidx.compose.material3.HorizontalDivider()
-            Spacer(Modifier.height(Spacing.sm))
+            Spacer(Modifier.height(Spacing.xs))
+            OutlinedTextField(
+                value = name, onValueChange = { name = it; persist() },
+                label = { Text("업무 이름") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                shape = RoundedCornerShape(12.dp), textStyle = com.phonelock.desktop.ui.components.calcFieldTextStyle()
+            )
 
-            CalcFieldGroupHeader("📊", "기본 정보")
+            CalcFieldGroupHeader("기본 정보")
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                 com.phonelock.desktop.ui.components.NumberStepperField(value = qty, onValueChange = { qty = it; persist() }, label = "전체 분량", modifier = Modifier.weight(1f))
                 OutlinedTextField(value = unit, onValueChange = { unit = it; persist() }, label = { Text("단위") }, modifier = Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(12.dp), textStyle = com.phonelock.desktop.ui.components.calcFieldTextStyle())
@@ -327,26 +354,15 @@ private fun CalcTaskCard(
             Spacer(Modifier.height(Spacing.xs))
             com.phonelock.desktop.ui.components.NumberStepperField(value = progress, onValueChange = { progress = it; persist() }, label = "지금까지 한 양", modifier = Modifier.fillMaxWidth())
 
-            Spacer(Modifier.height(Spacing.md))
-            androidx.compose.material3.HorizontalDivider()
-            Spacer(Modifier.height(Spacing.sm))
-
-            CalcFieldGroupHeader("🗓️", "기간")
+            CalcFieldGroupHeader("기간")
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 com.phonelock.desktop.ui.components.DatePickerField(value = start, onValueChange = { start = it; persist() }, label = "시작일", modifier = Modifier.weight(1f))
                 com.phonelock.desktop.ui.components.DatePickerField(value = dday, onValueChange = { dday = it; persist() }, label = "마감일", modifier = Modifier.weight(1f))
             }
 
-            Spacer(Modifier.height(Spacing.md))
-            androidx.compose.material3.HorizontalDivider()
-            Spacer(Modifier.height(Spacing.sm))
-
-            CalcFieldGroupHeader("📆", "요일별 목표")
-            // 85차: 요일별 목표도 화살표로 조절 가능하게 요청, 한 줄에 7칸 모두 들어가야 한다는 요청도
-            // 함께 받아 FlowRow(줄바꿈) 대신 weight(1f) Row로 되돌렸다(안드로이드판과 대칭) — Row는
-            // 절대 줄바꿈하지 않고 대신 칸을 균등하게 눌러 좁히므로 "한 줄에 다 들어간다"는 요구를
-            // 구조적으로 보장한다. 화살표 칩 자체도 더 작게(16dp/11dp) 줄여 좁은 칸에서도 숫자가
-            // 가려지지 않게 했다.
+            CalcFieldGroupHeader("요일별 목표")
+            // 85차: 요일별 목표도 화살표로 조절 가능하게, 한 줄에 7칸 모두 들어가게(안드로이드판과 달리 데스크탑은 폭이 넉넉해
+            // weight(1f) 한 줄 — 절대 줄바꿈하지 않고 칸을 균등하게 좁혀 "한 줄에 다 들어간다"를 구조적으로 보장한다).
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 DAY_ORDER.forEach { d ->
                     com.phonelock.desktop.ui.components.NumberStepperField(
@@ -370,28 +386,14 @@ private fun CalcTaskCard(
                 shape = RoundedCornerShape(12.dp), textStyle = com.phonelock.desktop.ui.components.calcFieldTextStyle()
             )
 
-            Spacer(Modifier.height(Spacing.md))
-            androidx.compose.material3.HorizontalDivider()
-            Spacer(Modifier.height(Spacing.sm))
-
-            CalcFieldGroupHeader("🔁", "반복 설정")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "반복 사용",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                androidx.compose.material3.Switch(
-                    checked = multiPassUsageEnabled,
-                    onCheckedChange = { multiPassUsageEnabled = it; persist() }
-                )
-            }
+            CalcFieldGroupHeader("반복")
+            com.phonelock.desktop.ui.components.ToggleRow(
+                title = "반복 사용",
+                description = if (multiPassUsageEnabled) "캘린더에 연동할 때 몇 번 반복할지" else "캘린더엔 1회차만 만듭니다.",
+                checked = multiPassUsageEnabled,
+                onCheckedChange = { multiPassUsageEnabled = it; persist() }
+            )
             if (multiPassUsageEnabled) {
-                Spacer(Modifier.height(Spacing.xs))
-                Text(
-                    "이 업무를 캘린더에 연동할 때 몇 번 반복할지",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 Spacer(Modifier.height(Spacing.xs))
                 com.phonelock.desktop.ui.components.NumberStepperField(
                     value = passCount.toString(),
@@ -410,8 +412,7 @@ private fun CalcTaskCard(
                 Spacer(Modifier.height(Spacing.xs))
                 Text("회차별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(2.dp))
-                // 회독 수가 늘어나면(최대 8이면 간격칸 7개) 고정 Row는 카드 폭을 넘어가 찌부러진다(83차 발견) —
-                // FlowRow로 넘치면 자동 줄바꿈, 칸 자체 폭도 줄여서 한 줄에 더 많이 들어가게 함.
+                // 회독 수가 늘어나면(최대 8이면 간격칸 7개) 고정 Row는 폭을 넘어가 찌부러진다(83차 발견) — FlowRow로 줄바꿈.
                 androidx.compose.foundation.layout.FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
                     verticalArrangement = Arrangement.spacedBy(Spacing.xs)
@@ -431,28 +432,16 @@ private fun CalcTaskCard(
                         )
                     }
                 }
-            } else {
-                Spacer(Modifier.height(Spacing.xs))
-                Text(
-                    "캘린더에 연동하면 1회차(한 번)만 생성됩니다",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
             Spacer(Modifier.height(Spacing.xs))
         }
     }
 }
 
-/**
- * 계산기 업무 카드 안에서 섹션을 시각적으로 나누는 작은 헤더(83차 UI 재설계, 안드로이드판과 대칭) —
- * 이 앱이 이미 쓰고 있는 색 배경 알약(pill) 배지 언어(CalendarScreen의 "🔁다회독" 토글 등)를 그대로
- * 재사용해 새 시각 패턴을 늘리지 않았다.
- */
+/** 업무 입력 안에서 묶음을 나누는 작은 라벨(144차 Ledger Overline) — 입력칸이 주인공이 되게 조용하게. */
 @Composable
-private fun CalcFieldGroupHeader(@Suppress("UNUSED_PARAMETER") emoji: String, title: String) {
-    // 144차: 이모지 알약 대신 작은 라벨(Ledger Overline) — 입력 묶음의 머리는 조용하게(안드로이드판과 같다).
-    com.phonelock.desktop.ui.components.Overline(title, Modifier.padding(top = Spacing.xs, bottom = 6.dp))
+private fun CalcFieldGroupHeader(title: String) {
+    com.phonelock.desktop.ui.components.Overline(title, Modifier.padding(top = Spacing.md, bottom = 6.dp))
 }
 
 @Composable
@@ -460,7 +449,7 @@ private fun CalcResultTab(repository: Repository, results: List<Pair<CalcTask, C
     val clipboard = LocalClipboardManager.current
     if (results.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("입력 탭에서 업무를 입력하고 계산하기를 눌러주세요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("왼쪽에 업무를 적고 계산하기를 누르세요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
@@ -470,36 +459,37 @@ private fun CalcResultTab(repository: Repository, results: List<Pair<CalcTask, C
     Column(Modifier.fillMaxSize().padding(horizontal = Spacing.md)) {
         results.forEach { (_, outcome) ->
             if (outcome is CalcEngine.CalcOutcome.Error) {
-                Text(outcome.message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = Spacing.xs))
+                com.phonelock.desktop.ui.components.NoticeStrip(outcome.message, modifier = Modifier.padding(vertical = Spacing.xs))
             }
         }
         val successes = results.mapNotNull { (task, outcome) -> if (outcome is CalcEngine.CalcOutcome.Success) task to outcome else null }
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs), modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = { collapsedKeys.value = emptySet() }, modifier = Modifier.weight(1f)) { Text("모두 펴기") }
-            TextButton(onClick = { collapsedKeys.value = successes.indices.toSet() }, modifier = Modifier.weight(1f)) { Text("모두 접기") }
-            OutlinedButton(
-                onClick = {
+        if (successes.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { collapsedKeys.value = emptySet() }) { Text("모두 펴기", maxLines = 1, softWrap = false) }
+                TextButton(onClick = { collapsedKeys.value = successes.indices.toSet() }) { Text("모두 접기", maxLines = 1, softWrap = false) }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = {
                     successes.forEach { (task, outcome) -> repository.saveCalcResult(task, outcome.result) }
                     savedAllCount = successes.size
                     onSaved()
-                },
-                modifier = Modifier.weight(1f)
-            ) { Text("전체 저장") }
+                }) { Text(savedAllCount?.let { "${it}개 저장됨" } ?: "전체 저장", maxLines = 1, softWrap = false) }
+            }
         }
-        savedAllCount?.let {
-            Text("${it}개 저장됨", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Spacing.xs))
-        }
+        // 146차: 결과마다 테두리 카드 → 위쪽 가는 선 + 큰 진척도 숫자(격자 배치는 그대로).
         CardGrid(successes.withIndex().toList(), Modifier.weight(1f)) { (index, pair) ->
             val (task, outcome) = pair
-            CalcResultCard(
-                result = outcome.result,
-                collapsed = index in collapsedKeys.value,
-                onToggleCollapse = {
-                    collapsedKeys.value = if (index in collapsedKeys.value) collapsedKeys.value - index else collapsedKeys.value + index
-                },
-                onSave = { repository.saveCalcResult(task, outcome.result); onSaved() },
-                onCopy = { clipboard.setText(AnnotatedString(summaryText(outcome.result))) }
-            )
+            Column {
+                com.phonelock.desktop.ui.components.Hairline()
+                CalcResultCard(
+                    result = outcome.result,
+                    collapsed = index in collapsedKeys.value,
+                    onToggleCollapse = {
+                        collapsedKeys.value = if (index in collapsedKeys.value) collapsedKeys.value - index else collapsedKeys.value + index
+                    },
+                    onSave = { repository.saveCalcResult(task, outcome.result); onSaved() },
+                    onCopy = { clipboard.setText(AnnotatedString(summaryText(outcome.result))) }
+                )
+            }
         }
     }
 }
@@ -521,25 +511,21 @@ private fun summaryText(r: CalcEngine.CalcResult): String {
     return "📚 ${r.name}\n$period\n$progressLine\n$verdict"
 }
 
-/** 웹앱 diffLabel() — 완료 예상일과 마감일 차이를 색 배지로. null이면 표시 안 함(10년 이상인 경우). */
+/** 웹앱 diffLabel() — 완료 예상일과 마감일 차이(146차: 이모지 없이 글자색으로). null이면 표시 안 함(10년 이상인 경우). */
 @Composable
-private fun DiffBadgeSpan(diffDays: Int?): Pair<String, Color>? {
+private fun diffBadge(diffDays: Int?): Pair<String, Color>? {
     if (diffDays == null) return null
+    val palette = com.phonelock.desktop.ui.theme.LocalPhoneLockPalette.current
     return when {
-        diffDays == 0 -> "딱 마감일 ✓" to MaterialTheme.colorScheme.primary
-        diffDays < 0 -> "마감 ${-diffDays}일 전 ✅" to Color(0xFF34D399)
-        else -> "마감 ${diffDays}일 초과 ⚠️" to Color(0xFFF87171)
+        diffDays == 0 -> "딱 마감일" to MaterialTheme.colorScheme.primary
+        diffDays < 0 -> "마감 ${-diffDays}일 전" to palette.success
+        else -> "마감 ${diffDays}일 초과" to MaterialTheme.colorScheme.error
     }
 }
 
 /**
- * 웹앱(index.html) `.result-block` 계산 결과 카드를 실제 CSS/JS 소스 기준으로 그대로 재현.
- * 핵심은 "카드 자체는 무채색, 색은 특정 요소에만" — 카드 배경/테두리는 항상 회색(surfaceVariant/
- * outline)이고, 색이 실제로 쓰이는 곳은 ① D-day 배지(파랑 고정, 상태와 무관) ② 진행바 채움(파랑→
- * 초록 그라디언트, 상태와 무관) ③ 페이스 표의 "필요⚠️" 행(빨강 고정) ④ 판정 배너의 배경+테두리
- * (충분=초록/부족=빨강, 배너 안 텍스트 자체는 무채색) ⑤ 완료예상일 옆 마감 초과/여유 배지, 이렇게
- * 5곳뿐이다. 제목·퍼센트·본문 텍스트는 전부 무채색 — 이전 버전들이 카드 전체를 상태색으로 물들이고
- * 제목/퍼센트까지 칠했던 건 전부 오독이었다(DECISIONS.md 참고할 정도로 반복 정정된 부분).
+ * 계산 결과 하나 — 146차(안드로이드판과 대칭): 테두리 카드 + 그라디언트 막대 → 작은 라벨 · 큰 숫자 · 얇은 진행선 ·
+ * 한 줄 판정 띠. 진척도 %가 이 블록의 주인공이고, 페이스 표와 판정은 펼쳤을 때만 보인다.
  */
 @Composable
 private fun CalcResultCard(
@@ -550,168 +536,103 @@ private fun CalcResultCard(
     onCopy: () -> Unit
 ) {
     var saved by remember(result) { mutableStateOf(false) }
-    val accent = MaterialTheme.colorScheme.primary
-    val green = Color(0xFF34D399)
-    val red = Color(0xFFF87171)
+    val palette = com.phonelock.desktop.ui.theme.LocalPhoneLockPalette.current
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val onSurface = MaterialTheme.colorScheme.onSurface
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        tonalElevation = 0.dp
-    ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-            // 헤더: 제목(무채색, 굵게) — D-day 배지(파랑 알약) + 접기 화살표(무채색)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                Text(
-                    result.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Surface(shape = RoundedCornerShape(50), color = accent.copy(alpha = 0.15f)) {
-                        Text(
-                            "🗓️ ${result.ddayLabel}",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = accent,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
-                        )
-                    }
-                    com.phonelock.desktop.ui.components.IconChip(if (collapsed) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown, onClick = onToggleCollapse)
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-
-            // 진행바: 파랑→초록 고정 그라디언트(상태와 무관), 트랙은 무채색
-            Box(
-                Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.outline)
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(fraction = (result.progressPct / 100f).coerceIn(0f, 1f))
-                        .fillMaxHeight()
-                        .background(Brush.horizontalGradient(listOf(accent, green)))
-                )
-            }
-            Spacer(Modifier.height(6.dp))
+    Column(Modifier.fillMaxWidth().clickable(onClick = onToggleCollapse).padding(vertical = Spacing.md)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                buildAnnotatedString {
-                    append("완료 ")
-                    withStyle(SpanStyle(color = onSurface, fontWeight = FontWeight.SemiBold)) { append("${fmtNum(result.progress)}${result.unit}") }
-                    append(" / 총 ")
-                    withStyle(SpanStyle(color = onSurface, fontWeight = FontWeight.SemiBold)) { append("${fmtNum(result.qty)}${result.unit}") }
-                    append(" · ")
-                    withStyle(SpanStyle(color = onSurface, fontWeight = FontWeight.SemiBold)) { append("${result.progressPct}%") }
-                    append(" · 남은 양 ")
-                    withStyle(SpanStyle(color = onSurface, fontWeight = FontWeight.SemiBold)) { append("${fmtNum(result.remaining)}${result.unit}") }
-                },
+                result.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = onSurface,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Text(result.ddayLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false)
+            androidx.compose.material3.Icon(
+                if (collapsed) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (collapsed) "펴기" else "접기",
+                tint = muted,
+                modifier = Modifier.padding(start = Spacing.xs).size(20.dp)
+            )
+        }
+        Spacer(Modifier.height(Spacing.xs))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            com.phonelock.desktop.ui.components.BigNumber(
+                "${result.progressPct}",
+                unit = "%",
+                style = MaterialTheme.typography.displaySmall,
+                color = if (result.enough) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.error
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "${fmtNum(result.progress)} / ${fmtNum(result.qty)}${result.unit} · 남은 ${fmtNum(result.remaining)}${result.unit}",
+                style = MaterialTheme.typography.bodySmall,
+                color = muted,
+                maxLines = 1,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+        }
+        Spacer(Modifier.height(Spacing.xs))
+        com.phonelock.desktop.ui.components.ProgressLine(
+            result.progressPct / 100f,
+            color = if (result.enough) palette.fillGood else palette.fillBad
+        )
+
+        if (!collapsed) {
+            Spacer(Modifier.height(Spacing.md))
+            Text(
+                "${result.startDate} ~ ${result.ddayDate} · ${result.totalDays}일" + if (result.holidayCount > 0) " · 휴일 제외 ${result.holidayCount}일" else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = muted
             )
+            Spacer(Modifier.height(Spacing.md))
+            com.phonelock.desktop.ui.components.Overline(if (result.enough) "요일별 페이스" else "요일별 페이스 · 필요 페이스")
+            Spacer(Modifier.height(4.dp))
+            PaceTable(result)
+            Spacer(Modifier.height(Spacing.md))
 
-            if (!collapsed) {
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    buildAnnotatedString {
-                        append("📆 계산 기간: ")
-                        withStyle(SpanStyle(color = onSurface, fontWeight = FontWeight.SemiBold)) { append("${result.startDate} ~ ${result.ddayDate}") }
-                        append(" (${result.totalDays}일)")
-                        if (result.holidayCount > 0) {
-                            append(" · 휴일 제외 ")
-                            withStyle(SpanStyle(color = onSurface, fontWeight = FontWeight.SemiBold)) { append("${result.holidayCount}일") }
-                        }
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = muted
-                )
-                Spacer(Modifier.height(12.dp))
-
-                // 요일별 페이스: 웹앱 .pace-section — 카드 안에 무채색 테두리로 한 번 더 감싼 박스
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                ) {
-                    Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-                        Text(
-                            "요일별 페이스" + if (!result.enough) " — 필요 페이스 함께 표시" else "",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = muted
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        PaceTable(result)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-
-                // 판정 배너: 배경+테두리만 상태색(충분=초록/부족=빨강), 안의 텍스트는 무채색
-                val bannerColor = if (result.enough) green else red
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    color = bannerColor.copy(alpha = 0.08f),
-                    border = BorderStroke(1.dp, bannerColor.copy(alpha = 0.3f))
-                ) {
-                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                        Text(
-                            if (result.enough) "✅ 현재 페이스로 충분합니다"
-                            else "⚠️ 페이스가 부족합니다 (약 ${fmtDec(result.multiplier)}배 증가 필요)",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = onSurface
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        val diffBadge = DiffBadgeSpan(result.finishDiffDays)
-                        Text(
-                            buildAnnotatedString {
-                                if (result.enough) {
-                                    append("기간 내 총 ${fmtNum(result.totalCapacity)}${result.unit} 소화 가능 · 완료 예상 ")
-                                } else {
-                                    append("기간 내 ${fmtNum(result.totalCapacity)}${result.unit} 소화 가능 / 남은 양 ${fmtNum(result.remaining)}${result.unit} · 현재 페이스 완료 예상 ")
-                                }
-                                withStyle(SpanStyle(color = onSurface, fontWeight = FontWeight.SemiBold)) { append(fmtKoreanDate(result.finishDate)) }
-                                if (diffBadge != null) {
-                                    append(" ")
-                                    withStyle(SpanStyle(color = diffBadge.second, fontWeight = FontWeight.Bold)) { append(diffBadge.first) }
-                                }
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = muted
-                        )
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-
-                // 버튼 2개: 둘 다 파란 알약(웹앱 .save-result-btn, 둘 다 같은 클래스), flex:1로 반반
-                val btnColors = ButtonDefaults.outlinedButtonColors(containerColor = accent.copy(alpha = 0.1f), contentColor = accent)
-                val btnBorder = BorderStroke(1.dp, accent.copy(alpha = 0.4f))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = { onSave(); saved = true },
-                        enabled = !saved,
-                        shape = RoundedCornerShape(7.dp),
-                        colors = btnColors,
-                        border = btnBorder,
-                        modifier = Modifier.weight(1f)
-                    ) { Text(if (saved) "✅ 저장됨" else "💾 이 업무 저장") }
-                    OutlinedButton(
-                        onClick = onCopy,
-                        shape = RoundedCornerShape(7.dp),
-                        colors = btnColors,
-                        border = btnBorder,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("결과 복사") }
+            val badge = diffBadge(result.finishDiffDays)
+            val verdict = buildAnnotatedString {
+                append(if (result.enough) "지금 페이스로 충분합니다" else "페이스를 약 ${fmtDec(result.multiplier)}배 올려야 합니다")
+                append(" · 완료 예상 ")
+                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(fmtKoreanDate(result.finishDate)) }
+                if (badge != null) {
+                    append(" ")
+                    withStyle(SpanStyle(color = badge.second, fontWeight = FontWeight.SemiBold)) { append("(${badge.first})") }
                 }
             }
+            VerdictStrip(verdict, good = result.enough)
+            Spacer(Modifier.height(Spacing.xs))
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                TextButton(onClick = { onSave(); saved = true }, enabled = !saved) {
+                    Text(if (saved) "저장됨" else "이 업무 저장", maxLines = 1, softWrap = false)
+                }
+                TextButton(onClick = onCopy) { Text("결과 복사", maxLines = 1, softWrap = false) }
+            }
         }
+    }
+}
+
+/** 판정 한 줄 — NoticeStrip과 같은 모양(왼쪽 색 막대 + 옅은 바탕)에 강조 글자를 섞어 쓴다. */
+@Composable
+private fun VerdictStrip(text: AnnotatedString, good: Boolean) {
+    val palette = com.phonelock.desktop.ui.theme.LocalPhoneLockPalette.current
+    val bar = if (good) palette.success else palette.warning
+    val bg = if (good) MaterialTheme.colorScheme.primaryContainer else palette.warningContainer
+    Row(
+        Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min).background(bg, RoundedCornerShape(10.dp)),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.width(4.dp).fillMaxHeight().background(bar, RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp)))
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 10.dp)
+        )
     }
 }
 
@@ -719,13 +640,13 @@ private fun CalcResultCard(
 private fun PaceTable(result: CalcEngine.CalcResult) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val onSurface = MaterialTheme.colorScheme.onSurface
-    val red = Color(0xFFF87171)
+    val need = MaterialTheme.colorScheme.error
 
     Row(Modifier.fillMaxWidth()) {
         Text("", modifier = Modifier.weight(0.6f))
         DAY_ORDER.forEach { d -> Text(DAY_LABELS[d], modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = muted, textAlign = TextAlign.Center) }
     }
-    Row(Modifier.fillMaxWidth()) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Text("현재", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, color = muted)
         DAY_ORDER.forEach { d ->
             val v = result.dayGoals[d] ?: 0.0
@@ -738,14 +659,14 @@ private fun PaceTable(result: CalcEngine.CalcResult) {
         }
     }
     if (!result.enough) {
-        Row(Modifier.fillMaxWidth().background(red.copy(alpha = 0.06f))) {
-            Text("필요", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, color = red, fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+            Text("필요", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, color = need, fontWeight = FontWeight.Bold)
             DAY_ORDER.forEach { d ->
                 val v = result.reqGoals[d] ?: 0.0
                 Text(
                     if (v > 0) "${fmtNum(v)}${result.unit}" else "—",
                     modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
-                    color = red, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center
+                    color = need, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center
                 )
             }
         }
@@ -753,9 +674,8 @@ private fun PaceTable(result: CalcEngine.CalcResult) {
 }
 
 /**
- * "저장됨" 탭: 왼쪽 사이드바 폭(비율 2)엔 좌우 분할 폴더 탐색기가 들어갈 공간이 없어, 웹앱
- * 사이드바(`#saved-list`, 폴더 헤더 + 하위 항목을 한 목록에 세로로 나열)와 안드로이드판
- * `FolderTreeSection`과 동일하게 재귀적으로 세로 나열하는 폴더 트리로 되돌렸다(31차 세션).
+ * "저장됨" 탭: 왼쪽 사이드바 폭엔 좌우 분할 폴더 탐색기가 들어갈 공간이 없어, 웹앱 사이드바와 안드로이드판
+ * `FolderTreeSection`과 동일하게 재귀적으로 세로 나열하는 폴더 트리(31차 세션). 146차: 줄마다 가는 선, 이모지 대신 아이콘.
  */
 @Composable
 private fun CalcSavedTab(repository: Repository, refreshTick: Int, onChanged: () -> Unit) {
@@ -767,23 +687,27 @@ private fun CalcSavedTab(repository: Repository, refreshTick: Int, onChanged: ()
         onChanged()
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.sm)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.md)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
+            com.phonelock.desktop.ui.components.CompactField(
                 value = newFolderName, onValueChange = { newFolderName = it },
-                label = { Text("새 폴더") }, modifier = Modifier.weight(1f), singleLine = true
+                placeholder = "새 폴더 이름", modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(Spacing.xs))
-            OutlinedButton(onClick = { if (repository.createCalcFolder(emptyList(), newFolderName)) { newFolderName = ""; refresh() } }) { Text("생성") }
+            TextButton(onClick = { if (repository.createCalcFolder(emptyList(), newFolderName)) { newFolderName = ""; refresh() } }) {
+                Text("폴더 만들기", maxLines = 1, softWrap = false)
+            }
         }
         Spacer(Modifier.height(Spacing.sm))
 
         if (saved.isEmpty() && repository.getCalcFolderPaths().isEmpty()) {
             Text(
-                "저장된 업무가 없습니다. 결과에서 계산 결과를 저장해 보세요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                "저장된 업무가 없습니다. 결과에서 저장해 보세요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = Spacing.md)
             )
         } else {
+            com.phonelock.desktop.ui.components.Hairline()
             CalcFolderTreeSection(repository = repository, parentPath = emptyList(), depth = 0, saved = saved, onChanged = { refresh() })
         }
 
@@ -812,12 +736,14 @@ private fun CalcFolderTreeSection(
             visibleState = visibleState,
             enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 8 }
         ) {
-            SavedItemRow(
-                repository = repository, item = item, index = idx, depth = depth,
-                allFolders = repository.getCalcFolderPaths(), onChanged = onChanged
-            )
+            Column {
+                SavedItemRow(
+                    repository = repository, item = item, index = idx, depth = depth,
+                    allFolders = repository.getCalcFolderPaths(), onChanged = onChanged
+                )
+                com.phonelock.desktop.ui.components.Hairline()
+            }
         }
-        Spacer(Modifier.height(Spacing.xs))
     }
 
     val subfolders = repository.getCalcSubfolderNames(parentPath)
@@ -826,30 +752,47 @@ private fun CalcFolderTreeSection(
         val expanded = !repository.isCalcFolderCollapsed(subPath)
         var renaming by remember(parentPath, name) { mutableStateOf(false) }
         var renameText by remember(parentPath, name) { mutableStateOf(name) }
+        var menuOpen by remember(parentPath, name) { mutableStateOf(false) }
         val countHere = saved.count { val fp = it.folderPath ?: emptyList(); fp.size >= subPath.size && fp.subList(0, subPath.size) == subPath }
 
         Row(
             Modifier.fillMaxWidth().padding(start = (depth * 16).dp, top = Spacing.xs, bottom = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                com.phonelock.desktop.ui.components.IconChip(Icons.Filled.KeyboardArrowUp, onClick = { repository.moveCalcFolderOrder(parentPath, name, -1); onChanged() })
-                com.phonelock.desktop.ui.components.IconChip(Icons.Filled.KeyboardArrowDown, onClick = { repository.moveCalcFolderOrder(parentPath, name, 1); onChanged() })
+            androidx.compose.material3.IconButton(onClick = { repository.toggleCalcFolderCollapsed(subPath); onChanged() }) {
+                androidx.compose.material3.Icon(
+                    if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
+                    contentDescription = if (expanded) "접기" else "펴기",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            com.phonelock.desktop.ui.components.IconChip(
-                if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
-                onClick = { repository.toggleCalcFolderCollapsed(subPath); onChanged() }
-            )
             if (renaming) {
-                OutlinedTextField(value = renameText, onValueChange = { renameText = it }, modifier = Modifier.weight(1f), singleLine = true)
+                com.phonelock.desktop.ui.components.CompactField(value = renameText, onValueChange = { renameText = it }, modifier = Modifier.weight(1f))
                 TextButton(onClick = { if (repository.renameCalcFolder(subPath, renameText)) { renaming = false; onChanged() } }) { Text("저장") }
                 TextButton(onClick = { renaming = false }) { Text("취소") }
             } else {
-                Text("📁 $name ($countHere)", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = { renaming = true }) { Text("✏️") }
-                TextButton(onClick = { repository.deleteCalcFolder(subPath); onChanged() }) { Text("✕") }
+                androidx.compose.material3.Icon(Icons.Outlined.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(Spacing.sm))
+                Text(name, modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(" $countHere", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.weight(1f))
+                Box {
+                    androidx.compose.material3.IconButton(onClick = { menuOpen = true }) {
+                        androidx.compose.material3.Icon(Icons.Filled.MoreVert, contentDescription = "폴더 메뉴", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(text = { Text("위로") }, onClick = { menuOpen = false; repository.moveCalcFolderOrder(parentPath, name, -1); onChanged() })
+                        DropdownMenuItem(text = { Text("아래로") }, onClick = { menuOpen = false; repository.moveCalcFolderOrder(parentPath, name, 1); onChanged() })
+                        DropdownMenuItem(text = { Text("이름 바꾸기") }, onClick = { menuOpen = false; renaming = true })
+                        DropdownMenuItem(
+                            text = { Text("폴더 삭제", color = MaterialTheme.colorScheme.error) },
+                            onClick = { menuOpen = false; repository.deleteCalcFolder(subPath); onChanged() }
+                        )
+                    }
+                }
             }
         }
+        com.phonelock.desktop.ui.components.Hairline()
         if (expanded) {
             CalcFolderTreeSection(repository = repository, parentPath = subPath, depth = depth + 1, saved = saved, onChanged = onChanged)
         }
@@ -866,33 +809,27 @@ private fun SavedItemRow(
     onChanged: () -> Unit
 ) {
     var showFolderPicker by remember(item) { mutableStateOf(false) }
+    var menuOpen by remember(item) { mutableStateOf(false) }
     val dayLine = "월${item.mon.ifBlank { "0" }} 화${item.tue.ifBlank { "0" }} 수${item.wed.ifBlank { "0" }} 목${item.thu.ifBlank { "0" }} " +
         "금${item.fri.ifBlank { "0" }} 토${item.sat.ifBlank { "0" }} 일${item.sun.ifBlank { "0" }}"
 
-    Column(
-        Modifier.fillMaxWidth().padding(start = (depth * 16).dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small)
-            .padding(Spacing.sm)
-    ) {
+    Column(Modifier.fillMaxWidth().padding(start = (depth * 16).dp).padding(vertical = Spacing.sm)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column {
-                com.phonelock.desktop.ui.components.IconChip(Icons.Filled.KeyboardArrowUp, onClick = { repository.moveCalcSavedItem(index, -1); onChanged() })
-                com.phonelock.desktop.ui.components.IconChip(Icons.Filled.KeyboardArrowDown, onClick = { repository.moveCalcSavedItem(index, 1); onChanged() })
-            }
-            Spacer(Modifier.width(Spacing.xs))
-            Text(item.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(item.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             // 웹앱 .folder-popover — 인라인 목록 대신 버튼 근처에 뜨는 플로팅 팝오버로, 현재 폴더는
             // accent 색+굵게 강조(.folder-popover-item.active)한다.
             Box {
                 TextButton(onClick = { showFolderPicker = !showFolderPicker }) {
-                    Text("📁 ${item.folderPath?.lastOrNull() ?: "미분류"}", style = MaterialTheme.typography.labelSmall)
+                    androidx.compose.material3.Icon(Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(item.folderPath?.lastOrNull() ?: "미분류", style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
                 }
                 val curPath = item.folderPath ?: emptyList()
                 DropdownMenu(expanded = showFolderPicker, onDismissRequest = { showFolderPicker = false }) {
                     DropdownMenuItem(
                         text = {
                             Text(
-                                "— 미분류",
+                                "미분류",
                                 color = if (curPath.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 fontWeight = if (curPath.isEmpty()) FontWeight.Bold else FontWeight.Normal
                             )
@@ -904,15 +841,29 @@ private fun SavedItemRow(
                         DropdownMenuItem(
                             text = {
                                 Text(
-                                    "📁 ${path.last()}",
+                                    path.last(),
                                     modifier = Modifier.padding(start = ((path.size - 1) * 12).dp),
                                     color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                     fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
                                 )
                             },
+                            leadingIcon = { androidx.compose.material3.Icon(Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.size(18.dp)) },
                             onClick = { repository.moveCalcSavedItemToFolder(index, path); showFolderPicker = false; onChanged() }
                         )
                     }
+                }
+            }
+            Box {
+                androidx.compose.material3.IconButton(onClick = { menuOpen = true }) {
+                    androidx.compose.material3.Icon(Icons.Filled.MoreVert, contentDescription = "더보기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text("위로") }, onClick = { menuOpen = false; repository.moveCalcSavedItem(index, -1); onChanged() })
+                    DropdownMenuItem(text = { Text("아래로") }, onClick = { menuOpen = false; repository.moveCalcSavedItem(index, 1); onChanged() })
+                    DropdownMenuItem(
+                        text = { Text("삭제", color = MaterialTheme.colorScheme.error) },
+                        onClick = { menuOpen = false; repository.deleteCalcSavedItem(index); onChanged() }
+                    )
                 }
             }
         }
@@ -920,9 +871,9 @@ private fun SavedItemRow(
             "${fmtNum(item.qty)}${item.unit} · ${item.start.ifBlank { "" }}${if (item.start.isNotBlank()) " 시작 · " else ""}${item.dday} 마감 · $dayLine · 저장 ${item.savedAt}",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), modifier = Modifier.padding(top = Spacing.xs)) {
-            TextButton(onClick = { repository.loadCalcSavedItemAsDraft(index); onChanged() }) { Text("✚ 불러오기") }
-            TextButton(onClick = { repository.deleteCalcSavedItem(index); onChanged() }) { Text("삭제", color = MaterialTheme.colorScheme.error) }
-        }
+        TextButton(
+            onClick = { repository.loadCalcSavedItemAsDraft(index); onChanged() },
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp, vertical = 4.dp)
+        ) { Text("입력으로 불러오기", maxLines = 1, softWrap = false) }
     }
 }

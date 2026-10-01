@@ -220,7 +220,7 @@ private fun TimetableContent(
                                         rowTotal += v
                                         dayTotals[i] += v
                                         val achieved = weekAchievedMap["${d}|${row.task.name}"] == true
-                                        val label = "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✅" else ""
+                                        val label = "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✓" else ""
                                         val cellColor = if (achieved) LocalPhoneLockPalette.current.success else null
                                         TtCell(label, dayColWidth, highlight = isTodayCol, textColor = cellColor)
                                     } else {
@@ -294,7 +294,7 @@ private fun TimetableContent(
                             modifier = Modifier.weight(1f, fill = false).padding(end = Spacing.sm)
                         )
                         Text(
-                            if (v > 0) "${fmtDec(v)}${t.unit}" + if (achieved) " ✅" else "" else "—",
+                            if (v > 0) "${fmtDec(v)}${t.unit}" + if (achieved) " ✓" else "" else "—",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = if (v > 0) FontWeight.Bold else FontWeight.Normal,
                             color = if (v <= 0) MaterialTheme.colorScheme.onSurfaceVariant

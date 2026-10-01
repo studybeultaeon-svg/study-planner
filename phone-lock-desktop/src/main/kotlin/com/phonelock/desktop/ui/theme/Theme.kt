@@ -75,7 +75,7 @@ private fun colorSchemeFor(palette: PhoneLockPalette): ColorScheme {
  * 기본 초록색이 남아 있던 버그가 121차에 있었다.
  */
 @Composable
-fun PhoneLockTheme(themeMode: String = ThemeMode.LIGHT_GREEN, content: @Composable () -> Unit) {
+fun PhoneLockTheme(themeMode: String = ThemeMode.DARK_BLUE, content: @Composable () -> Unit) {
     PhoneLockTheme(paletteFor(themeMode), content = content)
 }
 

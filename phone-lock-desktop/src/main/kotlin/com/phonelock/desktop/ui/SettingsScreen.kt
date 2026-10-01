@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.components.LedgerAlertDialog
 import com.phonelock.desktop.ui.components.PageMasthead
 import com.phonelock.desktop.ui.components.Hairline
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -39,7 +40,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -309,10 +309,10 @@ fun SettingsScreen(
     var category by remember { mutableStateOf(SettingsCategory.PROFILE) }
 
     pendingRestoreFile?.let { file ->
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { pendingRestoreFile = null },
             title = { Text("복원 확인") },
-            text = { Text("복원하면 현재 차단 규칙/기록이 ${file.name} 백업 내용으로 완전히 대체됩니다(되돌리기 없음). 계속할까요?") },
+            text = { Text("지금 차단 규칙·기록이 ${file.name} 내용으로 바뀝니다(되돌릴 수 없음).") },
             confirmButton = {
                 TextButton(onClick = {
                     repository.restoreFromBackup(file)
@@ -326,10 +326,10 @@ fun SettingsScreen(
     }
 
     pendingImportFile?.let { file ->
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { pendingImportFile = null },
             title = { Text("가져오기 확인") },
-            text = { Text("가져오면 현재 차단 규칙/기록이 ${file.name} 파일 내용으로 완전히 대체됩니다(되돌리기 없음). 계속할까요?") },
+            text = { Text("지금 차단 규칙·기록이 ${file.name} 내용으로 바뀝니다(되돌릴 수 없음).") },
             confirmButton = {
                 TextButton(onClick = {
                     repository.restoreFromBackup(file)
@@ -343,10 +343,10 @@ fun SettingsScreen(
     }
 
     pendingRoutineImportFile?.let { file ->
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { pendingRoutineImportFile = null },
             title = { Text("루틴 가져오기 확인") },
-            text = { Text("가져오면 현재 루틴/체크 기록이 ${file.name} 파일 내용으로 완전히 대체됩니다(되돌리기 없음). 계속할까요?") },
+            text = { Text("지금 루틴·체크 기록이 ${file.name} 내용으로 바뀝니다(되돌릴 수 없음).") },
             confirmButton = {
                 TextButton(onClick = {
                     repository.importRoutinesBackupJson(file.readText())
@@ -460,7 +460,7 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        "이 시각에 앱의 \"오늘\"이 바뀝니다 — 차단 규칙의 오늘 사용 시간·잠깐 풀기 횟수, 캘린더·일정표·집중 기록의 오늘이 이 시각부터 새로 시작돼요. 루틴은 이 설정과 상관없이 자정 기준이에요.\n$alsoIn",
+                        "이 시각에 \"오늘\"이 바뀝니다(루틴은 자정). $alsoIn",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -576,8 +576,7 @@ fun SettingsScreen(
                                 var offlineOverride by remember { mutableStateOf(repository.offlineModeOverride) }
                                 ToggleRow(
                                     title = "오프라인 모드로 강제 전환",
-                                    description = "켜면 인터넷이 연결돼 있어도 동기화/로그인/모임 등 네트워크 기능을 쓰지 않고 이 " +
-                                        "기기에서만 로컬로 사용합니다. 꺼둬도 실제로 인터넷이 끊기면 자동으로 오프라인 처리됩니다.",
+                                    description = "켜면 동기화·모임 없이 이 기기에서만 씁니다.",
                                     checked = offlineOverride,
                                     onCheckedChange = { offlineOverride = it; repository.offlineModeOverride = it }
                                 )
@@ -589,7 +588,7 @@ fun SettingsScreen(
                     SettingsCategory.DISPLAY -> {
                         SectionCard("테마") {
                             Text(
-                                "앱 전체 배경/포인트 색과 차단/실행 전 대기 화면 강조색, 브라우저 확장 색까지 함께 바뀝니다.",
+                                "앱·차단 화면·브라우저 확장 색이 함께 바뀝니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -661,7 +660,7 @@ fun SettingsScreen(
                                 }
                                 Spacer(Modifier.height(Spacing.xs))
                                 Text(
-                                    "직접 입력하거나, 오른쪽 색상 상자를 눌러 팔레트에서 고를 수 있습니다. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
+                                    "색 상자를 눌러 고르면 나머지 색은 자동으로 맞춥니다.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -700,7 +699,7 @@ fun SettingsScreen(
                                 Column(Modifier.weight(1f)) {
                                     Text("미니멀 모드", style = MaterialTheme.typography.bodyLarge)
                                     Text(
-                                        "앱 전체를 흑백으로 바꾸고, 화면 전환·숫자 변화 같은 움직임을 짧은 페이드로 줄이며, 홈의 움직이는 장면 대신 글자로 된 홈을 보여줍니다. 기능과 정보는 그대로라 오래된 PC나 배터리 절약 중에 가볍게 쓰기 좋습니다. 이 PC에만 적용됩니다.",
+                                        "흑백 · 움직임 최소 · 글자 홈. 이 PC에만 적용됩니다.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -716,14 +715,13 @@ fun SettingsScreen(
                     }
 
                     SettingsCategory.RULES -> SettingsColumns(left = {
-                        dayStartCard("🎯 집중 탭에서도 같은 값을 바꿀 수 있어요.")
+                        dayStartCard("집중 설정에도 같은 값이 있습니다.")
                         Spacer(Modifier.height(Spacing.md))
 
                         SectionCard("차단 규칙 수정·삭제 방지") {
                             ToggleRow(
                                 title = "방지 사용",
-                                description = "이 시간대 안에서는 지금 차단 중인 규칙을 약하게 바꾸거나 지우거나 끄려면 " +
-                                    "확인 질문 ${PERSUASION_MESSAGES.size}개를 통과해야 합니다. 시간대 밖에서는 바로 적용됩니다.",
+                                description = "이 시간대엔 약하게 바꾸려면 질문 ${PERSUASION_MESSAGES.size}개를 거칩니다.",
                                 checked = editProtectionEnabled,
                                 onCheckedChange = { checked ->
                                     val start = editProtectionStartText.toIntOrNull() ?: repository.editProtectionStartHour
@@ -774,16 +772,15 @@ fun SettingsScreen(
                             )
                             Text(
                                 if (protectedNow) {
-                                    "지금은 방지 시간대(" + savedProtectionStart + "시~" + savedProtectionEnd + "시)입니다 — 지금 차단 중인 규칙을 약하게 바꾸거나 지우거나 끄려면 확인 질문 ${PERSUASION_MESSAGES.size}개를 통과해야 합니다."
+                                    "지금은 방지 시간대 — 차단 중인 규칙을 약하게 바꾸려면 질문 ${PERSUASION_MESSAGES.size}개."
                                 } else {
-                                    "지금은 방지 시간대가 아닙니다 — 차단 규칙도, 이 방지 설정도 확인 질문 없이 바로 수정되고 다른 기기에도 그대로 동기화됩니다."
+                                    "지금은 방지 시간대가 아닙니다 — 바로 수정됩니다."
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (protectedNow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                "끝 시각은 포함하지 않으며(예: 11~23이면 23시부터 자유), 시작과 끝이 같으면 하루 종일 " +
-                                    "적용됩니다. 방지 시간대 안에서 방지를 끄거나 시간대를 좁혀 지금이 빠지게 하는 변경은 그 자체가 확인 질문을 거칩니다.",
+                                "끝 시각은 빼고 셉니다(11~23 → 23시부터 자유). 같으면 하루 종일.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -807,7 +804,7 @@ fun SettingsScreen(
                                 }
                             )
                             Text(
-                                "브라우저 확장프로그램이 youtube.com/shorts, instagram.com/reels URL을 감지해서 차단합니다.",
+                                "브라우저 확장이 그 주소만 감지해 막습니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -815,12 +812,12 @@ fun SettingsScreen(
                     })
 
                     SettingsCategory.STUDY -> SettingsColumns(left = {
-                        dayStartCard("🗂️ 관리 탭의 같은 항목과 같은 값이에요.")
+                        dayStartCard("관리 설정에도 같은 값이 있습니다.")
                         Spacer(Modifier.height(Spacing.md))
                         SectionCard("캘린더 반복 기본값") {
                             ToggleRow(
                                 title = "새 일정을 반복으로 시작",
-                                description = "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 회차를 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
+                                description = "완료하면 다음 회차가 생기는 상태로 만듭니다.",
                                 checked = defaultMultiPassEnabled,
                                 onCheckedChange = { checked ->
                                     defaultMultiPassEnabled = checked
@@ -830,8 +827,7 @@ fun SettingsScreen(
                             )
                             Spacer(Modifier.height(Spacing.sm))
                             Text(
-                                "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 반복 횟수/간격입니다 " +
-                                    "(계산기 업무는 업무별로 각 업무 입력 카드에서 따로 설정).",
+                                "캘린더에서 직접 만든 일정의 기본 횟수·간격입니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -881,9 +877,7 @@ fun SettingsScreen(
                         // 트레이 알림을 보낸다. 설정값은 이 기기 로컬(data.json)이라 통신이 끊겨도 초기화되지 않는다.
                         SectionCard("집중 알림") {
                             Text(
-                                "캘린더·일정표에 예정된 계획과 실제 진행 상황을 비교해서, 계획보다 늦어질 때만 트레이 알림을 보냅니다. " +
-                                    "같은 종류의 알림은 하루에 한 번만 오고, 이 설정은 기기별로 저장되어 인터넷이 끊겨도 초기화되지 않습니다. " +
-                                    "(진동 설정은 안드로이드 앱에만 있습니다.)",
+                                "계획보다 늦어질 때만, 종류마다 하루 한 번 트레이로 알립니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -917,7 +911,7 @@ fun SettingsScreen(
                                 )
                                 ToggleRow(
                                     title = "일정 지연 알림",
-                                    description = "마감이 지났거나, 요일별 목표대로 해도 마감까지 다 못 끝낼 때(하루치 이상 모자랄 때만).",
+                                    description = "목표대로 해도 마감까지 못 끝낼 때.",
                                     checked = studyAlertSchedule,
                                     onCheckedChange = { checked ->
                                         studyAlertSchedule = checked
@@ -952,7 +946,7 @@ fun SettingsScreen(
                                     )
                                 }
                                 Text(
-                                    "이 시간대 밖에서는 알림을 보내지 않습니다(시작이 종료보다 늦으면 자정을 넘기는 구간으로 봅니다).",
+                                    "시작이 종료보다 늦으면 자정을 넘깁니다.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -962,7 +956,7 @@ fun SettingsScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 ) { Text("지금 한 번 확인") }
                                 Text(
-                                    "지금 조건을 검사해서 보낼 알림이 있으면 바로 보냅니다(시간대·하루 1회 제한은 무시).",
+                                    "시간대·하루 1회 제한 없이 지금 확인합니다.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -975,7 +969,7 @@ fun SettingsScreen(
                     }, right = {
                         SectionCard("집중 중 허용 프로그램") {
                             Text(
-                                "집중 페이즈가 진행 중일 때만(휴식 중엔 아님) 데스크탑이 잠기고, 여기 등록한 프로그램만 열 수 있습니다.",
+                                "집중 중엔 여기 넣은 프로그램만 열립니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -991,7 +985,7 @@ fun SettingsScreen(
 
                         SectionCard("집중 중 허용 사이트") {
                             Text(
-                                "집중 페이즈 중엔 브라우저를 열어도 여기 등록한 사이트만 접속할 수 있습니다. 이 기기에만 적용됩니다.",
+                                "집중 중엔 여기 넣은 사이트만 열립니다(이 기기만).",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1016,7 +1010,7 @@ fun SettingsScreen(
                                 }
                             )
                             Text(
-                                "하루 중 랜덤한 시각에 어제 루틴 연속 기록 상태를 트레이 알림으로 알려줍니다.",
+                                "하루 한 번, 어제의 연속 기록을 트레이로 알려 줍니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1039,9 +1033,7 @@ fun SettingsScreen(
                             )
                             Spacer(Modifier.height(Spacing.xs))
                             Text(
-                                "일주일(월~일)에 이 일수만큼은 그날 루틴을 100% 채우지 못해도 연속 기록이 끊기지 않습니다. " +
-                                    "루틴 하나하나가 아니라 하루 단위이고, 넘어간 날은 연속 일수에 더해지지 않습니다. " +
-                                    "0으로 두면 하루만 못 채워도 끊깁니다. 다른 기기에도 같은 값이 적용됩니다.",
+                                "한 주(월~일)에 이만큼은 못 채워도 이어집니다. 0이면 바로 끊깁니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1049,21 +1041,20 @@ fun SettingsScreen(
                     }, right = {
                         SectionCard("루틴 내보내기 · 가져오기") {
                             Text(
-                                "루틴 목록과 체크 기록만 파일로 저장하거나 불러옵니다. 루틴은 이미 Firebase로 기기 간 자동 " +
-                                    "동기화되지만, 위 전체 백업과 달리 루틴만 골라서 다른 계정으로 옮기거나 별도 보관할 때 씁니다.",
+                                "루틴만 골라 다른 계정으로 옮기거나 따로 보관할 때 씁니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(Spacing.sm))
                             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                Button(onClick = {
+                                OutlinedButton(onClick = {
                                     pickSaveFile("루틴 내보내기", "phonelock_routines_${java.time.LocalDate.now()}.json")?.let { file ->
                                         file.writeText(repository.exportRoutinesBackupJson())
                                     }
-                                }) { Text("📤 내보내기") }
+                                }) { Text("내보내기", maxLines = 1, softWrap = false) }
                                 OutlinedButton(onClick = {
                                     pickOpenFile("루틴 가져오기")?.let { file -> pendingRoutineImportFile = file }
-                                }) { Text("📥 가져오기") }
+                                }) { Text("가져오기", maxLines = 1, softWrap = false) }
                             }
                         }
                     })
@@ -1071,33 +1062,23 @@ fun SettingsScreen(
                     SettingsCategory.SOCIAL -> {
                         SectionCard("모임 공유 설정") {
                             Text(
-                                "모임마다 공개할 내 정보(루틴/집중/연속 기록/오늘 일정/집중 중 여부/작동 중인 차단 규칙)를 " +
-                                    "다르게 정할 수 있어, 여기가 아니라 각 모임 화면의 🔒 공유 설정에서 모임별로 관리합니다. " +
-                                    "특정 멤버에게만 내 정보를 숨기거나 특정 멤버의 정보를 안 보이게 하는 것도 그 " +
-                                    "멤버의 상세 화면에서 따로 설정할 수 있습니다.",
+                                "공유 범위와 깨우기 수신은 모임마다 다릅니다 — 각 모임 화면의 설정에서 바꾸세요.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Text(
-                            "깨우기 메시지(음성/텍스트) 수신 설정도 모임마다 다르게 정할 수 있어 여기가 아니라 각 " +
-                                "모임 화면의 ⚙ 깨우기 메시지 설정에서 관리합니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
 
                     SettingsCategory.DATA -> SettingsColumns(left = {
                         SectionCard("일일 백업 · 복원") {
                             Text(
-                                "앱 시작 시 하루 한 번 전체 데이터(차단 규칙/사용시간/캘린더/계산기 등)를 자동 백업합니다. " +
-                                    "최근 7일치를 보관하며, 복원하면 현재 데이터가 완전히 대체됩니다.",
+                                "하루 한 번 자동 백업, 7일치 보관. 복원하면 지금 데이터가 바뀝니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(Spacing.sm))
                             if (backups.isEmpty()) {
-                                Text("아직 백업이 없습니다(다음 앱 재시작 시 처음 만들어집니다).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("아직 백업이 없습니다(다음 시작 때 만들어집니다).", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             } else {
                                 backups.forEach { file ->
                                     Row(
@@ -1105,32 +1086,31 @@ fun SettingsScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(file.name.removePrefix("backup_").removeSuffix(".json"), style = MaterialTheme.typography.bodyMedium)
-                                        OutlinedButton(onClick = { pendingRestoreFile = file }) { Text("이 시점으로 복원") }
+                                        TextButton(onClick = { pendingRestoreFile = file }) { Text("이 시점으로 복원", maxLines = 1, softWrap = false) }
                                     }
                                 }
                             }
                             Spacer(Modifier.height(Spacing.sm))
-                            Button(onClick = { backups = repository.listBackups() }) { Text("목록 새로고침") }
+                            TextButton(onClick = { backups = repository.listBackups() }) { Text("목록 새로고침", maxLines = 1, softWrap = false) }
                         }
                         Spacer(Modifier.height(Spacing.md))
 
                         SectionCard("설정·차단 규칙 내보내기 · 가져오기") {
                             Text(
-                                "기기 교체나 재설치 시 현재 데이터 전체(차단 규칙/사용시간/캘린더/계산기 등)를 원하는 위치에 파일로 저장하거나, " +
-                                    "저장해둔 파일에서 그대로 불러올 수 있습니다. 위 자동 백업과 달리 파일 위치를 직접 고를 수 있어 다른 PC로 옮길 때 유용합니다.",
+                                "전체 데이터를 파일로 옮깁니다. 다른 PC로 옮길 때 씁니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(Spacing.sm))
                             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                Button(onClick = {
+                                OutlinedButton(onClick = {
                                     pickSaveFile("설정·차단 규칙 내보내기", "phonelock_export_${java.time.LocalDate.now()}.json")?.let { file ->
                                         repository.exportDataToFile(file)
                                     }
-                                }) { Text("📤 내보내기") }
+                                }) { Text("내보내기", maxLines = 1, softWrap = false) }
                                 OutlinedButton(onClick = {
                                     pickOpenFile("설정·차단 규칙 가져오기")?.let { file -> pendingImportFile = file }
-                                }) { Text("📥 가져오기") }
+                                }) { Text("가져오기", maxLines = 1, softWrap = false) }
                             }
                         }
                         // 85차(사용자 요청): "자동 백업 (Firebase)" 설정 UI를 제거했다 — 로그인/Storage 활성화
@@ -1141,13 +1121,12 @@ fun SettingsScreen(
                         SectionCard("오래된 사용 기록 정리") {
                             var lastResult by remember { mutableStateOf<Int?>(null) }
                             Text(
-                                "12개월 이상 지난 사용시간/재확인 통과 횟수/집중 기록을 영구 삭제합니다(되돌리기 없음). " +
-                                    "캘린더 일정과 연속 기록 계산에는 영향을 주지 않습니다.",
+                                "12개월 지난 사용·집중 기록을 지웁니다(되돌릴 수 없음).",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(Spacing.sm))
-                            Button(onClick = { lastResult = repository.pruneOldStats(12) }) { Text("🧹 12개월 이상 지난 기록 정리") }
+                            OutlinedButton(onClick = { lastResult = repository.pruneOldStats(12) }) { Text("지난 기록 정리", maxLines = 1, softWrap = false) }
                             lastResult?.let {
                                 Spacer(Modifier.height(Spacing.xs))
                                 Text("$it 건 삭제됨", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1174,7 +1153,7 @@ fun SettingsScreen(
                             var installerUrl by remember { mutableStateOf(repository.pendingUpdateInstallerUrl()) }
                             var lastOutcome by remember { mutableStateOf<Repository.UpdateCheckOutcome?>(null) }
                             Text(
-                                "현재 빌드: ${repository.currentBuildTimestamp()} · 하루 시작 시각이 지나면 하루 1회 자동으로도 확인합니다.",
+                                "현재 빌드 ${repository.currentBuildTimestamp()} · 하루 한 번 자동 확인",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1214,8 +1193,7 @@ fun SettingsScreen(
                     }, right = {
                         SectionCard("자동 재시작(워치독)") {
                             Text(
-                                "감시 프로세스와 작업 스케줄러가 함께 지켜보다가, 작업 관리자로 강제종료해도 자동으로 다시 실행됩니다. " +
-                                    "트레이 메뉴의 \"종료\"로 10분 대기를 마치고 정식으로 나가야만 꺼진 상태가 유지됩니다.",
+                                "강제로 꺼도 다시 켜집니다. 트레이 \"종료\"(10분 대기)로만 꺼집니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

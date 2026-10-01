@@ -456,7 +456,7 @@ private fun PhoneLockApp(
                 )
             }
             composable("study_lock_apps") {
-                StudyLockAppsScreen()
+                StudyLockAppsScreen(onBack = { navController.popBackStack() })
             }
         }
     }

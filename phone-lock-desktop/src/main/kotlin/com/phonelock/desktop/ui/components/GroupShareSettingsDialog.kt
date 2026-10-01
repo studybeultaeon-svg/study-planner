@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -41,13 +40,13 @@ fun GroupShareSettingsDialog(
     var shareStudyingNow by remember { mutableStateOf(initial.shareStudyingNow) }
     var sharePlant by remember { mutableStateOf(initial.sharePlant) }
 
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("🔒 공유 설정") },
+        title = { Text("공유 설정") },
         text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
                 Text(
-                    "이 모임에서 다른 멤버에게 보여줄 내 정보를 항목별로 켜고 끌 수 있습니다.",
+                    "이 모임에 보여줄 내 정보를 고릅니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

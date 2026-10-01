@@ -229,9 +229,10 @@ fun paletteFor(themeMode: String, customBackgroundHex: String, customAccentHex: 
     if (themeMode == ThemeMode.CUSTOM) buildCustomPalette(customBackgroundHex, customAccentHex) else paletteFor(themeMode)
 
 /** 설정 화면 테마 선택 UI가 순서대로 나열할 때 쓰는 표시 이름 매핑. */
+// 146차(사용자 요청): 기본 테마가 다크 · 블루가 되면서 목록 맨 앞으로. 버튼 글자의 이모지는 뺐다(Ledger 규칙).
 val THEME_DISPLAY_NAMES: List<Pair<String, String>> = listOf(
-    ThemeMode.LIGHT_GREEN to "라이트 · 그린",
     ThemeMode.DARK_BLUE to "다크 · 블루",
+    ThemeMode.LIGHT_GREEN to "라이트 · 그린",
     ThemeMode.LIGHT_ORANGE to "화이트 · 오렌지",
-    ThemeMode.CUSTOM to "🎨 커스텀"
+    ThemeMode.CUSTOM to "커스텀"
 )

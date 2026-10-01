@@ -1,5 +1,6 @@
 package com.phonelock.app.ui
 
+import com.phonelock.app.ui.components.LedgerAlertDialog
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
@@ -31,7 +32,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -364,10 +364,10 @@ fun SettingsScreen(
     }
 
     if (showRestoreConfirmDialog) {
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showRestoreConfirmDialog = false },
             title = { Text("복원 확인") },
-            text = { Text("복원하면 현재 차단 규칙이 백업 파일 내용으로 대체됩니다. 계속할까요?") },
+            text = { Text("지금 차단 규칙이 백업 내용으로 바뀝니다(되돌릴 수 없음).") },
             confirmButton = {
                 TextButton(onClick = {
                     val uri = pendingRestoreUri
@@ -391,10 +391,10 @@ fun SettingsScreen(
     }
 
     if (showRoutineRestoreConfirmDialog) {
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showRoutineRestoreConfirmDialog = false },
             title = { Text("루틴 복원 확인") },
-            text = { Text("복원하면 현재 루틴/체크 기록이 파일 내용으로 대체됩니다. 계속할까요?") },
+            text = { Text("지금 루틴·체크 기록이 파일 내용으로 바뀝니다(되돌릴 수 없음).") },
             confirmButton = {
                 TextButton(onClick = {
                     val uri = pendingRoutineRestoreUri
@@ -420,7 +420,7 @@ fun SettingsScreen(
     pendingProtection?.let { staged ->
         val (pEnabled, pStart, pEnd) = staged
         val isLast = pendingProtectionMessageIndex == PERSUASION_MESSAGES.lastIndex
-        AlertDialog(
+        LedgerAlertDialog(
             // 밖을 눌러 닫으면 절차를 건너뛰고 창만 사라지는 셈이라 취소 버튼으로만 빠져나가게 한다.
             onDismissRequest = {},
             title = { Text("수정·삭제 방지를 약하게 만드는 변경입니다") },
@@ -449,13 +449,12 @@ fun SettingsScreen(
                     )
                 }
             },
-            confirmButton = {}
         )
     }
 
     if (pendingLauncherGate) {
         val isLast = pendingMinimalMessageIndex == PERSUASION_MESSAGES.lastIndex
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = {},
             title = { Text("기본 런처를 다시 고르려 합니다") },
             text = {
@@ -482,7 +481,6 @@ fun SettingsScreen(
                     )
                 }
             },
-            confirmButton = {}
         )
     }
 
@@ -514,7 +512,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             )
             Text(
-                "이 시각에 앱의 \"오늘\"이 바뀝니다 — 차단 규칙의 오늘 사용 시간·잠깐 풀기 횟수, 캘린더·일정표·집중 기록의 오늘이 이 시각부터 새로 시작돼요. 루틴은 이 설정과 상관없이 자정 기준이에요.\n$alsoIn",
+                "이 시각에 \"오늘\"이 바뀝니다(루틴은 자정). $alsoIn",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -624,9 +622,7 @@ fun SettingsScreen(
                                 Column(Modifier.weight(1f)) {
                                     Text("오프라인 모드로 강제 전환", style = MaterialTheme.typography.bodyLarge)
                                     Text(
-                                        "켜면 인터넷이 연결돼 있어도 동기화/로그인/모임 등 네트워크 기능을 쓰지 않고 이 " +
-                                            "기기에서만 로컬로 사용합니다. 꺼둬도 실제로 인터넷이 끊기면 자동으로 오프라인 " +
-                                            "처리됩니다.",
+                                        "켜면 동기화·모임 없이 이 기기에서만 씁니다.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -650,7 +646,7 @@ fun SettingsScreen(
                 SettingsCategory.DISPLAY -> {
                     SectionCard("테마") {
                         Text(
-                            "앱 전체 배경/포인트 색과 차단/실행 전 대기 화면 강조색, 홈 화면 위젯 색까지 함께 바뀝니다.",
+                            "앱·차단 화면·위젯 색이 함께 바뀝니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -721,7 +717,7 @@ fun SettingsScreen(
                             }
                             Spacer(Modifier.height(Spacing.xs))
                             Text(
-                                "직접 입력하거나, 오른쪽 색상 상자를 눌러 팔레트에서 고를 수 있습니다. 배경 밝기로 라이트/다크를 자동 판정하고, 나머지 색은 두 색을 섞어 자동으로 맞춥니다.",
+                                "색 상자를 눌러 고르면 나머지 색은 자동으로 맞춥니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -756,9 +752,7 @@ fun SettingsScreen(
                     SectionCard("미니멀 모드 · 성능 우선") {
                         ToggleRow(
                             title = "미니멀 모드",
-                            description = "앱 전체를 흑백으로 바꾸고, 화면 전환·숫자 변화 같은 움직임을 짧은 페이드로 줄이며, 홈의 움직이는 장면 대신 " +
-                                "글자로 된 홈을 보여줍니다. 기능과 정보는 그대로라 오래된 폰·배터리 절약 중에 가볍게 쓰기 좋습니다. " +
-                                "위에서 고른 테마는 그대로 남아 있어 끄면 바로 돌아옵니다.",
+                            description = "흑백 · 움직임 최소 · 글자 홈. 끄면 원래 테마로.",
                             checked = minimalMode,
                             onCheckedChange = { checked -> applyMinimalMode(checked) }
                         )
@@ -770,11 +764,7 @@ fun SettingsScreen(
                         var hiddenPackages by remember { mutableStateOf(prefs.launcherHiddenPackages) }
 
                         Text(
-                            "기본 런처로 지정하면 홈 버튼을 눌렀을 때 아이콘 없는 텍스트 홈 화면이 뜹니다. " +
-                                "그 홈에는 레벨·먼저 할 루틴·집중 시간·먼저 할 일정 요약과 아래에서 고른 디데이, " +
-                                "그리고 앱 탭 5개(홈/루틴/집중/관리/모임) 바로가기가 함께 올라옵니다. " +
-                                "즐겨찾기(최대 ${com.phonelock.app.ui.launcher.LAUNCHER_FAVORITE_MAX}개)와 앱 이름 바꾸기/숨기기는 " +
-                                "런처의 \"모든 앱\"에서 앱을 길게 눌러 설정합니다.",
+                            "홈 버튼에 글자로 된 홈이 뜹니다. 앱을 길게 눌러 즐겨찾기·숨기기.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -801,7 +791,7 @@ fun SettingsScreen(
                         if (isDefaultLauncher) {
                             Spacer(Modifier.height(Spacing.xs))
                             Text(
-                                "참고: 시스템 설정 > 앱 > 기본 앱에서 홈 앱을 직접 바꾸는 건 앱이 막을 수 없습니다.",
+                                "시스템 설정에서 바꾸는 건 막을 수 없습니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -841,7 +831,8 @@ fun SettingsScreen(
                                             hiddenPackages = next
                                             prefs.launcherHiddenPackages = next
                                         },
-                                        label = { Text("$label ✕") }
+                                        label = { Text(label, maxLines = 1, softWrap = false) },
+                                        trailingIcon = { Icon(Icons.Filled.Close, contentDescription = "다시 보이기", modifier = Modifier.size(16.dp)) }
                                     )
                                 }
                             }
@@ -885,8 +876,7 @@ fun SettingsScreen(
                         Text("홈 화면 디데이 (" + ddays.size + "개)", style = MaterialTheme.typography.titleSmall)
                         Spacer(Modifier.height(Spacing.xs))
                         Text(
-                            "후보를 여러 개 만들어두고 그중 하나만 런처 홈 화면에 뜹니다. " +
-                                "칩을 누르면 홈에 띄울 디데이가 되고, 다시 누르면 홈에서 내려갑니다. 뒤의 ✕는 후보를 지웁니다.",
+                            "고른 하나만 홈에 뜹니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -912,7 +902,7 @@ fun SettingsScreen(
                                         },
                                         label = { Text(dday.name + " · " + dday.date) },
                                         trailingIcon = {
-                                            Text("✕", modifier = Modifier.clickable {
+                                            Icon(Icons.Filled.Close, contentDescription = "후보 지우기", modifier = Modifier.size(16.dp).clickable {
                                                 saveDdays(ddays.filterNot { it.id == dday.id })
                                                 if (pinnedDdayId == dday.id) {
                                                     pinnedDdayId = null
@@ -944,7 +934,7 @@ fun SettingsScreen(
                         }
 
                         if (showDdayAdd) {
-                            AlertDialog(
+                            LedgerAlertDialog(
                                 onDismissRequest = { showDdayAdd = false },
                                 title = { Text("디데이 추가") },
                                 text = {
@@ -977,13 +967,13 @@ fun SettingsScreen(
                         }
 
                         if (showDdayCalendarPick) {
-                            AlertDialog(
+                            LedgerAlertDialog(
                                 onDismissRequest = { showDdayCalendarPick = false },
                                 title = { Text("캘린더에서 가져오기") },
                                 text = {
                                     if (ddayCalendarPicks.isEmpty()) {
                                         Text(
-                                            "오늘 이후로 등록된 캘린더 일정이 없습니다. 아래 \"직접 추가\"로 날짜를 고르세요.",
+                                            "오늘 이후 일정이 없습니다. \"직접 추가\"로 고르세요.",
                                             style = MaterialTheme.typography.bodyMedium
                                         )
                                     } else {
@@ -1017,9 +1007,7 @@ fun SettingsScreen(
                             com.phonelock.app.service.BackgroundMediaGuard.hasSessionAccess(context)
 
                         Text(
-                            "고른 앱의 알림은 뜨는 즉시 사라지고, 아래 시각에 \"읽지 않은 알림 N건\" 한 줄로 한 번에 옵니다. " +
-                                "전화·문자·알람과 진행 중인 알림(음악 재생 등)은 골라도 거르지 않습니다. " +
-                                "지운 알림은 되돌릴 수 없어 제목만 요약에 담기니, 중요한 앱은 고르지 마세요.",
+                            "고른 앱 알림은 바로 지우고 정한 시각에 묶어 알립니다(전화·문자·알람 제외). 지운 알림은 되돌릴 수 없습니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1044,7 +1032,7 @@ fun SettingsScreen(
                                 prefs.notificationDigestTimesCsv = text
                                 RoutineAlarmScheduler.scheduleNotificationDigest(context)
                             },
-                            label = { Text("요약 시각 (쉼표로 구분, 예: 12:30, 18:30)") },
+                            label = { Text("요약 시각 (예: 12:30, 18:30)") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -1071,7 +1059,7 @@ fun SettingsScreen(
                 }
 
                 SettingsCategory.RULES -> {
-                    dayStartCard("🎯 집중 탭에서도 같은 값을 바꿀 수 있어요.")
+                    dayStartCard("집중 설정에도 같은 값이 있습니다.")
                     Spacer(Modifier.height(Spacing.md))
 
                     SectionCard("차단 규칙 수정·삭제 방지") {
@@ -1127,16 +1115,15 @@ fun SettingsScreen(
                         )
                         Text(
                             if (protectedNow) {
-                                "지금은 방지 시간대(${savedProtectionStart}시~${savedProtectionEnd}시)입니다 — 지금 차단 중인 규칙을 약하게 바꾸거나 지우거나 끄려면 확인 질문 ${PERSUASION_MESSAGES.size}개를 통과해야 합니다."
+                                "지금은 방지 시간대 — 차단 중인 규칙을 약하게 바꾸려면 질문 ${PERSUASION_MESSAGES.size}개."
                             } else {
-                                "지금은 방지 시간대가 아닙니다 — 차단 규칙도, 이 방지 설정도 확인 질문 없이 바로 수정되고 다른 기기에도 그대로 동기화됩니다."
+                                "지금은 방지 시간대가 아닙니다 — 바로 수정됩니다."
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = if (protectedNow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            "끝 시각은 포함하지 않으며(예: 11~23이면 23시부터 자유), 시작과 끝이 같으면 하루 종일 적용됩니다. " +
-                                "방지 시간대 안에서 방지를 끄거나 시간대를 좁혀 지금이 빠지게 하는 변경은 그 자체가 확인 질문을 거칩니다.",
+                            "끝 시각은 빼고 셉니다(11~23 → 23시부터 자유). 같으면 하루 종일.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1161,7 +1148,7 @@ fun SettingsScreen(
                             }
                         )
                         Text(
-                            "릴스/쇼츠 화면만 감지해서 차단합니다 (베스트 에포트 기능).",
+                            "그 화면만 감지해 막습니다(완벽하진 않음).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1171,9 +1158,7 @@ fun SettingsScreen(
                     if (autoBackups.isNotEmpty()) {
                         SectionCard("차단 규칙 데이터 복구") {
                             Text(
-                                "앱 업데이트로 로컬 데이터가 초기화됐을 때 자동으로 만들어진 백업이 있습니다. 차단 규칙(차단 " +
-                                    "대상 앱/사이트 목록)은 동기화되지 않는 데이터라 지워졌다면 이 백업에서만 복구할 수 " +
-                                    "있습니다. 차단 규칙이 이미 정상적으로 보이면 누르지 마세요(같은 차단 규칙이 중복으로 추가됩니다).",
+                                "업데이트로 지워진 차단 규칙을 되살립니다. 규칙이 보이면 누르지 마세요(중복).",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1201,7 +1186,7 @@ fun SettingsScreen(
                 }
 
                 SettingsCategory.STUDY -> {
-                    dayStartCard("🗂️ 관리 탭의 같은 항목과 같은 값이에요.")
+                    dayStartCard("관리 설정에도 같은 값이 있습니다.")
                     Spacer(Modifier.height(Spacing.md))
                     SectionCard("캘린더 반복 기본값") {
                         ToggleRow(
@@ -1214,14 +1199,13 @@ fun SettingsScreen(
                             }
                         )
                         Text(
-                            "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 회차를 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
+                            "완료하면 다음 회차가 생기는 상태로 만듭니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(Spacing.sm))
                         Text(
-                            "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 반복 횟수/간격입니다 " +
-                                "(계산기 업무는 업무별로 각 업무 입력 카드에서 따로 설정).",
+                            "캘린더에서 직접 만든 일정의 기본 횟수·간격입니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1269,9 +1253,7 @@ fun SettingsScreen(
                     // 알린다. 설정값은 전부 이 기기 로컬(SharedPreferences)이라 통신이 끊겨도 초기화되지 않는다.
                     SectionCard("집중 알림") {
                         Text(
-                            "캘린더·일정표에 예정된 계획과 실제 진행 상황을 비교해서, 계획보다 늦어질 때만 알림을 보냅니다. " +
-                                "일정한 간격으로 무조건 보내지 않으며 같은 종류의 알림은 하루에 한 번만 옵니다. " +
-                                "이 설정은 기기별로 저장되고 동기화하지 않으므로 인터넷이 끊겨도 초기화되지 않습니다.",
+                            "계획보다 늦어질 때만, 종류마다 하루 한 번 알립니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1301,7 +1283,7 @@ fun SettingsScreen(
                             )
                             ToggleRow(
                                 title = "집중 미실행 알림",
-                                description = "오늘 예정된 일정이 있는데 아직 아무것도 하지 않았을 때.",
+                                description = "오늘 일정이 있는데 아직 시작하지 않았을 때.",
                                 checked = studyAlertNotStarted,
                                 onCheckedChange = { checked ->
                                     studyAlertNotStarted = checked
@@ -1319,7 +1301,7 @@ fun SettingsScreen(
                             )
                             ToggleRow(
                                 title = "일정 지연 알림",
-                                description = "마감이 지났거나, 요일별 목표대로 해도 마감까지 다 못 끝낼 때(하루치 이상 모자랄 때만).",
+                                description = "목표대로 해도 마감까지 못 끝낼 때.",
                                 checked = studyAlertSchedule,
                                 onCheckedChange = { checked ->
                                     studyAlertSchedule = checked
@@ -1356,7 +1338,7 @@ fun SettingsScreen(
                                 )
                             }
                             Text(
-                                "이 시간대 밖에서는 알림을 보내지 않습니다(시작이 종료보다 늦으면 자정을 넘기는 구간으로 봅니다).",
+                                "시작이 종료보다 늦으면 자정을 넘깁니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1370,7 +1352,7 @@ fun SettingsScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("지금 한 번 확인") }
                             Text(
-                                "지금 조건을 검사해서 보낼 알림이 있으면 바로 보냅니다(시간대·하루 1회 제한은 무시).",
+                                "시간대·하루 1회 제한 없이 지금 확인합니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1389,8 +1371,7 @@ fun SettingsScreen(
 
                     SectionCard("집중 잠금 허용 사이트") {
                         Text(
-                            "허용된 앱(브라우저)이 열려 있어도 여기 등록 안 된 사이트는 따로 차단됩니다. 이 기기에만 " +
-                                "적용되며, 데스크탑에는 데스크탑 앱 설정에서 따로 등록해야 합니다.",
+                            "허용한 브라우저에서도 여기 없는 사이트는 막습니다(이 기기만).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1420,7 +1401,7 @@ fun SettingsScreen(
                             }
                         )
                         Text(
-                            "하루 중 랜덤한 시각에 어제 루틴 연속 기록 상태를 알려줍니다.",
+                            "하루 한 번, 어제의 연속 기록을 알려 줍니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1443,9 +1424,7 @@ fun SettingsScreen(
                         )
                         Spacer(Modifier.height(Spacing.xs))
                         Text(
-                            "일주일(월~일)에 이 일수만큼은 그날 루틴을 100% 채우지 못해도 연속 기록이 끊기지 않습니다. " +
-                                "루틴 하나하나가 아니라 하루 단위이고, 넘어간 날은 연속 일수에 더해지지 않습니다. " +
-                                "0으로 두면 하루만 못 채워도 끊깁니다. 다른 기기에도 같은 값이 적용됩니다.",
+                            "한 주(월~일)에 이만큼은 못 채워도 이어집니다. 0이면 바로 끊깁니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1454,24 +1433,20 @@ fun SettingsScreen(
 
                     SectionCard("루틴 내보내기 · 가져오기") {
                         Text(
-                            "루틴 목록과 체크 기록을 파일로 저장하거나 불러옵니다. 루틴은 이미 Firebase로 기기 간 자동 " +
-                                "동기화되지만, 기기 초기화 전 별도 백업을 남기거나 다른 계정으로 옮길 때 씁니다.",
+                            "기기 초기화 전 백업이나 다른 계정으로 옮길 때 씁니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(Spacing.sm))
-                        Button(
-                            onClick = { routineBackupLauncher.launch("phone_lock_routines.json") },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("루틴 내보내기")
-                        }
-                        Spacer(Modifier.height(Spacing.sm))
-                        Button(
-                            onClick = { routineRestoreLauncher.launch(arrayOf("application/json")) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("루틴 파일에서 가져오기")
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            OutlinedButton(
+                                onClick = { routineBackupLauncher.launch("phone_lock_routines.json") },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("내보내기", maxLines = 1, softWrap = false) }
+                            OutlinedButton(
+                                onClick = { routineRestoreLauncher.launch(arrayOf("application/json")) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("가져오기", maxLines = 1, softWrap = false) }
                         }
                     }
                 }
@@ -1479,39 +1454,28 @@ fun SettingsScreen(
                 SettingsCategory.SOCIAL -> {
                     SectionCard("모임 공유 설정") {
                         Text(
-                            "모임마다 공개할 내 정보(루틴/집중/연속 기록/오늘 일정/집중 중 여부/작동 중인 차단 규칙)를 " +
-                                "다르게 정할 수 있어, 여기가 아니라 각 모임 화면의 ⚙ 공유 설정에서 모임별로 관리합니다. " +
-                                "특정 멤버에게만 내 정보를 숨기거나 특정 멤버의 정보를 안 보이게 하는 것도 그 " +
-                                "멤버의 상세 화면에서 따로 설정할 수 있습니다.",
+                            "공유 범위와 깨우기 수신은 모임마다 다릅니다 — 각 모임 화면의 설정에서 바꾸세요.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Text(
-                        "깨우기 메시지(음성/텍스트) 수신 설정도 모임마다 다르게 정할 수 있어 여기가 아니라 각 모임 " +
-                            "화면의 ⚙ 깨우기 메시지 설정에서 관리합니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
 
                 SettingsCategory.DATA -> {
                     SectionCard("백업 · 복원") {
-                        Button(
-                            onClick = { backupLauncher.launch("phone_lock_backup.json") },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("클라우드로 백업")
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            OutlinedButton(
+                                onClick = { backupLauncher.launch("phone_lock_backup.json") },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("백업", maxLines = 1, softWrap = false) }
+                            OutlinedButton(
+                                onClick = { restoreLauncher.launch(arrayOf("application/json")) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("복원", maxLines = 1, softWrap = false) }
                         }
-                        Spacer(Modifier.height(Spacing.sm))
-                        Button(
-                            onClick = { restoreLauncher.launch(arrayOf("application/json")) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("백업 파일에서 복원")
-                        }
+                        Spacer(Modifier.height(Spacing.xs))
                         Text(
-                            "저장 위치 선택 창에서 구글 드라이브 등 클라우드 폴더를 직접 고를 수 있습니다.",
+                            "저장 위치로 구글 드라이브도 고를 수 있습니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1522,16 +1486,15 @@ fun SettingsScreen(
                     SectionCard("오래된 사용 기록 정리") {
                         var lastResult by remember { mutableStateOf<Int?>(null) }
                         Text(
-                            "12개월 이상 지난 사용시간/재확인 통과 횟수/집중 기록을 영구 삭제합니다(되돌리기 없음). " +
-                                "캘린더 일정과 연속 기록 계산에는 영향을 주지 않습니다.",
+                            "12개월 지난 사용·집중 기록을 지웁니다(되돌릴 수 없음).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(Spacing.sm))
-                        Button(
+                        OutlinedButton(
                             onClick = { scope.launch { lastResult = repository.pruneOldStats(12) } },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("🧹 12개월 이상 지난 기록 정리") }
+                        ) { Text("지난 기록 정리", maxLines = 1, softWrap = false) }
                         lastResult?.let {
                             Spacer(Modifier.height(Spacing.xs))
                             Text("$it 건 삭제됨", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1585,7 +1548,7 @@ fun SettingsScreen(
                             color = if (allGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                         Text(
-                            "알림 / 접근성 서비스 / 백그라운드 실행 보호 / 정확한 알람 / 알림 접근(잠긴 앱 백그라운드 재생 차단) / 삭제 방지를 한 화면에서 확인하고 설정할 수 있습니다.",
+                            "알림·접근성·배터리·알람·알림 접근·삭제 방지를 한 화면에서 봅니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1601,7 +1564,7 @@ fun SettingsScreen(
                         if (crashLogFile.exists()) {
                             SectionCard("마지막 강제종료 로그") {
                                 Text(
-                                    "앱이 예기치 않게 꺼진 기록이 있습니다. 공유하면 원인을 정확히 찾는 데 도움이 됩니다.",
+                                    "예기치 않게 꺼진 기록이 있습니다. 공유하면 원인을 찾는 데 도움이 됩니다.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1626,7 +1589,7 @@ fun SettingsScreen(
                         var apkUrl by remember { mutableStateOf(repository.pendingUpdateApkUrl()) }
                         var lastOutcome by remember { mutableStateOf<PhoneLockRepository.UpdateCheckOutcome?>(null) }
                         Text(
-                            "현재 버전: ${repository.currentVersionCode()} · 하루 시작 시각이 지나면 하루 1회 자동으로도 확인합니다.",
+                            "현재 버전 ${repository.currentVersionCode()} · 하루 한 번 자동 확인",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1899,45 +1862,34 @@ private fun AllowedAppsCollapsibleSection(onOpenFullScreen: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val allowedCount = prefs.studyLockAllowedPackages.size
 
-    androidx.compose.material3.Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        tonalElevation = 0.dp
-    ) {
-        Column(Modifier.padding(Spacing.md)) {
-            Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                androidx.compose.material3.Icon(
-                    if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = Spacing.xs)
-                )
-                Text(
-                    "🔒 집중 잠금 허용 앱" + if (allowedCount > 0) " ($allowedCount)" else "",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            if (expanded) {
-                Spacer(Modifier.height(Spacing.sm))
-                Text(
-                    "집중 타이머가 \"집중\" 페이즈로 진행 중일 때(휴식 중엔 아님) 여기서 고른 앱 외에는 열자마자 " +
-                        "감지해서 잠금 화면으로 돌려보냅니다. 기기 소유자 권한이 없어 진짜 실행 차단은 아니고, " +
-                        "감지 후 재차단하는 베스트 에포트 방식입니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                AllowedAppsPickerBody(prefs = prefs, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(Spacing.sm))
-                Button(onClick = onOpenFullScreen, modifier = Modifier.fillMaxWidth()) {
-                    Text("전체 화면에서 고르기")
-                }
+    // 146차: 테두리 판 + 이모지 제목 → 다른 묶음과 같은 가는 선 머리(누르면 펼침).
+    Column(Modifier.fillMaxWidth()) {
+        com.phonelock.app.ui.components.Hairline()
+        Row(
+            Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(top = Spacing.md, bottom = Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            com.phonelock.app.ui.components.Overline(
+                "집중 잠금 허용 앱" + if (allowedCount > 0) " · $allowedCount" else "",
+                Modifier.weight(1f)
+            )
+            androidx.compose.material3.Icon(
+                if (expanded) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight,
+                contentDescription = if (expanded) "접기" else "펼치기",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (expanded) {
+            Text(
+                "집중 중엔 여기 고른 앱만 열립니다(완벽한 차단은 아님).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(Spacing.sm))
+            AllowedAppsPickerBody(prefs = prefs, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(Spacing.sm))
+            OutlinedButton(onClick = onOpenFullScreen, modifier = Modifier.fillMaxWidth()) {
+                Text("전체 화면에서 고르기", maxLines = 1, softWrap = false)
             }
         }
     }

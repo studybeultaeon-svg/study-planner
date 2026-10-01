@@ -1,5 +1,6 @@
 package com.phonelock.app.ui
 
+import com.phonelock.app.ui.components.LedgerAlertDialog
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -7,6 +8,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,7 +31,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -281,7 +282,7 @@ fun StudyTimerScreen(repository: PhoneLockRepository) {
     }
 
     if (showStopNoteDialog) {
-        AlertDialog(
+        LedgerAlertDialog(
             onDismissRequest = { showStopNoteDialog = false },
             title = { Text("집중 종료") },
             text = {
@@ -938,7 +939,7 @@ internal fun LockListEditor(items: List<String>, placeholder: String, onAdd: (St
                     ) {
                         Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         TextButton(onClick = { onRemove(idx) }, contentPadding = PaddingValues(4.dp)) {
-                            Text("✕", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            androidx.compose.material3.Icon(Icons.Filled.Close, contentDescription = "빼기", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -961,7 +962,7 @@ internal fun StudyTaskChangeDialog(
     onConfirm: (String) -> Unit
 ) {
     var text by remember { mutableStateOf(currentTaskName) }
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("집중할 일정 변경") },
         text = {
@@ -1025,7 +1026,7 @@ internal fun StudyTaskChangeDialog(
 }
 
 private fun taskDropdownLabel(task: CalendarTask): String {
-    val done = if (task.status == "O") " ✅" else ""
+    val done = if (task.status == "O") " · 완료" else ""
     return "${task.name}$done · ${task.passIndex + 1}회차"
 }
 

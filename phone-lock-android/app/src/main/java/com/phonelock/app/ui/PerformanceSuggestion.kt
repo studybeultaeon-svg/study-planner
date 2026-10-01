@@ -1,5 +1,6 @@
 package com.phonelock.app.ui
 
+import com.phonelock.app.ui.components.LedgerAlertDialog
 import android.app.ActivityManager
 import android.content.Context
 import android.os.PowerManager
@@ -7,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,7 +75,7 @@ fun PerformanceModeSuggestion(onEnable: () -> Unit) {
         )
     }
     val current = reason ?: return
-    AlertDialog(
+    LedgerAlertDialog(
         onDismissRequest = {
             prefs.performanceSuggestSnoozedUntil = System.currentTimeMillis() + PERFORMANCE_SUGGEST_SNOOZE_MS
             reason = null
@@ -92,8 +92,7 @@ fun PerformanceModeSuggestion(onEnable: () -> Unit) {
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "미니멀(성능) 모드는 기능과 정보는 그대로 두고, 흑백 화면과 짧은 움직임으로 배터리와 처리량을 아낍니다. " +
-                        "설정 > 화면에서 언제든 다시 바꿀 수 있어요.",
+                    "흑백·짧은 움직임으로 배터리를 아껴요. 기능은 그대로고, 설정 > 화면에서 되돌릴 수 있어요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

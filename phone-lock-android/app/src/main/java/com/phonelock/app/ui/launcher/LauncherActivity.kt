@@ -89,15 +89,15 @@ private data class LauncherThemeSettings(
     val fontScale: Float
 )
 
-/** 설정을 못 읽어도 홈은 떠야 하므로 기본값(라이트 그린)으로 물러난다 — 130차부터 쓰던 기본값 그대로. */
+/** 설정을 못 읽어도 홈은 떠야 하므로 앱의 기본 테마(146차부터 다크 블루)로 물러난다. */
 private fun readThemeSettings(preferences: AppPreferences?): LauncherThemeSettings = runCatching {
     LauncherThemeSettings(
-        mode = preferences?.effectiveThemeMode ?: ThemeMode.LIGHT_GREEN,
+        mode = preferences?.effectiveThemeMode ?: ThemeMode.DARK_BLUE,
         background = preferences?.customThemeBackground ?: "#FAFBF6",
         accent = preferences?.customThemeAccent ?: "#8BC34A",
         fontScale = preferences?.fontScale ?: 1.0f
     )
-}.getOrDefault(LauncherThemeSettings(ThemeMode.LIGHT_GREEN, "#FAFBF6", "#8BC34A", 1.0f))
+}.getOrDefault(LauncherThemeSettings(ThemeMode.DARK_BLUE, "#FAFBF6", "#8BC34A", 1.0f))
 
 /**
  * "기본 런처로 지정" 화면을 여는 인텐트. API 29+는 시스템이 주는 역할(ROLE_HOME) 선택 다이얼로그를,

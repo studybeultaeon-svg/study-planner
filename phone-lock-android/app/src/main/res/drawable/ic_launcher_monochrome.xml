@@ -1,0 +1,20 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 146차: 안드로이드 13+ 테마 아이콘용 한 색 레이어 — 앱 아이콘과 같은 별·궤도 고리를 모양만으로. -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:pathData="M24.77,67.02 A32,10.5 -24 0,1 83.23,40.98" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,29 Q58,50 79,54 Q58,58 54,79 Q50,58 29,54 Q50,50 54,29 Z" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:pathData="M83.23,40.98 A32,10.5 -24 0,1 24.77,67.02" />
+</vector>
