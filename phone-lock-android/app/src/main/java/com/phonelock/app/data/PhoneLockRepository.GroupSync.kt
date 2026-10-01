@@ -16,6 +16,11 @@ import org.json.JSONObject
  * - syncEnabled 자체 — 이 그룹을 동기화에 참여시킬지는 기기마다 따로 정하는 로컬 스위치라 동기화 대상이
  *   아니다(94차 신규).
  *
+ * **allowlistMode(전체 잠금 방식)는 143차부터 동기화 대상이다**(사용자 요청, 142차엔 제외했었다). 목록은 여전히 기기마다
+ * 따로라서, 이 값만 건너온 기기는 자기 목록을 그대로 새 뜻으로 쓴다 — 전체 잠금으로 넘어왔는데 그 기기의 허용 목록이
+ * 비어 있으면 항상 열리는 앱 외엔 전부 잠긴다(받는 쪽에서 허용 앱을 정해 줘야 한다). syncEnabled를 켠 규칙만 오가므로,
+ * 동기화를 켜지 않은 규칙은 다른 기기가 방식을 바꿔도 영향이 없다.
+ *
  * **94차 전면 개편**: 88차의 "그룹 화면에 들어가면 원격에 있는 모든 이름을 자동으로 로컬에 병합"하는
  * 방식이 사용자 의도와 안 맞아(원치 않는 규칙까지 저절로 생김) 그룹별 opt-in(syncEnabled) 방식으로
  * 바꿨다. syncEnabled=false인 그룹은 원격에 올라가지도, 원격 값으로 갱신되지도 않는다 — 완전히 로컬
@@ -58,6 +63,7 @@ private fun AppGroup.toGroupSettingsJson(): JSONObject = JSONObject().apply {
     put("forceEnabledUntil", forceEnabledUntil ?: JSONObject.NULL)
     put("blockAttemptDate", blockAttemptDate)
     put("blockAttemptCount", blockAttemptCount)
+    put("allowlistMode", allowlistMode)
 }
 
 /** 원격 JSON 한 그룹분을 [AppGroup]에 적용한다 — GroupMember/GroupSite·groupEnabled·groupOffPending류·
@@ -91,7 +97,9 @@ fun AppGroup.applyGroupSettingsJson(json: JSONObject): AppGroup = copy(
     forceEnabledFrom = if (json.isNull("forceEnabledFrom")) null else json.optString("forceEnabledFrom", null),
     forceEnabledUntil = if (json.isNull("forceEnabledUntil")) null else json.optString("forceEnabledUntil", null),
     blockAttemptDate = json.optString("blockAttemptDate", blockAttemptDate),
-    blockAttemptCount = json.optInt("blockAttemptCount", blockAttemptCount)
+    blockAttemptCount = json.optInt("blockAttemptCount", blockAttemptCount),
+    // 143차: 옛 버전이 올린 문서엔 이 키가 없으므로 그때는 이 기기의 값을 그대로 둔다.
+    allowlistMode = json.optBoolean("allowlistMode", allowlistMode)
 )
 
 /** "불러오기" 화면에 보여줄 원격 항목 한 건. */

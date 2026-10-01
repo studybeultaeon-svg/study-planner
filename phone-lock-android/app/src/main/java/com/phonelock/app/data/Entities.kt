@@ -95,7 +95,11 @@ data class AppGroup(
     /** 이 차단 규칙을 크로스디바이스 설정 동기화에 참여시킬지(94차, 사용자 요청 — 자동 전체 동기화 폐지).
      *  기본 꺼짐. 켜진 그룹만 원격에 올라가고("불러오기" 화면에서 다른 기기가 볼 수 있음), 원격 최신값을
      *  받아온다. 꺼진 그룹은 완전히 로컬 전용으로 남는다. PhoneLockRepository.GroupSync.kt 참고. */
-    val syncEnabled: Boolean = false
+    val syncEnabled: Boolean = false,
+    /** 전체 잠금 방식(142차, 사용자 요청) — true면 이 규칙의 앱/사이트 목록이 "막을 대상"이 아니라 "허용할 대상"이
+     *  된다: 시간대·일일 한도에 걸린 동안 목록에 없는 앱/사이트가 전부 잠긴다. 목록과 짝을 이루는 값이라 목록처럼
+     *  기기마다 따로 두고 동기화하지 않는다(PhoneLockRepository.GroupSync.kt). 실행 전 대기는 이 방식에 쓰지 않는다. */
+    val allowlistMode: Boolean = false
 )
 
 @Entity(tableName = "group_member", primaryKeys = ["groupId", "packageName"])

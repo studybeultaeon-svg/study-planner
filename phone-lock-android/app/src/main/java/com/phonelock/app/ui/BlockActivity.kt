@@ -27,7 +27,9 @@ class BlockActivity : ComponentActivity() {
             LockReason.LIMIT -> "오늘 이 차단 규칙의 사용 시간 한도를 모두 사용했습니다."
             LockReason.REELS -> "릴스 화면이 감지되어 차단되었습니다."
             LockReason.SHORTS -> "쇼츠 화면이 감지되어 차단되었습니다."
-            LockReason.STUDY_LOCK -> "공부 중에는 허용된 사이트만 이용할 수 있습니다."
+            LockReason.STUDY_LOCK -> "집중 중에는 허용된 사이트만 이용할 수 있습니다."
+            LockReason.TIMER -> "타이머로 잠근 앱/사이트입니다. 약속한 잠금 시간이 끝나면 다시 쓸 수 있습니다."
+            LockReason.FULL_LOCK -> "전체 잠금 중에는 허용한 사이트만 이용할 수 있습니다."
             null -> "이 차단 규칙은 현재 잠겨 있습니다."
         }
 
@@ -37,7 +39,7 @@ class BlockActivity : ComponentActivity() {
         val prefs = AppPreferences(applicationContext)
         applyThemeWindowBackground(prefs)
         setContent {
-            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
+            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale, performanceMode = prefs.minimalMode) {
                 val title = remember { quoteForTier(blockQuoteTier(blockAttempts)) }
                 InterstitialScreen(
                     title = title,

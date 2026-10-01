@@ -1,5 +1,30 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
+import com.phonelock.desktop.ui.theme.pressScale
+import com.phonelock.desktop.ui.theme.LocalPhoneLockPalette
+import com.phonelock.desktop.ui.theme.LocalAppMotion
+import com.phonelock.desktop.ui.components.VerticalHairline
+import com.phonelock.desktop.ui.components.StatRow
+import com.phonelock.desktop.ui.components.StatBlock
+import com.phonelock.desktop.ui.components.ProgressLine
+import com.phonelock.desktop.ui.components.Overline
+import com.phonelock.desktop.ui.components.NoticeTone
+import com.phonelock.desktop.ui.components.NoticeStrip
+import com.phonelock.desktop.ui.components.LiveDot
+import com.phonelock.desktop.ui.components.LedgerSection
+import com.phonelock.desktop.ui.components.Hairline
+import com.phonelock.desktop.ui.components.FitText
+import com.phonelock.desktop.ui.components.DurationHero
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material3.Switch
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -76,8 +101,6 @@ import java.time.LocalDate
 /** 다른 기기가 write한 신호가 이보다 오래되면(그 기기가 정지 없이 앱을 꺼서 갱신이 끊긴 경우 등) 화면에 보여주지 않는다. */
 private const val REMOTE_STALE_MS = 20 * 60 * 1000L
 
-private val GREEN = Color(0xFF34D399)
-private val YELLOW = Color(0xFFFBBF24)
 
 /**
  * 네이티브 공부 타이머 탭(1단계). 웹앱 index.html "타이머" 탭(`renderTimer()`)을 실제 CSS/JS 소스
@@ -163,13 +186,16 @@ fun StudyTimerScreen(repository: Repository) {
         last7Days = week
         // 스트릭: 오늘부터 거슬러 올라가며 끊기는 지점까지 — 위에서 이미 동기화한 최근 7일은 재사용하고,
         // 그보다 더 길면 하루씩 추가로 동기화(무한 네트워크 호출 방지용 60일 상한).
+        // 142차: 오늘 아직 기록이 없으면 어제부터 센다(통계 탭 StudyStats.currentStreak과 같은 규칙) — 하루가
+        // 끝나기 전에는 연속 기록이 0으로 보이지 않고, 오늘 공부하면 +1 된다.
+        val skip = if (week.last().second <= 0) 1 else 0
         var streak = 0
-        var d = today
         while (streak < 60) {
-            val seconds = if (streak < week.size) week[week.size - 1 - streak].second else daySecondsSynced(d.toString())
+            val back = streak + skip
+            val seconds = if (back < week.size) week[week.size - 1 - back].second
+            else daySecondsSynced(today.minusDays(back.toLong()).toString())
             if (seconds <= 0) break
             streak++
-            d = d.minusDays(1)
         }
         studyStreak = streak
     }
@@ -268,7 +294,7 @@ fun StudyTimerScreen(repository: Repository) {
     if (showStopNoteDialog) {
         AlertDialog(
             onDismissRequest = { showStopNoteDialog = false },
-            title = { Text("공부 종료") },
+            title = { Text("집중 종료") },
             text = {
                 Column {
                     Text(
@@ -280,15 +306,15 @@ fun StudyTimerScreen(repository: Repository) {
                     OutlinedTextField(
                         value = stopNoteText,
                         onValueChange = { stopNoteText = it },
-                        placeholder = { Text("예: 3장까지 풀었다, 집중이 잘 됐다") },
+                        placeholder = { Text("예: 3장까지 읽었다, 집중이 잘 됐다") },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(Spacing.sm))
                     OutlinedTextField(
                         value = stopTagText,
                         onValueChange = { stopTagText = it },
-                        label = { Text("태그(과목 등, 선택)") },
-                        placeholder = { Text("예: 수학, 영어") },
+                        label = { Text("태그(분야 등, 선택)") },
+                        placeholder = { Text("예: 독서, 업무, 운동") },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -309,394 +335,378 @@ fun StudyTimerScreen(repository: Repository) {
         )
     }
 
-    Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("⏱️ 시간 측정", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-            IconButton(onClick = { scope.launch { refreshNow() } }) { Text("🔄") }
+    // 144차 리디자인: 타이머 탭의 "주인공"은 숫자 하나다. 대기 중엔 오늘 집중한 시간이, 실행 중엔 지금 재는 시간이
+    // 화면 맨 위를 크게 차지하고, 시작 준비·기록·그래프는 그 아래에 가는 선으로만 나뉜 조용한 섹션이 된다.
+    // 상태/동기화/버튼 동작은 그대로이고 배치와 표현만 바꿨다(안드로이드판과 같은 구성).
+    val palette = LocalPhoneLockPalette.current
+    val motion = LocalAppMotion.current
+    val remoteActive = remoteStudying || remoteResting
+    val mirrorFromRemote = run == null && remoteActive
+    val timerActive = run != null || mirrorFromRemote
+    val todaySeconds = todayLog.sumOf { it.seconds }.toLong()
+
+    val idleContent: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth()) {
+            Overline("오늘 집중")
+            Spacer(Modifier.height(6.dp))
+            DurationHero(todaySeconds)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (studyStreak > 0) "연속 ${studyStreak}일째 이어가는 중" else "오늘 기록하면 연속 기록이 시작됩니다",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (studyStreak > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(Spacing.xl))
+            Overline("무엇에 집중할까요")
+            Spacer(Modifier.height(Spacing.sm))
+            // 92차(사용자 요청): 일정 목록에서 골라도 되고 직접 입력해도 되는 하나의 입력칸(readOnly 아님).
+            ExposedDropdownMenuBox(
+                expanded = taskDropdownExpanded,
+                onExpandedChange = { taskDropdownExpanded = it }
+            ) {
+                OutlinedTextField(
+                    value = taskName,
+                    onValueChange = { taskName = it; taskNameTouchedByUser = true },
+                    readOnly = false,
+                    label = { Text("오늘 캘린더 일정") },
+                    placeholder = { Text("예: 수학, 독서, 운동 (비워둬도 됩니다)") },
+                    singleLine = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = taskDropdownExpanded) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor()
+                )
+                ExposedDropdownMenu(
+                    expanded = taskDropdownExpanded,
+                    onDismissRequest = { taskDropdownExpanded = false }
+                ) {
+                    // 93차(사용자 요청): 빈칸으로 지우는 방법을 모르는 사용자를 위해 "해당 없음"을 항상 맨 위에 둔다.
+                    DropdownMenuItem(
+                        text = { Text("해당 없음") },
+                        onClick = { taskName = ""; taskNameTouchedByUser = true; taskDropdownExpanded = false }
+                    )
+                    todayTasks.forEach { t ->
+                        DropdownMenuItem(
+                            text = { Text(taskDropdownLabel(t)) },
+                            onClick = { taskName = t.name; taskNameTouchedByUser = true; taskDropdownExpanded = false }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            Row(Modifier.fillMaxWidth().heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("뽀모도로", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onBackground)
+                    Text(
+                        if (pomodoroEnabled) "집중과 휴식을 번갈아 잽니다" else "멈출 때까지 이어서 잽니다",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = pomodoroEnabled,
+                    onCheckedChange = {
+                        pomodoroEnabled = it
+                        repository.pomodoroModeEnabled = it
+                    }
+                )
+            }
+            if (pomodoroEnabled) {
+                Spacer(Modifier.height(Spacing.xs))
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    OutlinedTextField(
+                        value = studyMinText,
+                        onValueChange = { text ->
+                            studyMinText = text
+                            text.toIntOrNull()?.let { if (it > 0) repository.pomodoroStudyMinutes = it }
+                        },
+                        label = { Text("집중(분)") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = breakMinText,
+                        onValueChange = { text ->
+                            breakMinText = text
+                            text.toIntOrNull()?.let { if (it > 0) repository.pomodoroBreakMinutes = it }
+                        },
+                        label = { Text("휴식(분)") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            // 99차+(사용자 요청): 목표(뽀모도로=사이클 수, 일반=시간), 선택 입력 — 비워두면 진행률 문구를 띄우지 않는다.
+            if (pomodoroEnabled) {
+                OutlinedTextField(
+                    value = pomodoroTargetCyclesText,
+                    onValueChange = { text ->
+                        pomodoroTargetCyclesText = text
+                        val n = text.toIntOrNull()
+                        repository.pomodoroTargetCycles = if (n != null && n > 0) n else 0
+                    },
+                    label = { Text("목표 사이클 수(선택)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                OutlinedTextField(
+                    value = studyGoalText,
+                    onValueChange = { text ->
+                        studyGoalText = text
+                        val n = text.toIntOrNull()
+                        repository.studyGoalMinutes = if (n != null && n > 0) n else 0
+                    },
+                    label = { Text("목표 시간(분, 선택)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Spacer(Modifier.height(Spacing.md))
+            val startInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            Button(
+                onClick = {
+                    repository.timerStart(taskName, pomodoroEnabled)
+                    run = repository.getTimerRun()
+                },
+                interactionSource = startInteraction,
+                modifier = Modifier.fillMaxWidth().height(56.dp).pressScale(startInteraction)
+            ) {
+                androidx.compose.material3.Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("집중 시작", style = MaterialTheme.typography.titleMedium, maxLines = 1, softWrap = false)
+            }
         }
-        Spacer(Modifier.height(Spacing.md))
+    }
 
-        TodaySummaryCard(today = LocalDate.parse(repository.todayCalendarDateKey()), todayTasks = todayTasks, calcTasks = calcTasksForSummary, todayLogSeconds = todayLog.sumOf { it.seconds }.toLong())
-        Spacer(Modifier.height(Spacing.md))
-
-        // 오른쪽 일러스트에 넘길 값 — 실행 중(또는 다른 기기 미러링 중)이면 뽀모도로 진행률을 그리고,
-        // 대기 중이면 정적인 시계 모양만 그린다. 판정 로직과 무관한 순수 표시값이다.
-        val illustrationRun = run ?: if (remoteStudying || remoteResting) TimerRunState(
+    val runningContent: @Composable () -> Unit = {
+        val isMirror = run == null
+        val current = run ?: TimerRunState(
             taskName = remoteTaskName,
             mode = remoteMode,
             phase = if (remoteResting) "break" else "study",
             phaseStartedAt = remotePhaseStartedAt,
             phaseEndAt = remotePhaseEndAt
-        ) else null
-        val illustrationProgress = illustrationRun
-            ?.takeIf { it.mode == "pomodoro" && it.phaseEndAt > it.phaseStartedAt }
-            ?.let { ((nowMillis - it.phaseStartedAt).toFloat() / (it.phaseEndAt - it.phaseStartedAt).toFloat()).coerceIn(0f, 1f) }
-        // 92차(사용자 요청): 뽀모도로가 아닌 일반 스톱워치 모드는 목표 시간이 없어 진행률(%)을 못 그리는데,
-        // 그렇다고 실행 중에도 대기 중과 똑같이 정지된 시계로 보이면 "지금 흐르고 있다"는 느낌이 없다 —
-        // 목표 없이도 그릴 수 있는 값인 "경과 초"로 초침만 계속 돌려서 살아있는 느낌을 준다.
-        val illustrationSecondHandAngle = illustrationRun
-            ?.takeIf { it.mode != "pomodoro" }
-            ?.let { ((nowMillis - it.phaseStartedAt) / 1000 % 60) * 6f }
-        val illustrationCaption = when {
-            illustrationRun == null -> "공부를 시작하면 여기에 진행 상황이 표시됩니다"
-            illustrationRun.phase == "break" -> "휴식 중 — 잠시 쉬어가세요"
-            else -> "공부 중 — 이 시간이 아래 기록으로 쌓입니다"
+        )
+        val isBreak = current.phase == "break"
+        val phaseColor = if (isBreak) palette.success else MaterialTheme.colorScheme.primary
+        val displaySec = if (current.mode == "pomodoro") {
+            ((current.phaseEndAt - nowMillis) / 1000L).coerceAtLeast(0L)
+        } else {
+            ((nowMillis - current.phaseStartedAt) / 1000L).coerceAtLeast(0L)
         }
-
-        // studyStreak/last7Days는 위 refreshStreakAndWeek()가 채우는 state — 다른 기기 기록까지
-        // 합산해야 해서(위 주석 참고) 여기서 파생 계산하지 않는다.
-        // 92차: 오늘 과목(태그)별 공부시간 — 태그를 안 남겼으면 업무 이름으로 대신 묶는다. 이건
-        // todayLog(이미 getTodayStudyLog()가 다른 기기 기록과 합쳐 반환) 그대로 써도 정확하다.
-        val todaySubjects = remember(todayLog) {
-            todayLog.groupBy { it.tag.ifBlank { it.taskName.ifBlank { "기타" } } }
-                .mapValues { (_, entries) -> entries.sumOf { it.seconds }.toLong() }
-                .toList()
-                .sortedByDescending { it.second }
+        val timedUp = current.mode == "pomodoro" && displaySec <= 0L
+        // 99차+(사용자 요청): 목표(뽀모도로=사이클 수, 일반=시간) 대비 진행률 — 목표 미설정(0)이면 null.
+        val goalProgress: Double? = if (current.mode == "pomodoro") {
+            val targetCycles = repository.pomodoroTargetCycles
+            if (targetCycles > 0) {
+                val phaseFraction = if (current.phase == "study" && current.phaseEndAt > current.phaseStartedAt) {
+                    ((nowMillis - current.phaseStartedAt).toDouble() / (current.phaseEndAt - current.phaseStartedAt)).coerceIn(0.0, 1.0)
+                } else 0.0
+                (current.cycleCount + phaseFraction) / targetCycles
+            } else null
+        } else {
+            val goalMinutes = repository.studyGoalMinutes
+            if (goalMinutes > 0) (nowMillis - current.phaseStartedAt).toDouble() / (goalMinutes * 60_000.0) else null
         }
+        // 숫자 아래 막대: 뽀모도로면 이번 단계가 얼마나 지났는지, 일반 모드면 목표 대비(목표가 없으면 막대 없음).
+        val barProgress: Float? = if (current.mode == "pomodoro" && current.phaseEndAt > current.phaseStartedAt) {
+            ((nowMillis - current.phaseStartedAt).toFloat() / (current.phaseEndAt - current.phaseStartedAt).toFloat()).coerceIn(0f, 1f)
+        } else goalProgress?.toFloat()?.coerceIn(0f, 1f)
 
-        // 79차: 창이 좁아지면 위아래로 쌓는 ResponsiveSplit(사용자 요청, CalendarScreen/CalculatorScreen과 동일 패턴).
-        com.phonelock.desktop.ui.components.ResponsiveSplit(modifier = Modifier.weight(1f), left = {
-            // 왼쪽: 타이머 본체
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                // 이 기기 타이머가 꺼져 있어도 다른 기기가 재고 있으면(신선한 신호일 때만) 그 값을 그대로
-                // 미러링해서 보여준다 — 사용자 요청: 데스크탑에서 시작하면 모바일도 시작 없이 같은 숫자를 보여줄 것.
-                val remoteActive = remoteStudying || remoteResting
-                val mirrorFromRemote = run == null && remoteActive
-                SectionCard("⏱️ 공부 타이머") {
-                    if (run == null && !mirrorFromRemote) {
-                        // 92차(사용자 요청): 91차에 "일정 없으면 자유 입력"으로 바꿨더니 일정이 있을 때도
-                        // 드롭다운 선택 기능이 없어진 것처럼 보인다는 피드백 — 실제로는 남아있었지만,
-                        // 아예 항상 "골라도 되고 직접 입력해도 되는" 입력칸으로 통합해 헷갈릴 여지를 없앤다.
-                        // 이제 readOnly를 걸지 않아 일정이 있어도 자유롭게 고쳐 쓸 수 있고, 일정이 있으면
-                        // 드롭다운 아이콘으로 목록에서 고를 수도 있다.
-                        ExposedDropdownMenuBox(
-                            expanded = taskDropdownExpanded,
-                            onExpandedChange = { taskDropdownExpanded = it }
-                        ) {
-                            OutlinedTextField(
-                                value = taskName,
-                                onValueChange = { taskName = it; taskNameTouchedByUser = true },
-                                readOnly = false,
-                                label = { Text("오늘 캘린더 일정") },
-                                placeholder = { Text("예: 수학 (선택, 비워둬도 됩니다)") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = taskDropdownExpanded) },
-                                modifier = Modifier.fillMaxWidth().menuAnchor()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = taskDropdownExpanded,
-                                onDismissRequest = { taskDropdownExpanded = false }
-                            ) {
-                                // 93차(사용자 요청): 빈칸으로 지우는 방법을 모르는 사용자를 위해 목록에서도
-                                // 명시적으로 고를 수 있는 "해당 없음" 항목을 항상 맨 위에 둔다.
-                                DropdownMenuItem(
-                                    text = { Text("해당 없음") },
-                                    onClick = { taskName = ""; taskNameTouchedByUser = true; taskDropdownExpanded = false }
-                                )
-                                todayTasks.forEach { t ->
-                                    DropdownMenuItem(
-                                        text = { Text(taskDropdownLabel(t)) },
-                                        onClick = { taskName = t.name; taskNameTouchedByUser = true; taskDropdownExpanded = false }
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(Spacing.sm))
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "🍅 뽀모도로 모드",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Bold
-                            )
-                            PomoToggleButton(
-                                checked = pomodoroEnabled,
-                                onClick = {
-                                    pomodoroEnabled = !pomodoroEnabled
-                                    repository.pomodoroModeEnabled = pomodoroEnabled
-                                }
-                            )
-                        }
-                        Spacer(Modifier.height(Spacing.sm))
-                        if (pomodoroEnabled) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                OutlinedTextField(
-                                    value = studyMinText,
-                                    onValueChange = { text ->
-                                        studyMinText = text
-                                        text.toIntOrNull()?.let { if (it > 0) repository.pomodoroStudyMinutes = it }
-                                    },
-                                    label = { Text("공부(분)") },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                OutlinedTextField(
-                                    value = breakMinText,
-                                    onValueChange = { text ->
-                                        breakMinText = text
-                                        text.toIntOrNull()?.let { if (it > 0) repository.pomodoroBreakMinutes = it }
-                                    },
-                                    label = { Text("휴식(분)") },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                            Spacer(Modifier.height(Spacing.sm))
-                        }
-                        // 99차+(사용자 요청): 목표(뽀모도로=사이클 수, 일반=시간) 설정, 선택 입력 —
-                        // 비워두면 진행률 문구를 안 띄우던 기존 동작 그대로 유지.
-                        if (pomodoroEnabled) {
-                            OutlinedTextField(
-                                value = pomodoroTargetCyclesText,
-                                onValueChange = { text ->
-                                    pomodoroTargetCyclesText = text
-                                    val n = text.toIntOrNull()
-                                    repository.pomodoroTargetCycles = if (n != null && n > 0) n else 0
-                                },
-                                label = { Text("목표 사이클 수(선택)") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            OutlinedTextField(
-                                value = studyGoalText,
-                                onValueChange = { text ->
-                                    studyGoalText = text
-                                    val n = text.toIntOrNull()
-                                    repository.studyGoalMinutes = if (n != null && n > 0) n else 0
-                                },
-                                label = { Text("목표 시간(분, 선택)") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        Spacer(Modifier.height(Spacing.sm))
-                        Button(
+        Column(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+                LiveDot(phaseColor)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (isBreak) "휴식 중" else "집중 중",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = phaseColor,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                Text(
+                    " · " + current.taskName.ifBlank { "이름 없는 집중" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                // 다른 기기 세션을 미러링 중일 땐 제어하지 않는다(정지/전환과 같은 규칙).
+                if (!isMirror) {
+                    TextButton(onClick = { showTaskChangeDialog = true }) {
+                        Text("일정 변경", maxLines = 1, softWrap = false)
+                    }
+                }
+            }
+            FitText(
+                formatHmsLog(displaySec),
+                style = MaterialTheme.typography.displayLarge,
+                maxSize = 88.sp,
+                color = phaseColor
+            )
+            if (barProgress != null) {
+                Spacer(Modifier.height(Spacing.sm))
+                ProgressLine(barProgress, color = phaseColor)
+            }
+            if (goalProgress != null) {
+                val tier = StudyProgressQuotes.tierFor(goalProgress)
+                val quote = remember(tier) { StudyProgressQuotes.forProgress(goalProgress) }
+                Spacer(Modifier.height(Spacing.sm))
+                Text(quote, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onBackground)
+            }
+            if (timedUp) {
+                Spacer(Modifier.height(Spacing.md))
+                NoticeStrip(
+                    "시간이 다 됐어요 — " + if (isBreak) {
+                        if (current.breakExtraUsed) "준비되면 집중으로 전환하세요" else "5분만 더 쉬거나 집중으로 전환하세요"
+                    } else "휴식으로 전환하세요",
+                    tone = NoticeTone.Warning
+                )
+            }
+            Spacer(Modifier.height(Spacing.lg))
+            if (isMirror) {
+                // 다른 기기가 시작한 세션은 그 기기에서만 정지/전환한다(19차 remoteCommand 왕복 문제 재현 방지 — DECISIONS.md).
+                Text(
+                    "다른 기기에서 실행 중입니다 — 정지·전환은 그 기기에서 해주세요.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                val canSwitch = current.mode == "pomodoro" && (current.phase == "break" || nowMillis >= current.phaseEndAt)
+                if (canSwitch) {
+                    Button(
+                        onClick = {
+                            repository.timerSwitchPhase()
+                            run = repository.getTimerRun()
+                            refreshLog()
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp)
+                    ) { Text(if (current.phase == "study") "휴식으로 전환" else "집중으로 전환", maxLines = 1, softWrap = false) }
+                    Spacer(Modifier.height(Spacing.sm))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { showStopNoteDialog = true },
+                        modifier = Modifier.weight(1f).height(52.dp)
+                    ) {
+                        androidx.compose.material3.Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("정지", maxLines = 1, softWrap = false)
+                    }
+                    if (current.mode == "pomodoro" && current.phase == "break" && nowMillis >= current.phaseEndAt && !current.breakExtraUsed) {
+                        OutlinedButton(
                             onClick = {
-                                repository.timerStart(taskName, pomodoroEnabled)
+                                repository.timerExtendBreak()
                                 run = repository.getTimerRun()
                             },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            androidx.compose.material3.Icon(
-                                Icons.Filled.PlayArrow, contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text("시작")
-                        }
-                    } else {
-                        val isMirror = run == null
-                        val current = run ?: TimerRunState(
-                            taskName = remoteTaskName,
-                            mode = remoteMode,
-                            phase = if (remoteResting) "break" else "study",
-                            phaseStartedAt = remotePhaseStartedAt,
-                            phaseEndAt = remotePhaseEndAt
-                        )
-                        val isBreak = current.phase == "break"
-                        PomoPhaseBadge(isBreak = isBreak)
-                        Spacer(Modifier.height(Spacing.xs))
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                            Text(
-                                current.taskName.ifBlank { "이름 없는 공부" },
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            // 다른 기기 세션을 미러링 중일 땐 제어하지 않는다(정지/전환과 같은 규칙).
-                            if (!isMirror) {
-                                TextButton(onClick = { showTaskChangeDialog = true }, contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 0.dp)) {
-                                    Text("일정 변경", style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(Spacing.sm))
-
-                        val displaySec = if (current.mode == "pomodoro") {
-                            ((current.phaseEndAt - nowMillis) / 1000L).coerceAtLeast(0L)
-                        } else {
-                            ((nowMillis - current.phaseStartedAt) / 1000L).coerceAtLeast(0L)
-                        }
-                        val timedUp = current.mode == "pomodoro" && displaySec <= 0L
-                        if (timedUp) {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(8.dp),
-                                color = YELLOW.copy(alpha = 0.12f),
-                                border = BorderStroke(1.dp, YELLOW.copy(alpha = 0.35f))
-                            ) {
-                                Text(
-                                    "⏰ 시간이 다 됐어요 — " + if (isBreak) {
-                                        if (current.breakExtraUsed) "준비되면 아래에서 공부 모드로 전환하세요" else "아래에서 5분만 더 쉬거나 공부 모드로 전환하세요"
-                                    } else "아래 전환 버튼을 눌러주세요",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = YELLOW,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
-                                )
-                            }
-                            Spacer(Modifier.height(Spacing.sm))
-                        }
-                        Text(
-                            formatHmsLog(displaySec),
-                            style = MaterialTheme.typography.displaySmall,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(Spacing.md))
-
-                        // 99차+(사용자 요청): 목표(뽀모도로=사이클 수, 일반=시간) 대비 진행률에 따른 응원
-                        // 문구 — 목표 미설정(0)이면 아예 표시 안 함(기존 동작 보존).
-                        val progress: Double? = if (current.mode == "pomodoro") {
-                            val targetCycles = repository.pomodoroTargetCycles
-                            if (targetCycles > 0) {
-                                val phaseFraction = if (current.phase == "study" && current.phaseEndAt > current.phaseStartedAt) {
-                                    ((nowMillis - current.phaseStartedAt).toDouble() / (current.phaseEndAt - current.phaseStartedAt)).coerceIn(0.0, 1.0)
-                                } else 0.0
-                                (current.cycleCount + phaseFraction) / targetCycles
-                            } else null
-                        } else {
-                            val goalMinutes = repository.studyGoalMinutes
-                            if (goalMinutes > 0) (nowMillis - current.phaseStartedAt).toDouble() / (goalMinutes * 60_000.0) else null
-                        }
-                        if (progress != null) {
-                            val tier = StudyProgressQuotes.tierFor(progress)
-                            val quote = remember(tier) { StudyProgressQuotes.forProgress(progress) }
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(8.dp),
-                                color = GREEN.copy(alpha = 0.12f),
-                                border = BorderStroke(1.dp, GREEN.copy(alpha = 0.35f))
-                            ) {
-                                Text(
-                                    quote,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = GREEN,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp)
-                                )
-                            }
-                            Spacer(Modifier.height(Spacing.sm))
-                        }
-                        if (isMirror) {
-                            // 다른 기기가 시작한 세션을 미러링하는 중 — 이 기기에서 시작하지 않았으므로
-                            // 정지/전환은 그 기기에서만 가능하다(19차 세션에서 겪은 remoteCommand 왕복 문제를
-                            // 재현하지 않도록 여기선 표시만 하고 제어는 하지 않는다 — DECISIONS.md 참고).
-                            Text(
-                                "📡 다른 기기에서 실행 중입니다 — 정지·전환은 그 기기에서 해주세요.",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), modifier = Modifier.fillMaxWidth()) {
-                                OutlinedButton(
-                                    onClick = { showStopNoteDialog = true },
-                                    modifier = Modifier.weight(1f)
-                                ) { Text("■ 정지") }
-                                if (current.mode == "pomodoro") {
-                                    val canSwitch = current.phase == "break" || nowMillis >= current.phaseEndAt
-                                    if (canSwitch) {
-                                        OutlinedButton(
-                                            onClick = {
-                                                repository.timerSwitchPhase()
-                                                run = repository.getTimerRun()
-                                                refreshLog()
-                                            },
-                                            colors = ButtonDefaults.outlinedButtonColors(
-                                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                                contentColor = MaterialTheme.colorScheme.primary
-                                            ),
-                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-                                            modifier = Modifier.weight(1f)
-                                        ) { Text("🔁 ${if (current.phase == "study") "휴식으로 전환" else "공부로 전환"}") }
-                                    }
-                                    if (current.phase == "break" && nowMillis >= current.phaseEndAt && !current.breakExtraUsed) {
-                                        OutlinedButton(
-                                            onClick = {
-                                                repository.timerExtendBreak()
-                                                run = repository.getTimerRun()
-                                            },
-                                            modifier = Modifier.weight(1f)
-                                        ) { Text("⏰ 5분만 더") }
-                                    }
-                                }
-                            }
-                        }
+                            modifier = Modifier.weight(1f).height(52.dp)
+                        ) { Text("5분만 더", maxLines = 1, softWrap = false) }
                     }
                 }
             }
-        }, right = {
-            // 오른쪽: 타이머 일러스트 + 오늘 기록
-            // (90차: 허용 프로그램/사이트 편집은 설정 > 공부 탭으로 옮겨서 여기 없다 — 매번 보는 화면이
-            //  아니라 한 번 정해두는 설정이기 때문. 그 자리는 아래 TimerIllustration이 채운다.)
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                TimerIllustration(
-                    progress = illustrationProgress,
-                    secondHandAngle = illustrationSecondHandAngle,
-                    caption = illustrationCaption
-                )
-                Spacer(Modifier.height(Spacing.md))
-
-                StreakCard(streak = studyStreak)
-                Spacer(Modifier.height(Spacing.md))
-
-                SectionCard("📈 최근 7일 공부시간") {
-                    WeekBarChart(days = last7Days)
-                }
-                Spacer(Modifier.height(Spacing.md))
-
-                if (todaySubjects.isNotEmpty()) {
-                    SectionCard("🥧 오늘 과목별 공부시간") {
-                        SubjectPieChart(subjects = todaySubjects)
-                    }
-                    Spacer(Modifier.height(Spacing.md))
-                }
-
-                SectionCard("📊 오늘의 공부 기록") {
-                    if (todayLog.isEmpty()) {
-                        Text("아직 오늘 기록된 공부 시간이 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        val byTask = todayLog.groupBy { it.taskName }
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            byTask.entries.sortedByDescending { (_, entries) -> entries.sumOf { it.seconds } }.forEach { (name, entries) ->
-                                val lastEntry = entries.maxByOrNull { it.startedAt }
-                                StudyLogRow(name = name.ifBlank { "이름 없는 공부" }, seconds = entries.sumOf { it.seconds }.toLong(), note = lastEntry?.note.orEmpty(), tag = lastEntry?.tag.orEmpty())
-                            }
-                            StudyLogRow(name = "합계", seconds = todayLog.sumOf { it.seconds }.toLong(), isTotal = true)
-                        }
-                    }
-                }
-            }
-        })
+            Spacer(Modifier.height(Spacing.md))
+            Text(
+                "오늘 합계 " + formatHmsLog(todaySeconds),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
+
+    // 시작/정지할 때 히어로가 "오늘 합계"에서 "지금 재는 시간"으로 바뀐다 — 살짝 커지며 나타나 숫자가 자리를 넘겨받는
+    // 느낌을 준다(성능 모드에선 짧은 페이드).
+    val heroContent: @Composable () -> Unit = {
+        androidx.compose.animation.AnimatedContent(
+            targetState = timerActive,
+            transitionSpec = {
+                if (motion.reduced) fadeIn(motion.standard()) togetherWith fadeOut(motion.exit())
+                else (fadeIn(motion.emphasized()) + scaleIn(motion.emphasized(), initialScale = 0.94f)) togetherWith fadeOut(motion.exit())
+            },
+            label = "timerHero"
+        ) { active -> if (active) runningContent() else idleContent() }
+    }
+
+    // studyStreak/last7Days는 refreshStreakAndWeek()가 채우는 state — 다른 기기 기록까지 합산해야 해서 여기서 파생하지 않는다.
+    // 92차: 오늘 분야(태그)별 집중 시간 — 태그를 안 남겼으면 업무 이름으로 묶는다.
+    val todaySubjects = remember(todayLog) {
+        todayLog.groupBy { it.tag.ifBlank { it.taskName.ifBlank { "기타" } } }
+            .mapValues { (_, entries) -> entries.sumOf { it.seconds }.toLong() }
+            .toList()
+            .sortedByDescending { it.second }
+    }
+
+    val extrasContent: @Composable () -> Unit = {
+        LedgerSection("오늘 한눈에") {
+            TodaySummaryStrip(today = LocalDate.parse(repository.todayCalendarDateKey()), todayTasks = todayTasks, calcTasks = calcTasksForSummary)
+            Spacer(Modifier.height(Spacing.lg))
+        }
+        LedgerSection("최근 7일") {
+            WeekBarChart(days = last7Days)
+            Spacer(Modifier.height(Spacing.lg))
+        }
+        if (todaySubjects.isNotEmpty()) {
+            LedgerSection("분야별") {
+                SubjectPieChart(subjects = todaySubjects)
+                Spacer(Modifier.height(Spacing.lg))
+            }
+        }
+        LedgerSection("오늘의 기록") {
+            if (todayLog.isEmpty()) {
+                Text("아직 오늘 기록된 집중 시간이 없습니다.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                val byTask = todayLog.groupBy { it.taskName }
+                byTask.entries.sortedByDescending { (_, entries) -> entries.sumOf { it.seconds } }.forEach { (name, entries) ->
+                    val lastEntry = entries.maxByOrNull { it.startedAt }
+                    StudyLogRow(name = name.ifBlank { "이름 없는 집중" }, seconds = entries.sumOf { it.seconds }.toLong(), note = lastEntry?.note.orEmpty(), tag = lastEntry?.tag.orEmpty())
+                    Hairline()
+                }
+                StudyLogRow(name = "합계", seconds = todaySeconds, isTotal = true)
+            }
+            Spacer(Modifier.height(Spacing.lg))
+        }
+    }
+
+    // 데스크탑은 당겨서 새로고침이 없어 히어로 오른쪽 위 버튼으로 즉시 동기화한다. 넓은 창은 왼쪽 히어로 | 오른쪽 기록,
+    // 좁으면 ResponsiveSplit이 위아래로 쌓는다(79차 패턴).
+    com.phonelock.desktop.ui.components.ResponsiveSplit(
+        modifier = Modifier.fillMaxSize().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+        left = {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Spacing.md, end = Spacing.md)) {
+                Box(Modifier.fillMaxWidth()) {
+                    heroContent()
+                    IconButton(onClick = { scope.launch { refreshNow() } }, modifier = Modifier.align(Alignment.TopEnd)) {
+                        androidx.compose.material3.Icon(Icons.Outlined.Refresh, contentDescription = "새로고침", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        },
+        right = { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { extrasContent() } }
+    )
 }
 
 /**
- * "오늘 한눈에" 요약 카드 — 새 데이터/API 없이 이미 화면에 있는 캘린더/계산기/공부기록 3개 소스를
- * 상단에 나란히 보여주기만 한다(전문가 종합분석 보고서 #11, 순수 UI 집계, 판정 로직과 무관).
+ * "오늘 한눈에" — 캘린더 일정 완료 수와 일정표의 오늘 목표량을 큰 숫자 두 칸으로(오늘 집중 시간은 히어로가 이미 보여준다).
+ * 새 데이터 없이 화면에 이미 있는 값만 모은다(순수 표시, 안드로이드판과 대칭).
  */
 @Composable
-private fun TodaySummaryCard(today: LocalDate, todayTasks: List<CalendarTask>, calcTasks: List<CalcTask>, todayLogSeconds: Long) {
+private fun TodaySummaryStrip(today: LocalDate, todayTasks: List<CalendarTask>, calcTasks: List<CalcTask>) {
     val doneCount = todayTasks.count { it.status == "O" }
     val totalCount = todayTasks.size
     val todayCalcTargetTotal = calcTasks.sumOf { parseTodayCalcTarget(it, today) }
-    SectionCard("📌 오늘 한눈에") {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TodaySummaryStat("캘린더 일정", "${totalCount}개(완료 $doneCount)")
-            TodaySummaryStat("일정표 오늘 목표", if (todayCalcTargetTotal > 0) fmtCalcSummaryNumber(todayCalcTargetTotal) else "-")
-            TodaySummaryStat("오늘 누적 공부시간", formatHmsLog(todayLogSeconds))
-        }
-    }
-}
-
-@Composable
-private fun TodaySummaryStat(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(2.dp))
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+    StatRow {
+        StatBlock(
+            "캘린더 일정",
+            if (totalCount == 0) "-" else "$doneCount/$totalCount",
+            unit = if (totalCount == 0) null else "완료",
+            modifier = Modifier.weight(1f)
+        )
+        VerticalHairline(Modifier.align(Alignment.CenterVertically))
+        StatBlock(
+            "일정표 오늘 목표",
+            if (todayCalcTargetTotal > 0) fmtCalcSummaryNumber(todayCalcTargetTotal) else "-",
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
@@ -713,213 +723,64 @@ private fun parseTodayCalcTarget(task: CalcTask, today: LocalDate): Double {
 private fun fmtCalcSummaryNumber(n: Double): String =
     if (n == n.toLong().toDouble()) n.toLong().toString() else "%.1f".format(n)
 
-@Composable
-private fun PomoPhaseBadge(isBreak: Boolean) {
-    val color = if (isBreak) GREEN else MaterialTheme.colorScheme.primary
-    // 웹앱 .pomo-phase-badge .dot { animation: pulse 1s infinite } — 0%,100%=1, 50%=.3
-    val transition = rememberInfiniteTransition(label = "pomoPulse")
-    val dotAlpha by transition.animateFloat(
-        initialValue = 1f, targetValue = 0.3f,
-        animationSpec = infiniteRepeatable(animation = tween(500, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
-        label = "pomoPulseAlpha"
-    )
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier
-            .background(color.copy(alpha = 0.15f), RoundedCornerShape(50))
-            .padding(horizontal = 12.dp, vertical = 5.dp)
-    ) {
-        Box(Modifier.size(6.dp).background(color.copy(alpha = dotAlpha), CircleShape))
-        Text(if (isBreak) "휴식 중" else "공부 중", color = color, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-    }
-}
-
-/** 웹앱 .pomo-toggle-btn — off는 회색 카드, on은 초록 틴트. */
-@Composable
-private fun PomoToggleButton(checked: Boolean, onClick: () -> Unit) {
-    val bg = if (checked) GREEN.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
-    val fg = if (checked) GREEN else MaterialTheme.colorScheme.onSurfaceVariant
-    val border = if (checked) GREEN.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = bg,
-        border = BorderStroke(1.dp, border),
-        modifier = Modifier.clickable(onClick = onClick)
-    ) {
-        Text(
-            if (checked) "ON" else "OFF",
-            color = fg, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-        )
-    }
-}
-
-/** 웹앱 .study-log-row — 카드형 행, 합계 행은 파랑 틴트로 강조. note가 있으면 이름 아래 회고를 작게 덧붙인다. */
+/**
+ * 집중 기록 한 줄 — 카드 대신 줄 단위(행 사이는 호출하는 쪽이 가는 선으로 나눈다). 시간은 오른쪽 끝 고정폭 숫자,
+ * 회고(note)가 있으면 이름 아래 작게. 합계 줄은 굵게 + 강조색.
+ */
 @Composable
 internal fun StudyLogRow(name: String, seconds: Long, isTotal: Boolean = false, note: String = "", tag: String = "") {
-    val accent = MaterialTheme.colorScheme.primary
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = if (isTotal) accent.copy(alpha = 0.06f) else MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, if (isTotal) accent else MaterialTheme.colorScheme.outline)
-    ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                    if (tag.isNotBlank()) {
-                        Surface(shape = RoundedCornerShape(50), color = accent.copy(alpha = 0.12f)) {
-                            Text(tag, style = MaterialTheme.typography.labelSmall, color = accent, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
-                        }
-                    }
-                }
-                Text(formatHmsLog(seconds), style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, color = accent)
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                name,
+                style = if (isTotal) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 2,
+                modifier = Modifier.weight(1f)
+            )
+            if (tag.isNotBlank()) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    tag,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(50))
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                )
             }
-            if (note.isNotBlank()) {
-                Text(note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                formatHmsLog(seconds),
+                style = if (isTotal) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.W600),
+                color = if (isTotal) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+        if (note.isNotBlank()) {
+            Spacer(Modifier.height(2.dp))
+            Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 /**
- * 90차(사용자 요청): 허용 프로그램/사이트 설정을 설정 탭으로 옮기면서 비게 된 오른쪽 컬럼 위쪽을 채우는
- * 담백한 타이머 그림. 이 프로젝트엔 이미지 자산 파이프라인이 없어(DECISIONS.md 89차) 전부 Compose로
- * 직접 그린다 — 대기 중이면 정적인 시계(테두리 링 + 두 바늘), 뽀모도로 실행 중이면 그 자리에 진행률
- * 호(arc)를 덧그린다. 92차: 일반 스톱워치(뽀모도로 아님) 실행 중엔 목표 시간이 없어 호를 못 그리는 대신
- * 경과 초에 맞춰 도는 초침(secondHandAngle, 12시=0도·시계방향)을 덧그려 "지금 흐르고 있다"는 걸 보여준다.
+ * 92차: 최근 7일(오늘 포함) 집중 시간 막대그래프 — 144차: 지난 날은 중립색, 오늘만 강조색. 처음 보일 때 막대가
+ * 바닥에서 자라 올라온다(성능 모드에선 바로 그 높이). 안드로이드판과 대칭.
  */
-@Composable
-private fun TimerIllustration(progress: Float?, secondHandAngle: Float? = null, caption: String) {
-    val trackColor = MaterialTheme.colorScheme.outline
-    val accent = MaterialTheme.colorScheme.primary
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(Spacing.md),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            androidx.compose.foundation.Canvas(Modifier.size(132.dp)) {
-                val strokeWidth = 10.dp.toPx()
-                val diameter = size.minDimension - strokeWidth
-                val topLeft = androidx.compose.ui.geometry.Offset(
-                    (size.width - diameter) / 2f,
-                    (size.height - diameter) / 2f
-                )
-                val arcSize = androidx.compose.ui.geometry.Size(diameter, diameter)
-                drawArc(
-                    color = trackColor.copy(alpha = 0.5f),
-                    startAngle = 0f, sweepAngle = 360f, useCenter = false,
-                    topLeft = topLeft, size = arcSize,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth)
-                )
-                if (progress != null) {
-                    drawArc(
-                        color = accent,
-                        startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
-                        topLeft = topLeft, size = arcSize,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(
-                            width = strokeWidth,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
-                        )
-                    )
-                } else {
-                    // 대기 중이든 일반 스톱워치 실행 중이든 — 10시 10분을 가리키는 정적인 시계 바늘
-                    // 두 개(시계 아이콘 관례)는 항상 그린다.
-                    val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
-                    val handStroke = 4.dp.toPx()
-                    listOf(
-                        (diameter * 0.34f) to 60.0,   // 분침(2시 방향)
-                        (diameter * 0.24f) to 300.0   // 시침(10시 방향)
-                    ).forEach { (length, clockDegrees) ->
-                        // 시계 각도(12시=0, 시계방향) → 화면 좌표계 각도(+x축 기준, y는 아래로 증가)
-                        val rad = Math.toRadians(clockDegrees - 90.0)
-                        drawLine(
-                            color = accent.copy(alpha = 0.7f),
-                            start = center,
-                            end = androidx.compose.ui.geometry.Offset(
-                                center.x + (length * Math.cos(rad)).toFloat(),
-                                center.y + (length * Math.sin(rad)).toFloat()
-                            ),
-                            strokeWidth = handStroke,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
-                        )
-                    }
-                    // 92차: 일반 스톱워치 실행 중엔 경과 초에 맞춰 도는 초침을 하나 더 그려서
-                    // 정지된 대기 화면과 구분되는 "지금 흐르고 있다"는 느낌을 준다.
-                    if (secondHandAngle != null) {
-                        val rad = Math.toRadians(secondHandAngle - 90.0)
-                        val length = diameter * 0.4f
-                        drawLine(
-                            color = accent,
-                            start = center,
-                            end = androidx.compose.ui.geometry.Offset(
-                                center.x + (length * Math.cos(rad)).toFloat(),
-                                center.y + (length * Math.sin(rad)).toFloat()
-                            ),
-                            strokeWidth = handStroke * 0.5f,
-                            cap = androidx.compose.ui.graphics.StrokeCap.Round
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(Spacing.sm))
-            Text(
-                caption,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-/** 92차(사용자 요청, "타이머 화면이 여전히 비어보인다"): 오늘부터 거슬러 센 연속 공부일 카드. */
-@Composable
-private fun StreakCard(streak: Int) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = if (streak > 0) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, if (streak > 0) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline)
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(Spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-        ) {
-            Text(if (streak > 0) "🔥" else "💤", style = MaterialTheme.typography.headlineMedium)
-            Column {
-                Text(
-                    if (streak > 0) "연속 공부 ${streak}일째" else "오늘부터 연속 기록을 시작해보세요",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = if (streak > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text("하루라도 공부 시간이 기록되면 이어집니다", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-/** 92차: 최근 7일(오늘 포함) 공부시간 막대그래프 — 요일 라벨 + 시간 툴팁 없이 값 자체를 막대 위에 표기. */
 @Composable
 private fun WeekBarChart(days: List<Pair<LocalDate, Long>>) {
     val accent = MaterialTheme.colorScheme.primary
+    val neutral = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f)
+    val motion = LocalAppMotion.current
+    val grow by androidx.compose.animation.core.animateFloatAsState(if (days.isEmpty()) 0f else 1f, motion.emphasized(), label = "weekGrow")
     val maxSeconds = (days.maxOfOrNull { it.second } ?: 0L).coerceAtLeast(1L)
     val dowLabels = listOf("월", "화", "수", "목", "금", "토", "일")
     Row(
-        Modifier.fillMaxWidth().height(120.dp),
+        Modifier.fillMaxWidth().height(140.dp),
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         days.forEach { (date, seconds) ->
@@ -933,78 +794,77 @@ private fun WeekBarChart(days: List<Pair<LocalDate, Long>>) {
                 Text(
                     if (seconds > 0) formatHmsShort(seconds) else "",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(2.dp))
-                Box(
-                    Modifier
-                        .fillMaxWidth(0.6f)
-                        .fillMaxHeight(0.72f * fraction.coerceAtLeast(0.03f))
-                        .background(
-                            if (isToday) accent else accent.copy(alpha = 0.55f),
-                            RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
-                        )
+                    color = if (isToday) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false
                 )
                 Spacer(Modifier.height(4.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth(0.5f)
+                        .fillMaxHeight(0.7f * fraction.coerceAtLeast(0.03f))
+                        .graphicsLayer {
+                            scaleY = grow
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                        }
+                        .background(if (isToday) accent else neutral, RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                )
+                Spacer(Modifier.height(6.dp))
                 Text(
                     dowLabels[date.dayOfWeek.value - 1],
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isToday) accent else MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (isToday) FontWeight.W700 else FontWeight.W600,
+                    color = if (isToday) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
     }
     if (maxSeconds <= 1L && days.all { it.second == 0L }) {
         Spacer(Modifier.height(Spacing.sm))
-        Text("최근 7일간 기록된 공부 시간이 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("최근 7일간 기록된 집중 시간이 없습니다.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-/** 92차: 오늘 과목(태그)별 공부시간 도넛 차트 + 범례. */
+/**
+ * 92차: 오늘 분야(태그)별 집중 시간 도넛 + 범례. 144차: 색은 테마에서 꺼낸다(미니멀 모드면 자동으로 먹색 농도 차이로
+ * 구분된다), 범례는 이름과 시간을 한 줄씩 정렬. 안드로이드판과 대칭.
+ */
 @Composable
 private fun SubjectPieChart(subjects: List<Pair<String, Long>>) {
-    val palette = listOf(
-        MaterialTheme.colorScheme.primary,
-        MaterialTheme.colorScheme.secondary,
-        SUBJECT_COLOR_3, SUBJECT_COLOR_4, SUBJECT_COLOR_5, SUBJECT_COLOR_6
-    )
+    val p = LocalPhoneLockPalette.current
+    val colors = listOf(p.primary, p.success, p.warning, p.secondary, p.muted, p.error)
     val total = subjects.sumOf { it.second }.coerceAtLeast(1L)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        androidx.compose.foundation.Canvas(Modifier.size(100.dp)) {
-            val strokeWidth = 18.dp.toPx()
+        androidx.compose.foundation.Canvas(Modifier.size(104.dp)) {
+            val strokeWidth = 14.dp.toPx()
             val diameter = size.minDimension - strokeWidth
-            val topLeft = androidx.compose.ui.geometry.Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
+            val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
             val arcSize = androidx.compose.ui.geometry.Size(diameter, diameter)
             var startAngle = -90f
             subjects.forEachIndexed { idx, (_, seconds) ->
                 val sweep = 360f * (seconds.toFloat() / total.toFloat())
                 drawArc(
-                    color = palette[idx % palette.size],
-                    startAngle = startAngle, sweepAngle = sweep, useCenter = false,
+                    color = colors[idx % colors.size],
+                    startAngle = startAngle, sweepAngle = (sweep - 1.5f).coerceAtLeast(0.5f), useCenter = false,
                     topLeft = topLeft, size = arcSize,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth)
+                    style = Stroke(width = strokeWidth)
                 )
                 startAngle += sweep
             }
         }
-        Spacer(Modifier.width(Spacing.md))
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Spacer(Modifier.width(Spacing.lg))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             subjects.take(6).forEachIndexed { idx, (name, seconds) ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(Modifier.size(10.dp).background(palette[idx % palette.size], CircleShape))
-                    Text(name, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-                    Text(formatHmsShort(seconds), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(8.dp).background(colors[idx % colors.size], CircleShape))
+                    Spacer(Modifier.width(8.dp))
+                    Text(name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(formatHmsShort(seconds), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
                 }
             }
         }
     }
 }
-
-private val SUBJECT_COLOR_3 = Color(0xFFF59E0B)
-private val SUBJECT_COLOR_4 = Color(0xFFA78BFA)
-private val SUBJECT_COLOR_5 = Color(0xFF34D399)
-private val SUBJECT_COLOR_6 = Color(0xFFEC4899)
 
 private fun formatHmsShort(totalSeconds: Long): String {
     val h = totalSeconds / 3600
@@ -1075,11 +935,11 @@ internal fun StudyTaskChangeDialog(
     var text by remember { mutableStateOf(currentTaskName) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("공부 일정 변경") },
+        title = { Text("집중할 일정 변경") },
         text = {
             Column {
                 Text(
-                    "지금까지 잰 시간은 \"${currentTaskName.ifBlank { "이름 없는 공부" }}\" 기록으로 남고, " +
+                    "지금까지 잰 시간은 \"${currentTaskName.ifBlank { "이름 없는 집중" }}\" 기록으로 남고, " +
                         "새 일정부터 다시 잽니다. 타이머는 멈추지 않습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1088,8 +948,8 @@ internal fun StudyTaskChangeDialog(
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    label = { Text("공부 일정") },
-                    placeholder = { Text("예: 수학 (비워두면 이름 없는 공부)") },
+                    label = { Text("집중할 일정") },
+                    placeholder = { Text("예: 수학, 독서, 운동 (비워두면 이름 없는 집중)") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 if (todayTasks.isNotEmpty()) {
@@ -1138,7 +998,7 @@ internal fun StudyTaskChangeDialog(
 
 private fun taskDropdownLabel(task: CalendarTask): String {
     val done = if (task.status == "O") " ✅" else ""
-    return "${task.name}$done · ${task.passIndex + 1}회 복습"
+    return "${task.name}$done · ${task.passIndex + 1}회차"
 }
 
 internal fun formatHmsLog(totalSeconds: Long): String {

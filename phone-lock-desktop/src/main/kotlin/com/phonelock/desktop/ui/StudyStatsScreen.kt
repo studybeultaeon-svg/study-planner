@@ -1,5 +1,7 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,6 +41,7 @@ import com.phonelock.desktop.data.*
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.ui.components.SectionCard
 import com.phonelock.desktop.ui.theme.Spacing
+import com.phonelock.shared.study.StudyStats
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -51,26 +54,29 @@ private data class DayStat(val date: LocalDate, val cnt: Int, val done: Int)
  * 캘린더 일정(`repository.getAllCalendarTasks()`)만 집계하는 읽기 전용 파생 뷰. 51차: "전체 일정/완료/
  * 완료율" 타일을 전체 누적이 아니라 오늘 하루 기준으로 바꾸고, 회독 단계별 완료 현황 카드는 제거(사용자
  * 요청). 계산/저장 UI는 없다 — DECISIONS.md "4단계(일정표) 네이티브 재구현"과 같은 파생 뷰 원칙을 그대로
- * 따랐다.
+ * 따랐다. 142차: 연속 기록과 평균 공부 시간은 캘린더가 아니라 날짜별 공부 시간에서 계산한다([StudyStats]).
  */
 @Composable
 fun StudyStatsScreen(repository: Repository) {
     var allTasks by remember { mutableStateOf(emptyList<CalendarTask>()) }
     var allStudyLog by remember { mutableStateOf(emptyList<com.phonelock.desktop.data.StudyLogEntry>()) }
+    // 142차: 연속 기록·평균은 캘린더 완료율이 아니라 날짜별 공부 시간(모든 기기 합산)으로 계산한다.
+    var studyDays by remember { mutableStateOf(StudyStats.DayTotals.EMPTY) }
     val scope = rememberCoroutineScope()
 
     suspend fun refresh() {
         withContext(Dispatchers.IO) { repository.syncCalendarFromFirebase() }
         allTasks = repository.getAllCalendarTasks()
         allStudyLog = repository.getAllStudyLogOnce()
+        studyDays = withContext(Dispatchers.IO) { repository.loadStudyDayTotals() }
     }
 
     LaunchedEffect(Unit) { refresh() }
 
-    if (allTasks.isEmpty()) {
+    if (allTasks.isEmpty() && studyDays.studiedDates.isEmpty()) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text(
-                "캘린더에 일정을 추가하고 완료 체크를 하면\n통계가 여기에 표시됩니다",
+                "타이머로 집중 시간을 기록하거나 캘린더 일정을 완료하면\n통계가 여기에 표시됩니다",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -91,31 +97,10 @@ fun StudyStatsScreen(repository: Repository) {
     val doneCount = todayTasks.count { it.status == "O" }
     val completionRate = if (totalCount > 0) Math.round(doneCount * 100.0 / totalCount).toInt() else 0
 
-    // 연속 완료일: 오늘부터 과거로, 일정 있는 날 중 전부 완료면 계속, 일정 없는 날은 중립(건너뜀), 미완료 있으면 중단
-    var streak = 0
-    for (i in 0 until 3650) {
-        val key = today.minusDays(i.toLong()).toString()
-        val dayTasks = byDate[key] ?: emptyList()
-        if (dayTasks.isEmpty()) continue
-        val done = dayTasks.count { it.status == "O" }
-        if (done == dayTasks.size) streak++ else break
-    }
-
-    // 최고 스트릭(51차, 루틴 통계와 같은 톤): 과거→현재로 훑으며 가장 길었던 연속 완료 구간을 찾는다.
-    var bestStreak = 0
-    var runningStreak = 0
-    for (i in 3650 downTo 0) {
-        val key = today.minusDays(i.toLong()).toString()
-        val dayTasks = byDate[key] ?: emptyList()
-        if (dayTasks.isEmpty()) continue
-        val done = dayTasks.count { it.status == "O" }
-        if (done == dayTasks.size) {
-            runningStreak++
-            if (runningStreak > bestStreak) bestStreak = runningStreak
-        } else {
-            runningStreak = 0
-        }
-    }
+    // 142차(사용자 요청): 연속 기록은 캘린더 일정을 전부 완료했는지가 아니라 "그날 공부 시간이 기록됐는지"로 센다.
+    val study = remember(studyDays, today) { StudyStats.summarize(studyDays, today) }
+    val streak = study.currentStreak
+    val bestStreak = study.bestStreak
 
     val dayStats = (0 until 30).map { i ->
         val d = today.minusDays((29 - i).toLong())
@@ -125,16 +110,8 @@ fun StudyStatsScreen(repository: Repository) {
     val maxDayCnt = maxOf(1, dayStats.maxOf { it.cnt })
     val collapsedCalcNames = remember { mutableStateOf(setOf<String>()) }
 
-    Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                Text("📈 통계", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-                Text("캘린더 복습 진행 기준", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            // 사용자 요청(안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
-            IconButton(onClick = { scope.launch { refresh() } }) { Text("🔄") }
-        }
-        Spacer(Modifier.height(Spacing.md))
+    val palette = com.phonelock.desktop.ui.theme.LocalPhoneLockPalette.current
+    Column(Modifier.fillMaxSize().padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
 
         // 90차(사용자 요청): 넓은 데스크탑 창에서 세로 한 줄로만 쌓이던 걸 좌(요약 지표)/우(그래프·상세)
         // 로 나눴다 — 성격이 다른 두 종류라 타이머/캘린더 화면과 같은 ResponsiveSplit이 그대로 맞는다.
@@ -145,45 +122,51 @@ fun StudyStatsScreen(repository: Repository) {
             rightWeight = 1.4f, // 막대 30개짜리 그래프가 있는 오른쪽에 폭을 조금 더 준다
             left = {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        // 현재 스트릭을 가장 위, 가장 크게(51차) — 최고 스트릭은 아래 타일 중 하나로.
-        Surface(
-            Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-        ) {
-            Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("현재 연속 기록", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    "${streak}일" + if (streak > 0) " 🔥" else "",
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
+        // 144차: 현재 연속 기록을 화면에서 가장 큰 숫자로, 새로고침은 오른쪽 위.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                com.phonelock.desktop.ui.components.Overline("현재 연속 기록")
+                com.phonelock.desktop.ui.components.BigNumber(
+                    "$streak",
+                    unit = "일",
+                    style = MaterialTheme.typography.displayLarge.copy(fontSize = 96.sp, lineHeight = 98.sp, letterSpacing = (-3).sp),
+                    unitStyle = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
+            // 사용자 요청(안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
+            IconButton(onClick = { scope.launch { refresh() } }) {
+                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.Refresh, contentDescription = "새로고침", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Text("집중 시간이 조금이라도 기록된 날이 이어진 일수", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(Spacing.lg))
+        com.phonelock.desktop.ui.components.Hairline()
+        Spacer(Modifier.height(Spacing.md))
+
+        com.phonelock.desktop.ui.components.StatRow {
+            com.phonelock.desktop.ui.components.StatBlock("오늘 일정", "$doneCount/$totalCount", Modifier.weight(1f))
+            com.phonelock.desktop.ui.components.StatBlock("완료율", "$completionRate", Modifier.weight(1f), unit = "%")
+            com.phonelock.desktop.ui.components.StatBlock("최고 기록", "$bestStreak", Modifier.weight(1f), unit = "일")
         }
         Spacer(Modifier.height(Spacing.md))
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            StatTile("오늘 완료", "$doneCount / $totalCount", Modifier.weight(1f), accentColor = Color(0xFF34D399))
-            StatTile("오늘 완료율", "$completionRate%", Modifier.weight(1f), accentColor = Color(0xFFFBBF24))
-            StatTile("최고 연속 기록", "${bestStreak}일" + if (bestStreak > 0) "🔥" else "", Modifier.weight(1f), accentColor = MaterialTheme.colorScheme.secondary)
-        }
+        StudyAverageCard(study)
         Spacer(Modifier.height(Spacing.md))
 
         WeekOverWeekCard(allTasks = allTasks, today = today)
         }
         }, right = {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        SectionCard("최근 30일 완료 추이 (막대 높이 = 일정 개수, 색상 = 완료율)") {
+        SectionCard("최근 30일 일정 완료 · 막대 높이 = 개수, 색 = 완료율") {
             Row(Modifier.fillMaxWidth().height(90.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 dayStats.forEach { ds ->
                     val pct = if (ds.cnt > 0) Math.round(ds.done * 100.0 / ds.cnt).toInt() else 0
                     val barColor = when {
                         ds.cnt == 0 -> MaterialTheme.colorScheme.outlineVariant
-                        pct == 100 -> Color(0xFF34D399)
-                        pct > 0 -> Color(0xFFFBBF24)
-                        else -> Color(0xFFF87171)
+                        pct == 100 -> palette.success
+                        pct > 0 -> palette.warning
+                        else -> palette.error
                     }
                     val isToday = ds.date == today
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -215,7 +198,7 @@ fun StudyStatsScreen(repository: Repository) {
         val taggedSeconds = allStudyLog.filter { it.tag.isNotBlank() }.groupBy { it.tag }.mapValues { (_, v) -> v.sumOf { it.seconds } }
         if (taggedSeconds.isNotEmpty()) {
             Spacer(Modifier.height(Spacing.md))
-            SectionCard("태그별 누적 공부시간") {
+            SectionCard("태그별 누적 집중 시간") {
                 val maxTagSeconds = maxOf(1, taggedSeconds.values.max())
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     taggedSeconds.entries.sortedByDescending { it.value }.forEach { (tag, seconds) ->
@@ -282,9 +265,9 @@ fun StudyStatsScreen(repository: Repository) {
                             val achieved = target > 0 && done >= target
                             val barColor = when {
                                 target <= 0 -> MaterialTheme.colorScheme.outlineVariant
-                                achieved -> Color(0xFF34D399)
-                                done > 0 -> Color(0xFFFBBF24)
-                                else -> Color(0xFFF87171)
+                                achieved -> palette.success
+                                done > 0 -> palette.warning
+                                else -> palette.error
                             }
                             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Column(Modifier.fillMaxWidth().height(50.dp), verticalArrangement = Arrangement.Bottom) {
@@ -318,6 +301,7 @@ private fun completionRateInRange(tasks: List<CalendarTask>, fromInclusive: Stri
  */
 @Composable
 private fun WeekOverWeekCard(allTasks: List<CalendarTask>, today: LocalDate) {
+    val palette = com.phonelock.desktop.ui.theme.LocalPhoneLockPalette.current
     val (thisDone, thisTotal) = completionRateInRange(allTasks, today.minusDays(6).toString(), today.toString())
     val (lastDone, lastTotal) = completionRateInRange(allTasks, today.minusDays(13).toString(), today.minusDays(7).toString())
     if (thisTotal == 0 && lastTotal == 0) return
@@ -334,8 +318,8 @@ private fun WeekOverWeekCard(allTasks: List<CalendarTask>, today: LocalDate) {
             val lastRate = Math.round(lastDone * 100.0 / lastTotal).toInt()
             val diff = thisRate - lastRate
             val diffColor = when {
-                diff > 0 -> Color(0xFF34D399)
-                diff < 0 -> Color(0xFFF87171)
+                diff > 0 -> palette.success
+                diff < 0 -> palette.error
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             }
             val diffLabel = if (diff > 0) "+$diff%p" else "$diff%p"
@@ -348,22 +332,35 @@ private fun WeekOverWeekCard(allTasks: List<CalendarTask>, today: LocalDate) {
     }
 }
 
+/**
+ * 하루 평균 공부 시간(142차) — 기준은 [StudyStats] 주석 참고. 타일 대신 "이름 … 값" 줄로 쌓아서 폰 폭에서도
+ * "1시간 23분" 같은 값이 잘리지 않는다.
+ */
 @Composable
-private fun StatTile(label: String, value: String, modifier: Modifier = Modifier, accentColor: Color = Color.Unspecified) {
-    val hasAccent = accentColor != Color.Unspecified
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
-        color = if (hasAccent) accentColor.copy(alpha = 0.07f) else MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, if (hasAccent) accentColor.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline)
+private fun StudyAverageCard(summary: StudyStats.Summary) {
+    SectionCard("하루 평균 집중 시간") {
+        StudyAverageRow("오늘", StudyStats.durationLabel(summary.todaySeconds))
+        StudyAverageRow("최근 ${StudyStats.SHORT_WINDOW_DAYS}일 평균", summary.shortAverageSeconds?.let { StudyStats.durationLabel(it) } ?: "—")
+        StudyAverageRow("최근 ${StudyStats.LONG_WINDOW_DAYS}일 평균", summary.longAverageSeconds?.let { StudyStats.durationLabel(it) } ?: "—")
+        StudyAverageRow("집중한 날 평균", summary.activeDayAverageSeconds?.let { StudyStats.durationLabel(it) } ?: "—")
+        Spacer(Modifier.height(Spacing.xs))
+        Text(
+            "평균은 오늘을 포함한 기간의 합계를 날짜 수로 나눈 값입니다(쉰 날도 0으로 포함, 쓰기 시작한 지 얼마 안 됐으면 첫 기록일부터). " +
+                "\"집중한 날 평균\"은 최근 ${StudyStats.LONG_WINDOW_DAYS}일 중 기록이 있는 날만으로 나눕니다.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun StudyAverageRow(label: String, value: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.padding(Spacing.sm), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
-                color = if (accentColor != Color.Unspecified) accentColor else MaterialTheme.colorScheme.onSurface
-            )
-        }
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
     }
 }

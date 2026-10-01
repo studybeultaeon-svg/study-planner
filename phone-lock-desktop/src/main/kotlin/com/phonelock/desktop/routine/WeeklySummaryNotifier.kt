@@ -49,7 +49,7 @@ object WeeklySummaryNotifier {
 
         val message = buildString {
             append("루틴 완료율 $routineRate%($doneCount/$scheduledCount)")
-            append(" · 공부 %.1f시간".format(studyHours))
+            append(" · 집중 %.1f시간".format(studyHours))
             if (avgCalcProgress != null) append(" · 계산기 평균 진척도 ${Math.round(avgCalcProgress)}%")
         }
         DesktopNotifier.notify("📅 이번 주 요약", message)

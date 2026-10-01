@@ -43,11 +43,11 @@ fun StudyLockAppsScreen() {
     var allowedSitesText by remember { mutableStateOf(prefs.studyLockAllowedSites.joinToString("\n")) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("공부 잠금 허용 앱") }) }
+        topBar = { TopAppBar(title = { Text("집중 잠금 허용 앱", style = MaterialTheme.typography.headlineSmall) }, colors = com.phonelock.app.ui.components.ledgerTopBarColors()) }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(Spacing.md)) {
             Text(
-                "선택한 앱은 공부앱 타이머가 켜져 있는 동안에도 항상 열 수 있습니다.",
+                "선택한 앱은 집중 타이머가 켜져 있는 동안에도 항상 열 수 있습니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

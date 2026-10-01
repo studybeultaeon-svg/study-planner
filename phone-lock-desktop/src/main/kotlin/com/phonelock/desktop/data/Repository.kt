@@ -115,6 +115,10 @@ class Repository {
     /** 선택한 백업 파일로 현재 데이터를 완전히 대체한다(되돌리기 없음). 파싱 실패 시 false. */
     fun restoreFromBackup(file: java.io.File): Boolean = synchronized(lock) {
         val restored = JsonStore.parseBackupFile(file) ?: return@synchronized false
+        // 142차: 진행 중인 타이머 약속은 복원으로 바뀌지 않는다 — 시작 전 백업을 되살리는 것으로 해제 절차를
+        // 건너뛸 수 없게 한다(타이머는 이 기기의 지금 상태이지 옮겨 다닐 데이터가 아니다).
+        restored.lockTimerEncoded = data.lockTimerEncoded
+        restored.lockTimerClosedStartedAt = data.lockTimerClosedStartedAt
         data = restored
         persist()
         true
@@ -135,7 +139,9 @@ class Repository {
 
     fun getEnabledGroups(): List<Group> = synchronized(lock) { data.groups.filter { it.enabled } }
 
-    fun hasSiteGroups(): Boolean = synchronized(lock) { data.groups.any { it.domains.isNotEmpty() } }
+    fun hasSiteGroups(): Boolean = synchronized(lock) {
+        data.groups.any { it.domains.isNotEmpty() || (it.allowlistMode && allowsBrowser(it)) }
+    }
 
     private val appStartAtMillis = System.currentTimeMillis()
 
@@ -448,18 +454,31 @@ class Repository {
      * evaluate()/isConfirmActiveNow() 등에서 각각 확인한다).
      */
     fun findGroupsForProcess(processName: String): List<Group> = synchronized(lock) {
+        // 전체 잠금 방식 규칙(142차)은 거꾸로다 — 목록(허용 프로그램)에 "없는" 프로그램이 그 규칙의 대상이다.
+        // 이 앱 자신과 바탕화면(탐색기)·윈도우 잠금 화면은 어떤 전체 잠금 규칙에도 걸리지 않는다.
+        val alwaysAllowed = com.phonelock.desktop.monitor.DesktopEssentials.isAlwaysAllowed(processName)
         data.groups.filter { group ->
-            group.processNames.any { it.equals(processName, ignoreCase = true) } && evaluator.isGroupActive(group)
+            val listed = group.processNames.any { it.equals(processName, ignoreCase = true) }
+            val targeted = if (group.allowlistMode) !listed && !alwaysAllowed else listed
+            targeted && evaluator.isGroupActive(group)
         }
     }
+
+    /** 전체 잠금 방식 규칙이 브라우저를 하나라도 허용했는지 — 아니면 브라우저 자체가 프로그램 단위로 막히므로
+     *  사이트 단위 판정(과 사용시간 적립)을 또 하지 않는다. */
+    private fun allowsBrowser(group: Group): Boolean =
+        group.processNames.any { name -> com.phonelock.desktop.monitor.DesktopEssentials.isBrowser(name) }
 
     fun findGroupsForDomain(hostname: String): List<Group> = synchronized(lock) {
         val host = hostname.lowercase()
         data.groups.filter { group ->
-            group.domains.any { domain ->
+            val listed = group.domains.any { domain ->
                 val d = domain.lowercase()
                 host == d || host.endsWith(".$d")
-            } && evaluator.isGroupActive(group)
+            }
+            // 전체 잠금 방식 규칙(142차): 허용 사이트에 "없는" 사이트가 대상이다(브라우저를 허용해 둔 규칙만).
+            val targeted = if (group.allowlistMode) !listed && allowsBrowser(group) else listed
+            targeted && evaluator.isGroupActive(group)
         }
     }
 
@@ -699,9 +718,19 @@ class Repository {
             persist()
         }
 
-    /** 현재 선택된 테마의 완성된 팔레트 — CUSTOM이면 두 색으로부터 나머지를 자동 계산한다. */
+    /** 미니멀 모드 = 성능 모드(144차) — 켜면 [currentPalette]가 흑백 팔레트를 돌려주고, 테마가 그걸 보고 움직임을 줄인다. */
+    var minimalMode: Boolean
+        get() = synchronized(lock) { data.minimalMode }
+        set(value) = synchronized(lock) {
+            data.minimalMode = value
+            persist()
+        }
+
+    /** 현재 선택된 테마의 완성된 팔레트 — CUSTOM이면 두 색으로부터 나머지를 자동 계산한다. 144차: 미니멀 모드면 흑백. */
     fun currentPalette(): com.phonelock.desktop.ui.theme.PhoneLockPalette = synchronized(lock) {
-        if (data.themeMode == com.phonelock.desktop.ui.theme.ThemeMode.CUSTOM) {
+        if (data.minimalMode) {
+            com.phonelock.desktop.ui.theme.MonoPalette
+        } else if (data.themeMode == com.phonelock.desktop.ui.theme.ThemeMode.CUSTOM) {
             com.phonelock.desktop.ui.theme.buildCustomPalette(data.customThemeBackground, data.customThemeAccent)
         } else {
             com.phonelock.desktop.ui.theme.paletteFor(data.themeMode)
@@ -809,6 +838,13 @@ class Repository {
             persist()
         }
 
+    /** 루틴 연속 기록 방지권(142차) — 주당 봐주는 일수(0~6). 바꾼 뒤엔 [pushSettingsToFirebase]로 다른 기기에도 올린다. */
+    var routineStreakFreezePerWeek: Int
+        get() = synchronized(lock) { com.phonelock.shared.routine.RoutineStreak.clampFreeze(data.routineStreakFreezePerWeek) }
+        set(value) = synchronized(lock) {
+            data.routineStreakFreezePerWeek = com.phonelock.shared.routine.RoutineStreak.clampFreeze(value)
+            persist()
+        }
     // ---- 공부 알림(122차) — 전부 로컬 설정, [com.phonelock.desktop.routine.StudyAlertNotifier] 참고 ----
     var studyAlertEnabled: Boolean
         get() = synchronized(lock) { data.studyAlertEnabled }
@@ -1089,7 +1125,7 @@ class Repository {
     private fun addStudyLogEntry(taskName: String, seconds: Int, startedAt: Long, note: String = "", tag: String = "") = synchronized(lock) {
         if (seconds <= 0) return@synchronized
         val today = effectiveDate(data.dailyResetHour).toString()
-        data.studyLog.add(StudyLogEntry(today, taskName.ifBlank { "이름 없는 공부" }, seconds, startedAt, note, tag))
+        data.studyLog.add(StudyLogEntry(today, taskName.ifBlank { "이름 없는 집중" }, seconds, startedAt, note, tag))
         persist()
         pushStudyLogToFirebase(today)
         awardStudyPoints(seconds, today, startedAt)
@@ -1139,6 +1175,89 @@ class Repository {
         }
     }
 
+    /**
+     * 통계 탭용(142차) — 날짜별 공부 시간(모든 기기 합산)과 "공부 기록이 있는 날" 집합.
+     *
+     * 이 기기 기록은 로컬 전체를 쓰고, 다른 기기 몫은 평균에 필요한 최근 30일만 범위로 한 번에 받아 합친다
+     * (하루씩 [syncStudyLogFromFirebase]를 부르지 않는다). 연속 기록은 날짜만 알면 되므로 날짜 키 목록을 따로
+     * 받는다. 오프라인이거나 받지 못하면 이 기기 기록만으로 계산한다. 네트워크 호출이 있으므로 IO에서 부를 것.
+     */
+    fun loadStudyDayTotals(): com.phonelock.shared.study.StudyStats.DayTotals {
+        val local = synchronized(lock) { data.studyLog.toList() }
+        val secondsByDate = mutableMapOf<String, Long>()
+        local.forEach { secondsByDate[it.dateKey] = (secondsByDate[it.dateKey] ?: 0L) + it.seconds }
+        val studied = secondsByDate.filterValues { it > 0 }.keys.toMutableSet()
+        if (isEffectivelyOffline()) return com.phonelock.shared.study.StudyStats.DayTotals(secondsByDate, studied)
+
+        val (url, key) = synchronized(lock) { data.fbDatabaseUrl to data.fbApiKey }
+        val since = java.time.LocalDate.parse(todayCalendarDateKey())
+            .minusDays((com.phonelock.shared.study.StudyStats.LONG_WINDOW_DAYS - 1).toLong()).toString()
+        com.phonelock.desktop.monitor.PomodoroSyncClient.readStudyLogSince(url, key, since)?.let { remote ->
+            val ownKey = deviceSlotKey()
+            remote.keys().forEach { dateKey ->
+                val day = remote.optJSONObject(dateKey) ?: return@forEach
+                val fingerprints = local.filter { it.dateKey == dateKey }
+                    .map { studyLogFingerprint(it.startedAt, it.seconds, it.taskName) }
+                    .toSet()
+                val others = mergeRemoteStudyLog(day, dateKey, ownKey, fingerprints).sumOf { it.seconds.toLong() }
+                if (others > 0) {
+                    secondsByDate[dateKey] = (secondsByDate[dateKey] ?: 0L) + others
+                    studied += dateKey
+                }
+            }
+        }
+        com.phonelock.desktop.monitor.PomodoroSyncClient.readStudyLogDateKeys(url, key)?.let { studied += it }
+        return com.phonelock.shared.study.StudyStats.DayTotals(secondsByDate, studied)
+    }
+
+    /**
+     * 모임 공유용(143차) — [fromKey, toKey] 범위의 집중 기록 전체(이 기기 + 다른 기기). 캘린더 날짜 상세의 "그 날 총
+     * 시간"과 일정별 시간이 다른 기기에서 한 몫까지 합산되도록 범위로 한 번에 받는다([loadStudyDayTotals]와 같은 방식).
+     * 오프라인이거나 받지 못하면 이 기기 기록만 돌려준다. 네트워크 호출이 있으므로 IO에서 부를 것.
+     */
+    fun loadStudyLogEntriesInRange(fromKey: String, toKey: String): List<StudyLogEntry> {
+        val local = getStudyLogInRange(fromKey, toKey)
+        if (isEffectivelyOffline()) return local
+        val (url, key) = synchronized(lock) { data.fbDatabaseUrl to data.fbApiKey }
+        val remote = com.phonelock.desktop.monitor.PomodoroSyncClient.readStudyLogSince(url, key, fromKey) ?: return local
+        val ownKey = deviceSlotKey()
+        val entries = local.toMutableList()
+        remote.keys().forEach { dateKey ->
+            if (dateKey > toKey) return@forEach
+            val day = remote.optJSONObject(dateKey) ?: return@forEach
+            val fingerprints = local.filter { it.dateKey == dateKey }
+                .map { studyLogFingerprint(it.startedAt, it.seconds, it.taskName) }
+                .toSet()
+            entries += mergeRemoteStudyLog(day, dateKey, ownKey, fingerprints)
+        }
+        return entries
+    }
+    // ---- 관리 > 타이머("이거까지만 할게요!", 142차) ----
+
+    var lockTimer: com.phonelock.shared.lock.LockTimer?
+        get() = synchronized(lock) { com.phonelock.shared.lock.LockTimer.decode(data.lockTimerEncoded) }
+        set(value) = synchronized(lock) {
+            data.lockTimerEncoded = value?.encode().orEmpty()
+            persist()
+        }
+
+    var lockTimerPreset: com.phonelock.shared.lock.LockTimerPreset
+        get() = synchronized(lock) { com.phonelock.shared.lock.LockTimerPreset.decode(data.lockTimerPresetEncoded) }
+        set(value) = synchronized(lock) {
+            data.lockTimerPresetEncoded = value.encode()
+            persist()
+        }
+
+    /** 진행 중인 타이머. 잠금까지 다 끝난 약속은 여기서 지운다(다음 약속을 새로 걸 수 있게). */
+    fun activeLockTimer(): com.phonelock.shared.lock.LockTimer? = synchronized(lock) {
+        val timer = com.phonelock.shared.lock.LockTimer.decode(data.lockTimerEncoded) ?: return@synchronized null
+        if (timer.phaseAt(System.currentTimeMillis()) == com.phonelock.shared.lock.LockTimer.Phase.DONE) {
+            data.lockTimerEncoded = ""
+            persist()
+            return@synchronized null
+        }
+        timer
+    }
     /** 스톱워치/뽀모도로를 새로 시작한다. 이미 실행 중이면 아무 일도 하지 않는다. */
     fun timerStart(taskName: String, pomodoro: Boolean) {
         if (getTimerRun() != null) return

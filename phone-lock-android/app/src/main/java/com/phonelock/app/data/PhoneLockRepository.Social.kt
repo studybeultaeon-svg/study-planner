@@ -92,8 +92,11 @@ suspend fun PhoneLockRepository.pushMySocialStats(groupId: String) {
     val displayName = com.phonelock.app.service.AccountSyncClient.myDisplayName(fbDatabaseUrl, fbApiKey)
     val myProfileImage = com.phonelock.app.service.AccountSyncClient.fetchMyProfile(fbDatabaseUrl, fbApiKey)
         .getOrNull()?.optString("profileImage", "") ?: ""
+    // 루틴은 자정 기준(138차 결정)이라 달력 날짜를, 집중·캘린더 쪽은 "하루 시작 기준"의 오늘(141차)을 쓴다.
     val today = LocalDate.now()
     val todayKey = today.toString()
+    val studyToday = LocalDate.parse(todayCalendarDateKey())
+    val share = preferences.groupShareSettings(groupId)
     val routines = routineDao.getAll()
     val completed = routines.associate { it.id to getRoutineCompletedDateKeys(it.id) }
     val scheduledToday = routines.filter { com.phonelock.app.routine.RoutineEngine.isScheduledOn(it, today) }
@@ -107,17 +110,26 @@ suspend fun PhoneLockRepository.pushMySocialStats(groupId: String) {
     val studyProgress = if (calTasksToday.isNotEmpty()) {
         Math.round(calTasksToday.count { it.status == "O" } * 100.0 / calTasksToday.size).toInt()
     } else 0
-    val streak = com.phonelock.app.routine.RoutineEngine.currentStreak(routines, completed, today)
-    val routineBestStreak = com.phonelock.app.routine.RoutineEngine.bestStreak(routines, completed, today)
+    val freeze = preferences.routineStreakFreezePerWeek
+    val streak = com.phonelock.app.routine.RoutineEngine.currentStreak(routines, completed, today, freeze)
+    val routineBestStreak = com.phonelock.app.routine.RoutineEngine.bestStreak(routines, completed, today, freeze)
     // 오늘 하루치만 이름/상태로 보여주던 걸 76차에 실제 캘린더 미니 그리드로 바꾸면서, 이 달 전체
     // (달력 그리드가 앞뒤로 걸치는 주까지 포함해 ±7일 버퍼) 일정을 통째로 올린다 — 데스크탑
     // CalendarScreen.refresh()와 동일한 조회 범위 패턴.
-    val firstOfMonth = today.withDayOfMonth(1)
+    val firstOfMonth = studyToday.withDayOfMonth(1)
     val lastOfMonth = firstOfMonth.plusMonths(1).minusDays(1)
-    val monthTasks = getCalendarTasksInRange(firstOfMonth.minusDays(7).toString(), lastOfMonth.plusDays(7).toString())
+    val rangeFromKey = firstOfMonth.minusDays(7).toString()
+    val rangeToKey = lastOfMonth.plusDays(7).toString()
+    val monthTasks = getCalendarTasksInRange(rangeFromKey, rangeToKey)
+    // 143차: 같은 달 범위의 집중 기록(다른 기기 몫 포함) — 날짜별 합계와 일정별 시간을 여기서 함께 만든다.
+    // 집중 시간 공유를 끈 사람은 아예 받아오지도 않는다.
+    val studyEntries = if (share.shareStudy) loadStudyLogEntriesInRange(rangeFromKey, rangeToKey) else emptyList()
+    val studySecondsByDate = studyEntries.groupBy { it.dateKey }.mapValues { (_, entries) -> entries.sumOf { it.seconds } }
+    val studySecondsByTask = studyEntries.groupBy { it.dateKey to it.taskName }.mapValues { (_, entries) -> entries.sumOf { it.seconds } }
     val scheduleStats = monthTasks.map {
         com.phonelock.app.service.SocialGroupSyncClient.ScheduleStat(
-            it.dateKey, it.name, it.status, it.color, it.linkedCalc, it.progressStep, it.passIndex, it.passTotal
+            it.dateKey, it.name, it.status, it.color, it.linkedCalc, it.progressStep, it.passIndex, it.passTotal,
+            studySeconds = if (share.shareStudy) studySecondsByTask[it.dateKey to it.name] ?: 0 else null
         )
     }
     // "일정표" 탭에 캘린더 오늘 할 일이 아니라 진짜 TimetableScreen과 같은 요일별 목표량 표를
@@ -127,10 +139,11 @@ suspend fun PhoneLockRepository.pushMySocialStats(groupId: String) {
             it.name, it.unit, it.start, it.dday, it.mon, it.tue, it.wed, it.thu, it.fri, it.sat, it.sun
         )
     }
-    // 캘린더 날짜 상세에서 "그 날 얼마나 공부했는지" 보여주려고 같은 달 범위의 공부기록을 날짜별로 합산.
-    val studySecondsByDate = studyLogEntryDao.getInRange(
-        firstOfMonth.minusDays(7).toString(), lastOfMonth.plusDays(7).toString()
-    ).groupBy { it.dateKey }.mapValues { (_, entries) -> entries.sumOf { it.seconds } }
+    // 143차: 집중 통계 탭(연속 기록·하루 평균, 142차)은 이 사람의 기록으로 계산해서 올린다 — 받는 쪽은 일정 범위뿐이라
+    // 직접 계산할 수 없다.
+    val studySummary = if (share.shareStudy) {
+        com.phonelock.shared.study.StudyStats.summarize(loadStudyDayTotals(), studyToday)
+    } else null
 
     val localStudying = preferences.timerPhase == "study" && preferences.timerPhaseStartedAt > 0L
     val remoteStudying = runCatching {
@@ -141,7 +154,6 @@ suspend fun PhoneLockRepository.pushMySocialStats(groupId: String) {
         runCatching { com.phonelock.app.service.PomodoroSyncClient.remoteTaskName(fbDatabaseUrl, fbApiKey) }.getOrDefault("")
     }
 
-    val share = preferences.groupShareSettings(groupId)
     val hiddenFromUids = preferences.hiddenFromUidsFor(groupId)
 
     val plantExpTotal = getGrowthExpTotal()
@@ -159,7 +171,8 @@ suspend fun PhoneLockRepository.pushMySocialStats(groupId: String) {
             routineStats, studySeconds, studyProgress, streak, routineBestStreak,
             scheduleStats, calcTaskStats, studySecondsByDate, studyingNow, studyingTaskName,
             hiddenFromUids,
-            share.sharePlant, plantLevel, plantStage.title, plantStage.tier, plantProgress, plantRebirthCount
+            share.sharePlant, plantLevel, plantStage.title, plantStage.tier, plantProgress, plantRebirthCount,
+            studyDayKey = studyToday.toString(), studySummary = studySummary
         )
     }.onSuccess {
         preferences.recordSyncSuccess()

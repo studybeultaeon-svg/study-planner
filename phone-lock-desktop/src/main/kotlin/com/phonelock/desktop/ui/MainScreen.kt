@@ -1,21 +1,34 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Spa
+import androidx.compose.material.icons.filled.TaskAlt
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Spa
+import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationRailItemDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,9 +36,13 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import com.phonelock.desktop.ui.components.LedgerNavItem
+import com.phonelock.desktop.ui.components.LedgerNavRail
+import com.phonelock.desktop.ui.components.NoticeStrip
+import com.phonelock.desktop.ui.components.Overline
+import com.phonelock.desktop.ui.components.PageMasthead
+import com.phonelock.desktop.ui.components.SectionTabs
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.data.isEffectivelyOffline
 import com.phonelock.desktop.data.syncGroupSettingsFromFirebase
@@ -35,15 +52,25 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
+/** 관리 탭 안의 "타이머" 서브탭 번호 — 전체 잠금 화면의 "타이머 열기"가 쓴다(142차). 143차: 차단 규칙(0)과 사용 기록 사이로 옮겼다. */
+const val MANAGE_SUB_TAB_TIMER = 1
+private const val MANAGE_SUB_TAB_STATS = 2
+
 private enum class TopSection { HOME, ROUTINE, STUDY, MANAGE, SOCIAL_GROUP }
 
 /**
- * 데스크탑 전용 레이아웃: 왼쪽 사이드바(NavigationRail)로 관리앱/공부앱/설정을 고르고, 관리앱·공부앱은
+ * 데스크탑 전용 레이아웃: 왼쪽 레일(144차부터 [LedgerNavRail])로 관리앱/공부앱/설정을 고르고, 관리앱·공부앱은
  * 안에서 다시 서브탭(그룹/통계, 타이머/캘린더/계산기)으로 나뉜다. 넓은 화면을 옆으로 활용하는
  * 데스크탑다운 구조로, 모바일(하단 탭)과는 별개로 유지한다.
  */
 @Composable
-fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
+fun MainScreen(
+    repository: Repository,
+    onThemeChange: (String) -> Unit = {},
+    /** 전체 잠금 화면에서 "타이머 열기"/"차단 규칙 열기"를 누를 때마다 올라가는 번호와, 그때 열 관리 서브탭(142차). */
+    openManageSeq: Int = 0,
+    openManageSubTab: Int = 0
+) {
     // 관리자가 승인 시 지정한 기능 범위(루틴/공부/관리/모임)에 맞춰 보이는 섹션만 남긴다 — 설정은 항상
     // 보임(로그아웃/비밀번호 변경 등을 위해). 옛 승인 사용자는 필드가 없으면 Repository가 전부 true를
     // 기본값으로 주므로 이 필터링으로 인한 회귀는 없다.
@@ -74,6 +101,16 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
 
     fun refresh() {
         groups = repository.getGroups()
+    }
+
+    // 전체 잠금 화면이 보낸 요청 — 관리 탭의 그 서브탭으로 바로 간다.
+    LaunchedEffect(openManageSeq) {
+        if (openManageSeq > 0 && TopSection.MANAGE in visibleSections) {
+            settingsOpen = false
+            section = TopSection.MANAGE
+            manageSubTab = openManageSubTab
+            refresh()
+        }
     }
 
     // 탭을 옮겼다 와야만 그룹 목록이 새로고침되던 문제를 없애기 위해, 그룹 탭을 보고 있는 동안 주기적으로 다시 읽어온다.
@@ -117,123 +154,72 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
         }
     }
 
-    val railColors = NavigationRailItemDefaults.colors(
-        selectedIconColor = MaterialTheme.colorScheme.primary,
-        selectedTextColor = MaterialTheme.colorScheme.primary,
-        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-
-    Column(Modifier.fillMaxSize()) {
-        // 공부앱(index.html)의 상단 로고 바를 흉내낸 슬림 타이틀 바 — 데스크탑 창의 첫인상을 잡아준다.
-        Surface(color = MaterialTheme.colorScheme.surface) {
-            Box(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = Spacing.md), contentAlignment = Alignment.CenterStart) {
-                Text(
-                    "갓생살기종합세트",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
+    // 144차 리디자인(안드로이드판과 같은 언어): 상단 로고 바와 Material 레일 대신 "갓생" 워드마크가 있는 레일 + 강조 막대,
+    // 섹션마다 편집형 머리(큰 제목) + 텍스트 탭. 섹션·서브탭이 바뀔 때 짧게 페이드/슬라이드(성능 모드에선 페이드만).
+    val motion = com.phonelock.desktop.ui.theme.LocalAppMotion.current
+    val navItems = remember(visibleSections) {
+        visibleSections.map { s ->
+            when (s) {
+                TopSection.HOME -> LedgerNavItem(s.name, "홈", Icons.Outlined.Spa, Icons.Filled.Spa)
+                TopSection.ROUTINE -> LedgerNavItem(s.name, "루틴", Icons.Outlined.TaskAlt, Icons.Filled.TaskAlt)
+                TopSection.STUDY -> LedgerNavItem(s.name, "집중", Icons.Outlined.Timer, Icons.Filled.Timer)
+                TopSection.MANAGE -> LedgerNavItem(s.name, "관리", Icons.Outlined.Shield, Icons.Filled.Shield)
+                TopSection.SOCIAL_GROUP -> LedgerNavItem(s.name, "모임", Icons.Outlined.Groups, Icons.Filled.Groups)
             }
         }
+    }
 
-        Row(Modifier.weight(1f).fillMaxWidth()) {
-            NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
-                // 홈(구 "식물")이 항상 맨 위 — 앱의 메인 화면.
-                if (TopSection.HOME in visibleSections) {
-                    NavigationRailItem(
-                        selected = !settingsOpen && section == TopSection.HOME,
-                        onClick = { section = TopSection.HOME; settingsOpen = false },
-                        icon = { Text("🌱") },
-                        label = { Text("홈") },
-                        colors = railColors
-                    )
-                }
-                if (TopSection.ROUTINE in visibleSections) {
-                    NavigationRailItem(
-                        selected = !settingsOpen && section == TopSection.ROUTINE,
-                        onClick = { section = TopSection.ROUTINE; settingsOpen = false },
-                        icon = { Text("📋") },
-                        label = { Text("루틴") },
-                        colors = railColors
-                    )
-                }
-                if (TopSection.STUDY in visibleSections) {
-                    NavigationRailItem(
-                        selected = !settingsOpen && section == TopSection.STUDY,
-                        onClick = { section = TopSection.STUDY; settingsOpen = false },
-                        icon = { Text("📘") },
-                        label = { Text("공부") },
-                        colors = railColors
-                    )
-                }
-                if (TopSection.MANAGE in visibleSections) {
-                    NavigationRailItem(
-                        selected = !settingsOpen && section == TopSection.MANAGE,
-                        onClick = { section = TopSection.MANAGE; settingsOpen = false; refresh() },
-                        icon = { Text("🗂️") },
-                        label = { Text("규칙") },
-                        colors = railColors
-                    )
-                }
-                if (TopSection.SOCIAL_GROUP in visibleSections) {
-                    NavigationRailItem(
-                        selected = !settingsOpen && section == TopSection.SOCIAL_GROUP,
-                        onClick = { section = TopSection.SOCIAL_GROUP; settingsOpen = false },
-                        icon = { Text("👥") },
-                        label = { Text("모임") },
-                        colors = railColors
-                    )
-                }
+    Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        LedgerNavRail(
+            navItems,
+            selectedKey = if (settingsOpen) null else section.name,
+            onSelect = { item ->
+                val target = TopSection.valueOf(item.key)
+                section = target
+                settingsOpen = false
+                if (target == TopSection.MANAGE) refresh()
+            }
+        )
+
+        Column(Modifier.weight(1f).fillMaxHeight()) {
+            updateInstallerUrl?.let { url -> UpdateBanner(repository, url) }
+            if (extensionWarning) {
+                NoticeStrip(
+                    "브라우저 확장프로그램과 연결이 끊겼습니다 — 사이트 차단이 동작하지 않을 수 있습니다. 확장프로그램이 켜져 있는지, 시크릿 창이 아닌지 확인하세요.",
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)
+                )
             }
 
-            Column(Modifier.weight(1f).fillMaxHeight()) {
-                updateInstallerUrl?.let { url -> UpdateBanner(repository, url) }
-                if (extensionWarning) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.errorContainer
-                    ) {
-                        Text(
-                            "⚠ 브라우저 확장프로그램과 연결이 끊겼습니다 — 사이트 차단이 동작하지 않을 수 있습니다. " +
-                                "확장프로그램이 켜져 있는지, 시크릿 창이 아닌지 확인하세요.",
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-
-                if (settingsOpen) {
-                    Box(Modifier.weight(1f)) {
-                        SettingsScreen(
-                            repository,
-                            onThemeChange = onThemeChange,
-                            onClose = { settingsOpen = false }
-                        )
-                    }
-                } else when (section) {
-                    TopSection.MANAGE -> {
-                        TabRow(
-                            selectedTabIndex = manageSubTab,
-                            containerColor = MaterialTheme.colorScheme.background,
-                            contentColor = MaterialTheme.colorScheme.onBackground
-                        ) {
-                            Tab(
-                                selected = manageSubTab == 0,
-                                onClick = { manageSubTab = 0; editingGroupId = null; isCreatingNew = false; refresh() },
-                                // 공부 섹션 서브탭만 이모지가 있고 관리 섹션엔 없어서 같은 자리의 탭 줄인데도
-                                // 서로 다르게 보였다 — 두 섹션의 서브탭 표기를 통일한다.
-                                text = { Text("🗂️ 차단 규칙") }
+            AnimatedContent(
+                targetState = if (settingsOpen) null else section,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                transitionSpec = { fadeIn(motion.standard()) togetherWith fadeOut(motion.exit()) },
+                label = "desktopSection"
+            ) { shown ->
+                Column(Modifier.fillMaxSize()) {
+                    when (shown) {
+                        null -> Box(Modifier.weight(1f)) {
+                            SettingsScreen(
+                                repository,
+                                onThemeChange = onThemeChange,
+                                onClose = { settingsOpen = false }
                             )
-                            Tab(selected = manageSubTab == 1, onClick = { manageSubTab = 1; refresh() }, text = { Text("📊 사용 기록") })
                         }
-                        Box(Modifier.weight(1f)) {
-                            when (manageSubTab) {
-                                // 28차 세션의 타이머/캘린더/계산기와 같은 좌우 분할(마스터-디테일):
-                                // 왼쪽은 항상 그룹 목록, 오른쪽은 선택한 그룹의 편집 폼(선택 없으면 안내문).
-                                0 -> {
-                                    Row(Modifier.fillMaxSize()) {
+                        TopSection.MANAGE -> {
+                            PageMasthead(title = "관리", overline = "차단 · 타이머 · 기록")
+                            SectionTabs(
+                                listOf("차단 규칙", "타이머", "사용 기록"),
+                                manageSubTab,
+                                { tab ->
+                                    manageSubTab = tab
+                                    if (tab == 0) { editingGroupId = null; isCreatingNew = false }
+                                    if (tab != MANAGE_SUB_TAB_TIMER) refresh()
+                                }
+                            )
+                            DesktopSubTabContent(manageSubTab, Modifier.weight(1f)) { tab ->
+                                when (tab) {
+                                    // 28차 세션의 좌우 분할(마스터-디테일): 왼쪽은 항상 그룹 목록, 오른쪽은 선택한 그룹의 편집 폼.
+                                    0 -> Row(Modifier.fillMaxSize()) {
                                         Column(Modifier.weight(1f).fillMaxHeight()) {
                                             GroupListScreen(
                                                 repository = repository,
@@ -243,6 +229,7 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                                                 onEditClick = { isCreatingNew = false; editingGroupId = it }
                                             )
                                         }
+                                        VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                         Column(Modifier.weight(1f).fillMaxHeight()) {
                                             if (isCreatingNew || editingGroupId != null) {
                                                 GroupEditScreen(
@@ -255,59 +242,44 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                                                     }
                                                 )
                                             } else {
-                                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                    Text(
-                                                        "차단 규칙을 선택하면 여기서 편집할 수 있습니다.",
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
+                                                Column(Modifier.fillMaxSize().padding(Spacing.xl), verticalArrangement = Arrangement.Center) {
+                                                    Overline("편집")
+                                                    Text("왼쪽에서 차단 규칙을 고르면\n여기서 편집할 수 있습니다.", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 }
                                             }
                                         }
                                     }
+                                    MANAGE_SUB_TAB_STATS -> StatsScreen(repository)
+                                    MANAGE_SUB_TAB_TIMER -> LockTimerScreen(repository)
                                 }
-                                1 -> StatsScreen(repository)
                             }
                         }
-                    }
-                    TopSection.STUDY -> {
-                        TabRow(
-                            selectedTabIndex = studySubTab,
-                            containerColor = MaterialTheme.colorScheme.background,
-                            contentColor = MaterialTheme.colorScheme.onBackground
-                        ) {
-                            Tab(selected = studySubTab == 0, onClick = { studySubTab = 0 }, text = { Text("⏱️ 타이머") })
-                            Tab(selected = studySubTab == 1, onClick = { studySubTab = 1 }, text = { Text("📅 캘린더") })
-                            Tab(selected = studySubTab == 2, onClick = { studySubTab = 2 }, text = { Text("🧮 계산기") })
-                            Tab(selected = studySubTab == 3, onClick = { studySubTab = 3 }, text = { Text("🗓️ 일정표") })
-                            Tab(selected = studySubTab == 4, onClick = { studySubTab = 4 }, text = { Text("📈 통계") })
-                        }
-                        Box(Modifier.weight(1f)) {
-                            when (studySubTab) {
-                                0 -> StudyTimerScreen(repository)
-                                1 -> CalendarScreen(repository)
-                                2 -> CalculatorScreen(repository)
-                                3 -> TimetableScreen(repository)
-                                4 -> StudyStatsScreen(repository)
+                        TopSection.STUDY -> {
+                            val todayLabel = remember {
+                                java.time.LocalDate.parse(repository.todayCalendarDateKey())
+                                    .format(java.time.format.DateTimeFormatter.ofPattern("M월 d일 EEEE", java.util.Locale.KOREAN))
+                            }
+                            PageMasthead(title = "집중", overline = todayLabel)
+                            SectionTabs(listOf("타이머", "캘린더", "계산기", "일정표", "통계"), studySubTab, { studySubTab = it })
+                            DesktopSubTabContent(studySubTab, Modifier.weight(1f)) { tab ->
+                                when (tab) {
+                                    0 -> StudyTimerScreen(repository)
+                                    1 -> CalendarScreen(repository)
+                                    2 -> CalculatorScreen(repository)
+                                    3 -> TimetableScreen(repository)
+                                    4 -> StudyStatsScreen(repository)
+                                }
                             }
                         }
-                    }
-                    TopSection.ROUTINE -> {
-                        Box(Modifier.weight(1f)) {
-                            RoutineScreen(repository)
-                        }
-                    }
-                    TopSection.HOME -> {
-                        Box(Modifier.weight(1f)) {
+                        TopSection.ROUTINE -> Box(Modifier.weight(1f)) { RoutineScreen(repository) }
+                        TopSection.HOME -> Box(Modifier.weight(1f)) {
                             PlantScreen(
                                 repository,
                                 permPlant = repository.permPlant,
                                 onOpenSettings = { settingsOpen = true }
                             )
                         }
-                    }
-                    TopSection.SOCIAL_GROUP -> {
-                        Box(Modifier.weight(1f)) {
+                        TopSection.SOCIAL_GROUP -> Box(Modifier.weight(1f)) {
                             val dmChat = selectedDmChat
                             val groupId = selectedSocialGroupId
                             if (dmChat != null) {
@@ -330,5 +302,27 @@ fun MainScreen(repository: Repository, onThemeChange: (String) -> Unit = {}) {
                 }
             }
         }
+    }
+}
+
+/** 서브탭 내용 전환 — 고른 쪽으로 살짝(1/16 폭) 밀리며 바뀐다(안드로이드판 SectionContent와 같은 규칙, 성능 모드에선 페이드만). */
+@Composable
+private fun DesktopSubTabContent(subTab: Int, modifier: Modifier, content: @Composable (Int) -> Unit) {
+    val motion = com.phonelock.desktop.ui.theme.LocalAppMotion.current
+    AnimatedContent(
+        targetState = subTab,
+        modifier = modifier.fillMaxSize(),
+        transitionSpec = {
+            val forward = targetState > initialState
+            if (motion.reduced) {
+                fadeIn(motion.standard()) togetherWith fadeOut(motion.exit())
+            } else {
+                (fadeIn(motion.standard()) + slideInHorizontally(motion.standard()) { w -> (if (forward) w else -w) / 16 }) togetherWith
+                    (fadeOut(motion.exit()) + slideOutHorizontally(motion.exit()) { w -> (if (forward) -w else w) / 16 })
+            }
+        },
+        label = "desktopSubTab"
+    ) { tab ->
+        Box(Modifier.fillMaxSize()) { content(tab) }
     }
 }

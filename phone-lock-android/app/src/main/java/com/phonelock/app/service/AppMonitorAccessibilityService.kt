@@ -11,11 +11,17 @@ import android.widget.Toast
 import com.phonelock.app.data.AppGroup
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.GroupSite
+import com.phonelock.app.data.LockTimerSyncResult
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.data.enforcedLockTimer
+import com.phonelock.app.data.syncLockTimer
 import com.phonelock.app.ui.BlockActivity
 import com.phonelock.app.ui.ConfirmOpenActivity
+import com.phonelock.app.ui.FullLockActivity
 import com.phonelock.shared.MOTIVATIONAL_QUOTES
 import com.phonelock.app.ui.StudyLockActivity
+import com.phonelock.shared.lock.LockTimer
+import com.phonelock.shared.lock.formatLockRemaining
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +72,14 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     private val backgroundUsageRemainderMs = mutableMapOf<Long, Long>()
     private val lastPauseNoticeAt = mutableMapOf<String, Long>()
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // 타이머(142차) 안내를 한 약속당 한 번씩만 띄우기 위한 표시 — 값은 그 약속의 잠금 시작 시각.
+    private var lockTimerWarnedFor = 0L
+    private var lockTimerStartNoticeFor = 0L
+
+    // 타이머의 다른 기기 동기화(143차) — 마지막으로 맞춘 시각과 진행 중 여부.
+    private var lastLockTimerSyncAt = 0L
+    private val lockTimerSyncInFlight = AtomicBoolean(false)
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -118,6 +132,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             delay(TICK_MS)
             runCatching { tick() }
             runCatching { enforceBackgroundMedia() }
+            runCatching { syncLockTimerIfDue() }
         }
     }
 
@@ -144,12 +159,16 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         // "감옥처럼 이 화면을 벗어나지 못하게" 요청한 기능)에는 맞지 않는다 — 내 앱 화면으로 도망가서
         // 무제한으로 머물 수 있게 되어버리기 때문. checkStudyLock()은 내 앱 자신을 따로 예외 처리한다.
         if (checkStudyLock(packageName)) return
+        // 타이머(142차)의 "곧 잠깁니다" 안내는 어떤 화면을 보고 있든 떠야 하므로 무시 대상 검사보다 먼저 한다.
+        notifyLockTimerIfNeeded()
 
         if (shouldIgnore(packageName)) {
             // 우리 앱 자신(차단/확인 화면 등)이 떠 있을 땐 남은 시간 오버레이도 같이 내린다.
             hideUsageOverlay()
             return
         }
+
+        if (checkLockTimer(packageName)) return
 
         // 이벤트 기반 감지(onAccessibilityEvent)가 놓친 경우를 대비한 주기적 안전망.
         checkReelsShorts(packageName)
@@ -171,7 +190,10 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             val result = evaluator.evaluate(group)
             if (result.locked) {
                 hideUsageOverlay()
-                launchBlock(packageName, result.reason!!, repository.recordBlockAttempt(group.id))
+                val attempts = repository.recordBlockAttempt(group.id)
+                // 전체 잠금 방식 규칙(142차)은 허용한 앱을 바로 열 수 있는 전용 화면으로 보낸다.
+                if (group.allowlistMode) launchFullLockForGroup(group, result.reason!!)
+                else launchBlock(packageName, result.reason!!, attempts)
                 return
             }
         }
@@ -289,8 +311,16 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         val foregroundGroupIds = foreground?.let { pkg -> repository.findGroupsForPackage(pkg).map { it.id }.toSet() }.orEmpty()
         val studyLocked = repository.isStudyLockActive() || isRemoteStudyTimerActive()
         val studyAllowed = preferences.studyLockAllowedPackages
+        val lockedTimer = repository.enforcedLockTimer(activeLockTimer(), now)
         val usageGroupIds = mutableSetOf<Long>()
         for (pkg in playing) {
+            // 타이머 잠금(142차)에 걸린 앱도 화면과 같은 기준으로 재생을 멈춘다.
+            if (lockedTimer != null && lockedTimer.blocksApp(pkg) &&
+                !(lockedTimer.wholeDevice && pkg in EssentialApps.packages(applicationContext))
+            ) {
+                pauseBackgroundMedia(pkg)
+                continue
+            }
             if (studyLocked && pkg !in studyAllowed) {
                 pauseBackgroundMedia(pkg)
                 continue
@@ -486,8 +516,9 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         if (addressText == null) return
 
         if (checkStudyLockSite(packageName, addressText)) return
+        if (checkLockTimerSite(packageName, addressText)) return
 
-        val matches = repository.findGroupSitesForAddress(addressText)
+        val matches = repository.findGroupSitesForAddress(addressText, packageName)
         if (matches.isEmpty()) {
             hideUsageOverlay()
             return
@@ -500,7 +531,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             val result = evaluator.evaluate(group)
             if (result.locked) {
                 hideUsageOverlay()
-                launchBlock(packageName, result.reason!!, repository.recordBlockAttempt(group.id))
+                launchBlock(packageName, siteLockReason(group, result.reason!!), repository.recordBlockAttempt(group.id))
                 return
             }
         }
@@ -532,7 +563,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
                 val freshResult = evaluator.evaluate(fresh)
                 if (freshResult.locked) {
                     hideUsageOverlay()
-                    launchBlock(packageName, freshResult.reason!!, repository.recordBlockAttempt(fresh.id))
+                    launchBlock(packageName, siteLockReason(fresh, freshResult.reason!!), repository.recordBlockAttempt(fresh.id))
                     return
                 }
             }
@@ -797,6 +828,141 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         return "%02d:%02d".format(minutes, seconds)
     }
 
+    // ---- 관리 > 타이머("이거까지만 할게요!") · 전체 잠금 방식 규칙(142차) ----
+
+    /** 진행 중인 타이머. 잠금까지 다 끝난 약속은 여기서 지운다(다음 약속을 새로 걸 수 있게). */
+    private fun activeLockTimer(): LockTimer? {
+        val timer = preferences.lockTimer ?: return null
+        if (timer.phaseAt(System.currentTimeMillis()) == LockTimer.Phase.DONE) {
+            preferences.lockTimer = null
+            return null
+        }
+        return timer
+    }
+
+    /**
+     * 자유 시간이 1분 남았을 때와 잠금이 시작될 때 한 번씩 알려준다 — 보던 화면이 예고 없이 잠금 화면으로 바뀌지
+     * 않게 하기 위함이다. 자유 시간이 1분 이하였던 약속(바로 잠금 포함)은 방금 직접 누른 것이라 알리지 않는다.
+     */
+    private fun notifyLockTimerIfNeeded() {
+        val timer = activeLockTimer() ?: return
+        val now = System.currentTimeMillis()
+        val hadRealFreeTime = timer.lockStartAtMillis - timer.startedAtMillis > LockTimer.WARNING_BEFORE_LOCK_MILLIS
+        if (!hadRealFreeTime) return
+        when (timer.phaseAt(now)) {
+            LockTimer.Phase.FREE -> {
+                val untilLock = timer.lockStartAtMillis - now
+                if (untilLock <= LockTimer.WARNING_BEFORE_LOCK_MILLIS && lockTimerWarnedFor != timer.lockStartAtMillis) {
+                    lockTimerWarnedFor = timer.lockStartAtMillis
+                    showLockTimerToast("이거까지만! ${formatLockRemaining(untilLock)} 뒤에 잠깁니다.")
+                }
+            }
+            LockTimer.Phase.LOCKED -> if (lockTimerStartNoticeFor != timer.lockStartAtMillis) {
+                lockTimerStartNoticeFor = timer.lockStartAtMillis
+                showLockTimerToast("약속한 시간이 끝났습니다. 지금부터 ${formatLockRemaining(timer.remainingMillis(now))} 동안 잠급니다.")
+            }
+            LockTimer.Phase.DONE -> {}
+        }
+    }
+
+    private fun showLockTimerToast(message: String) {
+        mainHandler.post { Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show() }
+    }
+
+    /**
+     * 다른 기기와 타이머를 맞춘다(143차). 약속이 있으면 해제·교체를 빨리 알아채도록 자주, 없으면 새 약속이 걸렸는지만
+     * 가끔 확인한다 — 하루 종일 도는 루프라 한가할 때의 요청 수를 줄인다. 네트워크 대기가 판정 루프를 막지 않게
+     * 별도 코루틴에서 돌고, 이전 요청이 끝나기 전에는 새로 시작하지 않는다.
+     */
+    private fun syncLockTimerIfDue() {
+        val now = System.currentTimeMillis()
+        val interval = if (preferences.lockTimer != null) LOCK_TIMER_SYNC_ACTIVE_MS else LOCK_TIMER_SYNC_IDLE_MS
+        if (now - lastLockTimerSyncAt < interval) return
+        if (!lockTimerSyncInFlight.compareAndSet(false, true)) return
+        lastLockTimerSyncAt = now
+        serviceScope.launch {
+            try {
+                when (repository.syncLockTimer()) {
+                    LockTimerSyncResult.ADOPTED -> showLockTimerToast("다른 기기에서 시작한 타이머가 이 기기에도 걸렸습니다.")
+                    LockTimerSyncResult.CLEARED -> showLockTimerToast("다른 기기에서 타이머를 풀어서 이 기기에서도 풀렸습니다.")
+                    LockTimerSyncResult.NONE -> {}
+                }
+            } finally {
+                lockTimerSyncInFlight.set(false)
+            }
+        }
+    }
+
+    /**
+     * 타이머가 잠금 단계면 지금 화면의 앱이 막히는지 본다. 전체 잠금이면 허용 목록과 [EssentialApps] 밖의 앱을
+     * 전부 전체 잠금 화면으로 보내고, 특정 잠금이면 고른 앱만 차단 화면으로 보낸다. 막았으면 true.
+     */
+    private suspend fun checkLockTimer(packageName: String): Boolean {
+        // 143차: "뽀모도로 휴식 중엔 풀기"를 켠 약속은 휴식 중에 잠금이 없는 것으로 본다(enforcedLockTimer).
+        val timer = repository.enforcedLockTimer(activeLockTimer()) ?: return false
+        if (!timer.blocksApp(packageName)) return false
+        if (timer.wholeDevice && packageName in EssentialApps.packages(applicationContext)) return false
+        hideUsageOverlay()
+        if (timer.wholeDevice) {
+            launchFullLock(
+                title = "타이머 잠금",
+                message = "약속한 시간이 끝났습니다. 잠금이 풀릴 때까지 허용한 앱만 쓸 수 있습니다.",
+                allowedPackages = timer.apps,
+                endsAtMillis = timer.lockEndAtMillis
+            )
+        } else {
+            launchBlock(packageName, LockReason.TIMER)
+        }
+        return true
+    }
+
+    /** 브라우저가 열려 있을 때 주소 기준으로 한 번 더 본다 — 전체 잠금이면 허용 사이트 밖, 특정 잠금이면 고른 사이트. */
+    private suspend fun checkLockTimerSite(packageName: String, addressText: String): Boolean {
+        val timer = repository.enforcedLockTimer(activeLockTimer()) ?: return false
+        // 전체 잠금에서 브라우저 자체가 허용 앱이 아니면 앱 단위 잠금(checkLockTimer)이 이미 막는다.
+        if (timer.wholeDevice && timer.blocksApp(packageName)) return false
+        if (!timer.blocksAddressText(addressText)) return false
+        hideUsageOverlay()
+        launchBlock(packageName, if (timer.wholeDevice) LockReason.FULL_LOCK else LockReason.TIMER)
+        return true
+    }
+
+    /** 전체 잠금 방식 규칙에서 막힌 사이트는 "허용한 사이트만"이라는 안내가 맞다(시간대/한도 문구는 앱 기준 문장이다). */
+    private fun siteLockReason(group: AppGroup, reason: LockReason): LockReason =
+        if (group.allowlistMode) LockReason.FULL_LOCK else reason
+
+    private suspend fun launchFullLockForGroup(group: AppGroup, reason: LockReason) {
+        val message = if (reason == LockReason.LIMIT) {
+            "오늘 사용 시간 한도를 모두 썼습니다. 허용한 앱만 쓸 수 있습니다."
+        } else {
+            "지금은 이 차단 규칙의 전체 잠금 시간대입니다. 허용한 앱만 쓸 수 있습니다."
+        }
+        launchFullLock(
+            title = group.name,
+            message = message,
+            allowedPackages = repository.getMembers(group.id).map { it.packageName }.toSet(),
+            endsAtMillis = 0L,
+            groupId = group.id
+        )
+    }
+
+    private fun launchFullLock(
+        title: String,
+        message: String,
+        allowedPackages: Set<String>,
+        endsAtMillis: Long,
+        groupId: Long = -1L
+    ) {
+        val intent = Intent(this, FullLockActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra(IntentExtras.EXTRA_FULL_LOCK_TITLE, title)
+            putExtra(IntentExtras.EXTRA_FULL_LOCK_MESSAGE, message)
+            putExtra(IntentExtras.EXTRA_FULL_LOCK_ALLOWED_PACKAGES, allowedPackages.toTypedArray())
+            putExtra(IntentExtras.EXTRA_FULL_LOCK_ENDS_AT, endsAtMillis)
+            putExtra(IntentExtras.EXTRA_GROUP_ID, groupId)
+        }
+        startActivity(intent)
+    }
     private fun launchBlock(packageName: String, reason: LockReason, blockAttempts: Int = 0) {
         val intent = Intent(this, BlockActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -855,6 +1021,9 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         private val SHORTS_KEYWORDS = listOf("쇼츠", "Shorts")
         private const val SITE_CHECK_THROTTLE_MS = 800L
         private const val MAX_SITE_TICK_SECONDS = 30
+        // 타이머 동기화(143차) 확인 간격 — 진행 중인 약속이 있을 때 / 없을 때.
+        private const val LOCK_TIMER_SYNC_ACTIVE_MS = 10_000L
+        private const val LOCK_TIMER_SYNC_IDLE_MS = 30_000L
         // ?곗뒪?ы깙 ?ㅻ쾭?덉씠? 媛숈? 鍮꾩쑉(0.1/0.85瑜?0~255 ?뚰뙆媛믪쑝濡??섏궛). ?덈꺼留덈떎 ?ㅻⅤ?????
         // 怨좎젙媛믪씠 ?꾨땲??洹몃９??overlayLevelStepsToMax濡쒕???留ㅻ쾲 怨꾩궛?쒕떎(applyOverlayOpacityForLevel).
         private const val OVERLAY_BASE_ALPHA = 26

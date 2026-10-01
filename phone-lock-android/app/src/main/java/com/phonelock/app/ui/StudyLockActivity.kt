@@ -1,5 +1,6 @@
 package com.phonelock.app.ui
 
+import androidx.compose.ui.unit.sp
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -90,7 +91,7 @@ class StudyLockActivity : ComponentActivity() {
         val prefs = AppPreferences(applicationContext)
         applyThemeWindowBackground(prefs)
         setContent {
-            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
+            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale, performanceMode = prefs.minimalMode) {
                 StudyLockScreen(
                     allowedPackages = allowedPackages,
                     studyStartedAt = studyStartedAt,
@@ -226,93 +227,89 @@ private fun StudyLockScreen(
     val remainingSec = if (isPomodoro && phaseEndAt > 0) ((phaseEndAt - nowMillis) / 1000L).coerceAtLeast(0L) else null
     val secondHandAngle = if (!isPomodoro) (elapsedSec % 60) * 6f else null
 
-    val bg = Brush.radialGradient(
-        colors = listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f), MaterialTheme.colorScheme.background),
-        radius = 1400f
+    // 144차 리디자인: 원형 링 대신 화면 폭을 채우는 큰 시간 숫자 + 진행 막대(뽀모도로), 위에 상태 줄과 일정 이름,
+    // 버튼은 엄지가 닿는 아래쪽. 표준 모드는 강조색이 옅게 번지는 바탕, 성능 모드는 단색.
+    val performance = com.phonelock.app.ui.theme.LocalPerformanceMode.current
+    val bgModifier = if (performance) Modifier.background(MaterialTheme.colorScheme.background)
+    else Modifier.background(
+        Brush.radialGradient(
+            colors = listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f), MaterialTheme.colorScheme.background),
+            radius = 1400f
+        )
     )
 
-    Box(Modifier.fillMaxSize().background(bg)) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // 96차 버그 수정: 태블릿(특히 가로 모드처럼 세로 폭이 좁은 화면)에서 이 Column이 배지+타이머
-            // 원형+태스크 칩+"타이머 정지" 버튼까지 다 그리기엔 세로 공간이 부족한데, 예전엔 스크롤이
-            // 없어 넘치는 만큼 그냥 화면 밖으로 잘려 정지 버튼이 안 보였다(사용자 지적). verticalScroll을
-            // 추가해 안 잘리고 스크롤해서라도 항상 버튼에 닿을 수 있게 한다.
-            // 126차: 아래 절반을 늘 차지하던 "허용된 앱" 목록을 다이얼로그로 옮기면서 이 Column이 화면
-            // 전체를 쓴다 — 태블릿에서도 타이머와 버튼들이 한 화면에 들어와 스크롤이 거의 필요 없어졌다.
-            Column(
-                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                LockPhaseBadge(isPomodoro = isPomodoro, isRemote = isRemote)
-                Spacer(Modifier.height(20.dp))
-                LockRing(
-                    progress = progress,
-                    secondHandAngle = secondHandAngle,
-                    bigText = if (remainingSec != null) formatHms(remainingSec) else formatHms(elapsedSec),
-                    smallLabel = if (remainingSec != null) "남은 시간" else "경과 시간"
+    Box(Modifier.fillMaxSize().then(bgModifier)) {
+        // 96차: 세로 폭이 좁은 화면(태블릿 가로 등)에서도 정지 버튼까지 닿도록 스크롤 가능.
+        Column(
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                com.phonelock.app.ui.components.LiveDot(MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                com.phonelock.app.ui.components.Overline(
+                    (if (isPomodoro) "뽀모도로 · 집중 잠금" else "집중 잠금") + if (isRemote) " · 다른 기기" else "",
+                    color = MaterialTheme.colorScheme.primary
                 )
-                if (taskName.isNotBlank()) {
-                    Spacer(Modifier.height(20.dp))
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                    ) {
-                        Text(
-                            "📖 $taskName",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                taskName.ifBlank { "이름 없는 집중" },
+                style = MaterialTheme.typography.headlineMedium,
+                maxLines = 2
+            )
+            Spacer(Modifier.height(20.dp))
+            com.phonelock.app.ui.components.Overline(if (remainingSec != null) "남은 시간" else "경과 시간")
+            com.phonelock.app.ui.components.FitText(
+                if (remainingSec != null) formatHms(remainingSec) else formatHms(elapsedSec),
+                style = MaterialTheme.typography.displayLarge,
+                maxSize = 88.sp,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            if (progress != null) {
+                Spacer(Modifier.height(8.dp))
+                com.phonelock.app.ui.components.ProgressLine(progress)
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "오늘 합계 ${formatHms(todayLogSeconds)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(40.dp))
+            if (isRemote) {
                 Text(
-                    "오늘 누적 공부시간 · ${formatHms(todayLogSeconds)}",
-                    style = MaterialTheme.typography.bodySmall,
+                    "다른 기기에서 집중 타이머가 실행 중이라 이 기기도 함께 잠겼습니다. 정지·전환은 그 기기에서 해주세요.",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(20.dp))
-                if (isRemote) {
-                    Text(
-                        "📡 다른 기기에서 공부 타이머가 실행 중이라 이 기기도 함께 잠겼습니다. 정지·전환은 그 기기에서 해주세요.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { showStopNoteDialog = true }) { Text("⏹ 타이머 정지") }
-                        if (isPomodoro) {
-                            Spacer(Modifier.width(4.dp))
-                            Button(
-                                onClick = onSwitchToBreak,
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                            ) { Text("☕ 휴식으로 전환") }
-                        }
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { showStopNoteDialog = true }, modifier = Modifier.weight(1f).height(56.dp)) {
+                        Text("타이머 정지", maxLines = 1, softWrap = false)
                     }
                     if (isPomodoro) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "공부 시간을 다 채우기 전엔 전환이 적용되지 않습니다.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Button(onClick = onSwitchToBreak, modifier = Modifier.weight(1f).height(56.dp)) {
+                            Text("휴식으로 전환", maxLines = 1, softWrap = false)
+                        }
                     }
                 }
-                Spacer(Modifier.height(16.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(onClick = { showAllowedAppsDialog = true }) {
-                        Text("📱 허용된 앱" + if (allowedApps.isNotEmpty()) " (${allowedApps.size})" else "")
-                    }
-                    // 원격 신호로 잠긴 경우엔 이 기기에 제어할 타이머가 없다(정지/전환과 같은 규칙).
-                    if (!isRemote && run != null) {
-                        OutlinedButton(onClick = { showTaskChangeDialog = true }) { Text("📖 일정 변경") }
-                    }
+                if (isPomodoro) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "집중 시간을 다 채우기 전엔 전환이 적용되지 않습니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { showAllowedAppsDialog = true }) {
+                    Text("허용된 앱" + if (allowedApps.isNotEmpty()) " ${allowedApps.size}개" else "", maxLines = 1, softWrap = false)
+                }
+                // 원격 신호로 잠긴 경우엔 이 기기에 제어할 타이머가 없다(정지/전환과 같은 규칙).
+                if (!isRemote && run != null) {
+                    TextButton(onClick = { showTaskChangeDialog = true }) { Text("일정 변경", maxLines = 1, softWrap = false) }
                 }
             }
         }
@@ -325,7 +322,7 @@ private fun StudyLockScreen(
             text = {
                 if (allowedApps.isEmpty()) {
                     Text(
-                        "설정 > 공부 탭에서 공부 잠금 허용 앱을 등록할 수 있습니다.",
+                        "설정 > 집중 탭에서 집중 잠금 허용 앱을 등록할 수 있습니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -357,7 +354,7 @@ private fun StudyLockScreen(
     if (showStopNoteDialog) {
         AlertDialog(
             onDismissRequest = {},
-            title = { Text("공부 종료") },
+            title = { Text("집중 종료") },
             text = {
                 Column {
                     Text(
@@ -368,15 +365,15 @@ private fun StudyLockScreen(
                     OutlinedTextField(
                         value = stopNoteText,
                         onValueChange = { stopNoteText = it },
-                        placeholder = { Text("예: 3장까지 풀었다, 집중이 잘 됐다") },
+                        placeholder = { Text("예: 3장까지 읽었다, 집중이 잘 됐다") },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = stopTagText,
                         onValueChange = { stopTagText = it },
-                        label = { Text("태그(과목 등, 선택)") },
-                        placeholder = { Text("예: 수학, 영어") },
+                        label = { Text("태그(분야 등, 선택)") },
+                        placeholder = { Text("예: 독서, 업무, 운동") },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -400,106 +397,15 @@ private fun StudyLockScreen(
     }
 }
 
-@Composable
-private fun LockPhaseBadge(isPomodoro: Boolean, isRemote: Boolean) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-        ) {
-            Text(
-                if (isPomodoro) "🍅 뽀모도로 · 공부 중" else "🔒 공부 중",
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-            )
-        }
-        if (isRemote) {
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Text(
-                    "📡 원격",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                )
-            }
-        }
-    }
-}
-
-/** 데스크탑 StudyLockScreen의 LockRing과 대칭 — 큰 원형 진행률/시계 바늘 안에 시간을 직접 표시. */
-@Composable
-private fun LockRing(progress: Float?, secondHandAngle: Float?, bigText: String, smallLabel: String) {
-    val trackColor = MaterialTheme.colorScheme.outline
-    val accent = MaterialTheme.colorScheme.primary
-    Box(modifier = Modifier.size(220.dp), contentAlignment = Alignment.Center) {
-        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-            val strokeWidth = 14.dp.toPx()
-            val diameter = size.minDimension - strokeWidth
-            val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
-            val arcSize = androidx.compose.ui.geometry.Size(diameter, diameter)
-            drawArc(
-                color = trackColor.copy(alpha = 0.4f),
-                startAngle = 0f, sweepAngle = 360f, useCenter = false,
-                topLeft = topLeft, size = arcSize,
-                style = Stroke(width = strokeWidth)
-            )
-            if (progress != null) {
-                drawArc(
-                    color = accent,
-                    startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
-                    topLeft = topLeft, size = arcSize,
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-                )
-            } else {
-                drawArc(
-                    color = accent.copy(alpha = 0.5f),
-                    startAngle = -90f, sweepAngle = 360f, useCenter = false,
-                    topLeft = topLeft, size = arcSize,
-                    style = Stroke(width = strokeWidth)
-                )
-                if (secondHandAngle != null) {
-                    val center = Offset(size.width / 2f, size.height / 2f)
-                    val rad = Math.toRadians(secondHandAngle - 90.0)
-                    val length = diameter * 0.42f
-                    drawLine(
-                        color = accent,
-                        start = center,
-                        end = Offset(center.x + (length * Math.cos(rad)).toFloat(), center.y + (length * Math.sin(rad)).toFloat()),
-                        strokeWidth = 4.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
-                }
-            }
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                bigText,
-                style = MaterialTheme.typography.displaySmall,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Text(smallLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
 /** 안드로이드는 실제 앱 아이콘(AppIcon.kt)을 쓸 수 있어 데스크탑의 첫 글자 아바타보다 한 단계 더 구체적이다. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AllowedAppsFlow(apps: List<AppInfo>, onLaunchApp: (String) -> Unit) {
+internal fun AllowedAppsFlow(apps: List<AppInfo>, onLaunchApp: (String) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         apps.forEach { app ->
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 modifier = Modifier.clickable { onLaunchApp(app.packageName) }
             ) {
                 Row(

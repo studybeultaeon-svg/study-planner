@@ -1,14 +1,15 @@
 package com.phonelock.app.routine
 
 import com.phonelock.shared.routine.RoutineRepeat
+import com.phonelock.shared.routine.RoutineStreak
 
 import com.phonelock.app.data.Routine
 import java.time.LocalDate
 
 /**
- * 루틴앱 스트릭 순수 계산 로직 — 51차 전면 개편: 루틴별 스트릭(+방어권)이 아니라 "하루" 단위 전역
- * 스트릭으로 바뀜(그날 예정된 루틴을 전부 완료하면 그날 +1, 하나라도 미완료면 그 자리에서 0으로 끊김,
- * 방어권 없음). 데스크탑 RoutineEngine.kt와 동일 로직(플랫폼 공유 모듈이 없어 대칭 복제).
+ * 루틴앱 스트릭 계산의 플랫폼 쪽 입구 — "하루" 단위 전역 스트릭(51차): 그날 예정된 루틴을 전부 완료하면
+ * 그날 +1. 142차부터 실제 계산과 방지권(일주일에 며칠은 100%가 아니어도 넘어감) 규칙은
+ * `shared/routine/RoutineStreak.kt` 하나에 있고, 여기서는 이 플랫폼의 [Routine]으로 "그날 결과"만 만든다.
  */
 object RoutineEngine {
 
@@ -36,37 +37,31 @@ object RoutineEngine {
         return scheduled.all { key in (completedByRoutine[it.id] ?: emptySet()) }
     }
 
-    /** 오늘부터 과거로 훑어 지금 진행 중인 스트릭. 예정 없는 날은 건너뛰고, 하루라도 못 채우면 그 자리에서 끊긴다. */
-    fun currentStreak(routines: List<Routine>, completedByRoutine: Map<Long, Set<String>>, today: LocalDate = LocalDate.now()): Int {
-        var streak = 0
-        for (i in 0 until 3650) {
-            val date = today.minusDays(i.toLong())
-            when (dayResult(routines, completedByRoutine, date)) {
-                null -> continue
-                true -> streak++
-                false -> return streak
-            }
-        }
-        return streak
-    }
+    /**
+     * 지금 진행 중인 스트릭. 예정 없는 날은 건너뛰고, 못 채운 날은 그 주의 방지권([freezePerWeek]일)까지는
+     * 넘어가며 그다음부터 끊긴다. [todayPending]이 true면 아직 못 채운 오늘은 세지 않는다.
+     */
+    fun currentStreak(
+        routines: List<Routine>,
+        completedByRoutine: Map<Long, Set<String>>,
+        today: LocalDate,
+        freezePerWeek: Int,
+        todayPending: Boolean = true
+    ): Int = RoutineStreak.current(today, freezePerWeek, todayPending) { dayResult(routines, completedByRoutine, it) }
 
     /** 지금까지 통틀어 가장 길었던 스트릭(최고 기록). */
     fun bestStreak(
         routines: List<Routine>,
         completedByRoutine: Map<Long, Set<String>>,
-        today: LocalDate = LocalDate.now(),
-        lookbackDays: Int = 3650
-    ): Int {
-        var best = 0
-        var current = 0
-        for (i in lookbackDays downTo 0) {
-            val date = today.minusDays(i.toLong())
-            when (dayResult(routines, completedByRoutine, date)) {
-                null -> {}
-                true -> { current++; if (current > best) best = current }
-                false -> current = 0
-            }
-        }
-        return best
-    }
+        today: LocalDate,
+        freezePerWeek: Int
+    ): Int = RoutineStreak.best(today, freezePerWeek) { dayResult(routines, completedByRoutine, it) }
+
+    /** 이번 주(월~어제)에 이미 쓴 방지권 수. */
+    fun freezeUsedThisWeek(
+        routines: List<Routine>,
+        completedByRoutine: Map<Long, Set<String>>,
+        today: LocalDate,
+        freezePerWeek: Int
+    ): Int = RoutineStreak.usedThisWeek(today, freezePerWeek) { dayResult(routines, completedByRoutine, it) }
 }

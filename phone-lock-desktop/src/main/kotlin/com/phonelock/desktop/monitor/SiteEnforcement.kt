@@ -2,6 +2,7 @@ package com.phonelock.desktop.monitor
 
 import com.phonelock.desktop.data.Group
 import com.phonelock.desktop.data.Repository
+import com.phonelock.desktop.data.enforcedLockTimer
 
 // EnforcementService.REMOTE_STUDY_SIGNAL_STALE_MS와 같은 값 — 다른 기기의 "공부 타이머 실행 중" 신호가
 // 이보다 오래 갱신 안 됐으면 무시한다(신호를 올리던 기기가 정지 없이 꺼져 유령처럼 남는 경우 대비).
@@ -40,6 +41,18 @@ class SiteEnforcement(private val repository: Repository) {
         }
     }
 
+    /** 관리 > 타이머(142차)가 잠금 단계면 — 전체 잠금은 허용 사이트 밖을, 특정 잠금은 고른 사이트를 막는다. */
+    private fun lockTimerBlock(hostname: String): CheckResult.Block? {
+        // 143차: "뽀모도로 휴식 중엔 풀기"를 켠 약속은 휴식 중에 잠금이 없는 것으로 본다(enforcedLockTimer).
+        val timer = repository.enforcedLockTimer(repository.activeLockTimer()) ?: return null
+        if (!timer.blocksHost(hostname)) return null
+        return CheckResult.Block(if (timer.wholeDevice) LockReason.FULL_LOCK else LockReason.TIMER)
+    }
+
+    /** 전체 잠금 방식 규칙에서 막힌 사이트는 "허용한 사이트만"이라는 안내가 맞다(시간대/한도 문구는 고른 사이트 기준 문장이다). */
+    private fun siteLockReason(group: Group, reason: LockReason): LockReason =
+        if (group.allowlistMode) LockReason.FULL_LOCK else reason
+
     private fun isRemoteStudyTimerActive(): Boolean {
         val url = repository.fbDatabaseUrl
         val key = repository.fbApiKey
@@ -69,6 +82,7 @@ class SiteEnforcement(private val repository: Repository) {
 
     fun check(hostname: String): CheckResult {
         if (isBlockedByStudyLock(hostname)) return CheckResult.Block(LockReason.STUDY_LOCK)
+        lockTimerBlock(hostname)?.let { return it }
 
         val groups = repository.findGroupsForDomain(hostname)
         if (groups.isEmpty()) return CheckResult.Allow
@@ -78,7 +92,7 @@ class SiteEnforcement(private val repository: Repository) {
         val lockedEntry = groups.firstNotNullOfOrNull { group -> evaluator.evaluate(group).takeIf { it.locked }?.let { group to it } }
         if (lockedEntry != null) {
             val (group, result) = lockedEntry
-            return CheckResult.Block(result.reason!!, repository.recordBlockAttempt(group.id))
+            return CheckResult.Block(siteLockReason(group, result.reason!!), repository.recordBlockAttempt(group.id))
         }
 
         val needsConfirm = groups.firstOrNull {
@@ -134,6 +148,7 @@ class SiteEnforcement(private val repository: Repository) {
      */
     fun tick(hostname: String, elapsedSeconds: Int): CheckResult {
         if (isBlockedByStudyLock(hostname)) return CheckResult.Block(LockReason.STUDY_LOCK)
+        lockTimerBlock(hostname)?.let { return it }
 
         val groups = repository.findGroupsForDomain(hostname)
         if (groups.isEmpty()) return CheckResult.Allow
@@ -143,7 +158,7 @@ class SiteEnforcement(private val repository: Repository) {
         val lockedEntry = groups.firstNotNullOfOrNull { group -> evaluator.evaluate(group).takeIf { it.locked }?.let { group to it } }
         if (lockedEntry != null) {
             val (group, result) = lockedEntry
-            return CheckResult.Block(result.reason!!, repository.recordBlockAttempt(group.id))
+            return CheckResult.Block(siteLockReason(group, result.reason!!), repository.recordBlockAttempt(group.id))
         }
 
         val needsConfirm = groups.firstOrNull {
@@ -163,7 +178,7 @@ class SiteEnforcement(private val repository: Repository) {
         val freshLockedEntry = freshGroups.firstNotNullOfOrNull { group -> evaluator.evaluate(group).takeIf { it.locked }?.let { group to it } }
         return if (freshLockedEntry != null) {
             val (group, result) = freshLockedEntry
-            CheckResult.Block(result.reason!!, repository.recordBlockAttempt(group.id))
+            CheckResult.Block(siteLockReason(group, result.reason!!), repository.recordBlockAttempt(group.id))
         } else CheckResult.Allow
     }
 }

@@ -37,7 +37,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     // 120차: v41 — "루틴 모드" 기능 전체 삭제(사용자 요청) — routine_mode 테이블 drop + routine.modeId
     // 컬럼 제거. SQLite는 컬럼 삭제를 직접 지원하지 않아(구버전 호환) 새 테이블 생성 후 복사하는 방식으로
     // 처리한다(MIGRATION_40_41 참고).
-    version = 42,
+    // 142차: v43 — app_group에 allowlistMode(전체 잠금 방식, 기본 0 = 기존처럼 고른 앱만 차단) 추가.
+    version = 43,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -194,6 +195,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** 142차: 차단 규칙의 "전체 잠금 방식"(허용한 앱만 사용). 기존 규칙은 전부 기본값(0)이라 그대로 동작한다. */
+        private val MIGRATION_42_43 = object : Migration(42, 43) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE app_group ADD COLUMN allowlistMode INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -203,7 +211,7 @@ abstract class AppDatabase : RoomDatabase() {
                 ).addMigrations(
                     MIGRATION_27_28, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
                     MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38,
-                    MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42
+                    MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43
                 )
                     .fallbackToDestructiveMigration().build().also { instance = it }
             }

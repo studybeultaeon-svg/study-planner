@@ -1,10 +1,14 @@
 package com.phonelock.desktop.monitor
 
 import com.phonelock.desktop.data.Group
+import com.phonelock.desktop.data.LockTimerSyncResult
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.data.checkAndResetGrowthSeasonIfNeeded
+import com.phonelock.desktop.data.enforcedLockTimer
+import com.phonelock.desktop.data.syncLockTimer
 import com.phonelock.desktop.routine.DesktopNotifier
-import java.io.File
+import com.phonelock.shared.lock.LockTimer
+import com.phonelock.shared.lock.formatLockRemaining
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -20,6 +24,9 @@ private const val REMOTE_STUDY_SIGNAL_STALE_MS = 20 * 60 * 1000L
 // 사용자가 계속 다시 재생해도 알림이 도배되지 않도록 세션별 최소 알림 간격.
 private const val MAX_BACKGROUND_USAGE_STEP_MS = 10_000L
 private const val PAUSE_NOTICE_INTERVAL_MS = 60_000L
+// 타이머 동기화(143차) 확인 간격 — 진행 중인 약속이 있을 때 / 없을 때.
+private const val LOCK_TIMER_SYNC_ACTIVE_MS = 10_000L
+private const val LOCK_TIMER_SYNC_IDLE_MS = 30_000L
 
 private sealed class TickDecision {
     data class NeedsConfirm(val group: Group) : TickDecision()
@@ -41,20 +48,31 @@ data class StudyLockStatus(
     val isRemote: Boolean = false
 )
 
+/**
+ * 전체 잠금 화면(142차)에 보여줄 내용 — 전체 잠금 방식 규칙이 시간대/일일 한도에 걸렸을 때와 관리 > 타이머의
+ * 전체 잠금이 시작됐을 때 함께 쓴다. [endsAtMillis]는 타이머만 알 수 있다(규칙은 0 = 남은 시간 표시 없음).
+ */
+data class FullLockStatus(
+    val title: String,
+    val message: String,
+    val allowedApps: List<String>,
+    val endsAtMillis: Long,
+    val fromTimer: Boolean
+)
+
 class EnforcementService(
     private val repository: Repository,
     private val onBlock: (processName: String, reason: LockReason, blockAttempts: Int) -> Unit,
     private val onConfirm: suspend (processName: String, groupId: Long, waitSeconds: Int) -> Boolean,
     private val onOverlayUpdate: (UsageOverlayStatus?) -> Unit = {},
-    private val onStudyLockUpdate: (StudyLockStatus?) -> Unit = {}
+    private val onStudyLockUpdate: (StudyLockStatus?) -> Unit = {},
+    private val onFullLockUpdate: (FullLockStatus?) -> Unit = {}
 ) {
     private val evaluator = LockEvaluator(repository)
     private val tickMutex = Mutex()
 
     // 이 앱 자신은 공부 잠금 허용 목록에 없어도 항상 예외(그렇지 않으면 잠금 화면 자체를 못 띄움).
-    private val selfProcessName: String? by lazy {
-        runCatching { File(ProcessHandle.current().info().command().orElse(null) ?: return@lazy null).name }.getOrNull()
-    }
+    private val selfProcessName: String? get() = DesktopEssentials.selfProcessName
 
     // 확인창이 이미 떠 있는 그룹은 다시 확인을 요청하지 않게 막는다. 확인 대기는 tickMutex 밖에서
     // 이뤄지므로(아래 tick() 참고), 이 표시가 없으면 사용자가 확인창에 응답하지 않고 방치하는 동안
@@ -68,6 +86,15 @@ class EnforcementService(
     private var lastBackgroundMediaCheckAt = 0L
     private val backgroundUsageRemainderMs = mutableMapOf<Long, Long>()
     private val lastPauseNoticeAt = mutableMapOf<String, Long>()
+
+    // 전체 잠금 화면(142차)을 띄워 둔 동안 "그 잠금이 아직 유효한가"를 물어볼 방법 — 화면이 안 떠 있으면 null.
+    // 잠금 화면이 포그라운드가 되면 앞에 있는 프로그램이 이 앱 자신으로 보이므로, 그때는 이걸로만 판단한다.
+    private var fullLockStillActive: (() -> Boolean)? = null
+    private var fullLockShownThisTick = false
+
+    // 타이머 안내를 한 약속당 한 번씩만 띄우기 위한 표시 — 값은 그 약속의 잠금 시작 시각.
+    private var lockTimerWarnedFor = 0L
+    private var lockTimerStartNoticeFor = 0L
 
     /**
      * 포그라운드 창이 바뀌는 즉시(ForegroundWindowChangeWatcher) 재평가하고, 혹시 그 알림을
@@ -94,6 +121,20 @@ class EnforcementService(
                 runCatching { enforceBackgroundMedia() }
             }
         }
+        // 다른 기기와 타이머 약속을 맞춘다(143차). 네트워크를 기다리므로 판정 루프와 따로 돈다. 약속이 있으면 해제·교체를
+        // 빨리 알아채도록 자주, 없으면 새 약속이 걸렸는지만 가끔 확인한다(하루 종일 도는 루프라 한가할 때의 요청 수를 줄인다).
+        launch {
+            while (true) {
+                delay(if (repository.lockTimer != null) LOCK_TIMER_SYNC_ACTIVE_MS else LOCK_TIMER_SYNC_IDLE_MS)
+                runCatching {
+                    when (repository.syncLockTimer()) {
+                        LockTimerSyncResult.ADOPTED -> DesktopNotifier.notify("⏳ 타이머", "다른 기기에서 시작한 타이머가 이 PC에도 걸렸습니다.")
+                        LockTimerSyncResult.CLEARED -> DesktopNotifier.notify("⏳ 타이머", "다른 기기에서 타이머를 풀어서 이 PC에서도 풀렸습니다.")
+                        LockTimerSyncResult.NONE -> {}
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -112,8 +153,11 @@ class EnforcementService(
         lastBackgroundMediaCheckAt = now
 
         val studyLocked = repository.isStudyLockActive() || isRemoteStudyTimerActive()
-        val watchedGroups = repository.getGroups().filter { it.processNames.isNotEmpty() && evaluator.isGroupActive(it) }
-        val needed = studyLocked || watchedGroups.isNotEmpty()
+        // 143차: "뽀모도로 휴식 중엔 풀기"를 켠 약속은 휴식 중에 잠금이 없는 것으로 본다(enforcedLockTimer).
+        val lockedTimer = repository.enforcedLockTimer(repository.activeLockTimer(), now)
+        val watchedGroups = repository.getGroups()
+            .filter { (it.allowlistMode || it.processNames.isNotEmpty()) && evaluator.isGroupActive(it) }
+        val needed = studyLocked || lockedTimer != null || watchedGroups.isNotEmpty()
         MediaSessionBridge.setActive(needed)
         if (!needed) return
         val playing = MediaSessionBridge.sessions.value.filter { it.isPlaying }
@@ -129,8 +173,18 @@ class EnforcementService(
                     pauseBackgroundMedia(session.appId)
                     continue
                 }
+                // 타이머 잠금(142차)에 걸린 프로그램도 창과 같은 기준으로 재생을 멈춘다.
+                if (lockedTimer != null) {
+                    val listed = lockedTimer.apps.any { MediaSessionBridge.matchesProcess(session.appId, it) }
+                    if (if (lockedTimer.wholeDevice) !listed else listed) {
+                        pauseBackgroundMedia(session.appId)
+                        continue
+                    }
+                }
                 val groups = watchedGroups.filter { group ->
-                    group.processNames.any { MediaSessionBridge.matchesProcess(session.appId, it) }
+                    val listed = group.processNames.any { MediaSessionBridge.matchesProcess(session.appId, it) }
+                    // 전체 잠금 방식 규칙은 허용 목록에 "없는" 프로그램이 대상이다.
+                    if (group.allowlistMode) !listed else listed
                 }
                 if (groups.isEmpty()) continue
                 val blocked = groups.any { evaluator.evaluate(it).locked } ||
@@ -174,7 +228,20 @@ class EnforcementService(
 
         if (checkStudyLock(processName)) return
 
+        notifyLockTimerIfNeeded()
+        val isSelf = DesktopEssentials.isSelf(processName)
+        fullLockShownThisTick = false
+        if (isSelf) {
+            // 전체 잠금 화면이 떠 있으면 포그라운드는 이 앱 자신이다 — 그 잠금이 끝났을 때만 화면을 내린다
+            // (checkStudyLock이 자기 자신일 때 상태를 그대로 두는 것과 같은 이유: 내렸다 올렸다 깜빡이지 않게).
+            if (fullLockStillActive?.invoke() == false) hideFullLock()
+        } else if (checkLockTimer(processName)) {
+            return
+        }
+
         val decision = tickMutex.withLock { decide(processName) }
+        // 전체 잠금에 걸리지 않은 프로그램이 앞에 있으면(허용한 프로그램·바탕화면 등) 전체 잠금 화면을 내린다.
+        if (!isSelf && !fullLockShownThisTick) hideFullLock()
         if (decision == null) {
             onOverlayUpdate(overlayStatusFor(processName))
             return
@@ -250,6 +317,94 @@ class EnforcementService(
         return true
     }
 
+    // ---- 관리 > 타이머("이거까지만 할게요!") · 전체 잠금 방식 규칙(142차) ----
+
+    /** 규칙에 걸린 프로그램을 막는다 — 전체 잠금 방식 규칙이면 허용한 프로그램을 바로 열 수 있는 전체 잠금 화면으로. */
+    private fun blockForGroup(processName: String, group: Group, reason: LockReason) {
+        val attempts = repository.recordBlockAttempt(group.id)
+        if (!group.allowlistMode) {
+            onBlock(processName, reason, attempts)
+            ForegroundWindowWatcher.minimizeForegroundWindow()
+            return
+        }
+        val message = if (reason == LockReason.LIMIT) {
+            "오늘 사용 시간 한도를 모두 썼습니다. 허용한 프로그램만 쓸 수 있습니다."
+        } else {
+            "지금은 이 차단 규칙의 전체 잠금 시간대입니다. 허용한 프로그램만 쓸 수 있습니다."
+        }
+        showFullLock(
+            FullLockStatus(group.name, message, group.processNames.sorted(), endsAtMillis = 0L, fromTimer = false)
+        ) { repository.getGroup(group.id)?.let { evaluator.evaluate(it).locked } == true }
+    }
+
+    private fun showFullLock(status: FullLockStatus, stillActive: () -> Boolean) {
+        fullLockStillActive = stillActive
+        fullLockShownThisTick = true
+        onOverlayUpdate(null)
+        onFullLockUpdate(status)
+        ForegroundWindowWatcher.minimizeForegroundWindow()
+    }
+
+    private fun hideFullLock() {
+        if (fullLockStillActive == null) return
+        fullLockStillActive = null
+        onFullLockUpdate(null)
+    }
+
+    /**
+     * 자유 시간이 1분 남았을 때와 잠금이 시작될 때 한 번씩 알려준다 — 쓰던 창이 예고 없이 잠금 화면으로 바뀌지
+     * 않게 하기 위함이다. 자유 시간이 1분 이하였던 약속(바로 잠금 포함)은 방금 직접 누른 것이라 알리지 않는다.
+     */
+    private fun notifyLockTimerIfNeeded() {
+        val timer = repository.activeLockTimer() ?: return
+        val now = System.currentTimeMillis()
+        val hadRealFreeTime = timer.lockStartAtMillis - timer.startedAtMillis > LockTimer.WARNING_BEFORE_LOCK_MILLIS
+        if (!hadRealFreeTime) return
+        when (timer.phaseAt(now)) {
+            LockTimer.Phase.FREE -> {
+                val untilLock = timer.lockStartAtMillis - now
+                if (untilLock <= LockTimer.WARNING_BEFORE_LOCK_MILLIS && lockTimerWarnedFor != timer.lockStartAtMillis) {
+                    lockTimerWarnedFor = timer.lockStartAtMillis
+                    DesktopNotifier.notify("⏳ 이거까지만!", "${formatLockRemaining(untilLock)} 뒤에 잠깁니다.")
+                }
+            }
+            LockTimer.Phase.LOCKED -> if (lockTimerStartNoticeFor != timer.lockStartAtMillis) {
+                lockTimerStartNoticeFor = timer.lockStartAtMillis
+                DesktopNotifier.notify(
+                    "🔒 타이머 잠금",
+                    "약속한 시간이 끝났습니다. 지금부터 ${formatLockRemaining(timer.remainingMillis(now))} 동안 잠급니다."
+                )
+            }
+            LockTimer.Phase.DONE -> {}
+        }
+    }
+
+    /**
+     * 타이머가 잠금 단계면 지금 앞에 있는 프로그램이 막히는지 본다. 전체 잠금이면 허용 목록과 [DesktopEssentials]
+     * 밖의 프로그램을 전부 전체 잠금 화면으로 보내고, 특정 잠금이면 고른 프로그램만 차단 화면으로 보낸다.
+     * 타이머에 저장된 프로그램 이름은 소문자다.
+     */
+    private fun checkLockTimer(processName: String): Boolean {
+        val timer = repository.enforcedLockTimer(repository.activeLockTimer()) ?: return false
+        if (!timer.blocksApp(processName.lowercase())) return false
+        if (timer.wholeDevice) {
+            if (DesktopEssentials.isAlwaysAllowed(processName)) return false
+            showFullLock(
+                FullLockStatus(
+                    title = "타이머 잠금",
+                    message = "약속한 시간이 끝났습니다. 잠금이 풀릴 때까지 허용한 프로그램만 쓸 수 있습니다.",
+                    allowedApps = timer.apps.sorted(),
+                    endsAtMillis = timer.lockEndAtMillis,
+                    fromTimer = true
+                )
+            ) { repository.enforcedLockTimer(repository.activeLockTimer()) != null }
+        } else {
+            onOverlayUpdate(null)
+            onBlock(processName, LockReason.TIMER, 0)
+            ForegroundWindowWatcher.minimizeForegroundWindow()
+        }
+        return true
+    }
     private fun isRemoteStudyTimerActive(): Boolean {
         val url = repository.fbDatabaseUrl
         val key = repository.fbApiKey
@@ -287,8 +442,7 @@ class EnforcementService(
         val lockedEntry = groups.firstNotNullOfOrNull { group -> evaluator.evaluate(group).takeIf { it.locked }?.let { group to it } }
         if (lockedEntry != null) {
             val (group, result) = lockedEntry
-            onBlock(processName, result.reason!!, repository.recordBlockAttempt(group.id))
-            ForegroundWindowWatcher.minimizeForegroundWindow()
+            blockForGroup(processName, group, result.reason!!)
             return null
         }
 
@@ -315,8 +469,7 @@ class EnforcementService(
         val freshLockedEntry = freshGroups.firstNotNullOfOrNull { group -> evaluator.evaluate(group).takeIf { it.locked }?.let { group to it } }
         if (freshLockedEntry != null) {
             val (group, result) = freshLockedEntry
-            onBlock(processName, result.reason!!, repository.recordBlockAttempt(group.id))
-            ForegroundWindowWatcher.minimizeForegroundWindow()
+            blockForGroup(processName, group, result.reason!!)
         }
         return null
     }

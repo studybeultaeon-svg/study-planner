@@ -1,5 +1,7 @@
 package com.phonelock.app.ui
 
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
 import android.content.Intent
 import android.util.Base64
 import android.widget.Toast
@@ -211,9 +213,7 @@ fun SocialGroupMembersScreen(
             chatEnabled = info?.chatEnabled ?: true
             // 82차(§9 "모임 주간 리더보드"): schedule에 이미 담겨오는 ±7일 버퍼 캘린더 데이터로
             // "이번 주"(최근 7일) 완료율을 클라이언트에서 재집계 — 서버 집계/신규 API 없음.
-            val today = java.time.LocalDate.now()
-            val weekAgoKey = today.minusDays(6).toString()
-            val todayKey = today.toString()
+            val fallbackToday = java.time.LocalDate.now()
             rows = members.map { m ->
                 val s = stats[m.uid]
                 val rate = if (s != null && s.shareRoutines) {
@@ -222,6 +222,10 @@ fun SocialGroupMembersScreen(
                     if (total > 0) done * 100 / total else 0
                 } else null
                 val weekRate = if (s != null && s.shareSchedule) {
+                    // 143차: "최근 7일"의 끝은 그 사람의 하루 시작 기준 오늘(141차) — 옛 버전 데이터면 달력 날짜.
+                    val memberToday = s.studyDayKey?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } ?: fallbackToday
+                    val weekAgoKey = memberToday.minusDays(6).toString()
+                    val todayKey = memberToday.toString()
                     val weekTasks = s.schedule?.filter { it.dateKey in weekAgoKey..todayKey } ?: emptyList()
                     if (weekTasks.isNotEmpty()) weekTasks.count { it.status == "O" } * 100 / weekTasks.size else null
                 } else null
@@ -344,13 +348,15 @@ fun SocialGroupMembersScreen(
 
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text(if (groupName.isNotBlank()) groupName else "모임") },
+            title = { Text(if (groupName.isNotBlank()) groupName else "모임", style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+            navigationIcon = { com.phonelock.app.ui.components.LedgerBackButton(onBack) },
+            colors = com.phonelock.app.ui.components.ledgerTopBarColors(),
             actions = {
                 Box {
                     IconButton(
                         onClick = { showSettingsMenu = true },
                         modifier = Modifier.semantics { contentDescription = "모임 설정" }
-                    ) { Text("⚙") }
+                    ) { Icon(androidx.compose.material.icons.Icons.Outlined.Settings, contentDescription = null) }
                     // 82차(§6 UX 폴리싱): 밋밋한 AlertDialog 버튼 목록 대신 앵커된 드롭다운 메뉴로 —
                     // 톱니바퀴 바로 아래에서 펼쳐지는 게 "설정 창"보다 실제 위치와 맞고, Material 기본
                     // 펼침/접힘 애니메이션이 그대로 적용된다.
@@ -421,10 +427,7 @@ fun SocialGroupMembersScreen(
                 )
             }
             if (chatEnabled) {
-                TabRow(selectedTabIndex = channelTab) {
-                    MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
-                    MaterialTab(selected = channelTab == 1, onClick = { channelTab = 1 }, text = { Text("💬 대화") })
-                }
+                com.phonelock.app.ui.components.SectionTabs(listOf("멤버", "대화"), channelTab, { channelTab = it })
             }
             if (chatEnabled && channelTab == 1) {
                 GroupChatScreen(repository, groupId)

@@ -78,6 +78,10 @@ object JsonStore {
             customThemeBackground = json.optString("customThemeBackground", "#FAFBF6"),
             customThemeAccent = json.optString("customThemeAccent", "#8BC34A"),
             exitConfirmEnabled = json.optBoolean("exitConfirmEnabled", false),
+            minimalMode = json.optBoolean("minimalMode", false),
+            lockTimerEncoded = json.optString("lockTimer", ""),
+            lockTimerPresetEncoded = json.optString("lockTimerPreset", ""),
+            lockTimerClosedStartedAt = json.optLong("lockTimerClosedStartedAt", 0L),
             editProtectionEnabled = json.optBoolean("editProtectionEnabled", true),
             editProtectionStartHour = json.optInt("editProtectionStartHour", 11),
             editProtectionEndHour = json.optInt("editProtectionEndHour", 23),
@@ -91,6 +95,7 @@ object JsonStore {
             blockReels = json.optBoolean("blockReels", false),
             blockShorts = json.optBoolean("blockShorts", false),
             routineStreakNotifyEnabled = json.optBoolean("routineStreakNotifyEnabled", false),
+            routineStreakFreezePerWeek = json.optInt("routineStreakFreezePerWeek", com.phonelock.shared.routine.RoutineStreak.DEFAULT_FREEZE_DAYS_PER_WEEK),
             studyAlertEnabled = json.optBoolean("studyAlertEnabled", false),
             studyAlertNotStartedEnabled = json.optBoolean("studyAlertNotStartedEnabled", true),
             studyAlertPaceEnabled = json.optBoolean("studyAlertPaceEnabled", true),
@@ -364,7 +369,8 @@ object JsonStore {
                     processNames = processNames,
                     domains = domains,
                     selfMessageText = g.optString("selfMessageText", ""),
-                    syncEnabled = g.optBoolean("syncEnabled", false)
+                    syncEnabled = g.optBoolean("syncEnabled", false),
+                    allowlistMode = g.optBoolean("allowlistMode", false)
                 )
             )
         }
@@ -474,6 +480,10 @@ object JsonStore {
         json.put("customThemeBackground", data.customThemeBackground)
         json.put("customThemeAccent", data.customThemeAccent)
         json.put("exitConfirmEnabled", data.exitConfirmEnabled)
+        json.put("minimalMode", data.minimalMode)
+        json.put("lockTimer", data.lockTimerEncoded)
+        json.put("lockTimerPreset", data.lockTimerPresetEncoded)
+        json.put("lockTimerClosedStartedAt", data.lockTimerClosedStartedAt)
         json.put("editProtectionEnabled", data.editProtectionEnabled)
         json.put("editProtectionStartHour", data.editProtectionStartHour)
         json.put("editProtectionEndHour", data.editProtectionEndHour)
@@ -491,6 +501,7 @@ object JsonStore {
         json.put("blockReels", data.blockReels)
         json.put("blockShorts", data.blockShorts)
         json.put("routineStreakNotifyEnabled", data.routineStreakNotifyEnabled)
+        json.put("routineStreakFreezePerWeek", data.routineStreakFreezePerWeek)
         json.put("studyAlertEnabled", data.studyAlertEnabled)
         json.put("studyAlertNotStartedEnabled", data.studyAlertNotStartedEnabled)
         json.put("studyAlertPaceEnabled", data.studyAlertPaceEnabled)
@@ -686,6 +697,7 @@ object JsonStore {
             gj.put("domains", JSONArray(g.domains))
             gj.put("selfMessageText", g.selfMessageText)
             gj.put("syncEnabled", g.syncEnabled)
+            gj.put("allowlistMode", g.allowlistMode)
             groupsJson.put(gj)
         }
         json.put("groups", groupsJson)

@@ -34,9 +34,9 @@ object GrowthBoost {
      * 약 9개월에 500레벨이 되도록 환생 배율([GrowthSystem.expMultiplier])을 함께 맞췄다([[DECISIONS.md]] 138차).
      */
     val POTIONS: List<Potion> = listOf(
-        Potion("boost_small", "🧪", "성장 촉진제", "공부 한 세션 시작 전에 가볍게", 40, 1.5, 60),
+        Potion("boost_small", "🧪", "성장 촉진제", "집중 한 세션 시작 전에 가볍게", 40, 1.5, 60),
         Potion("boost_strong", "⚗️", "폭풍 성장 물약", "한 시간 바짝 몰아칠 때", 80, 2.0, 60),
-        Potion("boost_long", "⏳", "지속형 촉진제", "3시간 넘게 공부하는 날 가장 이득", 100, 1.5, 180)
+        Potion("boost_long", "⏳", "지속형 촉진제", "3시간 넘게 집중하는 날 가장 이득", 100, 1.5, 180)
     )
 
     fun potionById(id: String): Potion? = POTIONS.find { it.id == id }

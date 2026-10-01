@@ -1,5 +1,34 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.theme.LocalPhoneLockPalette
+import com.phonelock.desktop.ui.theme.LocalAppMotion
+import com.phonelock.desktop.ui.components.StatRow
+import com.phonelock.desktop.ui.components.StatBlock
+import com.phonelock.desktop.ui.components.SectionTabs
+import com.phonelock.desktop.ui.components.ProgressLine
+import com.phonelock.desktop.ui.components.PageMasthead
+import com.phonelock.desktop.ui.components.Overline
+import com.phonelock.desktop.ui.components.LedgerSection
+import com.phonelock.desktop.ui.components.Hairline
+import com.phonelock.desktop.ui.components.BigNumber
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import com.phonelock.shared.routine.RoutineRepeat
 import androidx.compose.foundation.background
@@ -109,96 +138,82 @@ fun RoutineScreen(repository: Repository) {
         refresh()
     }
 
-    Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                Text("📋 루틴", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-                Text("반복 할 일 · 통계", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
-                androidx.compose.material3.IconButton(onClick = {
-                    scope.launch {
-                        withContext(Dispatchers.IO) {
-                            if (!repository.isEffectivelyOffline()) {
-                                repository.syncRoutinesFromFirebase()
-                                repository.syncPointsFromFirebase()
-                            }
-                        }
-                        refresh()
-                    }
-                }) { Text("🔄") }
-                OutlinedButton(onClick = { showAddDialog = true }) { Text("+ 루틴 추가") }
-            }
-        }
-        Spacer(Modifier.height(Spacing.sm))
-
-        TabRow(
-            selectedTabIndex = subTab,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground
+    // 144차 리디자인(안드로이드판과 같은 언어): 편집형 머리 + 텍스트 탭, 테두리 칩 대신 요일 띠.
+    Column(Modifier.fillMaxSize()) {
+        val realTodayForHeader = LocalDate.now()
+        PageMasthead(
+            title = "루틴",
+            overline = "${realTodayForHeader.monthValue}월 ${realTodayForHeader.dayOfMonth}일 ${ROUTINE_WEEKDAYS_KO[bitIndexFor(realTodayForHeader)]}요일"
         ) {
-            Tab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("오늘") })
-            Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("🔥 연속 기록") })
-        }
-        Spacer(Modifier.height(Spacing.sm))
-
-        if (subTab == 0) {
-            val realToday = LocalDate.now()
-            val currentSunday = realToday.minusDays(realToday.dayOfWeek.value.toLong() % 7)
-            val sunday = currentSunday.plusWeeks(weekOffset.toLong())
-            val weekDates = (0..6).map { sunday.plusDays(it.toLong()) }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                IconButton(onClick = { weekOffset-- }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전 주") }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    weekDates.forEachIndexed { i, d ->
-                        FilterChip(
-                            selected = d == selectedDate,
-                            onClick = { selectedDate = d },
-                            label = {
-                                // 다른 주로 이동하면 "오늘"이 어디였는지 알 방법이 전혀 없었다 —
-                                // 선택 표시와 별개로 오늘 날짜는 항상 굵게+포인트 색으로 구분한다(안드로이드판과 동일).
-                                val isRealToday = d == realToday
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(ROUTINE_WEEKDAYS_SUN_FIRST[i], style = MaterialTheme.typography.labelSmall)
-                                    Text(
-                                        "${d.dayOfMonth}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = if (isRealToday) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isRealToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-                        )
+            // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
+            IconButton(onClick = {
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        if (!repository.isEffectivelyOffline()) {
+                            repository.syncRoutinesFromFirebase()
+                            repository.syncPointsFromFirebase()
+                        }
                     }
+                    refresh()
                 }
-                IconButton(onClick = { weekOffset++ }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음 주") }
+            }) { androidx.compose.material3.Icon(Icons.Outlined.Refresh, contentDescription = "새로고침", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            FilledTonalButton(onClick = { showAddDialog = true }, contentPadding = PaddingValues(horizontal = 14.dp)) {
+                androidx.compose.material3.Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("루틴 추가", maxLines = 1, softWrap = false)
             }
-            Spacer(Modifier.height(Spacing.sm))
         }
+        SectionTabs(listOf("오늘", "연속 기록"), subTab, { subTab = it })
 
-        if (routines.isEmpty()) {
-            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Text(
-                    "아직 등록된 루틴이 없습니다\n오른쪽 위 \"루틴 추가\"로 시작해보세요",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
+        Column(Modifier.fillMaxSize().padding(horizontal = Spacing.lg)) {
+            if (subTab == 0) {
+                Spacer(Modifier.height(Spacing.sm))
+                val realToday = LocalDate.now()
+                val currentSunday = realToday.minusDays(realToday.dayOfWeek.value.toLong() % 7)
+                val sunday = currentSunday.plusWeeks(weekOffset.toLong())
+                val weekDates = (0..6).map { sunday.plusDays(it.toLong()) }
+                Row(Modifier.widthIn(max = 640.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { weekOffset-- }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전 주", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Row(Modifier.weight(1f)) {
+                        weekDates.forEachIndexed { i, d ->
+                            WeekDayCell(
+                                weekday = ROUTINE_WEEKDAYS_SUN_FIRST[i],
+                                day = d.dayOfMonth,
+                                selected = d == selectedDate,
+                                isToday = d == realToday,
+                                modifier = Modifier.weight(1f)
+                            ) { selectedDate = d }
+                        }
+                    }
+                    IconButton(onClick = { weekOffset++ }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음 주", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                Spacer(Modifier.height(Spacing.md))
             }
-        } else {
-            Box(Modifier.weight(1f)) {
-                key(refreshTick) {
-                    when (subTab) {
-                        0 -> RoutineTodayTab(
-                            repository, routines, selectedDate,
-                            onEdit = { editing = it },
-                            onChanged = { refresh() },
-                            onSwap = { a, b -> repository.swapRoutineOrder(a, b); refresh() },
-                            selectedRoutineId = selectedRoutineId,
-                            onSelect = { selectedRoutineId = it }
-                        )
-                        1 -> RoutineStatsTab(repository, routines)
+
+            if (routines.isEmpty()) {
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+                    Text("아직 루틴이 없습니다", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text(
+                        "매일 하는 일, 정해진 시간의 일과, 며칠마다 돌아오는 일을 하나로 관리합니다. 오른쪽 위 \"루틴 추가\"로 시작해 보세요.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Box(Modifier.weight(1f)) {
+                    key(refreshTick) {
+                        when (subTab) {
+                            0 -> RoutineTodayTab(
+                                repository, routines, selectedDate,
+                                onEdit = { editing = it },
+                                onChanged = { refresh() },
+                                onSwap = { a, b -> repository.swapRoutineOrder(a, b); refresh() },
+                                selectedRoutineId = selectedRoutineId,
+                                onSelect = { selectedRoutineId = it }
+                            )
+                            1 -> RoutineStatsTab(repository, routines)
+                        }
                     }
                 }
             }
@@ -223,6 +238,27 @@ fun RoutineScreen(repository: Repository) {
     }
 }
 
+/** 주간 띠의 하루 — 요일(작게) + 날짜(굵게). 고른 날은 먹색 원 안에, 오늘은 강조색 점(안드로이드판과 같은 부품). */
+@Composable
+private fun WeekDayCell(weekday: String, day: Int, selected: Boolean, isToday: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val motion = LocalAppMotion.current
+    val fill by animateColorAsState(if (selected) MaterialTheme.colorScheme.onBackground else Color.Transparent, motion.quick(), label = "dayFill")
+    val ink = if (selected) MaterialTheme.colorScheme.background else if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground
+    Column(
+        modifier.heightIn(min = 60.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(weekday, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(4.dp))
+        Box(Modifier.size(32.dp).background(fill, CircleShape), contentAlignment = Alignment.Center) {
+            Text("$day", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.W700), color = ink, maxLines = 1, softWrap = false)
+        }
+        Spacer(Modifier.height(3.dp))
+        Box(Modifier.size(4.dp).background(if (isToday && !selected) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape))
+    }
+}
+
 @Composable
 private fun RoutineTodayTab(
     repository: Repository,
@@ -240,30 +276,41 @@ private fun RoutineTodayTab(
     // 시간대 지정 루틴이 먼저 시간순으로, 시간대 없는 루틴은 뒤에 붙는다(일과표 탭 통합, 50차).
     val todays = routines.filter { isScheduledOn(it, selectedDate) }
         .sortedWith(compareBy(nullsLast()) { it.timeSlot })
-    // 시간대 없는 루틴만 순서를 사용자가 직접 정할 수 있다(52차) — 시간대 지정 루틴은 항상 시간순이라
-    // ▲/▼로 옮겨도 다시 시간순으로 재정렬되며 눈에 보이는 변화가 없다.
+    // 시간대 없는 루틴만 순서를 사용자가 직접 정할 수 있다(52차).
     val untimed = todays.filter { it.timeSlot == null }
+    val doneCount = todays.count { repository.isRoutineCompleted(it.id, dateKey) }
+    val currentStreak = remember(routines) {
+        val completedByRoutine = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
+        RoutineEngine.currentStreak(routines, completedByRoutine, realToday, repository.routineStreakFreezePerWeek)
+    }
+    val timeColumn = todays.any { it.timeSlot != null }
 
-    // 90차(사용자 요청): 넓은 창에서 루틴 목록만 세로로 쌓이던 걸 좌(목록)/우(상세)로 나눴다.
-    // 목록이 주인공이라 좌:우 = 2:1, 좁아지면 ResponsiveSplit이 알아서 위아래로 쌓는다.
+    // 90차(사용자 요청): 넓은 창에서 좌(목록)/우(상세)로 나눴다 — 목록이 주인공이라 2:1, 좁아지면 위아래로.
     com.phonelock.desktop.ui.components.ResponsiveSplit(leftWeight = 2f, rightWeight = 1f, left = {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Text(
-                "${selectedDate.monthValue}월 ${selectedDate.dayOfMonth}일 (${ROUTINE_WEEKDAYS_KO[bitIndexFor(selectedDate)]})" + if (isToday) " · 오늘" else "",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.height(Spacing.sm))
-
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(end = Spacing.lg)) {
+            // 144차 히어로: 고른 날의 완료 수를 크게, 연속 기록은 오른쪽에 강조색으로.
+            Overline("${selectedDate.monthValue}월 ${selectedDate.dayOfMonth}일 ${ROUTINE_WEEKDAYS_KO[bitIndexFor(selectedDate)]}요일" + if (isToday) " · 오늘" else "")
+            Spacer(Modifier.height(4.dp))
             if (todays.isEmpty()) {
-                Text("이 날 예정된 루틴이 없습니다", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("이 날 예정된 루틴이 없습니다", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                    BigNumber("$doneCount/${todays.size}", unit = "완료", style = MaterialTheme.typography.displayMedium, modifier = Modifier.weight(1f))
+                    Column(horizontalAlignment = Alignment.End) {
+                        Overline("연속")
+                        BigNumber("$currentStreak", unit = "일", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Spacer(Modifier.height(Spacing.sm))
+                ProgressLine(doneCount / todays.size.toFloat())
+                Spacer(Modifier.height(Spacing.md))
                 todays.forEach { routine ->
                     val done = repository.isRoutineCompleted(routine.id, dateKey)
                     val untimedIdx = if (routine.timeSlot == null) untimed.indexOfFirst { it.id == routine.id } else -1
                     RoutineRow(
                         routine = routine,
                         done = done,
+                        timeColumn = timeColumn,
                         selected = routine.id == selectedRoutineId,
                         onToggle = { repository.toggleRoutineLog(routine.id, dateKey); onChanged() },
                         onEdit = { onEdit(routine) },
@@ -271,23 +318,19 @@ private fun RoutineTodayTab(
                         onMoveUp = if (untimedIdx > 0) ({ onSwap(routine.id, untimed[untimedIdx - 1].id) }) else null,
                         onMoveDown = if (untimedIdx in 0 until untimed.lastIndex) ({ onSwap(routine.id, untimed[untimedIdx + 1].id) }) else null
                     )
-                    Spacer(Modifier.height(Spacing.xs))
+                    Hairline()
                 }
             }
+            Spacer(Modifier.height(Spacing.xl))
         }
     }, right = {
-        // 91차: "그날 요약"(연속 기록/완료율) 대신, 왼쪽에서 고른 루틴의 상세 정보를 보여주는
-        // 마스터-디테일 패턴으로 교체(사용자 요청) — 통계는 이미 "🔥 연속 기록" 탭에서 볼 수 있다.
+        // 91차: 왼쪽에서 고른 루틴의 상세 정보(마스터-디테일). 통계는 "연속 기록" 탭에 있다.
         val selected = routines.find { it.id == selectedRoutineId }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             if (selected == null) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        "루틴을 선택하면 여기서 상세 정보를 볼 수 있습니다.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
+                Column(Modifier.fillMaxSize().padding(top = Spacing.xxl)) {
+                    Overline("상세")
+                    Text("루틴을 고르면\n여기서 자세히 볼 수 있습니다.", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 RoutineDetailPanel(repository, selected, onEdit = { onEdit(selected) })
@@ -296,7 +339,7 @@ private fun RoutineTodayTab(
     })
 }
 
-/** 91차 신규: 오른쪽 컬럼에서 선택한 루틴 하나의 상세 정보(요일/시간대/기간/연속 기록). */
+/** 91차 신규: 오른쪽 컬럼에서 선택한 루틴 하나의 상세(요일/시간대/기간/연속 기록). 144차: 큰 숫자 + 라벨-값 줄. */
 @Composable
 private fun RoutineDetailPanel(repository: Repository, routine: Routine, onEdit: () -> Unit) {
     val today = remember { LocalDate.now() }
@@ -304,29 +347,17 @@ private fun RoutineDetailPanel(repository: Repository, routine: Routine, onEdit:
     val ownStreak = remember(routine.id, completedDates) { routineOwnStreak(routine, completedDates, today) }
     val scheduledDays = (0..6).filter { (routine.daysMask shr it) and 1 == 1 }.joinToString(", ") { ROUTINE_WEEKDAYS_KO[it] }
 
+    Overline("상세")
     Text(
         if (routine.icon.isNotBlank()) "${routine.icon} ${routine.title}" else routine.title,
-        style = MaterialTheme.typography.titleLarge,
-        color = MaterialTheme.colorScheme.onSurface
+        style = MaterialTheme.typography.headlineSmall,
+        color = MaterialTheme.colorScheme.onBackground
     )
     Spacer(Modifier.height(Spacing.md))
-    Surface(
-        Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-    ) {
-        Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("현재 연속 기록", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                "${ownStreak}일" + if (ownStreak > 0) " 🔥" else "",
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
+    Overline("이 루틴 연속 기록")
+    BigNumber("$ownStreak", unit = "일", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary)
     Spacer(Modifier.height(Spacing.md))
+    Hairline()
     RoutineDetailRow("반복 요일", if (scheduledDays.isEmpty()) "없음" else scheduledDays)
     RoutineDetailRow("시간대", routine.timeSlot ?: "지정 안 함")
     if (routine.startDate != null || routine.endDate != null) {
@@ -335,14 +366,14 @@ private fun RoutineDetailPanel(repository: Repository, routine: Routine, onEdit:
     RoutineDetailRow("알림", if (routine.notifyEnabled) "켜짐" else "꺼짐")
     RoutineDetailRow("최근 30일 완료", "${completedDates.count { it >= today.minusDays(29).toString() }}일")
     Spacer(Modifier.height(Spacing.md))
-    OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("✏️ 수정") }
+    OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("수정", maxLines = 1, softWrap = false) }
 }
 
 @Composable
 private fun RoutineDetailRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1.5f))
+        Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.weight(1.5f))
     }
 }
 
@@ -388,13 +419,12 @@ private fun routineRateInRange(
 }
 
 /**
- * 루틴 통계(50차 "습관" 탭 대체, 51차 최고 스트릭 중심으로 개편) — 캘린더 쪽 StudyStatsScreen과 같은
- * 톤(StatTile+SectionCard+30일 막대그래프)으로, 루틴 로그 전체를 집계하는 읽기 전용 파생 뷰. 별도 저장
- * 없이 매번 다시 계산한다. 스트릭은 이제 루틴별이 아니라 하루 단위 전역 값(RoutineEngine 참고) — 최고
- * 스트릭을 가장 크게, 맨 위에 강조한다.
+ * 루틴 통계(51차 최고 스트릭 중심) — 144차: 현재 연속 기록을 아주 큰 숫자로, 오늘·최고는 세 칸, 주간 비교는 큰 퍼센트 + 증감,
+ * 30일 추이는 막대(색은 테마 팔레트). 넓은 창은 좌(요약)/우(그래프). 안드로이드판과 대칭.
  */
 @Composable
 private fun RoutineStatsTab(repository: Repository, routines: List<Routine>) {
+    val palette = LocalPhoneLockPalette.current
     val today = remember { LocalDate.now() }
     val dateKey = remember { today.toString() }
     val completedByRoutine = remember(routines) {
@@ -405,8 +435,10 @@ private fun RoutineStatsTab(repository: Repository, routines: List<Routine>) {
     val doneToday = scheduledToday.count { dateKey in (completedByRoutine[it.id] ?: emptySet()) }
     val todayRate = if (scheduledToday.isNotEmpty()) Math.round(doneToday * 100.0 / scheduledToday.size).toInt() else 0
 
-    val currentStreak = RoutineEngine.currentStreak(routines, completedByRoutine, today)
-    val bestStreak = RoutineEngine.bestStreak(routines, completedByRoutine, today)
+    val freezePerWeek = remember { repository.routineStreakFreezePerWeek }
+    val currentStreak = RoutineEngine.currentStreak(routines, completedByRoutine, today, freezePerWeek)
+    val bestStreak = RoutineEngine.bestStreak(routines, completedByRoutine, today, freezePerWeek)
+    val freezeUsed = RoutineEngine.freezeUsedThisWeek(routines, completedByRoutine, today, freezePerWeek)
 
     val (thisDone, thisTotal) = routineRateInRange(routines, completedByRoutine, today.minusDays(6), today)
     val (lastDone, lastTotal) = routineRateInRange(routines, completedByRoutine, today.minusDays(13), today.minusDays(7))
@@ -418,127 +450,101 @@ private fun RoutineStatsTab(repository: Repository, routines: List<Routine>) {
     }
     val maxDayCnt = maxOf(1, dayStats.maxOf { it.scheduled })
 
-    // 90차: StudyStatsScreen과 같은 좌(요약 지표)/우(그래프) 분할.
     com.phonelock.desktop.ui.components.ResponsiveSplit(leftWeight = 1f, rightWeight = 1.4f, left = {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        // 현재 스트릭을 가장 위, 가장 크게 — 최고 스트릭은 아래 타일 중 하나로.
-        Surface(
-            Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-        ) {
-            Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("현재 연속 기록", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    "${currentStreak}일" + if (currentStreak > 0) " 🔥" else "",
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(end = Spacing.lg)) {
+            Spacer(Modifier.height(Spacing.md))
+            Overline("현재 연속 기록")
+            BigNumber(
+                "$currentStreak",
+                unit = "일",
+                style = MaterialTheme.typography.displayLarge.copy(fontSize = 96.sp, lineHeight = 98.sp, letterSpacing = (-3).sp),
+                unitStyle = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                if (freezePerWeek > 0) "하루라도 예정 루틴을 다 끝내면 이어집니다 · 이번 주 방지권 $freezeUsed/$freezePerWeek 사용"
+                else "하루라도 예정 루틴을 다 끝내면 이어집니다",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(Spacing.lg))
+            Hairline()
+            Spacer(Modifier.height(Spacing.md))
+            StatRow {
+                StatBlock("오늘 완료", "$doneToday/${scheduledToday.size}", Modifier.weight(1f))
+                StatBlock("오늘 완료율", "$todayRate", Modifier.weight(1f), unit = "%")
+                StatBlock("최고 기록", "$bestStreak", Modifier.weight(1f), unit = "일")
             }
-        }
-        Spacer(Modifier.height(Spacing.md))
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            RoutineStatTile("오늘 완료", "$doneToday / ${scheduledToday.size}", Modifier.weight(1f), accentColor = Color(0xFF34D399))
-            RoutineStatTile("오늘 완료율", "$todayRate%", Modifier.weight(1f), accentColor = Color(0xFFFBBF24))
-            RoutineStatTile("최고 연속 기록", "${bestStreak}일" + if (bestStreak > 0) "🔥" else "", Modifier.weight(1f), accentColor = MaterialTheme.colorScheme.secondary)
-        }
-        Spacer(Modifier.height(Spacing.md))
-
-        if (thisTotal > 0 || lastTotal > 0) {
-            val thisRate = if (thisTotal > 0) Math.round(thisDone * 100.0 / thisTotal).toInt() else 0
-            SectionCard("최근 7일 vs 지난 7일 완료율") {
-                if (lastTotal == 0) {
-                    Text(
-                        "이번 주 완료율 $thisRate% (지난주 예정 루틴 없음, 비교 불가)",
-                        style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                } else {
-                    val lastRate = Math.round(lastDone * 100.0 / lastTotal).toInt()
-                    val diff = thisRate - lastRate
-                    val diffColor = when {
-                        diff > 0 -> Color(0xFF34D399)
-                        diff < 0 -> Color(0xFFF87171)
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                    val diffLabel = if (diff > 0) "+$diff%p" else "$diff%p"
-                    Text(
-                        "이번 주 완료율 $thisRate% (지난주 대비 $diffLabel)",
-                        style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold,
-                        color = diffColor
-                    )
-                }
-            }
-        }
-    }
-    }, right = {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        SectionCard("최근 30일 완료 추이 (막대 높이 = 예정 개수, 색상 = 완료율)") {
-            Row(Modifier.fillMaxWidth().height(90.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                dayStats.forEach { ds ->
-                    val pct = if (ds.scheduled > 0) Math.round(ds.done * 100.0 / ds.scheduled).toInt() else 0
-                    val barColor = when {
-                        ds.scheduled == 0 -> MaterialTheme.colorScheme.outlineVariant
-                        pct == 100 -> Color(0xFF34D399)
-                        pct > 0 -> Color(0xFFFBBF24)
-                        else -> Color(0xFFF87171)
-                    }
-                    val isToday = ds.date == today
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Column(
-                            Modifier.fillMaxWidth().height(60.dp),
-                            verticalArrangement = Arrangement.Bottom
-                        ) {
-                            val heightPct = (ds.scheduled.toFloat() / maxDayCnt).coerceIn(if (ds.scheduled > 0) 0.08f else 0.03f, 1f)
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .height((60 * heightPct).dp)
-                                    .background(barColor)
-                            ) {}
+            Spacer(Modifier.height(Spacing.lg))
+            if (thisTotal > 0 || lastTotal > 0) {
+                val thisRate = if (thisTotal > 0) Math.round(thisDone * 100.0 / thisTotal).toInt() else 0
+                LedgerSection("최근 7일 완료율") {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        BigNumber("$thisRate", unit = "%", style = MaterialTheme.typography.displaySmall)
+                        Spacer(Modifier.width(Spacing.md))
+                        if (lastTotal == 0) {
+                            Text("지난주 예정 루틴이 없어 비교할 수 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.alignByBaseline())
+                        } else {
+                            val lastRate = Math.round(lastDone * 100.0 / lastTotal).toInt()
+                            val diff = thisRate - lastRate
+                            val diffColor = when {
+                                diff > 0 -> palette.success
+                                diff < 0 -> palette.error
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Text("지난주 대비 " + if (diff > 0) "+$diff%p" else "$diff%p", style = MaterialTheme.typography.titleMedium, color = diffColor, modifier = Modifier.alignByBaseline())
                         }
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            "${ds.date.dayOfMonth}",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    }
+                    Spacer(Modifier.height(Spacing.lg))
+                }
+            }
+        }
+    }, right = {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            LedgerSection("최근 30일", divider = false) {
+                Text("막대 높이는 예정 개수, 색은 완료율", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(Spacing.sm))
+                Row(Modifier.fillMaxWidth().height(110.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    dayStats.forEach { ds ->
+                        val pct = if (ds.scheduled > 0) Math.round(ds.done * 100.0 / ds.scheduled).toInt() else 0
+                        val barColor = when {
+                            ds.scheduled == 0 -> MaterialTheme.colorScheme.outlineVariant
+                            pct == 100 -> palette.success
+                            pct > 0 -> palette.warning
+                            else -> palette.error
+                        }
+                        val isToday = ds.date == today
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(Modifier.fillMaxWidth().height(80.dp), verticalArrangement = Arrangement.Bottom) {
+                                val heightPct = (ds.scheduled.toFloat() / maxDayCnt).coerceIn(if (ds.scheduled > 0) 0.08f else 0.03f, 1f)
+                                Box(Modifier.fillMaxWidth().height((80 * heightPct).dp).background(barColor, RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)))
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "${ds.date.dayOfMonth}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isToday) FontWeight.W700 else FontWeight.W600,
+                                color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     }
                 }
             }
         }
-    }
     })
 }
 
-@Composable
-private fun RoutineStatTile(label: String, value: String, modifier: Modifier = Modifier, accentColor: Color = Color.Unspecified) {
-    val hasAccent = accentColor != Color.Unspecified
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.medium,
-        color = if (hasAccent) accentColor.copy(alpha = 0.07f) else MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, if (hasAccent) accentColor.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline)
-    ) {
-        Column(Modifier.padding(Spacing.sm), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
-                color = if (hasAccent) accentColor else MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
-}
-
+/**
+ * 루틴 한 줄 — 144차: 카드 대신 줄(아래 가는 선은 호출 쪽). 줄을 누르면 오른쪽 상세에 열리고(데스크탑 마스터-디테일),
+ * 왼쪽 원형 체크를 누르면 완료/해제. 시간 칸(시간대 루틴이 하나라도 있으면 모든 줄에) → 체크 → 제목/주기 → 순서·수정.
+ */
 @Composable
 private fun RoutineRow(
     routine: Routine,
     done: Boolean,
+    timeColumn: Boolean,
     onToggle: () -> Unit,
     onEdit: () -> Unit,
     selected: Boolean = false,
@@ -546,47 +552,71 @@ private fun RoutineRow(
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null
 ) {
-    Surface(
-        if (onSelect != null) Modifier.fillMaxWidth().clickable(onClick = onSelect) else Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
-        color = when {
-            selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-            done -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-            else -> MaterialTheme.colorScheme.surfaceVariant
-        },
-        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 60.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+            .let { if (onSelect != null) it.clickable(onClick = onSelect) else it }
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(Modifier.fillMaxWidth().padding(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = done, onCheckedChange = { onToggle() })
-            Column(Modifier.weight(1f).padding(start = Spacing.xs)) {
-                Text(
-                    if (routine.icon.isNotBlank()) "${routine.icon} ${routine.title}" else routine.title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-                )
-                // 134차: 요일 반복이 아닌 루틴(며칠마다 · 매월 날짜)은 목록에서도 주기를 알 수 있게 함께 보여준다.
-                val repeatLabel = if (routine.repeatMode == RoutineRepeat.MODE_WEEKLY) null
-                else RoutineRepeat.describe(routine.repeatMode, routine.daysMask, routine.repeatIntervalDays, routine.repeatMonthDaysCsv)
-                val subtitle = listOfNotNull(routine.timeSlot, repeatLabel).joinToString(" · ")
-                if (subtitle.isNotEmpty()) {
-                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            if (onMoveUp != null || onMoveDown != null) {
-                Column {
-                    com.phonelock.desktop.ui.components.IconChip(
-                        Icons.Filled.KeyboardArrowUp,
-                        enabled = onMoveUp != null,
-                        onClick = { onMoveUp?.invoke() }
-                    )
-                    com.phonelock.desktop.ui.components.IconChip(
-                        Icons.Filled.KeyboardArrowDown,
-                        enabled = onMoveDown != null,
-                        onClick = { onMoveDown?.invoke() }
-                    )
-                }
-            }
-            IconButton(onClick = onEdit) { Text("✏️") }
+        if (timeColumn) {
+            Text(
+                routine.timeSlot?.substringBefore("-")?.trim().orEmpty(),
+                style = MaterialTheme.typography.labelLarge,
+                color = if (done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.width(52.dp)
+            )
         }
+        Box(Modifier.clip(CircleShape).clickable(onClick = onToggle).padding(4.dp)) { CheckCircle(done) }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (routine.icon.isNotBlank()) "${routine.icon} ${routine.title}" else routine.title,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.W600,
+                    textDecoration = if (done) TextDecoration.LineThrough else TextDecoration.None
+                ),
+                color = if (done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground
+            )
+            // 134차: 요일 반복이 아닌 루틴(며칠마다 · 매월 날짜)은 목록에서도 주기를 알 수 있게 함께 보여준다.
+            val repeatLabel = if (routine.repeatMode == RoutineRepeat.MODE_WEEKLY) null
+            else RoutineRepeat.describe(routine.repeatMode, routine.daysMask, routine.repeatIntervalDays, routine.repeatMonthDaysCsv)
+            if (repeatLabel != null) {
+                Text(repeatLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (onMoveUp != null || onMoveDown != null) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                com.phonelock.desktop.ui.components.IconChip(Icons.Filled.KeyboardArrowUp, enabled = onMoveUp != null, size = 24.dp, iconSize = 16.dp, onClick = { onMoveUp?.invoke() })
+                com.phonelock.desktop.ui.components.IconChip(Icons.Filled.KeyboardArrowDown, enabled = onMoveDown != null, size = 24.dp, iconSize = 16.dp, onClick = { onMoveDown?.invoke() })
+            }
+        }
+        IconButton(onClick = onEdit) {
+            androidx.compose.material3.Icon(Icons.Outlined.Edit, contentDescription = "수정", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+/** 원형 체크(28dp) — 완료되면 강조색으로 차오르고 체크 표시가 살짝 커졌다 자리 잡는다(성능 모드에선 바로 바뀐다). */
+@Composable
+private fun CheckCircle(done: Boolean) {
+    val motion = LocalAppMotion.current
+    val fill by animateColorAsState(if (done) MaterialTheme.colorScheme.primary else Color.Transparent, motion.quick(), label = "checkFill")
+    val markScale by animateFloatAsState(if (done) 1f else 0f, motion.press(), label = "checkMark")
+    Box(
+        Modifier.size(28.dp)
+            .background(fill, CircleShape)
+            .border(2.dp, if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.material3.Icon(
+            Icons.Filled.Check,
+            contentDescription = if (done) "완료" else "미완료",
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(18.dp).graphicsLayer { scaleX = markScale; scaleY = markScale }
+        )
     }
 }

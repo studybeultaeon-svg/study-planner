@@ -1,5 +1,21 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.theme.LocalPhoneLockPalette
+import com.phonelock.desktop.ui.components.Overline
+import com.phonelock.desktop.ui.components.NoticeTone
+import com.phonelock.desktop.ui.components.NoticeStrip
+import com.phonelock.desktop.ui.components.Hairline
+import com.phonelock.desktop.ui.components.BigNumber
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -82,51 +98,58 @@ fun GroupListScreen(
     var pendingSyncToggleGroup by remember { mutableStateOf<Group?>(null) }
     var pendingSyncToggleEntry by remember { mutableStateOf<JSONObject?>(null) }
 
-    Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "🗂️ 차단 규칙",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.weight(1f)
-            )
+    // 144차(안드로이드판과 같은 언어): 제목은 관리 탭 머리가 보여주므로 "지금 차단 중인 규칙 수"를 크게, 목록은 가는 선으로.
+    val lockedCount = groups.count { it.groupEnabled && evaluator.isAnyManagementActiveToday(it) }
+    Column(Modifier.fillMaxSize().padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                Overline("지금 차단 중")
+                BigNumber(
+                    "$lockedCount",
+                    unit = if (groups.isEmpty()) "개" else "/ ${groups.size}개 규칙",
+                    style = MaterialTheme.typography.displayMedium,
+                    color = if (lockedCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground
+                )
+            }
             // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
             androidx.compose.material3.IconButton(onClick = {
                 scope.launch {
                     withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncGroupSettingsFromFirebase() }
                 }
-            }) { Text("🔄") }
-            OutlinedButton(onClick = { showImportDialog = true }) {
-                Text("⬇ 불러오기")
+            }) { Icon(Icons.Outlined.Refresh, contentDescription = "새로고침", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            androidx.compose.material3.TextButton(onClick = { showImportDialog = true }) {
+                Icon(Icons.Outlined.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("불러오기", maxLines = 1, softWrap = false)
             }
         }
         if (showImportDialog) {
             GroupImportDialog(repository = repository, onDismiss = { showImportDialog = false })
         }
-        Spacer(Modifier.height(Spacing.sm))
-        Button(onClick = onAddClick, modifier = Modifier.fillMaxWidth()) {
-            Text("차단 규칙 추가")
+        Spacer(Modifier.height(Spacing.md))
+        androidx.compose.material3.FilledTonalButton(onClick = onAddClick, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("차단 규칙 추가", maxLines = 1, softWrap = false)
         }
-        // 안내가 아니라 "지금 이 동작이 막혔다"는 경고이므로 본문과 같은 톤이 아니라 경고 색 카드로 —
-        // 예전엔 기본 색 평문이라 목록 위쪽에 조용히 얹혀 못 보고 지나치기 쉬웠다.
+        // 안내가 아니라 "지금 이 동작이 막혔다"는 경고 — 경고 띠로.
         penaltyMessage?.let {
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm),
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.errorContainer
-            ) {
+            Spacer(Modifier.height(Spacing.sm))
+            NoticeStrip(it, tone = NoticeTone.Warning)
+        }
+        Spacer(Modifier.height(Spacing.sm))
+        Hairline()
+        if (groups.isEmpty()) {
+            Column(Modifier.padding(top = Spacing.lg)) {
+                Text("아직 차단 규칙이 없습니다", style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.padding(Spacing.sm)
+                    "막고 싶은 프로그램·사이트를 고르고 언제(시간대·하루 한도·열기 전 확인) 막을지 정합니다.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-        if (groups.isEmpty()) {
-            Text("아직 차단 규칙이 없습니다.", modifier = Modifier.padding(top = Spacing.md))
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(top = Spacing.sm)) {
+            LazyColumn(Modifier.fillMaxSize()) {
                 items(groups, key = { it.id }) { group ->
                     GroupRow(
                         group = group,
@@ -195,6 +218,7 @@ fun GroupListScreen(
                             }
                         }
                     )
+                    Hairline()
                 }
             }
         }
@@ -226,10 +250,6 @@ fun GroupListScreen(
         )
     }
 }
-
-// 상태 색 — 자물쇠 아이콘(잠김)과 잠깐 풀기 칩에 쓰인다. DECISIONS.md 85차의 상태 3색(성공/경고/실패) 재사용.
-private val STATUS_OK = Color(0xFF34D399)
-private val STATUS_WARNING = Color(0xFFFBBF24)
 
 /**
  * "불러오기" 화면(94차 신규, 안드로이드판과 대칭) — 원격에 있고 이 기기엔 아직 동기화로 연결 안 된
@@ -318,109 +338,124 @@ private fun GroupRow(
         }
     }
 
-    // 선택한 그룹은 오른쪽에서 편집 중임을 알 수 있도록 accent 테두리로 강조(마스터-디테일 레이아웃).
-    Surface(
-        // 꺼진 차단 규칙은 줄 전체를 흐리게 해서 한눈에 "꺼져 있다"가 보이게 한다(95차, 사용자 요청).
-        // 고정 회색을 새로 칠하는 대신 Modifier.alpha로 카드 전체(배경+글자+아이콘)를 낮은 불투명도로
-        // 내려서 지금 테마(라이트/다크/커스텀 무엇이든) 배경이 그대로 비쳐 보이게 한다.
-        modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)
-            .alpha(if (group.groupEnabled) 1f else 0.55f),
-        shape = MaterialTheme.shapes.medium,
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceVariant,
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-        onClick = onClick
-    ) {
-        Column(Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
-            // 96차 재작업(사용자 확정 시안, 안드로이드판과 대칭): 상태를 알리던 텍스트 배지와, 일일
-            // 한도/시간대/실행 전 대기를 나열하던 설명 줄을 통째로 없애고 "지금 차단 중인가"만 이름 옆
-            // 자물쇠 아이콘 색으로 표시한다(잠김=초록, 열림=회색). 잠깐 풀기 칩은 이름 아래에 왼쪽
-            // 정렬로 붙이고, 동기화 칩+스위치는 그 왼쪽 블록(이름+잠깐 풀기) 전체 높이 기준으로
-            // 수직 중앙 정렬한다.
-            val locked = restrictingNow
-            val showSnoozeChip = !pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)
-            val snoozeClickable = !snoozeActive && snoozeRemainingToday > 0
-            val snoozeText = if (snoozeActive) "😴 잠깐 풀기 중" else "😴 잠깐 풀기 ${group.snoozeMinutes}분 ($snoozeRemainingToday/${group.snoozeDailyLimit})"
+    val palette = LocalPhoneLockPalette.current
+    val locked = restrictingNow
+    val showSnoozeChip = !pending && group.groupEnabled && group.snoozeEnabled && (restrictingNow || snoozeActive)
+    val snoozeClickable = !snoozeActive && snoozeRemainingToday > 0
+    val snoozeText = if (snoozeActive) "잠깐 풀기 중" else "잠깐 풀기 ${group.snoozeMinutes}분 · $snoozeRemainingToday/${group.snoozeDailyLimit}회 남음"
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (locked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                            contentDescription = if (locked) "오늘 차단 중" else "차단 안 함",
-                            tint = if (locked) STATUS_OK else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            group.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    if (showSnoozeChip) {
-                        Spacer(Modifier.height(Spacing.xs))
-                        Text(
-                            snoozeText,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            color = STATUS_WARNING,
-                            modifier = Modifier
-                                .background(STATUS_WARNING.copy(alpha = 0.15f), RoundedCornerShape(50))
-                                .let { if (snoozeClickable) it.clickable(onClick = onSnooze) else it }
-                                .alpha(if (snoozeClickable) 1f else 0.6f)
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.width(Spacing.sm))
-                Text(
-                    if (group.syncEnabled) "☁️동기화 ON" else "☁️동기화 OFF",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    color = if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .background(
-                            (if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.15f),
-                            RoundedCornerShape(50)
-                        )
-                        .clickable { onSyncToggle(!group.syncEnabled) }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+    // 선택한 그룹(오른쪽에서 편집 중)은 옅은 판으로 강조 — 마스터-디테일 레이아웃.
+    Column(
+        Modifier.fillMaxWidth()
+            .alpha(if (group.groupEnabled) 1f else 0.5f)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else androidx.compose.ui.graphics.Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(36.dp).background(
+                    if (locked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    CircleShape
+                ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (locked) Icons.Filled.Lock else Icons.Outlined.LockOpen,
+                    contentDescription = if (locked) "오늘 차단 중" else "차단 안 함",
+                    tint = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
                 )
-                Spacer(Modifier.width(Spacing.sm))
-                Switch(checked = group.groupEnabled, onCheckedChange = onGroupToggle)
             }
-            if (pending) {
-                val messageIndex = group.groupOffMessageIndex.coerceIn(0, PERSUASION_MESSAGES.lastIndex)
-                val isLast = messageIndex == PERSUASION_MESSAGES.lastIndex
-                val stepDelaysMs = remember(group.id, group.groupOffPending) { randomPersuasionStepDelaysMs() }
-                var stepStarted by remember(group.id, messageIndex) { mutableStateOf(false) }
-                var stepRemainingSeconds by remember(group.id, messageIndex) { mutableIntStateOf(0) }
-                LaunchedEffect(group.id, messageIndex, stepStarted) {
-                    if (!stepStarted) return@LaunchedEffect
-                    stepRemainingSeconds = ((stepDelaysMs[messageIndex] + 999) / 1000).toInt()
-                    while (stepRemainingSeconds > 0) {
-                        delay(1000)
-                        stepRemainingSeconds -= 1
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    Text(
+                        group.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    // 전체 잠금 방식 규칙(142차)은 목록의 뜻이 반대라 이름 옆에 표시해 둔다.
+                    if (group.allowlistMode) {
+                        Text(
+                            "전체 잠금",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(50))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
                     }
-                    onConfirmMessage()
                 }
-                Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    PERSUASION_MESSAGES[messageIndex],
+                    if (locked) "지금 차단 중" else if (group.groupEnabled) "지금은 열려 있음" else "꺼짐",
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.fillMaxWidth()
+                    color = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(Spacing.xs))
+            }
+            Spacer(Modifier.width(Spacing.xs))
+            // 동기화 표시 — 누르면 켜고 끈다(켤 때 같은 이름의 원격 규칙이 있으면 확인창).
+            IconButton(onClick = { onSyncToggle(!group.syncEnabled) }) {
+                Icon(
+                    if (group.syncEnabled) Icons.Filled.Cloud else Icons.Outlined.CloudOff,
+                    contentDescription = if (group.syncEnabled) "다른 기기와 동기화 켜짐" else "다른 기기와 동기화 꺼짐",
+                    tint = if (group.syncEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Switch(checked = group.groupEnabled, onCheckedChange = onGroupToggle)
+        }
+        if (showSnoozeChip) {
+            Spacer(Modifier.height(Spacing.sm))
+            Row(
+                Modifier.padding(start = 50.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(palette.warningContainer)
+                    .let { if (snoozeClickable) it.clickable(onClick = onSnooze) else it }
+                    .alpha(if (snoozeClickable || snoozeActive) 1f else 0.6f)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Outlined.Bedtime, contentDescription = null, tint = palette.warning, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(snoozeText, style = MaterialTheme.typography.labelMedium, color = palette.warning, maxLines = 1, softWrap = false)
+            }
+        }
+        if (pending) {
+            val messageIndex = group.groupOffMessageIndex.coerceIn(0, PERSUASION_MESSAGES.lastIndex)
+            val isLast = messageIndex == PERSUASION_MESSAGES.lastIndex
+            val stepDelaysMs = remember(group.id, group.groupOffPending) { randomPersuasionStepDelaysMs() }
+            var stepStarted by remember(group.id, messageIndex) { mutableStateOf(false) }
+            var stepRemainingSeconds by remember(group.id, messageIndex) { mutableIntStateOf(0) }
+            LaunchedEffect(group.id, messageIndex, stepStarted) {
+                if (!stepStarted) return@LaunchedEffect
+                stepRemainingSeconds = ((stepDelaysMs[messageIndex] + 999) / 1000).toInt()
+                while (stepRemainingSeconds > 0) {
+                    delay(1000)
+                    stepRemainingSeconds -= 1
+                }
+                onConfirmMessage()
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            Column(
+                Modifier.fillMaxWidth().padding(start = 50.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+                    .padding(Spacing.md)
+            ) {
+                Overline("끄기 확인 ${messageIndex + 1}/${PERSUASION_MESSAGES.size}")
+                Spacer(Modifier.height(4.dp))
+                Text(PERSUASION_MESSAGES[messageIndex], style = MaterialTheme.typography.bodyMedium, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(Spacing.sm))
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    OutlinedButton(onClick = onCancelPending) { Text("취소") }
+                    OutlinedButton(onClick = onCancelPending) { Text("취소", maxLines = 1, softWrap = false) }
                     Button(onClick = { stepStarted = true }, enabled = !stepStarted) {
                         val label = if (isLast) "끄기" else "예"
-                        Text(if (stepStarted && stepRemainingSeconds > 0) "$label (${stepRemainingSeconds}초)" else label)
+                        Text(if (stepStarted && stepRemainingSeconds > 0) "$label (${stepRemainingSeconds}초)" else label, maxLines = 1, softWrap = false)
                     }
                 }
             }

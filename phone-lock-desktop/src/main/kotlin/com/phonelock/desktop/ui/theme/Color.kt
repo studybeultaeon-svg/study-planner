@@ -2,11 +2,10 @@ package com.phonelock.desktop.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-/** 테마 선택지(설정 화면에서 고름) — AppData.themeMode에 이 문자열 그대로 저장된다.
- *  85차(사용자 요청, 안드로이드판과 대칭): 53차/82차에 늘렸던 LAVENDER/MINT/ROSE/MIDNIGHT/FOREST/
- *  HIGH_CONTRAST 6종을 제거하고 기본 3종(LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE)+CUSTOM만 남겼다.
- *  기존에 이 값들로 저장돼 있던 사용자는 [paletteFor]의 `else -> LightGreenPalette` 폴백으로
- *  자동 복구된다. */
+/** 테마 선택지(설정 화면에서 고름) — 안드로이드판과 동일, AppData.themeMode에 이 문자열로 저장된다.
+ *  85차(사용자 요청): 53차/82차에 늘렸던 LAVENDER/MINT/ROSE/MIDNIGHT/FOREST/HIGH_CONTRAST 6종을
+ *  제거하고 기본 3종(LIGHT_GREEN/DARK_BLUE/LIGHT_ORANGE)+CUSTOM만 남겼다. 기존에 이 값들로 저장돼
+ *  있던 사용자는 [paletteFor]의 `else -> LightGreenPalette` 폴백으로 자동 복구된다. */
 object ThemeMode {
     const val LIGHT_GREEN = "LIGHT_GREEN"
     const val DARK_BLUE = "DARK_BLUE"
@@ -14,6 +13,13 @@ object ThemeMode {
     /** 커스텀(79차, 사용자 요청) — 배경/포인트 두 색만 사용자가 고르면 나머지 팔레트 값은
      *  [buildCustomPalette]가 자동 계산한다. 실제 두 색은 AppData.customThemeBackground/customThemeAccent. */
     const val CUSTOM = "CUSTOM"
+
+    /**
+     * 미니멀 모드(130차) 전용 흑백 팔레트. **설정의 테마 목록에는 넣지 않는다** — 테마를 하나 더 고르는
+     * 게 아니라 "미니멀 모드" 스위치를 켜면 골라둔 테마와 무관하게 이 팔레트가 강제되는 구조이기 때문이다
+     * (85차에 테마 종류를 3개로 줄인 결정을 되돌리지 않으려는 의도). 스위치를 끄면 원래 고른 테마로 그대로 돌아온다.
+     */
+    const val MINIMAL = "MINIMAL"
 }
 
 /** 팔레트 하나가 채워야 하는 색상 집합 — PhoneLockColorScheme(Theme.kt)이 그대로 매핑한다. */
@@ -37,73 +43,74 @@ data class PhoneLockPalette(
     val outline: Color
 )
 
-// 라이트+그린 팔레트(47차 방향 확정, 48차 착수 후 실제 톤 확정, 49차부터 기본값) — 다크+파랑(28차/35차)을 뒤집는다.
-// 배경은 순백 대신 아주 옅은 그린 틴트를 준 오프화이트, 포인트 색은 밝은 연두(Primary)를 쓰되
-// 그 색 위 텍스트(onPrimary)는 대비를 위해 흰색 대신 짙은 그린빛 다크 톤을 쓴다.
+// ── 144차 리디자인 "Ledger" 팔레트(DECISIONS.md 144차, 안드로이드판과 같은 값) ─────────────────────────
+// 구조: 중립 바탕(종이/먹) + 테마마다 강조색 하나. 강조색은 "지금 여기"(선택 상태·진행·주요 행동)에만 쓰고
+// 장식으로 칠하지 않는다. 테마 이름과 색 계열(그린/블루/오렌지)은 그대로 두고, 강조색 글씨가 바탕·옅은 바탕·
+// 강조 바탕 위에서 모두 4.5:1 이상 읽히도록 값을 다시 잡았다(이전 그린·오렌지는 강조색 글씨가 약 2:1이었다).
+// 성공/경고/오류도 라이트 테마에선 글씨로 읽히는 진한 값(4.5:1 이상)을 쓴다.
+
+// 라이트 · 그린 — 옅은 풀빛 종이 + 짙은 풀색 강조.
 val LightGreenPalette = PhoneLockPalette(
     isDark = false,
-    background = Color(0xFFFAFBF6),
+    background = Color(0xFFF4F5EF),
     surface = Color(0xFFFFFFFF),
-    surfaceAlt = Color(0xFFF1F5E9),
-    primary = Color(0xFF8BC34A),
-    primaryContainer = Color(0xFFDCEDC1),
-    onPrimary = Color(0xFF20261A),
-    secondary = Color(0xFF558B2F),
-    onSecondary = Color(0xFFFAFBF6),
-    success = Color(0xFF43A047),
-    warning = Color(0xFFF59E0B),
-    warningContainer = Color(0xFFFEF3C7),
-    error = Color(0xFFE53935),
-    errorContainer = Color(0xFFFEE2E2),
-    onBackground = Color(0xFF20261A),
-    muted = Color(0xFF6B7566),
-    outline = Color(0xFFD9E2CB)
+    surfaceAlt = Color(0xFFEAEDE3),
+    primary = Color(0xFF36701A),
+    primaryContainer = Color(0xFFDDEFC6),
+    onPrimary = Color(0xFFFFFFFF),
+    secondary = Color(0xFF2B5A12),
+    onSecondary = Color(0xFFFFFFFF),
+    success = Color(0xFF2E7D32),
+    warning = Color(0xFFB45309),
+    warningContainer = Color(0xFFFDF0D2),
+    error = Color(0xFFC62828),
+    errorContainer = Color(0xFFFDE4E1),
+    onBackground = Color(0xFF141A10),
+    muted = Color(0xFF5C6656),
+    outline = Color(0xFFDCE0D4)
 )
 
-// 다크+파랑 팔레트(28차 세션 적용분, 35차에 하드코딩 accent만 주황→파랑 통일) — 공부앱(index.html) 다크
-// 팔레트를 그대로 이식한 원본 값: 배경 #0f1117 / 카드 #1e2333 / 포인트 파랑 #4f8ef7 / 보조 보라 #a78bfa /
-// 성공 #34d399 / 경고 #fbbf24 / 에러 #f87171.
+// 다크 · 블루 — 먹색에 가까운 남색 바탕 + 밝은 파랑 강조. 보조색은 예전의 보라 대신 같은 계열의 옅은 파랑으로
+// 둬서 "파랑→보라" 조합을 없앴다.
 val DarkBluePalette = PhoneLockPalette(
     isDark = true,
-    background = Color(0xFF0F1117),
-    surface = Color(0xFF1E2333),
-    surfaceAlt = Color(0xFF1E2333),
-    primary = Color(0xFF4F8EF7),
-    primaryContainer = Color(0xFF283654),
-    onPrimary = Color(0xFF0F1117),
-    secondary = Color(0xFFA78BFA),
-    onSecondary = Color(0xFF0F1117),
-    success = Color(0xFF34D399),
-    warning = Color(0xFFFBBF24),
-    warningContainer = Color(0xFF3A331A),
-    error = Color(0xFFF87171),
-    errorContainer = Color(0xFF3A2020),
-    onBackground = Color(0xFFE5E7EB),
-    muted = Color(0xFF9CA3AF),
-    outline = Color(0xFF2A3142)
+    background = Color(0xFF0B0E14),
+    surface = Color(0xFF141922),
+    surfaceAlt = Color(0xFF1B212C),
+    primary = Color(0xFF6AA4FF),
+    primaryContainer = Color(0xFF1C2C47),
+    onPrimary = Color(0xFF07101F),
+    secondary = Color(0xFF9CC3FF),
+    onSecondary = Color(0xFF07101F),
+    success = Color(0xFF3DD68C),
+    warning = Color(0xFFF5B83D),
+    warningContainer = Color(0xFF3A2F14),
+    error = Color(0xFFFF7A7A),
+    errorContainer = Color(0xFF3D1C1F),
+    onBackground = Color(0xFFEEF1F6),
+    muted = Color(0xFF98A2B3),
+    outline = Color(0xFF252C38)
 )
 
-// 화이트+오렌지 팔레트(28차 개편 이전, 앱 최초 테마) — 정확한 원본 hex는 커밋 이력이 남아있지 않아
-// 그대로 복원할 수 없다(2026-08-13 확인). 유일하게 문서에 정확히 남아있던 값은 강조색 #FF9800(35차
-// DECISIONS.md 기록)뿐이라, 이를 기준으로 따뜻한 라이트 톤을 재구성했다 — 배경/카드 톤은 근사치다.
+// 화이트 · 오렌지 — 따뜻한 미색 종이 + 짙은 주황 강조.
 val LightOrangePalette = PhoneLockPalette(
     isDark = false,
-    background = Color(0xFFFFF8F0),
+    background = Color(0xFFFAF6F0),
     surface = Color(0xFFFFFFFF),
-    surfaceAlt = Color(0xFFFBEBD9),
-    primary = Color(0xFFFF9800),
-    primaryContainer = Color(0xFFFFE0B2),
-    onPrimary = Color(0xFF2E1E00),
-    secondary = Color(0xFFE65100),
-    onSecondary = Color(0xFFFFF8F0),
-    success = Color(0xFF43A047),
-    warning = Color(0xFFF59E0B),
-    warningContainer = Color(0xFFFEF3C7),
-    error = Color(0xFFE53935),
-    errorContainer = Color(0xFFFEE2E2),
-    onBackground = Color(0xFF2E2114),
-    muted = Color(0xFF8A7360),
-    outline = Color(0xFFE8D5BE)
+    surfaceAlt = Color(0xFFF2EADF),
+    primary = Color(0xFFA84F00),
+    primaryContainer = Color(0xFFFCE3C8),
+    onPrimary = Color(0xFFFFFFFF),
+    secondary = Color(0xFF8A3F00),
+    onSecondary = Color(0xFFFFFFFF),
+    success = Color(0xFF2E7D32),
+    warning = Color(0xFFB45309),
+    warningContainer = Color(0xFFFDF0D2),
+    error = Color(0xFFC62828),
+    errorContainer = Color(0xFFFDE4E1),
+    onBackground = Color(0xFF1F160C),
+    muted = Color(0xFF6E5E4E),
+    outline = Color(0xFFE6DCCD)
 )
 
 /** "#RRGGBB"(또는 "RRGGBB") 문자열을 [Color]로 파싱, 실패하면 null. */
@@ -124,9 +131,7 @@ private fun luminance(c: Color): Float = 0.299f * c.red + 0.587f * c.green + 0.1
 
 /**
  * 커스텀 테마(79차, 사용자 요청) — 배경색/포인트색 두 개만으로 나머지 팔레트 필드를 자동 계산한다.
- * 배경의 명도로 라이트/다크를 판정하고, 텍스트/보조색/컨테이너색은 전부 배경↔포인트색을 섞어(blend)
- * 만들어서 사용자가 어떤 색을 고르든 항상 읽을 수 있는 대비를 보장한다. success/warning/error는
- * 기존 8개 팔레트가 전부 공유하는 표준값을 라이트/다크에 맞게 그대로 재사용한다.
+ * 안드로이드판과 동일 알고리즘 — DECISIONS.md 참고.
  */
 fun buildCustomPalette(backgroundHex: String, accentHex: String): PhoneLockPalette {
     val background = parseHexColor(backgroundHex) ?: Color(0xFFFAFBF6)
@@ -140,7 +145,7 @@ fun buildCustomPalette(backgroundHex: String, accentHex: String): PhoneLockPalet
     val primaryContainer = if (isDark) blend(background, primary, 0.35f) else blend(primary, Color.White, 0.7f)
     val secondary = if (isDark) blend(primary, Color.White, 0.15f) else blend(primary, Color.Black, 0.2f)
     val onSecondary = background
-    val outline = blend(onBackground, background, 0.85f)
+    val outline = blend(onBackground, background, 0.86f)
     val muted = blend(onBackground, background, 0.5f)
 
     return PhoneLockPalette(
@@ -154,7 +159,7 @@ fun buildCustomPalette(backgroundHex: String, accentHex: String): PhoneLockPalet
         secondary = secondary,
         onSecondary = onSecondary,
         success = if (isDark) Color(0xFF34D399) else Color(0xFF43A047),
-        warning = if (isDark) Color(0xFFFBBF24) else Color(0xFFF59E0B),
+        warning = if (isDark) Color(0xFFF5B83D) else Color(0xFFB45309),
         warningContainer = if (isDark) Color(0xFF3A331A) else Color(0xFFFEF3C7),
         error = if (isDark) Color(0xFFF87171) else Color(0xFFE53935),
         errorContainer = if (isDark) Color(0xFF3A2020) else Color(0xFFFEE2E2),
@@ -164,11 +169,47 @@ fun buildCustomPalette(backgroundHex: String, accentHex: String): PhoneLockPalet
     )
 }
 
+/**
+ * 미니멀 모드(130차) 흑백 팔레트 — 색으로 시선을 끄는 자리를 전부 없앤다. 경고/에러만 회색 농도로
+ * 구분해서(빨강 대신 가장 진한 먹색) "위험한 동작"이라는 신호 자체는 남긴다.
+ */
+val MonoPalette = PhoneLockPalette(
+    isDark = false,
+    // 144차: 바탕을 아주 옅은 회색으로 — 흰 표면(묶음·시트)이 바탕과 구분돼야 테두리 없이도 묶음이 보인다.
+    background = Color(0xFFF5F5F5),
+    surface = Color(0xFFFFFFFF),
+    surfaceAlt = Color(0xFFEDEDED),
+    primary = Color(0xFF111111),
+    primaryContainer = Color(0xFFE6E6E6),
+    onPrimary = Color(0xFFFFFFFF),
+    secondary = Color(0xFF3D3D3D),
+    onSecondary = Color(0xFFFFFFFF),
+    success = Color(0xFF333333),
+    warning = Color(0xFF555555),
+    warningContainer = Color(0xFFEDEDED),
+    error = Color(0xFF000000),
+    errorContainer = Color(0xFFE0E0E0),
+    onBackground = Color(0xFF111111),
+    muted = Color(0xFF666666),
+    outline = Color(0xFFE2E2E2)
+)
+
 fun paletteFor(themeMode: String): PhoneLockPalette = when (themeMode) {
     ThemeMode.DARK_BLUE -> DarkBluePalette
     ThemeMode.LIGHT_ORANGE -> LightOrangePalette
+    ThemeMode.MINIMAL -> MonoPalette
     else -> LightGreenPalette
 }
+
+/**
+ * 커스텀 테마까지 포함해 "지금 선택된 테마의 완성된 팔레트"를 돌려주는 유일한 창구(121차) — Compose
+ * 밖(위젯 RemoteViews, 접근성 오버레이, 액티비티 창 배경)에서도 테마 색을 써야 하는데, 그동안
+ * [paletteFor] 한 인자 버전만 부르는 자리들이 CUSTOM을 `else ->` 로 흘려 라이트+그린 기본 팔레트를
+ * 보여주고 있었다(사용자 지적: "위젯·오버레이에만 초록 기본 테마가 남아있다"). 앞으로 테마 색이 필요한
+ * 코드는 반드시 이 함수(또는 이걸 부르는 `Repository.currentPalette()`)를 쓴다.
+ */
+fun paletteFor(themeMode: String, customBackgroundHex: String, customAccentHex: String): PhoneLockPalette =
+    if (themeMode == ThemeMode.CUSTOM) buildCustomPalette(customBackgroundHex, customAccentHex) else paletteFor(themeMode)
 
 /** 설정 화면 테마 선택 UI가 순서대로 나열할 때 쓰는 표시 이름 매핑. */
 val THEME_DISPLAY_NAMES: List<Pair<String, String>> = listOf(

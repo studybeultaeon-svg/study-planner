@@ -26,6 +26,8 @@ fun PhoneLockRepository.pushSettingsToFirebase() {
         put("editProtectionEnabled", preferences.editProtectionEnabled)
         put("editProtectionStartHour", preferences.editProtectionStartHour)
         put("editProtectionEndHour", preferences.editProtectionEndHour)
+        // 142차: 루틴 방지권 — 기기마다 값이 다르면 같은 기록으로 연속 일수가 다르게 나온다.
+        put("routineStreakFreezePerWeek", preferences.routineStreakFreezePerWeek)
     }
     ioScope.launch {
         com.phonelock.app.service.PomodoroSyncClient.writeSettings(fbDatabaseUrl, fbApiKey, json, ts)
@@ -44,6 +46,7 @@ suspend fun PhoneLockRepository.syncSettingsFromFirebase() {
         if (json.has("editProtectionEnabled")) preferences.editProtectionEnabled = json.optBoolean("editProtectionEnabled", preferences.editProtectionEnabled)
         if (json.has("editProtectionStartHour")) preferences.editProtectionStartHour = json.optInt("editProtectionStartHour", preferences.editProtectionStartHour)
         if (json.has("editProtectionEndHour")) preferences.editProtectionEndHour = json.optInt("editProtectionEndHour", preferences.editProtectionEndHour)
+        if (json.has("routineStreakFreezePerWeek")) preferences.routineStreakFreezePerWeek = json.optInt("routineStreakFreezePerWeek", preferences.routineStreakFreezePerWeek)
         settingsTs = result.ts
     } else if (settingsTs > result.ts) {
         pushSettingsToFirebase()

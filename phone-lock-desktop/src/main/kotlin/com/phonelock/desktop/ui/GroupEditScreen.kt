@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -169,6 +170,9 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
     // GroupListScreen(잠깐 풀기 버튼 옆)에 있다 — 여기서는 저장 시 기존 값을 그대로 유지해 전달하는
     // 용도로만 상태를 들고 있는다. 새 규칙 생성 시 이름 충돌 확인은 pendingCreateCollisionEntry가 담당.
     var syncEnabled by remember { mutableStateOf(false) }
+    // 전체 잠금 방식(142차) — 켜면 아래 프로그램/사이트 목록이 "막을 대상"이 아니라 "허용할 대상"이 된다. 목록처럼
+    // 기기마다 따로 두는 값이라 동기화로 받아오는 설정(applyGroupToForm)에는 들어 있지 않다.
+    var allowlistMode by remember { mutableStateOf(false) }
     var pendingCreateCollisionEntry by remember { mutableStateOf<JSONObject?>(null) }
 
     fun applyGroupToForm(group: Group) {
@@ -237,6 +241,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 name = group.name
                 selfMessageText = group.selfMessageText
                 syncEnabled = group.syncEnabled
+                allowlistMode = group.allowlistMode
                 applyGroupToForm(group)
                 processNames = group.processNames.toSet()
                 domains = group.domains.toSet()
@@ -284,6 +289,33 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
         Spacer(Modifier.height(Spacing.md))
 
+        // 142차(사용자 요청): 프로그램을 특정해서 막는 방식 말고, PC 전체를 잠그고 허용한 프로그램만 쓰는 방식.
+        SectionCard("차단 방식", emoji = "🔒") {
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                FilterChip(
+                    selected = !allowlistMode,
+                    onClick = { allowlistMode = false },
+                    label = { Text("고른 것만 차단") }
+                )
+                FilterChip(
+                    selected = allowlistMode,
+                    onClick = { allowlistMode = true },
+                    label = { Text("전체 잠금") }
+                )
+            }
+            Text(
+                if (allowlistMode) {
+                    "시간대나 일일 한도에 걸린 동안 PC 전체가 잠기고, 아래에서 고른 프로그램·사이트만 쓸 수 있습니다. " +
+                        "바탕화면(탐색기)은 항상 열리고, 허용 안 된 프로그램을 열면 허용한 프로그램 목록이 있는 잠금 화면이 뜹니다."
+                } else {
+                    "아래에서 고른 프로그램·사이트만 막습니다."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(Spacing.md))
+
         SectionCard("관리 종류", emoji = "🗂️") {
             Text(
                 "이 차단 규칙에 적용할 관리 종류를 선택하세요.",
@@ -303,20 +335,23 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 checked = dailyLimitEnabled,
                 onCheckedChange = { dailyLimitEnabled = it }
             )
-            Spacer(Modifier.height(Spacing.sm))
-            ToggleRow(
-                title = "실행 전 대기",
-                description = "켜면 실행할 때마다 확인창이 뜨고, 확인할 때마다 대기시간이 늘어납니다.",
-                checked = confirmEnabled,
-                onCheckedChange = { confirmEnabled = it }
-            )
+            // 전체 잠금 방식엔 실행 전 대기를 쓰지 않는다 — PC의 모든 프로그램에 확인창이 뜨게 된다.
+            if (!allowlistMode) {
+                Spacer(Modifier.height(Spacing.sm))
+                ToggleRow(
+                    title = "실행 전 대기",
+                    description = "켜면 실행할 때마다 확인창이 뜨고, 확인할 때마다 대기시간이 늘어납니다.",
+                    checked = confirmEnabled,
+                    onCheckedChange = { confirmEnabled = it }
+                )
+            }
         }
         Spacer(Modifier.height(Spacing.md))
 
         SectionCard("뽀모도로 연동", emoji = "🍅") {
             ToggleRow(
                 title = "뽀모도로 휴식 시 자동 해제",
-                description = "공부앱(설정 메뉴에서 로그인 필요)의 뽀모도로 휴식 시간 동안 이 차단 규칙의 잠금을 임시로 해제합니다. 실행 전 대기 on/off와 무관하게 작동합니다.",
+                description = "집중 타이머(설정 메뉴에서 로그인 필요)의 뽀모도로 휴식 시간 동안 이 차단 규칙의 잠금을 임시로 해제합니다. 실행 전 대기 on/off와 무관하게 작동합니다.",
                 checked = pomodoroUnlockEnabled,
                 onCheckedChange = { pomodoroUnlockEnabled = it }
             )
@@ -426,7 +461,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
             Spacer(Modifier.height(Spacing.md))
         }
 
-        if (confirmEnabled) {
+        if (confirmEnabled && !allowlistMode) {
             SectionCard("실행 전 대기", emoji = "🛑") {
                 Text("적용 시간대 (비워두면 하루 종일 적용, HH:mm)", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(Spacing.xs))
@@ -579,8 +614,11 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         }
         Spacer(Modifier.height(Spacing.md))
 
-        SectionCard("차단 대상", emoji = "🎯") {
-            Text("포함할 프로그램 (실행파일 이름, 예: chrome.exe)", style = MaterialTheme.typography.bodySmall)
+        SectionCard(if (allowlistMode) "허용할 프로그램·사이트" else "차단 대상", emoji = if (allowlistMode) "✅" else "🎯") {
+            Text(
+                if (allowlistMode) "허용할 프로그램 (실행파일 이름, 예: chrome.exe)" else "포함할 프로그램 (실행파일 이름, 예: chrome.exe)",
+                style = MaterialTheme.typography.bodySmall
+            )
             Spacer(Modifier.height(Spacing.xs))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CompactField(
@@ -610,7 +648,10 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
             }
 
             Spacer(Modifier.height(Spacing.md))
-            Text("포함할 사이트 (도메인, 예: youtube.com)", style = MaterialTheme.typography.bodySmall)
+            Text(
+                if (allowlistMode) "허용할 사이트 (도메인, 예: youtube.com)" else "포함할 사이트 (도메인, 예: youtube.com)",
+                style = MaterialTheme.typography.bodySmall
+            )
             Spacer(Modifier.height(Spacing.xs))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CompactField(
@@ -631,7 +672,8 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                 }
             }
             Text(
-                "Chrome 확장프로그램(별도 설치 필요)이 켜져 있어야 사이트 차단이 동작합니다.",
+                "Chrome 확장프로그램(별도 설치 필요)이 켜져 있어야 사이트 차단이 동작합니다." +
+                    if (allowlistMode) " 브라우저를 허용했다면 허용할 사이트도 적어 주세요 — 비워 두면 브라우저 안의 모든 사이트가 막힙니다." else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -805,7 +847,8 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                         blockAttemptCount = currentGroup?.blockAttemptCount ?: 0,
                         processNames = processNames.toList(),
                         domains = domains.toList(),
-                        syncEnabled = syncEnabled
+                        syncEnabled = syncEnabled,
+                        allowlistMode = allowlistMode
                     )
                     if (groupId == null) {
                         // 새 규칙을 만드는데 그 이름이 불러오기 목록(원격)에 이미 있으면, 저장하기 전에
@@ -934,7 +977,8 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                         scheduleEnabled = scheduleEnabled,
                         processNames = processNames.toList(),
                         domains = domains.toList(),
-                        syncEnabled = false
+                        syncEnabled = false,
+                        allowlistMode = allowlistMode
                     )
                     repository.createGroup(group)
                     pendingCreateCollisionEntry = null

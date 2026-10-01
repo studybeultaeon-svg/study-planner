@@ -1,5 +1,9 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -67,11 +71,11 @@ private val MONTHS_KO = arrayOf("1월", "2월", "3월", "4월", "5월", "6월", 
 private val WEEKDAYS_KO = arrayOf("일", "월", "화", "수", "목", "금", "토")
 // 77차: 8단계(51차)에서 3단계(빨/노/초)로 축소(사용자 요청). 83차부터는 색상 자체가 passIndex/passTotal
 // 그라데이션으로 넘어가 이 라벨 표는 더 이상 쓰이지 않는다(이력은 HANDOFF.md 참고).
-private val COLOR_LABEL = mapOf("red" to "1회 복습", "yellow" to "2회 복습", "green" to "3회 복습")
+private val COLOR_LABEL = mapOf("red" to "1회차", "yellow" to "2회차", "green" to "3회차")
 
 /** 83차(다회독 상세화) — passIndex/passTotal 기반 빨강→초록 그라데이션 accent. */
 internal fun passAccentColor(task: CalendarTask): Color = Color(com.phonelock.shared.calc.PassSchedule.passColor(task.passIndex, task.passTotal))
-internal fun passLabel(task: CalendarTask): String = "${task.passIndex + 1}회 복습"
+internal fun passLabel(task: CalendarTask): String = "${task.passIndex + 1}회차"
 
 private fun dowLabel(date: LocalDate): String = WEEKDAYS_KO[date.dayOfWeek.value % 7]
 
@@ -135,18 +139,11 @@ fun CalendarScreen(repository: Repository) {
     }
     LaunchedEffect(year, month, dayRefreshTick) { refresh() }
 
-    Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            Text("📅 캘린더", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-            // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
-            androidx.compose.material3.IconButton(onClick = {
-                scope.launch {
-                    withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncCalendarFromFirebase() }
-                    refresh()
-                }
-            }) { Text("🔄") }
-        }
-        Spacer(Modifier.height(Spacing.md))
+    // 144차: 화면 제목은 집중 탭 머리가 보여주므로 달 이름부터(편집형). 새로고침은 달 머리 오른쪽.
+    val palette = com.phonelock.desktop.ui.theme.LocalPhoneLockPalette.current
+    val sundayColor = MaterialTheme.colorScheme.error
+    val saturdayColor = com.phonelock.desktop.ui.components.saturdayInk()
+    Column(Modifier.fillMaxSize().padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
 
         // 데스크탑 전용 분할: 왼쪽(넓을 땐 좌측, 좁을 땐 위쪽)은 월 그리드, 오른쪽(넓을 땐 우측, 좁을 땐
         // 아래쪽)은 선택한 날짜의 상세 일정 — 웹앱의 모달 대신 항상 곁에 두고 볼 수 있는 패널 형태.
@@ -158,34 +155,45 @@ fun CalendarScreen(repository: Repository) {
             rightWeight = 0.9f,
             left = {
             Column(Modifier.fillMaxSize()) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    OutlinedButton(onClick = { if (month == 0) { month = 11; year-- } else month-- }) {
-                        Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("이전")
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                    Column(Modifier.weight(1f)) {
+                        com.phonelock.desktop.ui.components.Overline("${year}년")
+                        Text(MONTHS_KO[month], style = MaterialTheme.typography.headlineLarge)
                     }
-                    Text("${year}년 ${MONTHS_KO[month]}", style = MaterialTheme.typography.titleLarge)
-                    Row {
-                        OutlinedButton(onClick = {
-                            scope.launch(Dispatchers.IO) {
-                                repository.archiveOldCalendarTasks()
-                                dayRefreshTick++
-                            }
-                        }) { Text("🧹 정리") }
-                        Spacer(Modifier.width(Spacing.sm))
-                        OutlinedButton(onClick = { if (month == 11) { month = 0; year++ } else month++ }) {
-                            Text("다음")
-                            Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                    androidx.compose.material3.TextButton(onClick = {
+                        scope.launch(Dispatchers.IO) {
+                            repository.archiveOldCalendarTasks()
+                            dayRefreshTick++
                         }
+                    }) {
+                        Icon(Icons.Outlined.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("오래된 일정 정리", maxLines = 1, softWrap = false)
+                    }
+                    // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
+                    androidx.compose.material3.IconButton(onClick = {
+                        scope.launch {
+                            withContext(Dispatchers.IO) { if (!repository.isEffectivelyOffline()) repository.syncCalendarFromFirebase() }
+                            refresh()
+                        }
+                    }) { Icon(Icons.Outlined.Refresh, contentDescription = "새로고침", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    androidx.compose.material3.IconButton(onClick = { if (month == 0) { month = 11; year-- } else month-- }) {
+                        Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전 달")
+                    }
+                    androidx.compose.material3.IconButton(onClick = { if (month == 11) { month = 0; year++ } else month++ }) {
+                        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음 달")
                     }
                 }
                 Spacer(Modifier.height(Spacing.sm))
 
                 Row(Modifier.fillMaxWidth()) {
                     WEEKDAYS_KO.forEachIndexed { i, d ->
-                        val c = when (i) { 0 -> Color(0xFFF87171); 6 -> Color(0xFF6B9FFF); else -> MaterialTheme.colorScheme.onSurface }
+                        val c = when (i) { 0 -> sundayColor; 6 -> saturdayColor; else -> MaterialTheme.colorScheme.onSurfaceVariant }
                         Text(d, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center, style = MaterialTheme.typography.labelMedium, color = c)
                     }
                 }
+                Spacer(Modifier.height(Spacing.xs))
+                com.phonelock.desktop.ui.components.Hairline()
 
                 val firstOfMonth = LocalDate.of(year, month + 1, 1)
                 val firstDow = firstOfMonth.dayOfWeek.value % 7
@@ -196,9 +204,13 @@ fun CalendarScreen(repository: Repository) {
                 // 그리드 영역이 남는 세로 공간을 다 차지하도록(웹앱 .calendar-grid도 flex:1) 행마다
                 // weight(1f)로 균등 분배 — 이전엔 셀 높이가 72dp 고정이라 창이 커도 그 아래가 빈 채로
                 // 남았다.
+                val lineColor = MaterialTheme.colorScheme.outlineVariant
                 Column(Modifier.weight(1f)) {
                 for (row in 0 until rows) {
-                    Row(Modifier.fillMaxWidth().weight(1f)) {
+                    // 칸마다 테두리 대신 줄 사이 가는 선(144차).
+                    Row(Modifier.fillMaxWidth().weight(1f).drawBehind {
+                        drawLine(lineColor, androidx.compose.ui.geometry.Offset(0f, size.height), androidx.compose.ui.geometry.Offset(size.width, size.height), 1f)
+                    }) {
                         for (col in 0 until 7) {
                             val dayNum = row * 7 + col - firstDow + 1
                             if (dayNum in 1..daysInMonth) {
@@ -211,30 +223,27 @@ fun CalendarScreen(repository: Repository) {
                                 // (.day-cell.today .day-num { background: accent; border-radius: 50% }).
                                 Box(
                                     Modifier.weight(1f).fillMaxHeight().padding(2.dp)
-                                        .border(
-                                            if (isSelected) 2.dp else 1.dp,
-                                            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                            MaterialTheme.shapes.small
-                                        )
-                                        .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent, MaterialTheme.shapes.small)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
                                         .clickable { selectedDate = date }
                                         .padding(4.dp)
                                 ) {
                                     Column {
                                         val dayNumColor = when {
                                             isToday -> MaterialTheme.colorScheme.onPrimary
-                                            date.dayOfWeek == java.time.DayOfWeek.SUNDAY -> Color(0xFFF87171)
-                                            date.dayOfWeek == java.time.DayOfWeek.SATURDAY -> Color(0xFF6B9FFF)
-                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                            date.dayOfWeek == java.time.DayOfWeek.SUNDAY -> sundayColor
+                                            date.dayOfWeek == java.time.DayOfWeek.SATURDAY -> saturdayColor
+                                            else -> MaterialTheme.colorScheme.onBackground
                                         }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Box(
                                                 Modifier
-                                                    .size(20.dp)
-                                                    .background(if (isToday) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape),
+                                                    .size(26.dp)
+                                                    .background(if (isToday) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape)
+                                                    .then(if (isSelected && !isToday) Modifier.border(1.5.dp, MaterialTheme.colorScheme.onBackground, CircleShape) else Modifier),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Text("$dayNum", style = MaterialTheme.typography.labelSmall, color = dayNumColor, fontWeight = FontWeight.Bold)
+                                                Text("$dayNum", style = MaterialTheme.typography.labelLarge, color = dayNumColor, maxLines = 1, softWrap = false)
                                             }
                                             // 모바일판과 동일하게, 그날 일정 총 개수 + 완료 정도를 색깔 배지로 요약해서
                                             // 보여준다(사용자 요청) — 전체완료=초록, 일부완료=노랑, 미완료=빨강.
@@ -242,18 +251,13 @@ fun CalendarScreen(repository: Repository) {
                                                 Spacer(Modifier.width(4.dp))
                                                 val doneCount = dayTasks.count { it.status == "O" }
                                                 val badgeColor = when {
-                                                    doneCount == dayTasks.size -> Color(0xFF34D399)
-                                                    doneCount > 0 -> Color(0xFFFBBF24)
-                                                    else -> Color(0xFFF87171)
+                                                    doneCount == dayTasks.size -> palette.success
+                                                    doneCount > 0 -> palette.warning
+                                                    else -> palette.error
                                                 }
-                                                Text(
-                                                    "${dayTasks.size}개",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = badgeColor,
-                                                    modifier = Modifier
-                                                        .background(badgeColor.copy(alpha = 0.18f), MaterialTheme.shapes.extraSmall)
-                                                        .padding(horizontal = 3.dp)
-                                                )
+                                                Box(Modifier.size(6.dp).background(badgeColor, CircleShape))
+                                                Spacer(Modifier.width(3.dp))
+                                                Text("${dayTasks.size}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
                                             }
                                         }
                                         Spacer(Modifier.height(2.dp))
@@ -573,7 +577,7 @@ private fun CalendarTaskRow(
             // 79차: 완료(O) 시 다음 회독을 자동 생성할지 업무마다 켜고 끌 수 있는 토글(기본 off, 사용자 요청).
             // 꺼져 있으면 아래 ⏱(nextDays) 입력은 의미가 없으므로 숨긴다.
             Text(
-                if (task.multiPassEnabled) "🔁복습" else "🔁off",
+                if (task.multiPassEnabled) "🔁반복" else "🔁off",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = if (task.multiPassEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -621,7 +625,7 @@ private fun CalendarTaskRow(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = stageColor),
                         border = BorderStroke(1.dp, stageColor.copy(alpha = 0.5f))
-                    ) { Text("${idx + 1}회 복습", style = MaterialTheme.typography.labelSmall) }
+                    ) { Text("${idx + 1}회차", style = MaterialTheme.typography.labelSmall) }
                 }
             }
         }

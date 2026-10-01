@@ -22,6 +22,8 @@ fun Repository.pushSettingsToFirebase() {
             put("editProtectionEnabled", data.editProtectionEnabled)
             put("editProtectionStartHour", data.editProtectionStartHour)
             put("editProtectionEndHour", data.editProtectionEndHour)
+            // 142차: 루틴 방지권 — 기기마다 값이 다르면 같은 기록으로 연속 일수가 다르게 나온다.
+            put("routineStreakFreezePerWeek", data.routineStreakFreezePerWeek)
         }
     }
     persist()
@@ -45,6 +47,11 @@ fun Repository.syncSettingsFromFirebase() {
             if (json.has("editProtectionEnabled")) data.editProtectionEnabled = json.optBoolean("editProtectionEnabled", data.editProtectionEnabled)
             if (json.has("editProtectionStartHour")) data.editProtectionStartHour = json.optInt("editProtectionStartHour", data.editProtectionStartHour)
             if (json.has("editProtectionEndHour")) data.editProtectionEndHour = json.optInt("editProtectionEndHour", data.editProtectionEndHour)
+            if (json.has("routineStreakFreezePerWeek")) {
+                data.routineStreakFreezePerWeek = com.phonelock.shared.routine.RoutineStreak.clampFreeze(
+                    json.optInt("routineStreakFreezePerWeek", data.routineStreakFreezePerWeek)
+                )
+            }
             data.settingsTs = result.ts
             persist()
         } else if (data.settingsTs > result.ts) {

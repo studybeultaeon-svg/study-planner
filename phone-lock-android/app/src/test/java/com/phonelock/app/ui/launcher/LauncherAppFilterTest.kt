@@ -104,7 +104,7 @@ class LauncherAppFilterTest {
     @Test
     fun `바로가기는 앱 하단 탭 5개와 순서까지 같다`() {
         val all = godsaengShortcuts(routine = true, study = true, manage = true, social = true)
-        assertEquals(listOf("홈", "루틴", "공부", "규칙", "모임"), all.map { it.label })
+        assertEquals(listOf("홈", "루틴", "집중", "관리", "모임"), all.map { it.label })
         assertEquals(
             listOf(
                 com.phonelock.app.ui.MainActivity.ROUTE_HOME,
@@ -123,6 +123,32 @@ class LauncherAppFilterTest {
         assertEquals(emptyList<String>(), all.filter { it.emoji.isBlank() }.map { it.label })
     }
 
+    // --- 142차: 전체 잠금 중에는 허용한 앱만 남는다 ---
+
+    @Test
+    fun `전체 잠금 중에는 허용한 앱만 보이고 나머지는 잠긴 개수로 센다`() {
+        val allowOnly = setOf("com.android.dialer")
+        val visible = visibleLauncherApps(apps, hidden = emptySet(), renames = emptyMap(), allowOnly = allowOnly)
+        assertEquals(listOf("com.android.dialer"), visible.map { it.packageName })
+        assertEquals(2, lockedAppCount(apps, hidden = emptySet(), locked = emptySet(), allowOnly = allowOnly))
+    }
+
+    @Test
+    fun `전체 잠금에서 허용한 앱이라도 다른 규칙이 막고 있으면 빠진다`() {
+        val visible = visibleLauncherApps(
+            apps, hidden = emptySet(), renames = emptyMap(),
+            locked = setOf("com.android.dialer"),
+            allowOnly = setOf("com.android.dialer", "com.google.android.youtube")
+        )
+        assertEquals(listOf("com.google.android.youtube"), visible.map { it.packageName })
+    }
+
+    @Test
+    fun `전체 잠금이 없으면 허용 목록은 목록에 영향을 주지 않는다`() {
+        val visible = visibleLauncherApps(apps, hidden = emptySet(), renames = emptyMap(), allowOnly = null)
+        assertEquals(3, visible.size)
+        assertEquals(0, lockedAppCount(apps, hidden = emptySet(), locked = emptySet(), allowOnly = null))
+    }
     // --- 133차: 갓생 카드가 "지금 먼저 해야 할 것"을 고르는 규칙 ---
 
     private fun routine(id: Long, title: String, timeSlot: String? = null) =

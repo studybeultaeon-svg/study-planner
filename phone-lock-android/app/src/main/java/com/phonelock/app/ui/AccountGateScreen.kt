@@ -1,5 +1,7 @@
 package com.phonelock.app.ui
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -575,13 +577,18 @@ private fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(Spacing.md)
         ) {
-            Text(if (mode == LoginMode.LOGIN) "로그인" else "회원가입", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                "관리자 승인을 받은 사용자만 앱을 사용할 수 있습니다.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
+            // 144차: 첫 화면은 브랜드부터 — 큰 워드마크 + 작은 라벨, 그 아래 로그인/회원가입 제목(왼쪽 정렬 편집형 머리).
+            Column(Modifier.fillMaxWidth().padding(bottom = Spacing.sm)) {
+                com.phonelock.app.ui.components.Overline("갓생살기종합세트")
+                Text("갓생", style = MaterialTheme.typography.displayMedium, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(Spacing.md))
+                Text(if (mode == LoginMode.LOGIN) "로그인" else "회원가입", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    "관리자 승인을 받은 사용자만 앱을 사용할 수 있습니다.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             infoMessage?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
             }

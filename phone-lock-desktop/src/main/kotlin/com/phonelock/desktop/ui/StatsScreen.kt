@@ -1,5 +1,7 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -88,89 +90,109 @@ fun StatsScreen(repository: Repository) {
         }
     }
 
-    Row(Modifier.fillMaxSize().padding(Spacing.md)) {
+    // 144차(안드로이드판과 같은 언어): "오늘 사용한 시간 합계"를 히어로로, 규칙마다 사용량 막대 한 줄(한도에 가까우면 경고색,
+    // 넘으면 오류색) — 카드 없이 가는 선으로. 오른쪽은 고른 규칙의 상세(마스터-디테일).
+    val palette = com.phonelock.desktop.ui.theme.LocalPhoneLockPalette.current
+    val totalUsed = rows.sumOf { it.usedSeconds }.toLong()
+    Row(Modifier.fillMaxSize().padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
         Column(Modifier.weight(1f).fillMaxHeight()) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("오늘의 사용 통계", style = MaterialTheme.typography.headlineMedium)
-                androidx.compose.material3.OutlinedButton(onClick = { exportUsageCsvToFile(repository) }) { Text("📄 CSV 내보내기") }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    com.phonelock.desktop.ui.components.Overline("오늘 차단 규칙 프로그램 사용")
+                    com.phonelock.desktop.ui.components.DurationHero(totalUsed, numberStyle = MaterialTheme.typography.displayMedium)
+                }
+                androidx.compose.material3.TextButton(onClick = { exportUsageCsvToFile(repository) }) { Text("CSV 내보내기", maxLines = 1, softWrap = false) }
             }
             Spacer(Modifier.height(Spacing.md))
+            com.phonelock.desktop.ui.components.Hairline()
             if (rows.isEmpty()) {
-                Text("아직 기록된 사용 데이터가 없습니다.")
+                Spacer(Modifier.height(Spacing.md))
+                Text("아직 기록된 사용 데이터가 없습니다.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                     items(rows, key = { it.name }) { row ->
                         val selected = row.name == selectedName
-                        Surface(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)
-                                .clickable { selectedName = row.name },
-                            shape = MaterialTheme.shapes.medium,
-                            color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceVariant,
-                            border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null
+                        Column(
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+                                .clickable { selectedName = row.name }
+                                .padding(horizontal = Spacing.sm, vertical = 14.dp)
                         ) {
-                            Column(Modifier.padding(Spacing.sm)) {
-                                Text(row.name, style = MaterialTheme.typography.titleMedium)
-                                Spacer(Modifier.height(Spacing.xs))
-                                if (row.limitSeconds != null) {
-                                    val progress = (row.usedSeconds.toFloat() / row.limitSeconds).coerceIn(0f, 1f)
-                                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                                } else {
-                                    Text("오늘 ${formatHms(row.usedSeconds)} 사용", style = MaterialTheme.typography.bodySmall)
-                                }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                                Text(row.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 2)
+                                Text(
+                                    if (row.limitSeconds != null) "${formatHms(row.usedSeconds)} / ${formatHms(row.limitSeconds)}" else formatHms(row.usedSeconds),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                            if (row.limitSeconds != null) {
+                                val progress = (row.usedSeconds.toFloat() / row.limitSeconds).coerceIn(0f, 1f)
+                                Spacer(Modifier.height(Spacing.sm))
+                                com.phonelock.desktop.ui.components.ProgressLine(
+                                    progress,
+                                    color = when {
+                                        row.usedSeconds >= row.limitSeconds -> palette.error
+                                        progress >= 0.8f -> palette.warning
+                                        else -> MaterialTheme.colorScheme.primary
+                                    }
+                                )
                             }
                         }
+                        com.phonelock.desktop.ui.components.Hairline()
                     }
                 }
             }
             if (quoteOutcomes.isNotEmpty()) {
-                Spacer(Modifier.height(Spacing.md))
                 val overallStop = quoteOutcomes.count { it.choice == "STOP" }
                 val overallRate = Math.round(overallStop * 100.0 / quoteOutcomes.size).toInt()
-                Text("확인 질문 성공률", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(Spacing.xs))
-                Text(
-                    "문구가 뜬 상태에서 \"중단\"(저항)을 고른 비율: ${overallRate}% (${overallStop}/${quoteOutcomes.size})",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        Spacer(Modifier.width(Spacing.md))
-        Column(Modifier.weight(1f).fillMaxHeight()) {
-            val detail = rows.firstOrNull { it.name == selectedName }
-            if (detail == null) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                com.phonelock.desktop.ui.components.LedgerSection("확인 질문에서 멈춘 비율") {
+                    com.phonelock.desktop.ui.components.BigNumber("$overallRate", unit = "%", style = MaterialTheme.typography.headlineLarge)
                     Text(
-                        "차단 규칙을 선택하면 상세 사용량을 볼 수 있습니다.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        "문구가 뜬 상태에서 \"중단\"(저항)을 고른 비율 · ${overallStop}/${quoteOutcomes.size}회",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+        }
+        androidx.compose.material3.VerticalDivider(Modifier.padding(horizontal = Spacing.lg), color = MaterialTheme.colorScheme.outlineVariant)
+        Column(Modifier.weight(1f).fillMaxHeight()) {
+            val detail = rows.firstOrNull { it.name == selectedName }
+            if (detail == null) {
+                Column(Modifier.fillMaxSize().padding(top = Spacing.xxl)) {
+                    com.phonelock.desktop.ui.components.Overline("상세")
+                    Text("차단 규칙을 고르면\n상세 사용량을 볼 수 있습니다.", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             } else {
-                Column(Modifier.padding(Spacing.md)) {
-                    Text(detail.name, style = MaterialTheme.typography.headlineSmall)
+                Column(Modifier.padding(top = Spacing.sm)) {
+                    com.phonelock.desktop.ui.components.Overline("오늘 사용")
+                    Text(detail.name, style = MaterialTheme.typography.headlineMedium)
                     Spacer(Modifier.height(Spacing.md))
+                    com.phonelock.desktop.ui.components.DurationHero(detail.usedSeconds.toLong(), numberStyle = MaterialTheme.typography.displaySmall)
                     if (detail.limitSeconds != null) {
                         val progress = (detail.usedSeconds.toFloat() / detail.limitSeconds).coerceIn(0f, 1f)
-                        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(Spacing.sm))
-                        Text("${formatHms(detail.usedSeconds)} / ${formatHms(detail.limitSeconds)}", style = MaterialTheme.typography.titleMedium)
-                    } else {
-                        Text("오늘 ${formatHms(detail.usedSeconds)} 사용", style = MaterialTheme.typography.titleMedium)
+                        com.phonelock.desktop.ui.components.ProgressLine(
+                            progress,
+                            color = if (detail.usedSeconds >= detail.limitSeconds) palette.error else if (progress >= 0.8f) palette.warning else MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text("하루 한도 ${formatHms(detail.limitSeconds)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Spacer(Modifier.height(Spacing.md))
                     Text(
-                        "🔓 재확인 통과 횟수: 오늘 ${detail.confirmCountToday}회 (어제 ${detail.confirmCountYesterday}회)",
+                        "열기 전 확인 통과 오늘 ${detail.confirmCountToday}회 · 어제 ${detail.confirmCountYesterday}회",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (detail.recentAverageSeconds > 0 && detail.usedSeconds > detail.recentAverageSeconds * ANOMALY_MULTIPLIER) {
-                        Spacer(Modifier.height(Spacing.sm))
-                        Text(
-                            "⚠️ 오늘 사용이 최근 7일 평균(${formatHms(detail.recentAverageSeconds)})보다 눈에 띄게 많아요.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFBBF24)
+                        Spacer(Modifier.height(Spacing.md))
+                        com.phonelock.desktop.ui.components.NoticeStrip(
+                            "오늘 사용이 최근 7일 평균(${formatHms(detail.recentAverageSeconds)})보다 눈에 띄게 많아요",
+                            tone = com.phonelock.desktop.ui.components.NoticeTone.Warning
                         )
                     }
                 }

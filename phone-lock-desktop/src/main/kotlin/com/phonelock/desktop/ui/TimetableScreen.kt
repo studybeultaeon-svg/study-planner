@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
@@ -100,30 +101,28 @@ fun TimetableScreen(repository: Repository) {
         if (start > weekDates.last() || dday < weekDates.first()) null else WeekTaskRow(t, start, dday)
     }
 
-    Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                Text("🗓️ 일정표", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-                Text("할당량 계산기 업무 입력 기준", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // 144차: 편집형 머리 — 작은 라벨(이번 주/N주 전) + 큰 기간, 오른쪽에 새로고침·이전·다음(안드로이드판과 같다).
+    Column(Modifier.fillMaxSize().padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                com.phonelock.desktop.ui.components.Overline(
+                    (if (weekOffset == 0) "이번 주" else if (weekOffset < 0) "${-weekOffset}주 전" else "${weekOffset}주 뒤") + " · 계산기 업무의 요일별 목표량"
+                )
+                Text(
+                    "${weekDates.first().monthValue}월 ${weekDates.first().dayOfMonth}일 – ${weekDates.last().monthValue}월 ${weekDates.last().dayOfMonth}일",
+                    style = MaterialTheme.typography.headlineSmall,
+                    maxLines = 1
+                )
             }
             // 사용자 요청(안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
-            IconButton(onClick = { scope.launch { refresh() } }) { Text("🔄") }
-        }
-        Spacer(Modifier.height(Spacing.md))
-
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            OutlinedButton(onClick = { weekOffset-- }) {
-                androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("이전주")
+            IconButton(onClick = { scope.launch { refresh() } }) {
+                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.Refresh, contentDescription = "새로고침", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(
-                "${weekDates.first().monthValue}/${weekDates.first().dayOfMonth} ~ ${weekDates.last().monthValue}/${weekDates.last().dayOfMonth}" +
-                    if (weekOffset == 0) " (이번 주)" else "",
-                style = MaterialTheme.typography.titleMedium
-            )
-            OutlinedButton(onClick = { weekOffset++ }) {
-                Text("다음주")
-                androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
+            IconButton(onClick = { weekOffset-- }) {
+                androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전 주")
+            }
+            IconButton(onClick = { weekOffset++ }) {
+                androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음 주")
             }
         }
         Spacer(Modifier.height(Spacing.sm))

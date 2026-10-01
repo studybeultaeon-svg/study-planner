@@ -23,18 +23,19 @@ fun launcherLabel(app: AppInfo, renames: Map<String, String>): String =
     renames[app.packageName]?.trim()?.takeIf { it.isNotEmpty() } ?: app.label
 
 /**
- * 숨긴 앱과 [locked](지금 차단 규칙에 걸려있는 앱)을 빼고, 바꾼 이름을 입힌 뒤, 그 이름 기준으로 정렬한 목록.
+ * 숨긴 앱과 지금 잠긴 앱([isLockedForLauncher])을 빼고, 바꾼 이름을 입힌 뒤, 그 이름 기준으로 정렬한 목록.
  *
- * [hidden]은 사용자가 직접 감춘 것이라 설정에서 언제든 되돌릴 수 있고, [locked]는 시간이 지나
- * 차단 시간대가 끝나면 저절로 다시 나타난다 — 둘을 한 덩어리로 합치지 않고 따로 받는 이유다.
+ * [hidden]은 사용자가 직접 감춘 것이라 설정에서 언제든 되돌릴 수 있고, [locked]/[allowOnly]는 시간이 지나
+ * 차단이 끝나면 저절로 다시 나타난다 — 둘을 한 덩어리로 합치지 않고 따로 받는 이유다.
  */
 fun visibleLauncherApps(
     all: List<AppInfo>,
     hidden: Set<String>,
     renames: Map<String, String>,
-    locked: Set<String> = emptySet()
+    locked: Set<String> = emptySet(),
+    allowOnly: Set<String>? = null
 ): List<AppInfo> = all.asSequence()
-    .filter { it.packageName !in hidden && it.packageName !in locked }
+    .filter { it.packageName !in hidden && !isLockedForLauncher(it.packageName, locked, allowOnly) }
     .map { it.copy(label = launcherLabel(it, renames)) }
     .sortedBy { it.label.lowercase() }
     .toList()
@@ -44,8 +45,16 @@ fun visibleLauncherApps(
  * 세지 않는다 — 이 숫자는 "차단이 실제로 돌고 있다"는 신호라서, 아무것도 안 보이는 화면과
  * 차단이 고장난 화면을 구분해주는 게 목적이다.
  */
-fun lockedAppCount(all: List<AppInfo>, hidden: Set<String>, locked: Set<String>): Int =
-    all.count { it.packageName in locked && it.packageName !in hidden }
+fun lockedAppCount(all: List<AppInfo>, hidden: Set<String>, locked: Set<String>, allowOnly: Set<String>? = null): Int =
+    all.count { it.packageName !in hidden && isLockedForLauncher(it.packageName, locked, allowOnly) }
+
+/**
+ * 런처가 지금 감춰야 하는 앱인지. [locked]는 "고른 앱만 차단"하는 규칙·타이머에 걸린 앱이고, [allowOnly]는
+ * 전체 잠금(142차)이 걸려 있을 때만 값이 있다 — 그때는 허용한 앱(과 전화·시계 같은 필수 앱)만 남고 나머지는
+ * 전부 감춘다. 홈 화면 모양은 그대로 두고 앱 목록만 줄어드는 것이 전체 잠금 중의 런처 동작이다.
+ */
+fun isLockedForLauncher(packageName: String, locked: Set<String>, allowOnly: Set<String>?): Boolean =
+    packageName in locked || (allowOnly != null && packageName !in allowOnly)
 
 /** 검색어 필터 — 바꾼 이름이 이미 입혀진 목록([visibleLauncherApps]의 결과)에 적용한다. */
 fun searchLauncherApps(apps: List<AppInfo>, query: String): List<AppInfo> {
@@ -77,17 +86,17 @@ fun toggleFavorite(current: List<String>, packageName: String): List<String> = w
 /**
  * 런처 홈에서 한 번에 들어갈 수 있는 갓생살기종합세트 화면. [route]는 [com.phonelock.app.ui.MainActivity]가
  * 인텐트로 받는 값 그대로이고, 라우트 문자열은 `MainActivity.ROUTE_*` 상수를 써서 탭 정의와 어긋날 수 없게 한다.
- * [emoji]도 앱 하단 탭(`MainActivity`의 `Tab`)이 쓰는 것과 같은 글자를 쓴다 — 런처와 앱에서 같은 탭이
- * 다른 얼굴로 보이면 안 되기 때문이다.
+ * [emoji]는 143차까지 앱 하단 탭과 맞추던 글자다 — 144차부터 앱 탭이 벡터 아이콘으로 바뀌어 런처 화면도 [route]로
+ * 같은 아이콘을 골라 그린다(LauncherScreen `ShortcutTile`). 런처와 앱에서 같은 탭이 다른 얼굴로 보이면 안 되기 때문이다.
  */
 data class GodsaengShortcut(val label: String, val emoji: String, val route: String)
 
 /**
- * 승인 범위(루틴/공부/규칙/소셜)에 맞는 바로가기만 남긴다 — 판단 기준과 순서는 `MainActivity.visibleTabs()`와
+ * 승인 범위(루틴/공부/관리/소셜)에 맞는 바로가기만 남긴다 — 판단 기준과 순서는 `MainActivity.visibleTabs()`와
  * 같고, 인자는 `AppPreferences.perm*` 값을 그대로 받는다(런처를 Room/로그인에 묶지 않기 위해 여기선
  * SharedPreferences 값만 쓴다).
  *
- * **132차(사용자 요청): 앱 하단 탭 5개(홈/루틴/공부/규칙/모임)만 둔다.** 131차엔 서브탭까지 펼쳐
+ * **132차(사용자 요청): 앱 하단 탭 5개(홈/루틴/공부/관리/모임)만 둔다.** 131차엔 서브탭까지 펼쳐
  * 10종(타이머·캘린더·계산기…)을 늘어놓았는데, 런처 홈이 앱 목차가 되어버려 요청대로 되돌렸다.
  * 설정은 앱에서도 탭이 아니라 홈 우상단 버튼으로만 들어가므로(118차) 여기서도 탭과 나란히 두지 않는다.
  */
@@ -99,8 +108,8 @@ fun godsaengShortcuts(
 ): List<GodsaengShortcut> = listOfNotNull(
     GodsaengShortcut("홈", "🌱", MainActivity.ROUTE_HOME),
     GodsaengShortcut("루틴", "📋", MainActivity.ROUTE_ROUTINE).takeIf { routine },
-    GodsaengShortcut("공부", "📘", MainActivity.ROUTE_STUDY).takeIf { study },
-    GodsaengShortcut("규칙", "🗂️", MainActivity.ROUTE_MANAGE).takeIf { manage },
+    GodsaengShortcut("집중", "🎯", MainActivity.ROUTE_STUDY).takeIf { study },
+    GodsaengShortcut("관리", "🗂️", MainActivity.ROUTE_MANAGE).takeIf { manage },
     GodsaengShortcut("모임", "👥", MainActivity.ROUTE_GROUP).takeIf { social }
 )
 

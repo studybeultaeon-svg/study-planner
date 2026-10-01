@@ -18,6 +18,12 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- 전체 잠금(142차) 중에도 홈 화면은 열려 있어야 하는데, 기본 홈 앱은 LAUNCHER 카테고리가 없어 위 조회만으로는
+             이 앱에 보이지 않는다(API 30+ 패키지 가시성) — 보이지 않으면 기본 홈 앱을 알아낼 수 없어 홈 화면까지 잠근다. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
         <!-- 자체 업데이트(UpdateBanner.kt) 설치 인텐트가 API 30+ 패키지 가시성 제한 때문에
              resolveActivity()에서 설치 프로그램을 못 찾는 걸 방지 -->
         <intent>
@@ -78,6 +84,14 @@
 
         <activity
             android:name=".ui.StudyLockActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:theme="@style/Theme.PhoneLock.Overlay" />
+
+        <!-- 전체 잠금 화면(142차) — 전체 잠금 방식 규칙과 타이머의 전체 잠금이 함께 쓴다. -->
+        <activity
+            android:name=".ui.FullLockActivity"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance"

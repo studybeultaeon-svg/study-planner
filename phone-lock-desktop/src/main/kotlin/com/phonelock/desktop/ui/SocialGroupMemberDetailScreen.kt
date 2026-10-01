@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -65,6 +66,7 @@ import com.phonelock.desktop.ui.components.VoiceRecordDialog
 import com.phonelock.desktop.ui.components.WakeOptionsDialog
 import com.phonelock.desktop.ui.theme.Spacing
 import com.phonelock.shared.GrowthSystem
+import com.phonelock.shared.study.StudyStats
 
 private fun formatSeconds(seconds: Int): String {
     val h = seconds / 3600
@@ -183,11 +185,7 @@ fun SocialGroupMemberDetailScreen(
         var routineSubTab by remember { mutableStateOf(0) }
         var studySubTab by remember { mutableStateOf(0) }
 
-        TabRow(selectedTabIndex = section, containerColor = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
-            Tab(selected = section == 0, onClick = { section = 0 }, text = { Text("🌱 홈") })
-            Tab(selected = section == 1, onClick = { section = 1 }, text = { Text("📋 루틴") })
-            Tab(selected = section == 2, onClick = { section = 2 }, text = { Text("📘 공부") })
-        }
+        com.phonelock.desktop.ui.components.SectionTabs(listOf("홈", "루틴", "집중"), section, { section = it })
         Spacer(Modifier.height(Spacing.sm))
 
         when (section) {
@@ -199,10 +197,7 @@ fun SocialGroupMemberDetailScreen(
                 }
             }
             1 -> {
-                TabRow(selectedTabIndex = routineSubTab, containerColor = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
-                    Tab(selected = routineSubTab == 0, onClick = { routineSubTab = 0 }, text = { Text("오늘") })
-                    Tab(selected = routineSubTab == 1, onClick = { routineSubTab = 1 }, text = { Text("🔥 연속 기록") })
-                }
+                com.phonelock.desktop.ui.components.SegmentedTabs(listOf("오늘", "연속 기록"), routineSubTab, { routineSubTab = it }, Modifier.widthIn(max = 420.dp))
                 Spacer(Modifier.height(Spacing.sm))
                 if (!member.shareRoutines) {
                     Text("비공개", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -219,15 +214,15 @@ fun SocialGroupMemberDetailScreen(
                             Spacer(Modifier.width(Spacing.md))
                             Column {
                                 Text(formatSeconds(member.studyTodaySeconds), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text("오늘 공부 · 진행률 ${member.studyProgressPercent}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("오늘 집중 · 진행률 ${member.studyProgressPercent}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                         if (member.shareStudyingNow) {
                             if (member.shareStudy) Spacer(Modifier.width(Spacing.md))
                             Text(
                                 if (member.studyingNow) {
-                                    "🟢 공부 중" + if (member.studyingTaskName.isNotBlank()) " · ${member.studyingTaskName}" else ""
-                                } else "지금은 공부 중이 아닙니다.",
+                                    "🟢 집중 중" + if (member.studyingTaskName.isNotBlank()) " · ${member.studyingTaskName}" else ""
+                                } else "지금은 집중 중이 아닙니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (member.studyingNow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -235,18 +230,22 @@ fun SocialGroupMemberDetailScreen(
                     }
                     Spacer(Modifier.height(Spacing.sm))
                 }
-                TabRow(selectedTabIndex = studySubTab, containerColor = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {
-                    Tab(selected = studySubTab == 0, onClick = { studySubTab = 0 }, text = { Text("캘린더") })
-                    Tab(selected = studySubTab == 1, onClick = { studySubTab = 1 }, text = { Text("일정표") })
-                    Tab(selected = studySubTab == 2, onClick = { studySubTab = 2 }, text = { Text("📈 학습 통계") })
-                }
+                com.phonelock.desktop.ui.components.SegmentedTabs(listOf("캘린더", "일정표", "집중 통계"), studySubTab, { studySubTab = it }, Modifier.widthIn(max = 520.dp))
                 Spacer(Modifier.height(Spacing.sm))
                 if (!member.shareSchedule) {
                     Text("비공개", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else when (studySubTab) {
-                    0 -> ReadOnlyMiniCalendar(member.schedule, member.studySecondsByDate)
-                    1 -> MemberStudyTimetableTab(member)
-                    else -> MemberStudyStatsTab(member)
+                } else {
+                    // 143차(141차 하루 시작 기준 반영): "오늘"은 달력 날짜가 아니라 이 사람 앱이 올린 하루 시작 기준의
+                    // 날짜다(옛 버전이 올린 데이터면 보는 사람의 기준).
+                    val memberToday = remember(member.studyDayKey) {
+                        member.studyDayKey?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                            ?: LocalDate.parse(repository.todayCalendarDateKey())
+                    }
+                    when (studySubTab) {
+                        0 -> ReadOnlyMiniCalendar(memberToday, member.schedule, member.studySecondsByDate)
+                        1 -> MemberStudyTimetableTab(member, memberToday)
+                        else -> MemberStudyStatsTab(member, memberToday)
+                    }
                 }
             }
         }
@@ -423,10 +422,10 @@ private val MEMBER_CAL_WEEKDAYS_KO = arrayOf("일", "월", "화", "수", "목", 
  */
 @Composable
 private fun ReadOnlyMiniCalendar(
+    today: LocalDate,
     schedule: List<com.phonelock.desktop.monitor.SocialGroupSyncClient.ScheduleStat>,
     studySecondsByDate: Map<String, Int>
 ) {
-    val today = remember { LocalDate.now() }
     val year = today.year
     val month = today.monthValue - 1
     val tasksByDate = remember(schedule) { schedule.groupBy { it.dateKey } }
@@ -515,10 +514,16 @@ private fun ReadOnlyMiniCalendar(
                         dayTasks.forEach { t ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(when (t.status) { "O" -> "✅"; "X" -> "❌"; else -> "▫" }, modifier = Modifier.padding(end = Spacing.sm))
-                                Text(
-                                    t.name, style = MaterialTheme.typography.bodyMedium,
-                                    color = Color(com.phonelock.shared.calc.PassSchedule.passColor(t.passIndex, t.passTotal))
-                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        t.name, style = MaterialTheme.typography.bodyMedium,
+                                        color = Color(com.phonelock.shared.calc.PassSchedule.passColor(t.passIndex, t.passTotal))
+                                    )
+                                    // 143차: 라이브 캘린더 날짜 상세와 같이 이름 아래에 회차와, 그 일정에 실제로 잰 시간을 붙인다.
+                                    val loggedSeconds = t.studySeconds ?: 0
+                                    val meta = "${t.passIndex + 1}회차" + if (loggedSeconds > 0) " · ⏱ ${formatHmsLog(loggedSeconds.toLong())}" else ""
+                                    Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                         }
                     }
@@ -656,9 +661,8 @@ private fun MemberStatTile(label: String, value: String, modifier: Modifier = Mo
  * [Repository.isLinkedGoalAchieved]와 동일한 판정(그날 연동 완료 일정의 progressStep 합 ≥ 목표량)을 재현한다.
  */
 @Composable
-private fun MemberStudyTimetableTab(member: SocialGroupSyncClient.MemberStats) {
-    var cursor by remember { mutableStateOf(LocalDate.now()) }
-    val today = LocalDate.now()
+private fun MemberStudyTimetableTab(member: SocialGroupSyncClient.MemberStats, today: LocalDate) {
+    var cursor by remember(today) { mutableStateOf(today) }
     val isToday = cursor == today
     val jsDow = cursor.dayOfWeek.value % 7
     val weekdayLabels = listOf("일", "월", "화", "수", "목", "금", "토")
@@ -701,20 +705,22 @@ private fun MemberStudyTimetableTab(member: SocialGroupSyncClient.MemberStats) {
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f, fill = false).padding(end = Spacing.xs)
                     )
+                    // 139차(양 플랫폼 일정표): 분량의 파란색·오늘 미완료 빨간색을 없애고 기본 글자색으로 통일 — 달성(✅)만
+                    // 초록으로 남긴다. 모임 상세는 그때 같이 못 바꿔서 이제야 맞춘다.
                     Text(
                         if (v > 0) "${memberTimetableFmtDec(v)}${t.unit}" + if (achieved) " ✅" else "" else "—",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (v > 0) FontWeight.Bold else FontWeight.Normal,
                         color = if (v <= 0) MaterialTheme.colorScheme.onSurfaceVariant
                             else if (achieved) Color(0xFF34D399)
-                            else if (isToday) Color(0xFFF87171) else MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface
                     )
                 }
                 HorizontalDivider()
             }
             Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("합계", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(memberTimetableFmtDec(dayTotal), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text(memberTimetableFmtDec(dayTotal), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -745,12 +751,46 @@ private fun memberTimetableFmtDec(n: Double): String {
  * 정확한 전체 기록이 아니라 "최근" 범위 근사치임을 라벨로 밝혀둔다.
  */
 @Composable
-private fun MemberStudyStatsTab(member: SocialGroupSyncClient.MemberStats) {
-    val today = remember { LocalDate.now() }
+private fun MemberStudyStatsTab(member: SocialGroupSyncClient.MemberStats, today: LocalDate) {
     val byDate = remember(member.schedule) { member.schedule.groupBy { it.dateKey } }
     val todayTasks = byDate[today.toString()].orEmpty()
     val doneCount = todayTasks.count { it.status == "O" }
     val rate = if (todayTasks.isNotEmpty()) Math.round(doneCount * 100.0 / todayTasks.size).toInt() else 0
+
+    // 143차: 142차에 라이브 통계의 연속 기록이 "캘린더 일정을 전부 완료한 날"에서 "집중 시간이 기록된 날"로 바뀌었고 하루 평균
+    // 집중 시간 카드가 생겼다. 상대 앱이 그 값을 직접 계산해 올려 주면(새 버전) 그대로 보여 주고, 옛 버전이 올린 데이터면
+    // 예전 근사치(최근 일정 범위 안의 연속 완료일)로 돌아간다.
+    if (member.studyStreak != null) {
+        val currentStreak = member.studyStreak
+        Column(Modifier.fillMaxWidth()) {
+            Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)) {
+                Column(Modifier.fillMaxWidth().padding(Spacing.md), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("현재 연속 기록", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    StreakVisual(currentStreak)
+                    Text(
+                        "집중 시간이 조금이라도 기록된 날이 이어진 일수",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                MemberStatTile("오늘 완료", "$doneCount / ${todayTasks.size}", Modifier.weight(1f))
+                MemberStatTile("오늘 완료율", "$rate%", Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            MemberStatTile("최고 연속 기록", "${member.studyBestStreak ?: currentStreak}일", Modifier.fillMaxWidth())
+            Spacer(Modifier.height(Spacing.sm))
+            SectionCard("하루 평균 집중 시간") {
+                MemberAverageRow("오늘", StudyStats.durationLabel(member.studyTodaySeconds.toLong()))
+                MemberAverageRow("최근 ${StudyStats.SHORT_WINDOW_DAYS}일 평균", member.studyAvgShortSeconds?.let { StudyStats.durationLabel(it.toLong()) } ?: "—")
+                MemberAverageRow("최근 ${StudyStats.LONG_WINDOW_DAYS}일 평균", member.studyAvgLongSeconds?.let { StudyStats.durationLabel(it.toLong()) } ?: "—")
+                MemberAverageRow("집중한 날 평균", member.studyActiveAvgSeconds?.let { StudyStats.durationLabel(it.toLong()) } ?: "—")
+            }
+        }
+        return
+    }
 
     var streak = 0
     for (i in 0 until 90) {
@@ -768,6 +808,19 @@ private fun MemberStudyStatsTab(member: SocialGroupSyncClient.MemberStats) {
         }
         Spacer(Modifier.height(Spacing.sm))
         MemberStatTile("연속 완료일(최근 범위 내)", "${streak}일", Modifier.fillMaxWidth())
+    }
+}
+
+/** 하루 평균 집중 시간 카드의 "이름 … 값" 줄 — 라이브 통계 화면과 같은 모양. */
+@Composable
+private fun MemberAverageRow(label: String, value: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
     }
 }
 

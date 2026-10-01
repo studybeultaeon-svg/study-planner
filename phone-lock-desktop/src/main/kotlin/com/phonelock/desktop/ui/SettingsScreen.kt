@@ -1,5 +1,27 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.components.PageMasthead
+import com.phonelock.desktop.ui.components.Hairline
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.AdminPanelSettings
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -74,17 +96,17 @@ private fun pickOpenFile(title: String): File? {
  *  기존 SettingsSubTab(COMMON/ROUTINE/STUDY/MANAGE/SOCIAL) 5분류를 성격별로 더 잘게 나눴다: 계정 관련
  *  카드는 PROFILE로, 테마는 DISPLAY로, 백업/내보내기/정리는 DATA로, 자동실행/업데이트/워치독/종료확인은
  *  SYSTEM으로, 관리자 전용 카드는 ADMIN으로 독립시켰다. */
-private enum class SettingsCategory(val label: String, val emoji: String) {
-    PROFILE("프로필", "👤"),
-    DISPLAY("화면", "🎨"),
-    RULES("규칙", "🗂️"),
-    STUDY("공부", "📘"),
-    ROUTINE("루틴", "📋"),
-    SOCIAL("모임", "👥"),
-    DATA("데이터", "💾"),
-    SYSTEM("시스템", "⚙️"),
-    HELP("도움말", "❓"),
-    ADMIN("관리자 패널", "🛡️")
+private enum class SettingsCategory(val label: String, val icon: ImageVector, val summary: String) {
+    PROFILE("프로필", Icons.Outlined.Person, "닉네임 · 프로필 사진 · 로그인 및 보안"),
+    DISPLAY("화면", Icons.Outlined.Palette, "테마 · 미니멀(성능) 모드"),
+    RULES("관리", Icons.Outlined.Shield, "수정·삭제 방지 · 릴스/쇼츠 · 하루 시작 기준"),
+    STUDY("집중", Icons.Outlined.Timer, "반복 기본값 · 집중 알림 · 허용 프로그램과 사이트"),
+    ROUTINE("루틴", Icons.Outlined.TaskAlt, "연속 기록 알림 · 방지권 · 내보내기"),
+    SOCIAL("모임", Icons.Outlined.Groups, "모임 공유 설정"),
+    DATA("데이터", Icons.Outlined.Backup, "백업 · 복원 · 오래된 기록 정리"),
+    SYSTEM("시스템", Icons.Outlined.Tune, "자동 실행 · 업데이트 · 워치독"),
+    HELP("도움말", Icons.Outlined.HelpOutline, "기능 설명과 자주 묻는 질문"),
+    ADMIN("관리자 패널", Icons.Outlined.AdminPanelSettings, "가입 승인 · 권한")
 }
 
 /**
@@ -143,6 +165,8 @@ fun SettingsScreen(
     }
     var showExitConfirmGate by remember { mutableStateOf(false) }
     var dailyResetHourText by remember { mutableStateOf(repository.dailyResetHour.toString()) }
+    // 루틴 연속 기록 방지권(142차) — 아래 동기화 이펙트가 값을 갱신하므로 그보다 먼저 선언한다.
+    var routineStreakFreeze by remember { mutableStateOf(repository.routineStreakFreezePerWeek) }
     // 차단 규칙 수정·삭제 방지(129차, 사용자 요청) — 128차까지 11~23시로 하드코딩이던 걸 설정으로 뺐다.
     var editProtectionEnabled by remember { mutableStateOf(repository.editProtectionEnabled) }
     var editProtectionStartText by remember { mutableStateOf(repository.editProtectionStartHour.toString()) }
@@ -168,6 +192,7 @@ fun SettingsScreen(
         editProtectionEndText = repository.editProtectionEndHour.toString()
         savedProtectionStart = repository.editProtectionStartHour
         savedProtectionEnd = repository.editProtectionEndHour
+        routineStreakFreeze = repository.routineStreakFreezePerWeek
     }
 
     // 저장된 값 기준으로 되돌리기(게이트 취소 시) / 실제 저장.
@@ -379,39 +404,45 @@ fun SettingsScreen(
         }
     }
 
+    // 144차 리디자인(안드로이드판과 같은 언어): 편집형 머리(큰 제목 + 닫기), 왼쪽 목차는 원 안의 아이콘 + 이름 + 한 줄 설명,
+    // 오른쪽은 고른 분류의 큰 제목 + 세부 설정.
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(Spacing.md),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("설정", style = MaterialTheme.typography.headlineMedium)
-            TextButton(onClick = onClose) { Text("✕ 닫기") }
+        PageMasthead(title = "설정", overline = "갓생살기종합세트") {
+            IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "설정 닫기") }
         }
+        Spacer(Modifier.height(Spacing.md))
+        Hairline()
 
         Row(Modifier.weight(1f).fillMaxSize()) {
-            // 좌측: 카테고리 목록.
+            // 좌측: 분류 목차.
             Column(
-                Modifier.width(200.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.sm)
+                Modifier.width(300.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.sm, vertical = Spacing.sm)
             ) {
                 visibleCategories.forEach { cat ->
                     val selected = category == cat
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp).clickable { category = cat },
-                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                        shape = MaterialTheme.shapes.small
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+                            .clickable { category = cat }
+                            .padding(horizontal = Spacing.sm, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                            Text(cat.emoji, modifier = Modifier.padding(end = Spacing.sm))
-                            Text(
-                                cat.label,
-                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
+                        Box(
+                            Modifier.size(36.dp).background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(cat.icon, contentDescription = null, tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(cat.label, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onBackground, maxLines = 1)
+                            Text(cat.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                     }
                 }
             }
+            VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             // 138차(사용자 요청): "일일 사용 한도 초기화 시각"을 "하루 시작 기준"으로 이름을 바꾸고 공부 탭에도 둔다 —
             // 이 값은 한도뿐 아니라 캘린더·공부 기록의 "오늘"도 정하는데, 규칙 탭에 한도 이름으로만 있어서 공부 쪽에선
@@ -429,21 +460,23 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        "이 시각에 앱의 \"오늘\"이 바뀝니다 — 차단 규칙의 오늘 사용 시간·잠깐 풀기 횟수, 캘린더·일정표·공부 기록의 오늘이 이 시각부터 새로 시작돼요. 루틴은 이 설정과 상관없이 자정 기준이에요.\n$alsoIn",
+                        "이 시각에 앱의 \"오늘\"이 바뀝니다 — 차단 규칙의 오늘 사용 시간·잠깐 풀기 횟수, 캘린더·일정표·집중 기록의 오늘이 이 시각부터 새로 시작돼요. 루틴은 이 설정과 상관없이 자정 기준이에요.\n$alsoIn",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            // 우측: 선택된 카테고리의 세부 설정.
+            // 우측: 선택된 분류의 세부 설정 — 위에 그 분류의 큰 제목.
             Column(
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(Spacing.md)
+                    .padding(horizontal = Spacing.lg, vertical = Spacing.md)
             ) {
+                Text(category.label, style = MaterialTheme.typography.headlineMedium)
+                Spacer(Modifier.height(Spacing.md))
                 when (category) {
                     SettingsCategory.PROFILE -> {
                         SectionCard("닉네임 설정") {
@@ -658,10 +691,32 @@ fun SettingsScreen(
                                 }
                             }
                         }
+                        Spacer(Modifier.height(Spacing.md))
+                        // 144차: 미니멀 모드 = 성능 모드(안드로이드 130차 미니멀 모드를 데스크탑에도) — 흑백 + 움직임·효과 최소화 +
+                        // 글자로 된 홈. 기능과 정보는 그대로이고, 고른 테마는 남아 있어 끄면 바로 돌아온다. 이 PC에만 적용된다.
+                        SectionCard("미니멀 모드 · 성능 우선") {
+                            var minimalOn by remember { mutableStateOf(repository.minimalMode) }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("미니멀 모드", style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        "앱 전체를 흑백으로 바꾸고, 화면 전환·숫자 변화 같은 움직임을 짧은 페이드로 줄이며, 홈의 움직이는 장면 대신 글자로 된 홈을 보여줍니다. 기능과 정보는 그대로라 오래된 PC나 배터리 절약 중에 가볍게 쓰기 좋습니다. 이 PC에만 적용됩니다.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Spacer(Modifier.width(Spacing.md))
+                                Switch(checked = minimalOn, onCheckedChange = { on ->
+                                    minimalOn = on
+                                    repository.minimalMode = on
+                                    onThemeChange(themeMode)
+                                })
+                            }
+                        }
                     }
 
                     SettingsCategory.RULES -> SettingsColumns(left = {
-                        dayStartCard("📘 공부 탭에서도 같은 값을 바꿀 수 있어요.")
+                        dayStartCard("🎯 집중 탭에서도 같은 값을 바꿀 수 있어요.")
                         Spacer(Modifier.height(Spacing.md))
 
                         SectionCard("차단 규칙 수정·삭제 방지") {
@@ -760,12 +815,12 @@ fun SettingsScreen(
                     })
 
                     SettingsCategory.STUDY -> SettingsColumns(left = {
-                        dayStartCard("🗂️ 규칙 탭의 같은 항목과 같은 값이에요.")
+                        dayStartCard("🗂️ 관리 탭의 같은 항목과 같은 값이에요.")
                         Spacer(Modifier.height(Spacing.md))
-                        SectionCard("캘린더 복습 기본값") {
+                        SectionCard("캘린더 반복 기본값") {
                             ToggleRow(
-                                title = "새 일정을 복습으로 시작",
-                                description = "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 복습을 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
+                                title = "새 일정을 반복으로 시작",
+                                description = "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 회차를 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
                                 checked = defaultMultiPassEnabled,
                                 onCheckedChange = { checked ->
                                     defaultMultiPassEnabled = checked
@@ -775,14 +830,14 @@ fun SettingsScreen(
                             )
                             Spacer(Modifier.height(Spacing.sm))
                             Text(
-                                "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 복습 횟수/간격입니다 " +
+                                "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 반복 횟수/간격입니다 " +
                                     "(계산기 업무는 업무별로 각 업무 입력 카드에서 따로 설정).",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(Spacing.xs))
                             com.phonelock.desktop.ui.components.NumberStepperField(
-                                label = "기본 복습 횟수",
+                                label = "기본 반복 횟수",
                                 value = defaultPassCount.toString(),
                                 onValueChange = { text ->
                                     val newCount = (text.toIntOrNull() ?: defaultPassCount)
@@ -798,14 +853,14 @@ fun SettingsScreen(
                                 modifier = Modifier.width(160.dp)
                             )
                             Spacer(Modifier.height(Spacing.xs))
-                            Text("복습별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("회차별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             androidx.compose.foundation.layout.FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                                 verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                             ) {
                                 defaultPassIntervals.forEachIndexed { i, days ->
                                     com.phonelock.desktop.ui.components.NumberStepperField(
-                                        label = "${i + 1}→${i + 2}회 복습",
+                                        label = "${i + 1}→${i + 2}회차",
                                         value = days.toString(),
                                         onValueChange = { text ->
                                             val newDays = (text.toIntOrNull() ?: days).coerceIn(1, 90)
@@ -824,9 +879,9 @@ fun SettingsScreen(
 
                         // 공부 알림(122차, 안드로이드판과 대칭) — 캘린더/계산기/일정표를 보고 계획보다 늦어질 때만
                         // 트레이 알림을 보낸다. 설정값은 이 기기 로컬(data.json)이라 통신이 끊겨도 초기화되지 않는다.
-                        SectionCard("🔔 공부 알림") {
+                        SectionCard("집중 알림") {
                             Text(
-                                "캘린더·일정표에 예정된 공부와 실제 진행 상황을 비교해서, 계획보다 늦어질 때만 트레이 알림을 보냅니다. " +
+                                "캘린더·일정표에 예정된 계획과 실제 진행 상황을 비교해서, 계획보다 늦어질 때만 트레이 알림을 보냅니다. " +
                                     "같은 종류의 알림은 하루에 한 번만 오고, 이 설정은 기기별로 저장되어 인터넷이 끊겨도 초기화되지 않습니다. " +
                                     "(진동 설정은 안드로이드 앱에만 있습니다.)",
                                 style = MaterialTheme.typography.bodySmall,
@@ -834,7 +889,7 @@ fun SettingsScreen(
                             )
                             Spacer(Modifier.height(Spacing.sm))
                             ToggleRow(
-                                title = "공부 알림 받기",
+                                title = "집중 알림 받기",
                                 checked = studyAlertEnabled,
                                 onCheckedChange = { checked ->
                                     studyAlertEnabled = checked
@@ -843,8 +898,8 @@ fun SettingsScreen(
                             )
                             if (studyAlertEnabled) {
                                 ToggleRow(
-                                    title = "공부 미실행 알림",
-                                    description = "오늘 예정된 공부가 있는데 아직 아무것도 하지 않았을 때.",
+                                    title = "집중 미실행 알림",
+                                    description = "오늘 예정된 일정이 있는데 아직 아무것도 하지 않았을 때.",
                                     checked = studyAlertNotStarted,
                                     onCheckedChange = { checked ->
                                         studyAlertNotStarted = checked
@@ -852,7 +907,7 @@ fun SettingsScreen(
                                     }
                                 )
                                 ToggleRow(
-                                    title = "학습 페이스 지연 알림",
+                                    title = "진행 페이스 지연 알림",
                                     description = "진행량이 계획(기간 경과율)보다 뒤처졌을 때.",
                                     checked = studyAlertPace,
                                     onCheckedChange = { checked ->
@@ -918,9 +973,9 @@ fun SettingsScreen(
                             }
                         }
                     }, right = {
-                        SectionCard("🔒 공부 중 허용 프로그램") {
+                        SectionCard("집중 중 허용 프로그램") {
                             Text(
-                                "공부 페이즈가 진행 중일 때만(휴식 중엔 아님) 데스크탑이 잠기고, 여기 등록한 프로그램만 열 수 있습니다.",
+                                "집중 페이즈가 진행 중일 때만(휴식 중엔 아님) 데스크탑이 잠기고, 여기 등록한 프로그램만 열 수 있습니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -934,9 +989,9 @@ fun SettingsScreen(
                         }
                         Spacer(Modifier.height(Spacing.md))
 
-                        SectionCard("🌐 공부 중 허용 사이트") {
+                        SectionCard("집중 중 허용 사이트") {
                             Text(
-                                "공부 페이즈 중엔 브라우저를 열어도 여기 등록한 사이트만 접속할 수 있습니다. 이 기기에만 적용됩니다.",
+                                "집중 페이즈 중엔 브라우저를 열어도 여기 등록한 사이트만 접속할 수 있습니다. 이 기기에만 적용됩니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -966,6 +1021,31 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        Spacer(Modifier.height(Spacing.md))
+
+                        // 142차(사용자 요청): 주 2일로 굳어 있던 방지권을 사용자가 정한다.
+                        SectionCard("연속 기록 방지권") {
+                            com.phonelock.desktop.ui.components.NumberStepperField(
+                                label = "일주일에 넘어갈 수 있는 날",
+                                value = routineStreakFreeze.toString(),
+                                onValueChange = { text ->
+                                    val days = com.phonelock.shared.routine.RoutineStreak.clampFreeze(text.toIntOrNull() ?: routineStreakFreeze)
+                                    routineStreakFreeze = days
+                                    repository.routineStreakFreezePerWeek = days
+                                    repository.pushSettingsToFirebase()
+                                },
+                                min = 0, max = com.phonelock.shared.routine.RoutineStreak.MAX_FREEZE_DAYS_PER_WEEK,
+                                modifier = Modifier.width(200.dp)
+                            )
+                            Spacer(Modifier.height(Spacing.xs))
+                            Text(
+                                "일주일(월~일)에 이 일수만큼은 그날 루틴을 100% 채우지 못해도 연속 기록이 끊기지 않습니다. " +
+                                    "루틴 하나하나가 아니라 하루 단위이고, 넘어간 날은 연속 일수에 더해지지 않습니다. " +
+                                    "0으로 두면 하루만 못 채워도 끊깁니다. 다른 기기에도 같은 값이 적용됩니다.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }, right = {
                         SectionCard("루틴 내보내기 · 가져오기") {
                             Text(
@@ -991,7 +1071,7 @@ fun SettingsScreen(
                     SettingsCategory.SOCIAL -> {
                         SectionCard("모임 공유 설정") {
                             Text(
-                                "모임마다 공개할 내 정보(루틴/공부/연속 기록/오늘 일정/공부중 여부/작동 중인 차단 규칙)를 " +
+                                "모임마다 공개할 내 정보(루틴/집중/연속 기록/오늘 일정/집중 중 여부/작동 중인 차단 규칙)를 " +
                                     "다르게 정할 수 있어, 여기가 아니라 각 모임 화면의 🔒 공유 설정에서 모임별로 관리합니다. " +
                                     "특정 멤버에게만 내 정보를 숨기거나 특정 멤버의 정보를 안 보이게 하는 것도 그 " +
                                     "멤버의 상세 화면에서 따로 설정할 수 있습니다.",
@@ -1061,7 +1141,7 @@ fun SettingsScreen(
                         SectionCard("오래된 사용 기록 정리") {
                             var lastResult by remember { mutableStateOf<Int?>(null) }
                             Text(
-                                "12개월 이상 지난 사용시간/재확인 통과 횟수/공부 기록을 영구 삭제합니다(되돌리기 없음). " +
+                                "12개월 이상 지난 사용시간/재확인 통과 횟수/집중 기록을 영구 삭제합니다(되돌리기 없음). " +
                                     "캘린더 일정과 연속 기록 계산에는 영향을 주지 않습니다.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1304,12 +1384,12 @@ private fun PermissionChipsRow(
         FilterChip(
             selected = permissions.study,
             onClick = { onChange(permissions.copy(study = !permissions.study)) },
-            label = { Text("공부") }
+            label = { Text("집중") }
         )
         FilterChip(
             selected = permissions.manage,
             onClick = { onChange(permissions.copy(manage = !permissions.manage)) },
-            label = { Text("규칙") }
+            label = { Text("관리") }
         )
         FilterChip(
             selected = permissions.social,

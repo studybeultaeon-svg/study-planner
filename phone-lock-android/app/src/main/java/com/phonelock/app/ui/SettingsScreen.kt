@@ -16,7 +16,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -34,22 +33,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -81,6 +74,25 @@ import com.phonelock.app.ui.components.PersuasionStepper
 import com.phonelock.app.ui.components.SectionCard
 import com.phonelock.app.ui.components.ToggleRow
 import com.phonelock.app.ui.components.isTabletWidth
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.AdminPanelSettings
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.phonelock.app.ui.theme.Spacing
 import com.phonelock.app.widget.RoutineWidgetProvider
 import kotlinx.coroutines.launch
@@ -117,17 +129,17 @@ private fun syncElapsedLabel(atMillis: Long): String {
 
 /** 118차: 데스크탑판과 대칭되는 9개 카테고리 — 기존 settingsSubTab(0~4, TabRow) 5분류를 성격별로
  *  더 잘게 나눴다. 자세한 매핑 이유는 데스크탑 SettingsScreen.kt 주석 참고. */
-private enum class SettingsCategory(val label: String, val emoji: String) {
-    PROFILE("프로필", "👤"),
-    DISPLAY("화면", "🎨"),
-    RULES("규칙", "🗂️"),
-    STUDY("공부", "📘"),
-    ROUTINE("루틴", "📋"),
-    SOCIAL("모임", "👥"),
-    DATA("데이터", "💾"),
-    SYSTEM("시스템", "⚙️"),
-    HELP("도움말", "❓"),
-    ADMIN("관리자 패널", "🛡️")
+private enum class SettingsCategory(val label: String, val icon: ImageVector, val summary: String) {
+    PROFILE("프로필", Icons.Outlined.Person, "닉네임 · 프로필 사진 · 로그인 및 보안"),
+    DISPLAY("화면", Icons.Outlined.Palette, "테마 · 미니멀(성능) 모드 · 런처 · 알림 묶음"),
+    RULES("관리", Icons.Outlined.Shield, "수정·삭제 방지 · 릴스/쇼츠 · 하루 시작 기준"),
+    STUDY("집중", Icons.Outlined.Timer, "반복 기본값 · 집중 알림 · 허용 앱과 사이트"),
+    ROUTINE("루틴", Icons.Outlined.TaskAlt, "연속 기록 알림 · 방지권 · 내보내기"),
+    SOCIAL("모임", Icons.Outlined.Groups, "모임 공유 설정"),
+    DATA("데이터", Icons.Outlined.Backup, "백업 · 복원 · 오래된 기록 정리"),
+    SYSTEM("시스템", Icons.Outlined.Tune, "권한 · 진단 · 업데이트"),
+    HELP("도움말", Icons.Outlined.HelpOutline, "기능 설명과 자주 묻는 질문"),
+    ADMIN("관리자 패널", Icons.Outlined.AdminPanelSettings, "가입 승인 · 권한")
 }
 
 /**
@@ -165,6 +177,7 @@ fun SettingsScreen(
     var blockReels by remember { mutableStateOf(prefs.blockReels) }
     var blockShorts by remember { mutableStateOf(prefs.blockShorts) }
     var routineStreakNotifyEnabled by remember { mutableStateOf(prefs.routineStreakNotifyEnabled) }
+    var routineStreakFreeze by remember { mutableStateOf(prefs.routineStreakFreezePerWeek) }
     // 공부 알림(122차) — 값은 전부 AppPreferences(기기 로컬)에 즉시 저장된다.
     var studyAlertEnabled by remember { mutableStateOf(prefs.studyAlertEnabled) }
     var studyAlertVibrate by remember { mutableStateOf(prefs.studyAlertVibrate) }
@@ -208,6 +221,7 @@ fun SettingsScreen(
         editProtectionEndText = prefs.editProtectionEndHour.toString()
         savedProtectionStart = prefs.editProtectionStartHour
         savedProtectionEnd = prefs.editProtectionEndHour
+        routineStreakFreeze = prefs.routineStreakFreezePerWeek
     }
 
     // 저장된 값 기준으로 되돌리기(게이트 취소 시) / 실제 저장.
@@ -500,7 +514,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             )
             Text(
-                "이 시각에 앱의 \"오늘\"이 바뀝니다 — 차단 규칙의 오늘 사용 시간·잠깐 풀기 횟수, 캘린더·일정표·공부 기록의 오늘이 이 시각부터 새로 시작돼요. 루틴은 이 설정과 상관없이 자정 기준이에요.\n$alsoIn",
+                "이 시각에 앱의 \"오늘\"이 바뀝니다 — 차단 규칙의 오늘 사용 시간·잠깐 풀기 횟수, 캘린더·일정표·집중 기록의 오늘이 이 시각부터 새로 시작돼요. 루틴은 이 설정과 상관없이 자정 기준이에요.\n$alsoIn",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -510,7 +524,7 @@ fun SettingsScreen(
     // 카테고리별 세부 설정 — 태블릿의 우측 패널과 폰의 드로어 본문이 같은 람다를 재사용한다
     // (MainActivity.kt의 navHostContent와 같은 패턴).
     val detailContent: @Composable (Modifier) -> Unit = { modifier ->
-        Column(modifier.verticalScroll(rememberScrollState()).padding(Spacing.md)) {
+        Column(modifier.verticalScroll(rememberScrollState()).padding(horizontal = Spacing.gutter).padding(top = Spacing.sm, bottom = Spacing.xxl)) {
             when (category) {
                 SettingsCategory.PROFILE -> {
                     SectionCard("닉네임 설정") {
@@ -650,7 +664,7 @@ fun SettingsScreen(
                                     selected = themeMode == mode,
                                     onClick = {
                                         themeMode = mode; prefs.themeMode = mode
-                                        onThemeChange(mode); RoutineWidgetProvider.updateAll(context)
+                                        onThemeChange(prefs.effectiveThemeMode); RoutineWidgetProvider.updateAll(context)
                                     },
                                     label = { Text(label) }
                                 )
@@ -667,7 +681,7 @@ fun SettingsScreen(
                                         customBgText = text
                                         if (com.phonelock.app.ui.theme.parseHexColor(text) != null) {
                                             prefs.customThemeBackground = text.trim()
-                                            onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                                            onThemeChange(prefs.effectiveThemeMode); RoutineWidgetProvider.updateAll(context)
                                         }
                                     },
                                     label = { Text("배경색") },
@@ -690,7 +704,7 @@ fun SettingsScreen(
                                         customAccentText = text
                                         if (com.phonelock.app.ui.theme.parseHexColor(text) != null) {
                                             prefs.customThemeAccent = text.trim()
-                                            onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                                            onThemeChange(prefs.effectiveThemeMode); RoutineWidgetProvider.updateAll(context)
                                         }
                                     },
                                     label = { Text("포인트색") },
@@ -718,7 +732,7 @@ fun SettingsScreen(
                                     onSelect = { hex ->
                                         customBgText = hex
                                         prefs.customThemeBackground = hex
-                                        onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                                        onThemeChange(prefs.effectiveThemeMode); RoutineWidgetProvider.updateAll(context)
                                     },
                                     onDismiss = { showBgPalette = false }
                                 )
@@ -730,7 +744,7 @@ fun SettingsScreen(
                                     onSelect = { hex ->
                                         customAccentText = hex
                                         prefs.customThemeAccent = hex
-                                        onThemeChange(themeMode); RoutineWidgetProvider.updateAll(context)
+                                        onThemeChange(prefs.effectiveThemeMode); RoutineWidgetProvider.updateAll(context)
                                     },
                                     onDismiss = { showAccentPalette = false }
                                 )
@@ -739,10 +753,11 @@ fun SettingsScreen(
                     }
 
                     Spacer(Modifier.height(Spacing.md))
-                    SectionCard("미니멀 모드") {
+                    SectionCard("미니멀 모드 · 성능 우선") {
                         ToggleRow(
                             title = "미니멀 모드",
-                            description = "앱 전체를 흑백으로 바꾸고, 홈의 움직이는 식물 대신 요약 카드만 보여주며, 탭에서 이모지를 뺍니다. " +
+                            description = "앱 전체를 흑백으로 바꾸고, 화면 전환·숫자 변화 같은 움직임을 짧은 페이드로 줄이며, 홈의 움직이는 장면 대신 " +
+                                "글자로 된 홈을 보여줍니다. 기능과 정보는 그대로라 오래된 폰·배터리 절약 중에 가볍게 쓰기 좋습니다. " +
                                 "위에서 고른 테마는 그대로 남아 있어 끄면 바로 돌아옵니다.",
                             checked = minimalMode,
                             onCheckedChange = { checked -> applyMinimalMode(checked) }
@@ -756,8 +771,8 @@ fun SettingsScreen(
 
                         Text(
                             "기본 런처로 지정하면 홈 버튼을 눌렀을 때 아이콘 없는 텍스트 홈 화면이 뜹니다. " +
-                                "그 홈에는 레벨·먼저 할 루틴·공부 시간·먼저 할 일정 요약과 아래에서 고른 디데이, " +
-                                "그리고 앱 탭 5개(홈/루틴/공부/규칙/모임) 바로가기가 함께 올라옵니다. " +
+                                "그 홈에는 레벨·먼저 할 루틴·집중 시간·먼저 할 일정 요약과 아래에서 고른 디데이, " +
+                                "그리고 앱 탭 5개(홈/루틴/집중/관리/모임) 바로가기가 함께 올라옵니다. " +
                                 "즐겨찾기(최대 ${com.phonelock.app.ui.launcher.LAUNCHER_FAVORITE_MAX}개)와 앱 이름 바꾸기/숨기기는 " +
                                 "런처의 \"모든 앱\"에서 앱을 길게 눌러 설정합니다.",
                             style = MaterialTheme.typography.bodySmall,
@@ -1056,7 +1071,7 @@ fun SettingsScreen(
                 }
 
                 SettingsCategory.RULES -> {
-                    dayStartCard("📘 공부 탭에서도 같은 값을 바꿀 수 있어요.")
+                    dayStartCard("🎯 집중 탭에서도 같은 값을 바꿀 수 있어요.")
                     Spacer(Modifier.height(Spacing.md))
 
                     SectionCard("차단 규칙 수정·삭제 방지") {
@@ -1154,7 +1169,7 @@ fun SettingsScreen(
                     Spacer(Modifier.height(Spacing.md))
 
                     if (autoBackups.isNotEmpty()) {
-                        SectionCard("⚠ 차단 규칙 데이터 복구") {
+                        SectionCard("차단 규칙 데이터 복구") {
                             Text(
                                 "앱 업데이트로 로컬 데이터가 초기화됐을 때 자동으로 만들어진 백업이 있습니다. 차단 규칙(차단 " +
                                     "대상 앱/사이트 목록)은 동기화되지 않는 데이터라 지워졌다면 이 백업에서만 복구할 수 " +
@@ -1186,11 +1201,11 @@ fun SettingsScreen(
                 }
 
                 SettingsCategory.STUDY -> {
-                    dayStartCard("🗂️ 규칙 탭의 같은 항목과 같은 값이에요.")
+                    dayStartCard("🗂️ 관리 탭의 같은 항목과 같은 값이에요.")
                     Spacer(Modifier.height(Spacing.md))
-                    SectionCard("캘린더 복습 기본값") {
+                    SectionCard("캘린더 반복 기본값") {
                         ToggleRow(
-                            title = "새 일정을 복습으로 시작",
+                            title = "새 일정을 반복으로 시작",
                             checked = defaultMultiPassEnabled,
                             onCheckedChange = { checked ->
                                 defaultMultiPassEnabled = checked
@@ -1199,20 +1214,20 @@ fun SettingsScreen(
                             }
                         )
                         Text(
-                            "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 복습을 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
+                            "켜두면 캘린더에 새로 추가하는 일정이 완료(O) 시 다음 회차를 자동 생성하는 상태로 시작됩니다. 이미 만든 일정에는 영향 없고, 각 일정에서 개별적으로 다시 켜고 끌 수 있습니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(Spacing.sm))
                         Text(
-                            "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 복습 횟수/간격입니다 " +
+                            "계산기 업무와 연결하지 않고 캘린더에서 직접 추가하는 일정에 적용되는 기본 반복 횟수/간격입니다 " +
                                 "(계산기 업무는 업무별로 각 업무 입력 카드에서 따로 설정).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(Spacing.xs))
                         com.phonelock.app.ui.components.NumberStepperField(
-                            label = "기본 복습 횟수",
+                            label = "기본 반복 횟수",
                             value = defaultPassCount.toString(),
                             onValueChange = { text ->
                                 val newCount = (text.toIntOrNull() ?: defaultPassCount)
@@ -1228,11 +1243,11 @@ fun SettingsScreen(
                             modifier = Modifier.width(160.dp)
                         )
                         Spacer(Modifier.height(Spacing.xs))
-                        Text("복습별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("회차별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                             defaultPassIntervals.forEachIndexed { i, days ->
                                 com.phonelock.app.ui.components.NumberStepperField(
-                                    label = "${i + 1}→${i + 2}회 복습",
+                                    label = "${i + 1}→${i + 2}회차",
                                     value = days.toString(),
                                     onValueChange = { text ->
                                         val newDays = (text.toIntOrNull() ?: days).coerceIn(1, 90)
@@ -1252,9 +1267,9 @@ fun SettingsScreen(
 
                     // 공부 알림(122차, 사용자 요청) — 캘린더/계산기/일정표 데이터를 보고 "계획보다 늦어질 때만"
                     // 알린다. 설정값은 전부 이 기기 로컬(SharedPreferences)이라 통신이 끊겨도 초기화되지 않는다.
-                    SectionCard("🔔 공부 알림") {
+                    SectionCard("집중 알림") {
                         Text(
-                            "캘린더·일정표에 예정된 공부와 실제 진행 상황을 비교해서, 계획보다 늦어질 때만 알림을 보냅니다. " +
+                            "캘린더·일정표에 예정된 계획과 실제 진행 상황을 비교해서, 계획보다 늦어질 때만 알림을 보냅니다. " +
                                 "일정한 간격으로 무조건 보내지 않으며 같은 종류의 알림은 하루에 한 번만 옵니다. " +
                                 "이 설정은 기기별로 저장되고 동기화하지 않으므로 인터넷이 끊겨도 초기화되지 않습니다.",
                             style = MaterialTheme.typography.bodySmall,
@@ -1262,7 +1277,7 @@ fun SettingsScreen(
                         )
                         Spacer(Modifier.height(Spacing.sm))
                         ToggleRow(
-                            title = "공부 알림 받기",
+                            title = "집중 알림 받기",
                             checked = studyAlertEnabled,
                             onCheckedChange = { checked ->
                                 studyAlertEnabled = checked
@@ -1285,8 +1300,8 @@ fun SettingsScreen(
                                 }
                             )
                             ToggleRow(
-                                title = "공부 미실행 알림",
-                                description = "오늘 예정된 공부가 있는데 아직 아무것도 하지 않았을 때.",
+                                title = "집중 미실행 알림",
+                                description = "오늘 예정된 일정이 있는데 아직 아무것도 하지 않았을 때.",
                                 checked = studyAlertNotStarted,
                                 onCheckedChange = { checked ->
                                     studyAlertNotStarted = checked
@@ -1294,7 +1309,7 @@ fun SettingsScreen(
                                 }
                             )
                             ToggleRow(
-                                title = "학습 페이스 지연 알림",
+                                title = "진행 페이스 지연 알림",
                                 description = "진행량이 계획(기간 경과율)보다 뒤처졌을 때.",
                                 checked = studyAlertPace,
                                 onCheckedChange = { checked ->
@@ -1372,7 +1387,7 @@ fun SettingsScreen(
                     AllowedAppsCollapsibleSection(onOpenFullScreen = onNavigateToStudyLockApps)
                     Spacer(Modifier.height(Spacing.md))
 
-                    SectionCard("🌐 공부 잠금 허용 사이트") {
+                    SectionCard("집중 잠금 허용 사이트") {
                         Text(
                             "허용된 앱(브라우저)이 열려 있어도 여기 등록 안 된 사이트는 따로 차단됩니다. 이 기기에만 " +
                                 "적용되며, 데스크탑에는 데스크탑 앱 설정에서 따로 등록해야 합니다.",
@@ -1412,6 +1427,31 @@ fun SettingsScreen(
                     }
                     Spacer(Modifier.height(Spacing.md))
 
+                    // 142차(사용자 요청): 주 2일로 굳어 있던 방지권을 사용자가 정한다.
+                    SectionCard("연속 기록 방지권") {
+                        com.phonelock.app.ui.components.NumberStepperField(
+                            label = "일주일에 넘어갈 수 있는 날",
+                            value = routineStreakFreeze.toString(),
+                            onValueChange = { text ->
+                                val days = com.phonelock.shared.routine.RoutineStreak.clampFreeze(text.toIntOrNull() ?: routineStreakFreeze)
+                                routineStreakFreeze = days
+                                prefs.routineStreakFreezePerWeek = days
+                                repository.pushSettingsToFirebase()
+                            },
+                            min = 0, max = com.phonelock.shared.routine.RoutineStreak.MAX_FREEZE_DAYS_PER_WEEK,
+                            modifier = Modifier.width(200.dp)
+                        )
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text(
+                            "일주일(월~일)에 이 일수만큼은 그날 루틴을 100% 채우지 못해도 연속 기록이 끊기지 않습니다. " +
+                                "루틴 하나하나가 아니라 하루 단위이고, 넘어간 날은 연속 일수에 더해지지 않습니다. " +
+                                "0으로 두면 하루만 못 채워도 끊깁니다. 다른 기기에도 같은 값이 적용됩니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.md))
+
                     SectionCard("루틴 내보내기 · 가져오기") {
                         Text(
                             "루틴 목록과 체크 기록을 파일로 저장하거나 불러옵니다. 루틴은 이미 Firebase로 기기 간 자동 " +
@@ -1439,7 +1479,7 @@ fun SettingsScreen(
                 SettingsCategory.SOCIAL -> {
                     SectionCard("모임 공유 설정") {
                         Text(
-                            "모임마다 공개할 내 정보(루틴/공부/연속 기록/오늘 일정/공부중 여부/작동 중인 차단 규칙)를 " +
+                            "모임마다 공개할 내 정보(루틴/집중/연속 기록/오늘 일정/집중 중 여부/작동 중인 차단 규칙)를 " +
                                 "다르게 정할 수 있어, 여기가 아니라 각 모임 화면의 ⚙ 공유 설정에서 모임별로 관리합니다. " +
                                 "특정 멤버에게만 내 정보를 숨기거나 특정 멤버의 정보를 안 보이게 하는 것도 그 " +
                                 "멤버의 상세 화면에서 따로 설정할 수 있습니다.",
@@ -1482,7 +1522,7 @@ fun SettingsScreen(
                     SectionCard("오래된 사용 기록 정리") {
                         var lastResult by remember { mutableStateOf<Int?>(null) }
                         Text(
-                            "12개월 이상 지난 사용시간/재확인 통과 횟수/공부 기록을 영구 삭제합니다(되돌리기 없음). " +
+                            "12개월 이상 지난 사용시간/재확인 통과 횟수/집중 기록을 영구 삭제합니다(되돌리기 없음). " +
                                 "캘린더 일정과 연속 기록 계산에는 영향을 주지 않습니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1559,7 +1599,7 @@ fun SettingsScreen(
                     run {
                         val crashLogFile = java.io.File(context.filesDir, "crash_log.txt")
                         if (crashLogFile.exists()) {
-                            SectionCard("⚠ 마지막 강제종료 로그") {
+                            SectionCard("마지막 강제종료 로그") {
                                 Text(
                                     "앱이 예기치 않게 꺼진 기록이 있습니다. 공유하면 원인을 정확히 찾는 데 도움이 됩니다.",
                                     style = MaterialTheme.typography.bodySmall,
@@ -1744,74 +1784,103 @@ fun SettingsScreen(
         }
     }
 
+    // 144차 리디자인: 폰은 드로어 대신 "목차 → 세부" 두 단계(목차는 아이콘 + 이름 + 한 줄 설명, 세부는 큰 제목),
+    // 태블릿은 왼쪽 목차 + 오른쪽 세부. 뒤로가기는 세부 → 목차 → 설정 닫기 순서.
+    val motion = com.phonelock.app.ui.theme.LocalAppMotion.current
     if (isTabletWidth()) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("설정") },
-                    actions = { TextButton(onClick = onClose) { Text("✕ 닫기") } }
-                )
-            }
-        ) { padding ->
-            Row(Modifier.fillMaxSize().padding(padding)) {
-                Column(Modifier.width(200.dp).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                    visibleCategories.forEach { cat ->
-                        val selected = category == cat
-                        Surface(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = 2.dp).clickable { category = cat },
-                            color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                            shape = MaterialTheme.shapes.small
-                        ) {
-                            Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                                Text(cat.emoji, modifier = Modifier.padding(end = Spacing.sm))
-                                Text(
-                                    cat.label,
-                                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
-                        }
-                    }
+        Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            Column(Modifier.width(280.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = Spacing.md)) {
+                com.phonelock.app.ui.components.PageMasthead(title = "설정", overline = "갓생살기종합세트")
+                Spacer(Modifier.height(Spacing.md))
+                visibleCategories.forEach { cat ->
+                    SettingsCategoryRow(cat, selected = category == cat, compact = true) { category = cat }
                 }
-                detailContent(Modifier.weight(1f).fillMaxHeight())
+            }
+            androidx.compose.material3.VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                Row(Modifier.fillMaxWidth().padding(start = Spacing.gutter, end = Spacing.sm, top = Spacing.md), verticalAlignment = Alignment.Bottom) {
+                    Text(category.label, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "설정 닫기") }
+                }
+                detailContent(Modifier.weight(1f).fillMaxWidth())
             }
         }
     } else {
-        val drawerState = androidx.compose.material3.rememberDrawerState(DrawerValue.Closed)
-        ModalNavigationDrawer(
-            drawerState = drawerState,
-            drawerContent = {
-                ModalDrawerSheet {
+        var detailOpen by rememberSaveable { mutableStateOf(false) }
+        androidx.activity.compose.BackHandler(enabled = detailOpen) { detailOpen = false }
+        androidx.compose.animation.AnimatedContent(
+            targetState = detailOpen,
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+            transitionSpec = {
+                val forward = targetState
+                if (motion.reduced) {
+                    androidx.compose.animation.fadeIn(motion.standard()) togetherWith androidx.compose.animation.fadeOut(motion.exit())
+                } else {
+                    (androidx.compose.animation.fadeIn(motion.emphasized()) + androidx.compose.animation.slideInHorizontally(motion.emphasized()) { w -> if (forward) w / 8 else -w / 8 }) togetherWith
+                        (androidx.compose.animation.fadeOut(motion.exit()) + androidx.compose.animation.slideOutHorizontally(motion.exit()) { w -> if (forward) -w / 12 else w / 12 })
+                }
+            },
+            label = "settingsLevel"
+        ) { open ->
+            if (!open) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = Spacing.xl)) {
+                    com.phonelock.app.ui.components.PageMasthead(title = "설정", overline = "갓생살기종합세트") {
+                        IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "설정 닫기") }
+                    }
                     Spacer(Modifier.height(Spacing.md))
                     visibleCategories.forEach { cat ->
-                        NavigationDrawerItem(
-                            label = { Text("${cat.emoji} ${cat.label}") },
-                            selected = category == cat,
-                            onClick = {
-                                category = cat
-                                scope.launch { drawerState.close() }
-                            },
-                            modifier = Modifier.padding(horizontal = Spacing.sm)
-                        )
+                        SettingsCategoryRow(cat, selected = false, compact = false) {
+                            category = cat
+                            detailOpen = true
+                        }
                     }
                 }
-            }
-        ) {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { Text("${category.emoji} ${category.label}") },
-                        navigationIcon = {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(Icons.Filled.Menu, contentDescription = "설정 카테고리")
-                            }
-                        },
-                        actions = { TextButton(onClick = onClose) { Text("✕ 닫기") } }
+            } else {
+                Column(Modifier.fillMaxSize()) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.xs, vertical = Spacing.xs), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { detailOpen = false }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "설정 목차로") }
+                        com.phonelock.app.ui.components.Overline("설정", Modifier.weight(1f))
+                        IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "설정 닫기") }
+                    }
+                    Text(
+                        category.label,
+                        style = MaterialTheme.typography.headlineLarge,
+                        modifier = Modifier.padding(horizontal = Spacing.gutter).padding(bottom = Spacing.md)
                     )
+                    detailContent(Modifier.weight(1f).fillMaxWidth())
                 }
-            ) { padding ->
-                detailContent(Modifier.fillMaxSize().padding(padding))
             }
+        }
+    }
+}
+
+/** 설정 목차 한 줄 — 원 안의 아이콘 + 이름 + 한 줄 설명 + 오른쪽 화살표(폰). 태블릿 목차는 설명 없이 고른 줄을 옅게 칠한다. */
+@Composable
+private fun SettingsCategoryRow(cat: SettingsCategory, selected: Boolean, compact: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .padding(horizontal = if (compact) Spacing.sm else 0.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = if (compact) Spacing.sm else Spacing.gutter, vertical = if (compact) 10.dp else 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        androidx.compose.foundation.layout.Box(
+            Modifier.size(40.dp).background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, androidx.compose.foundation.shape.CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(cat.icon, contentDescription = null, tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(cat.label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground, maxLines = 1)
+            if (!compact) {
+                Text(cat.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            }
+        }
+        if (!compact) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1848,7 +1917,7 @@ private fun AllowedAppsCollapsibleSection(onOpenFullScreen: () -> Unit) {
                     modifier = Modifier.padding(end = Spacing.xs)
                 )
                 Text(
-                    "🔒 공부 잠금 허용 앱" + if (allowedCount > 0) " ($allowedCount)" else "",
+                    "🔒 집중 잠금 허용 앱" + if (allowedCount > 0) " ($allowedCount)" else "",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
@@ -1857,7 +1926,7 @@ private fun AllowedAppsCollapsibleSection(onOpenFullScreen: () -> Unit) {
             if (expanded) {
                 Spacer(Modifier.height(Spacing.sm))
                 Text(
-                    "공부앱 타이머가 \"공부\" 페이즈로 진행 중일 때(휴식 중엔 아님) 여기서 고른 앱 외에는 열자마자 " +
+                    "집중 타이머가 \"집중\" 페이즈로 진행 중일 때(휴식 중엔 아님) 여기서 고른 앱 외에는 열자마자 " +
                         "감지해서 잠금 화면으로 돌려보냅니다. 기기 소유자 권한이 없어 진짜 실행 차단은 아니고, " +
                         "감지 후 재차단하는 베스트 에포트 방식입니다.",
                     style = MaterialTheme.typography.bodySmall,
@@ -1898,12 +1967,12 @@ private fun PermissionChipsRow(
         FilterChip(
             selected = permissions.study,
             onClick = { onChange(permissions.copy(study = !permissions.study)) },
-            label = { Text("공부") }
+            label = { Text("집중") }
         )
         FilterChip(
             selected = permissions.manage,
             onClick = { onChange(permissions.copy(manage = !permissions.manage)) },
-            label = { Text("규칙") }
+            label = { Text("관리") }
         )
         FilterChip(
             selected = permissions.social,

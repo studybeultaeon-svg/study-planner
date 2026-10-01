@@ -110,7 +110,7 @@ object StudyAlertEngine {
             alerts.add(
                 Alert(
                     Kind.NOT_STARTED,
-                    "📘 오늘 공부를 아직 시작하지 않았어요",
+                    "🎯 오늘 집중을 아직 시작하지 않았어요",
                     "${parts.joinToString(" · ")}이 오늘 예정되어 있어요."
                 )
             )
@@ -132,7 +132,7 @@ object StudyAlertEngine {
                 overdueTask != null -> alerts.add(
                     Alert(
                         Kind.SCHEDULE_DELAYED,
-                        "📉 마감이 지난 공부가 있어요",
+                        "📉 마감이 지난 업무가 있어요",
                         "'${overdueTask.name}': 마감일이 지났는데 아직 ${subject(amount(remaining(overdueTask), overdueTask.unit))} " +
                             "남아 있어요(전체의 ${percent(remainingRatio(overdueTask))}%)."
                     )
@@ -176,9 +176,9 @@ object StudyAlertEngine {
                 alerts.add(
                     Alert(
                         Kind.PACE_BEHIND,
-                        "⏳ 학습 페이스가 계획보다 느려요",
+                        "⏳ 진행 페이스가 계획보다 느려요",
                         "'${task.name}': 기간은 ${percent(elapsedRatio(task))}% 지났는데 진행은 ${percent(progressRatio(task))}%예요. " +
-                            "마감(${ddayLabel(task.daysLeft)})까지 공부하는 날마다 평균 " +
+                            "마감(${ddayLabel(task.daysLeft)})까지 계획한 날마다 평균 " +
                             "${amount(ceil1(neededPerPlanDay(task)), task.unit)}씩 해야 따라잡아요."
                     )
                 )

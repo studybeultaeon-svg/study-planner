@@ -154,6 +154,9 @@ suspend fun PhoneLockRepository.applyCalendarAutoSchedule(dateKey: String, task:
                 // 98차 버그 수정: 계산기 연동(linkedCalc/progressStep)을 안 이어받아서 다음 회독부터
                 // 연동이 끊기던 버그 — 원본 task에서 그대로 이어받는다.
                 linkedCalc = task.linkedCalc, progressStep = task.progressStep,
+                // 143차: 반복을 켜 둔 일정의 다음 회차는 반복도 켜진 채로 만든다 — 빠뜨리면 기본값(꺼짐)이 되어
+                // 1회차에서만 반복이 켜져 있고 2회차부터는 사용자가 매번 다시 켜야 했다.
+                multiPassEnabled = task.multiPassEnabled,
                 passIndex = nextIndex, passTotal = task.passTotal, passIntervalsCsv = task.passIntervalsCsv
             )
         )

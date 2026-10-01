@@ -157,6 +157,8 @@ fun Repository.applyCalendarAutoSchedule(dateKey: String, task: CalendarTask) {
                 // 98차 버그 수정(안드로이드판과 대칭): 계산기 연동(linkedCalc/progressStep)을 안 이어받아서
                 // 다음 회독부터 연동이 끊기던 버그 — 원본 task에서 그대로 이어받는다.
                 linkedCalc = task.linkedCalc, progressStep = task.progressStep,
+                // 143차(안드로이드판과 대칭): 반복을 켜 둔 일정의 다음 회차도 반복이 켜진 채로 만든다.
+                multiPassEnabled = task.multiPassEnabled,
                 passIndex = nextIndex, passTotal = task.passTotal, passIntervalsCsv = task.passIntervalsCsv
             )
         )

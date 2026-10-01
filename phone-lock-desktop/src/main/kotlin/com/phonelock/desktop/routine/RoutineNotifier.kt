@@ -55,7 +55,10 @@ object RoutineNotifier {
             nextStreakCheckAt = randomTimeAfter(now)
             val routines = repository.getAllRoutines()
             val completed = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
-            val streak = RoutineEngine.currentStreak(routines, completed, today.minusDays(1))
+            // 어제까지를 확정값으로 본다 — 어제를 못 채웠으면 방지권을 쓰거나(유지) 끊긴 것으로 센다.
+            val streak = RoutineEngine.currentStreak(
+                routines, completed, today.minusDays(1), repository.routineStreakFreezePerWeek, todayPending = false
+            )
             val message: String
             if (streak > 0) {
                 message = RoutineQuotes.forStreak(streak, broken = false)

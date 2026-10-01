@@ -1,5 +1,7 @@
 package com.phonelock.desktop.ui
 
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
@@ -94,7 +96,8 @@ private fun completionRatio(m: SocialGroupSyncClient.MemberStats): Double? =
 /** 82차(§9 "모임 주간 리더보드") — schedule에 이미 담겨오는 ±버퍼 캘린더 데이터로 최근 7일 완료율을 재집계. */
 private fun weekCompletionRatio(m: SocialGroupSyncClient.MemberStats): Double? {
     if (!m.shareSchedule) return null
-    val today = java.time.LocalDate.now()
+    // 143차: "최근 7일"의 끝은 그 사람의 하루 시작 기준 오늘(141차) — 옛 버전 데이터면 달력 날짜.
+    val today = m.studyDayKey?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } ?: java.time.LocalDate.now()
     val weekAgoKey = today.minusDays(6).toString()
     val todayKey = today.toString()
     val weekTasks = m.schedule.filter { it.dateKey in weekAgoKey..todayKey }
@@ -295,14 +298,19 @@ fun SocialGroupMembersScreen(
     val groupGoalTodaySeconds = stats.filter { it.shareStudy }.sumOf { it.studyTodaySeconds }
 
     Row(Modifier.fillMaxSize().background(socialGradientBackground())) {
-        Column(Modifier.weight(1f).fillMaxHeight().padding(Spacing.md)) {
+        Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack) { Text("< 목록") }
-                Row {
+                // 144차 리디자인(안드로이드판과 같은 언어): 화살표 뒤로 + 아이콘 동작, 아래에 큰 모임 이름.
+                com.phonelock.desktop.ui.components.LedgerBackButton(onBack)
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
-                    androidx.compose.material3.IconButton(onClick = { refresh() }) { Text("🔄") }
+                    androidx.compose.material3.IconButton(onClick = { refresh() }) {
+                        androidx.compose.material3.Icon(Icons.Outlined.Refresh, contentDescription = "새로고침", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Box {
-                        TextButton(onClick = { showSettingsMenu = true }) { Text("⚙ 설정") }
+                        androidx.compose.material3.IconButton(onClick = { showSettingsMenu = true }) {
+                            androidx.compose.material3.Icon(Icons.Outlined.Settings, contentDescription = "모임 설정", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         // 82차(§6 UX 폴리싱, 안드로이드판과 대칭): 밋밋한 AlertDialog 버튼 목록 대신
                         // 버튼 바로 아래에서 펼쳐지는 앵커된 드롭다운 메뉴로.
                         androidx.compose.material3.DropdownMenu(
@@ -349,13 +357,14 @@ fun SocialGroupMembersScreen(
                         }
                     }
                     if (isOwner) {
-                        OutlinedButton(onClick = { showDeleteConfirm = true }) { Text("모임 삭제") }
+                        TextButton(onClick = { showDeleteConfirm = true }) { Text("모임 삭제", color = MaterialTheme.colorScheme.error, maxLines = 1, softWrap = false) }
                     } else {
-                        OutlinedButton(onClick = { showLeaveConfirm = true }) { Text("나가기") }
+                        TextButton(onClick = { showLeaveConfirm = true }) { Text("나가기", color = MaterialTheme.colorScheme.error, maxLines = 1, softWrap = false) }
                     }
                 }
             }
-            Text(info?.name ?: "", style = MaterialTheme.typography.headlineSmall)
+            com.phonelock.desktop.ui.components.Overline("모임")
+            Text(info?.name ?: "", style = MaterialTheme.typography.headlineMedium, maxLines = 2)
             if (!info?.description.isNullOrBlank()) {
                 Text(
                     info?.description ?: "",
@@ -367,10 +376,7 @@ fun SocialGroupMembersScreen(
 
             val chatEnabled = info?.chatEnabled != false
             if (chatEnabled) {
-                TabRow(selectedTabIndex = channelTab) {
-                    MaterialTab(selected = channelTab == 0, onClick = { channelTab = 0 }, text = { Text("멤버") })
-                    MaterialTab(selected = channelTab == 1, onClick = { channelTab = 1 }, text = { Text("💬 대화") })
-                }
+                com.phonelock.desktop.ui.components.SectionTabs(listOf("멤버", "대화"), channelTab, { channelTab = it })
                 Spacer(Modifier.height(Spacing.sm))
             }
 

@@ -240,6 +240,31 @@ class LockEvaluatorTest {
     }
 
     @Test
+    fun `detectWeakeningEdit is true when turning off the usage overlay even if confirm is off`() {
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val original = baseGroup().copy(confirmEnabled = false, usageOverlayEnabled = true)
+
+        assertTrue(
+            evaluator.detectWeakeningEdit(
+                original, original.copy(usageOverlayEnabled = false), emptySet(), emptySet(), emptySet(), emptySet(), now
+            )
+        )
+        // 오버레이를 새로 켜는 쪽은 강화이므로 약화가 아니다.
+        assertFalse(
+            evaluator.detectWeakeningEdit(
+                original.copy(usageOverlayEnabled = false), original, emptySet(), emptySet(), emptySet(), emptySet(), now
+            )
+        )
+        // 방지 시간대 밖이면 다른 약화 판정과 똑같이 자유롭게 끌 수 있다.
+        assertFalse(
+            evaluator.detectWeakeningEdit(
+                original, original.copy(usageOverlayEnabled = false), emptySet(), emptySet(), emptySet(), emptySet(),
+                LocalDateTime.of(2026, 1, 7, 23, 30)
+            )
+        )
+    }
+
+    @Test
     fun `detectWeakeningEdit is false when the group itself is disabled`() {
         val now = LocalDateTime.of(2026, 1, 7, 14, 0)
         val original = baseGroup().copy(confirmEnabled = true, groupEnabled = false)
@@ -248,5 +273,64 @@ class LockEvaluatorTest {
         assertFalse(
             evaluator.detectWeakeningEdit(original, updated, emptySet(), emptySet(), emptySet(), emptySet(), now)
         )
+    }
+
+    // --- 142차: 전체 잠금 방식 규칙(목록 = 허용할 프로그램) ---
+
+    /** 수요일 14시, 13~15시 시간대 차단에 걸려 있는 규칙. */
+    private fun restrictingGroup(allowlistMode: Boolean) = baseGroup().copy(
+        scheduleStartMinute = 13 * 60, scheduleEndMinute = 15 * 60, allowlistMode = allowlistMode
+    )
+
+    @Test
+    fun `allowlist rule treats adding an allowed program as weakening, not removing one`() {
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val group = restrictingGroup(allowlistMode = true)
+
+        assertTrue(evaluator.detectWeakeningEdit(group, group, setOf("a"), setOf("a", "b"), emptySet(), emptySet(), now))
+        assertFalse(evaluator.detectWeakeningEdit(group, group, setOf("a", "b"), setOf("a"), emptySet(), emptySet(), now))
+        assertTrue(evaluator.detectWeakeningEdit(group, group, emptySet(), emptySet(), emptySet(), setOf("site.com"), now))
+    }
+
+    @Test
+    fun `blocklist rule still treats removing a blocked program as weakening`() {
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val group = restrictingGroup(allowlistMode = false)
+
+        assertTrue(evaluator.detectWeakeningEdit(group, group, setOf("a", "b"), setOf("a"), emptySet(), emptySet(), now))
+        assertFalse(evaluator.detectWeakeningEdit(group, group, setOf("a"), setOf("a", "b"), emptySet(), emptySet(), now))
+    }
+
+    @Test
+    fun `switching the lock mode while restricting is weakening, but not outside the window`() {
+        val group = restrictingGroup(allowlistMode = true)
+        val flipped = group.copy(allowlistMode = false)
+
+        assertTrue(
+            evaluator.detectWeakeningEdit(group, flipped, emptySet(), emptySet(), emptySet(), emptySet(), LocalDateTime.of(2026, 1, 7, 14, 0))
+        )
+        assertFalse(
+            evaluator.detectWeakeningEdit(group, flipped, emptySet(), emptySet(), emptySet(), emptySet(), LocalDateTime.of(2026, 1, 7, 16, 0))
+        )
+    }
+
+    @Test
+    fun `allowlist rule never asks for launch confirmation`() {
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val group = baseGroup().copy(confirmEnabled = true)
+
+        assertTrue(evaluator.isConfirmActiveNow(group, now))
+        assertFalse(evaluator.isConfirmActiveNow(group.copy(allowlistMode = true), now))
+        assertFalse(evaluator.isConfirmTypeActiveToday(group.copy(allowlistMode = true), now))
+    }
+
+    @Test
+    fun `explorer and the lock screen are always allowed, other programs are not`() {
+        assertTrue(DesktopEssentials.isAlwaysAllowed("explorer.exe"))
+        assertTrue(DesktopEssentials.isAlwaysAllowed("Explorer.EXE"))
+        assertTrue(DesktopEssentials.isAlwaysAllowed("LockApp.exe"))
+        assertFalse(DesktopEssentials.isAlwaysAllowed("chrome.exe"))
+        assertTrue(DesktopEssentials.isBrowser("Chrome.exe"))
+        assertFalse(DesktopEssentials.isBrowser("notepad.exe"))
     }
 }

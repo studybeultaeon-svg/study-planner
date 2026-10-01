@@ -1,5 +1,7 @@
 package com.phonelock.app.ui
 
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.background
@@ -27,6 +29,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -186,6 +189,9 @@ fun GroupEditScreen(
     // 기존 값을 그대로 유지해 전달하는 용도로만 상태를 들고 있는다. 새 규칙 생성 시 이름 충돌 확인은
     // 아래 pendingCreateCollisionEntry가 담당한다.
     var syncEnabled by remember { mutableStateOf(false) }
+    // 전체 잠금 방식(142차) — 켜면 아래 앱/사이트 목록이 "막을 대상"이 아니라 "허용할 대상"이 된다. 목록처럼 기기마다
+    // 따로 두는 값이라 동기화로 받아오는 설정(applyGroupToForm)에는 들어 있지 않다.
+    var allowlistMode by remember { mutableStateOf(false) }
     var pendingCreateCollisionEntry by remember { mutableStateOf<JSONObject?>(null) }
 
     // 원격 설정 항목을 화면의 입력 필드들에 반영한다 — 최초 로드(기존 그룹 편집)와 새 규칙 생성 시
@@ -290,6 +296,7 @@ fun GroupEditScreen(
                 name = group.name
                 selfMessageText = group.selfMessageText
                 syncEnabled = group.syncEnabled
+                allowlistMode = group.allowlistMode
                 applyGroupToForm(group)
                 originalGroup = group
             }
@@ -304,7 +311,26 @@ fun GroupEditScreen(
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text(if (groupId == null) "차단 규칙 추가" else "차단 규칙 편집") }) },
+        containerColor = MaterialTheme.colorScheme.background,
+        // 144차: 앱바 대신 편집형 머리 — 뒤로 가기 + 작은 경로 라벨 + 큰 제목(규칙 이름이 있으면 그 이름).
+        topBar = {
+            Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = Spacing.xs, vertical = Spacing.xs), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDone) {
+                        Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
+                    }
+                    com.phonelock.app.ui.components.Overline(if (groupId == null) "관리 · 새 차단 규칙" else "관리 · 차단 규칙 편집")
+                }
+                Text(
+                    name.ifBlank { if (groupId == null) "새 차단 규칙" else "차단 규칙" },
+                    style = MaterialTheme.typography.headlineMedium,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = Spacing.gutter).padding(bottom = Spacing.sm)
+                )
+                com.phonelock.app.ui.components.Hairline()
+            }
+        },
         bottomBar = {
             if (loaded) {
                 Column(Modifier.fillMaxWidth().padding(Spacing.md)) {
@@ -434,7 +460,8 @@ fun GroupEditScreen(
                                         // 강도(오늘 시도 횟수)가 매번 0으로 리셋되고 있었다.
                                         blockAttemptDate = currentGroup?.blockAttemptDate ?: "",
                                         blockAttemptCount = currentGroup?.blockAttemptCount ?: 0,
-                                        syncEnabled = syncEnabled
+                                        syncEnabled = syncEnabled,
+                                        allowlistMode = allowlistMode
                                     )
                                     val original = originalGroup
                                     val weakening = original != null && evaluator.detectWeakeningEdit(
@@ -535,6 +562,33 @@ fun GroupEditScreen(
                 }
                 Spacer(Modifier.height(Spacing.md))
 
+                // 142차(사용자 요청): 앱을 특정해서 막는 방식 말고, 기기 전체를 잠그고 허용한 앱만 쓰는 방식.
+                SectionCard("차단 방식", emoji = "🔒") {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        FilterChip(
+                            selected = !allowlistMode,
+                            onClick = { allowlistMode = false },
+                            label = { Text("고른 것만 차단") }
+                        )
+                        FilterChip(
+                            selected = allowlistMode,
+                            onClick = { allowlistMode = true },
+                            label = { Text("전체 잠금") }
+                        )
+                    }
+                    Text(
+                        if (allowlistMode) {
+                            "시간대나 일일 한도에 걸린 동안 기기 전체가 잠기고, 아래에서 고른 앱·사이트만 쓸 수 있습니다. " +
+                                "홈 화면과 전화·시계·키보드는 항상 열립니다. 미니멀 런처를 쓰면 앱 목록에 허용한 앱만 보입니다."
+                        } else {
+                            "아래에서 고른 앱·사이트만 막습니다."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(Spacing.md))
+
                 SectionCard("관리 종류", emoji = "🗂️") {
                     Text(
                         "이 차단 규칙에 적용할 관리 종류를 선택하세요.",
@@ -554,20 +608,23 @@ fun GroupEditScreen(
                         checked = dailyLimitEnabled,
                         onCheckedChange = { dailyLimitEnabled = it }
                     )
-                    Spacer(Modifier.height(Spacing.sm))
-                    ToggleRow(
-                        title = "실행 전 대기",
-                        description = "켜면 실행할 때마다 확인창이 뜨고, 확인할 때마다 대기시간이 늘어납니다.",
-                        checked = confirmEnabled,
-                        onCheckedChange = { confirmEnabled = it }
-                    )
+                    // 전체 잠금 방식엔 실행 전 대기를 쓰지 않는다 — 기기의 모든 앱에 확인창이 뜨게 된다.
+                    if (!allowlistMode) {
+                        Spacer(Modifier.height(Spacing.sm))
+                        ToggleRow(
+                            title = "실행 전 대기",
+                            description = "켜면 실행할 때마다 확인창이 뜨고, 확인할 때마다 대기시간이 늘어납니다.",
+                            checked = confirmEnabled,
+                            onCheckedChange = { confirmEnabled = it }
+                        )
+                    }
                 }
                 Spacer(Modifier.height(Spacing.md))
 
                 SectionCard("뽀모도로 연동", emoji = "🍅") {
                     ToggleRow(
                         title = "뽀모도로 휴식 시 자동 해제",
-                        description = "공부앱(설정 메뉴에서 로그인 필요)의 뽀모도로 휴식 시간 동안 이 차단 규칙의 잠금을 임시로 해제합니다. 실행 전 대기 on/off와 무관하게 작동합니다.",
+                        description = "집중 타이머(설정 메뉴에서 로그인 필요)의 뽀모도로 휴식 시간 동안 이 차단 규칙의 잠금을 임시로 해제합니다. 실행 전 대기 on/off와 무관하게 작동합니다.",
                         checked = pomodoroUnlockEnabled,
                         onCheckedChange = { pomodoroUnlockEnabled = it }
                     )
@@ -677,7 +734,7 @@ fun GroupEditScreen(
                     Spacer(Modifier.height(Spacing.md))
                 }
 
-                if (confirmEnabled) {
+                if (confirmEnabled && !allowlistMode) {
                     SectionCard("실행 전 대기", emoji = "🛑") {
                         Text("적용 시간대 (비워두면 하루 종일 적용, HH:mm)", style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(Spacing.xs))
@@ -830,7 +887,7 @@ fun GroupEditScreen(
                 Spacer(Modifier.height(Spacing.md))
 
                 Text(
-                    "🎯 차단 대상",
+                    if (allowlistMode) "✅ 허용할 앱·사이트" else "🎯 차단 대상",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
@@ -876,6 +933,13 @@ fun GroupEditScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (allowlistMode) {
+                        Text(
+                            "브라우저를 허용했다면 허용할 사이트도 여기에 적어 주세요. 비워 두면 브라우저 안의 모든 사이트가 막힙니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Spacer(Modifier.height(Spacing.sm))
                 }
             }
@@ -937,7 +1001,8 @@ fun GroupEditScreen(
                     pendingCreateCollisionEntry = null
                     scope.launch {
                         val finalName = name.ifBlank { "이름 없는 그룹" }
-                        val importedGroup = AppGroup(name = finalName, syncEnabled = true).applyGroupSettingsJson(entryToApply)
+                        val importedGroup = AppGroup(name = finalName, syncEnabled = true, allowlistMode = allowlistMode)
+                            .applyGroupSettingsJson(entryToApply)
                         val savedId = repository.createGroup(importedGroup)
                         repository.setMembers(savedId, selectedPackages)
                         repository.setGroupSites(savedId, selectedSites)
@@ -980,7 +1045,8 @@ fun GroupEditScreen(
                             forceEnabledUntil = forceEnabledUntilText.trim().ifBlank { null },
                             pomodoroUnlockEnabled = pomodoroUnlockEnabled,
                             scheduleEnabled = scheduleEnabled,
-                            syncEnabled = false
+                            syncEnabled = false,
+                            allowlistMode = allowlistMode
                         )
                         val savedId = repository.createGroup(group)
                         repository.setMembers(savedId, selectedPackages)

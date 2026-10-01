@@ -40,7 +40,10 @@ object SocialGroupSyncClient {
     data class ScheduleStat(
         val dateKey: String, val name: String, val status: String?, val color: String,
         val linkedCalc: String? = null, val progressStep: String? = null,
-        val passIndex: Int = 0, val passTotal: Int = com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT
+        val passIndex: Int = 0, val passTotal: Int = com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT,
+        /** 143차: 그 날 이 일정(같은 이름)에 실제로 잰 집중 시간(초, 모든 기기 합산) — 상세 화면에서 완료 표시 옆에 시간을
+         *  보여준다. 집중 시간 공유(shareStudy)를 켠 사람만 싣고, 없으면(옛 버전·공유 끔) null. */
+        val studySeconds: Int? = null
     )
 
     /** 할당량 계산기 업무 하나 — 라이브 [com.phonelock.app.ui.TimetableScreen]과 같은 요일별 목표량 표를
@@ -84,7 +87,17 @@ object SocialGroupSyncClient {
         val plantTitle: String? = null,
         val plantTier: Int? = null,
         val plantProgress: Float? = null,
-        val plantRebirthCount: Int? = null
+        val plantRebirthCount: Int? = null,
+        /** 143차: 이 사람의 "오늘" 날짜 키(하루 시작 기준 반영, 141차) — 캘린더·일정표의 오늘 표시를 이 사람 기준으로 맞춘다.
+         *  없으면(옛 버전) 보는 사람의 기준을 쓴다. */
+        val studyDayKey: String? = null,
+        /** 143차: 집중 통계(142차의 연속 기록·하루 평균)를 이 사람 기록으로 계산한 값 — 집중 시간 공유(shareStudy)를 켠
+         *  사람만 있다. 옛 버전은 null이라 상세 화면이 예전 근사치(캘린더 완료 기준)로 돌아간다. */
+        val studyStreak: Int? = null,
+        val studyBestStreak: Int? = null,
+        val studyAvgShortSeconds: Int? = null,
+        val studyAvgLongSeconds: Int? = null,
+        val studyActiveAvgSeconds: Int? = null
     )
 
     /** 닉네임 옆에 붙이는 레벨/칭호 배지(122차, 사용자 요청) — [findMemberPlantBadge] 참고. */
@@ -531,7 +544,8 @@ object SocialGroupSyncClient {
         studyingNow: Boolean, studyingTaskName: String,
         hiddenFromUids: Set<String>,
         sharePlant: Boolean = false, plantLevel: Int = 1, plantTitle: String = "", plantTier: Int = 0,
-        plantProgress: Float = 0f, plantRebirthCount: Int = 0
+        plantProgress: Float = 0f, plantRebirthCount: Int = 0,
+        studyDayKey: String = "", studySummary: com.phonelock.shared.study.StudyStats.Summary? = null
     ) {
         if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return
         withContext(Dispatchers.IO) {
@@ -542,6 +556,7 @@ object SocialGroupSyncClient {
                     put("displayName", displayName)
                     if (profileImage.isNotBlank()) put("profileImage", profileImage)
                     put("updatedAt", System.currentTimeMillis())
+                    if (studyDayKey.isNotBlank()) put("studyDayKey", studyDayKey)
                     put("shareRoutines", shareRoutines)
                     put("shareStudy", shareStudy)
                     put("shareStreak", shareStreak)
@@ -566,6 +581,14 @@ object SocialGroupSyncClient {
                         put("studySecondsByDate", JSONObject().apply {
                             studySecondsByDate.forEach { (dateKey, seconds) -> put(dateKey, seconds) }
                         })
+                        // 143차: 집중 통계 탭용 — 평균은 기록이 없으면 키 자체를 생략한다(받는 쪽이 "—"로 표시).
+                        studySummary?.let { summary ->
+                            put("studyStreak", summary.currentStreak)
+                            put("studyBestStreak", summary.bestStreak)
+                            summary.shortAverageSeconds?.let { put("studyAvgShort", it.toInt()) }
+                            summary.longAverageSeconds?.let { put("studyAvgLong", it.toInt()) }
+                            summary.activeDayAverageSeconds?.let { put("studyActiveAvg", it.toInt()) }
+                        }
                     }
                     if (shareStreak) {
                         put("streak", streak)
@@ -583,6 +606,7 @@ object SocialGroupSyncClient {
                                     put("progressStep", s.progressStep ?: JSONObject.NULL)
                                     put("passIndex", s.passIndex)
                                     put("passTotal", s.passTotal)
+                                    s.studySeconds?.let { put("studySeconds", it) }
                                 })
                             }
                         })
@@ -673,7 +697,8 @@ object SocialGroupSyncClient {
                                     if (sc.isNull("progressStep")) null else sc.optString("progressStep", null),
                                     // passIndex/passTotal을 안 올리는 구버전 클라이언트의 데이터는 레거시 3단계 규칙으로 추론.
                                     sc.optInt("passIndex", com.phonelock.shared.calc.PassSchedule.legacyPassIndex(scColor)),
-                                    sc.optInt("passTotal", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT)
+                                    sc.optInt("passTotal", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT),
+                                    if (shareStudy && sc.has("studySeconds")) sc.optInt("studySeconds", 0) else null
                                 )
                             }
                         } else null,
@@ -702,7 +727,13 @@ object SocialGroupSyncClient {
                         plantTitle = if (s.optBoolean("sharePlant", false)) s.optString("plantTitle", "") else null,
                         plantTier = if (s.optBoolean("sharePlant", false)) s.optInt("plantTier", 0) else null,
                         plantProgress = if (s.optBoolean("sharePlant", false)) s.optDouble("plantProgress", 0.0).toFloat() else null,
-                        plantRebirthCount = if (s.optBoolean("sharePlant", false)) s.optInt("plantRebirthCount", 0) else null
+                        plantRebirthCount = if (s.optBoolean("sharePlant", false)) s.optInt("plantRebirthCount", 0) else null,
+                        studyDayKey = s.optString("studyDayKey", "").takeIf { it.isNotBlank() },
+                        studyStreak = if (shareStudy && s.has("studyStreak")) s.optInt("studyStreak", 0) else null,
+                        studyBestStreak = if (shareStudy && s.has("studyBestStreak")) s.optInt("studyBestStreak", 0) else null,
+                        studyAvgShortSeconds = if (shareStudy && s.has("studyAvgShort")) s.optInt("studyAvgShort", 0) else null,
+                        studyAvgLongSeconds = if (shareStudy && s.has("studyAvgLong")) s.optInt("studyAvgLong", 0) else null,
+                        studyActiveAvgSeconds = if (shareStudy && s.has("studyActiveAvg")) s.optInt("studyActiveAvg", 0) else null
                     )
                 }.toList()
             }.getOrDefault(emptyList())

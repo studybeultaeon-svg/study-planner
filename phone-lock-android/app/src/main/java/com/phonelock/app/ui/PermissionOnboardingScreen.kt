@@ -110,7 +110,9 @@ fun PermissionOnboardingScreen(repository: PhoneLockRepository, onDone: () -> Un
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Spacing.lg),
         verticalArrangement = Arrangement.spacedBy(Spacing.md)
     ) {
-        Text("권한 설정 가이드", style = MaterialTheme.typography.headlineSmall)
+        // 144차: 편집형 머리 — 작은 라벨 + 큰 제목.
+        com.phonelock.app.ui.components.Overline("시작하기 · 권한")
+        Text("몇 가지만\n허락해 주세요", style = MaterialTheme.typography.headlineLarge)
         Text(
             "이 앱이 차단/알림 기능을 제대로 쓰려면 몇 가지 권한이 필요합니다. 하나씩 안내해 드릴게요. " +
                 "지금 건너뛰어도 설정 탭에서 언제든 다시 열 수 있습니다.",
@@ -169,7 +171,7 @@ fun PermissionOnboardingScreen(repository: PhoneLockRepository, onDone: () -> Un
         PermissionGuideItem(
             title = "알림 접근 — 잠긴 앱 백그라운드 재생 차단",
             granted = mediaAccessGranted,
-            why = "차단 규칙으로 잠겼거나 실행 확인을 통과하지 않았거나 공부 잠금 중인 앱(Spotify 등)이 화면 뒤에서 음악을 " +
+            why = "차단 규칙으로 잠겼거나 실행 확인을 통과하지 않았거나 집중 잠금 중인 앱(Spotify 등)이 화면 뒤에서 음악을 " +
                 "계속 트는 걸 멈추려면 필요합니다. 어느 앱이 재생 중인지 알아내는 데만 쓰고 알림 내용은 읽거나 저장하지 않습니다. " +
                 "꺼져 있으면 잠긴 앱의 백그라운드 재생을 막지 못하고, 백그라운드 재생 시간도 사용시간에 들어가지 않습니다.",
             whereToSet = "버튼을 누르면 알림 접근(기기 및 앱 알림) 설정 화면이 열립니다. 이 앱을 켜 주세요. 켤 수 없게 " +

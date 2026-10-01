@@ -1,5 +1,12 @@
 package com.phonelock.app.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -153,96 +160,85 @@ fun InterstitialScreen(
         }
     }
 
-    Surface {
+    // 144차 리디자인: 가운데 정렬 안내문 → 편집형 "포스터". 위는 작은 브랜드 줄, 가운데는 왼쪽 정렬 큰 제목과 강조 막대가
+    // 붙은 인용문(이 앱의 목소리), 대기 중엔 남은 초를 아주 크게, 버튼은 엄지가 닿는 아래쪽. 카운트다운·체크포인트 동작은 그대로.
+    Surface(color = MaterialTheme.colorScheme.background) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(Spacing.lg),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            modifier = Modifier.fillMaxSize().padding(horizontal = Spacing.lg).padding(top = Spacing.xl, bottom = Spacing.lg)
         ) {
-            // 문구(quoteForTier)는 랜덤으로 골라지기 때문에 길이가 들쭉날쭉하다 — 긴 문구가 고정
-            // 크기 폰트로 줄바꿈되면(2줄이 되는 것 자체가) 단어가 애매한 지점에서 잘려 보여 오히려
-            // 가독성이 떨어진다. 한 줄에 안 들어가면(didOverflowWidth) 폰트를 조금씩 줄여 다시
-            // 그리는 식으로, 짧은 문구는 원래 크기를 유지하고 긴 문구만 한 줄에 들어갈 때까지
-            // 자동으로 작아지게 한다.
-            val baseTitleStyle = titleStyle ?: MaterialTheme.typography.titleLarge
-            // 태블릿(sw600dp 이상)은 폭이 넉넉해 폰처럼 한 줄로 욱여넣을 필요가 없다 —
-            // 데스크탑(WatchAndWaitScreen)과 동일하게 축소 없이 기본 줄바꿈으로 표시한다.
+            Overline("갓생살기종합세트")
+            Spacer(Modifier.weight(1f))
+            // 문구는 무작위라 길이가 들쭉날쭉하다 — 폰에선 한 줄에 안 들어가면(didOverflowWidth) 글자를 조금씩 줄여
+            // 한 줄로 맞추고(애매한 지점에서 줄이 갈라지지 않게), 태블릿은 폭이 넉넉해 그대로 줄바꿈한다.
+            val baseTitleStyle = titleStyle ?: MaterialTheme.typography.headlineMedium
             val isTablet = LocalConfiguration.current.screenWidthDp >= 600
             if (isTablet) {
-                Text(
-                    title,
-                    style = baseTitleStyle,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Text(title, style = baseTitleStyle, modifier = Modifier.fillMaxWidth())
             } else {
                 var titleScale by remember(title) { mutableFloatStateOf(1f) }
                 Text(
                     title,
                     style = baseTitleStyle.copy(
                         fontSize = baseTitleStyle.fontSize * titleScale,
-                        lineHeight = if (baseTitleStyle.lineHeight.isSpecified) {
-                            baseTitleStyle.lineHeight * titleScale
-                        } else {
-                            baseTitleStyle.lineHeight
-                        }
+                        lineHeight = if (baseTitleStyle.lineHeight.isSpecified) baseTitleStyle.lineHeight * titleScale else baseTitleStyle.lineHeight
                     ),
-                    textAlign = TextAlign.Center,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Clip,
                     onTextLayout = { result ->
-                        if (result.didOverflowWidth && titleScale > 0.55f) {
-                            titleScale -= 0.05f
-                        }
+                        if (result.didOverflowWidth && titleScale > 0.55f) titleScale -= 0.05f
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
             if (message != null) {
-                Spacer(Modifier.height(Spacing.md))
-                Text(message, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(Spacing.sm))
+                Text(message, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
             }
             if (quote != null) {
-                Spacer(Modifier.height(Spacing.md))
-                Text(quote, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(Spacing.lg))
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                    Box(Modifier.width(4.dp).fillMaxHeight().background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp)))
+                    Spacer(Modifier.width(Spacing.md))
+                    Text(quote, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.weight(1f))
+                }
+            }
+            if (countdownSeconds != null && started) {
+                // 대기 중: 남은 초를 크게 + 지나간 만큼 막대. 체크포인트에서 멈추면 숫자는 그대로 두고 아래에 이유를 쓴다.
+                Spacer(Modifier.height(Spacing.xl))
+                BigNumber(
+                    "$remainingSeconds",
+                    unit = "초",
+                    style = MaterialTheme.typography.displayLarge.copy(fontSize = 88.sp, lineHeight = 90.sp, letterSpacing = (-3).sp),
+                    unitStyle = MaterialTheme.typography.headlineSmall,
+                    color = if (paused) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                ProgressLine(
+                    if (countdownSeconds > 0) 1f - remainingSeconds / countdownSeconds.toFloat() else 1f,
+                    color = if (paused) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+                )
             }
             if (countdownSeconds != null && started && paused) {
-                Spacer(Modifier.height(Spacing.sm))
-                Text(
-                    "이게 의무입니까?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                // 체크포인트에서 카운트다운이 조용히 멈추기만 해서, 문구만 보고는 "왜 숫자가 안 줄지"
-                // 알 수 없었다 — 다시 눌러야 이어진다는 사실을 명시한다(문구 자체는 의도된 표현이라 유지).
+                Spacer(Modifier.height(Spacing.md))
+                Text("이게 의무입니까?", style = MaterialTheme.typography.titleMedium, modifier = Modifier.fillMaxWidth())
+                // 체크포인트에서 카운트다운이 조용히 멈추기만 해서, 문구만 보고는 "왜 숫자가 안 줄지" 알 수 없었다 —
+                // 다시 눌러야 이어진다는 사실을 명시한다(문구 자체는 의도된 표현이라 유지).
                 Text(
                     "아래 \"$primaryLabel\"을 다시 눌러야 이어집니다.",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
             } else if (countdownSeconds != null && started && !isResumed) {
-                Spacer(Modifier.height(Spacing.sm))
-                Text(
-                    "화면을 벗어나서 다시 눌러야 합니다.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Spacer(Modifier.height(Spacing.md))
+                Text("화면을 벗어나서 다시 눌러야 합니다.", style = MaterialTheme.typography.titleMedium, modifier = Modifier.fillMaxWidth())
             }
-            Spacer(Modifier.height(Spacing.xl))
-            // primary(진행) 버튼은 누르는 순간 대기시간이 시작되고, 다 지나면 자동으로 onPrimary가
-            // 호출된다 — 시각적 좌우 순서(reverseButtonOrder)나 채워짐/테두리 스타일(primaryFilled/
-            // secondaryFilled)을 바꿔도 "진행" 액션에 걸린 대기시간 게이트는 항상 primary 쪽에 그대로 유지된다.
-            // 이 화면의 두 버튼은 앱에서 가장 자주, 그리고 대개 급한 마음으로 누르는 버튼이다 —
-            // Material3 기본 높이(40dp)는 권장 최소 터치 영역(48dp)보다 작아 오조작이 나기 쉬우므로
-            // 높이를 48dp로 올리고, 좌우 폭도 균등(weight)하게 줘서 조준하기 쉽게 만든다.
-            val buttonModifier = Modifier.defaultMinSize(minHeight = 48.dp)
+            Spacer(Modifier.weight(1f))
+            // primary(진행) 버튼은 누르는 순간 대기시간이 시작되고, 다 지나면 자동으로 onPrimary가 호출된다 — 좌우 순서
+            // (reverseButtonOrder)나 채워짐/테두리 스타일을 바꿔도 "진행" 액션에 걸린 대기시간 게이트는 항상 primary 쪽에 있다.
+            // 앱에서 가장 자주, 대개 급한 마음으로 누르는 버튼이라 56dp 높이 + 균등 폭으로 조준하기 쉽게 한다.
+            val buttonModifier = Modifier.defaultMinSize(minHeight = 56.dp)
             val secondaryButton: (@Composable RowScope.() -> Unit)? = if (secondaryLabel != null && onSecondary != null) {
                 {
                     if (secondaryFilled) {
@@ -254,9 +250,11 @@ fun InterstitialScreen(
                             } else {
                                 ButtonDefaults.buttonColors()
                             }
-                        ) { Text(secondaryLabel) }
+                        ) { Text(secondaryLabel, style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false) }
                     } else {
-                        OutlinedButton(onClick = onSecondary, modifier = buttonModifier.weight(1f)) { Text(secondaryLabel) }
+                        OutlinedButton(onClick = onSecondary, modifier = buttonModifier.weight(1f)) {
+                            Text(secondaryLabel, style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false)
+                        }
                     }
                 }
             } else null
@@ -271,15 +269,12 @@ fun InterstitialScreen(
             }
             val primaryLocked = countdownSeconds != null && started && !paused
             val primaryEnabled = countdownSeconds == null || !primaryLocked
-            val primaryText = if (countdownSeconds != null && started && !paused && remainingSeconds > 0) {
-                "$primaryLabel (${remainingSeconds}초)"
-            } else {
-                primaryLabel
-            }
+            // 남은 초는 위의 큰 숫자가 보여주므로 버튼 글자는 짧게 그대로 둔다(좁은 폰에서 두 줄로 깨지지 않게).
+            val primaryText = primaryLabel
             val primaryButton: @Composable RowScope.() -> Unit = {
                 if (primaryFilled) {
                     Button(onClick = primaryOnClick, enabled = primaryEnabled, modifier = buttonModifier.weight(1f)) {
-                        Text(primaryText)
+                        Text(primaryText, style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false)
                     }
                 } else {
                     OutlinedButton(
@@ -292,11 +287,11 @@ fun InterstitialScreen(
                             ButtonDefaults.outlinedButtonColors()
                         }
                     ) {
-                        Text(primaryText)
+                        Text(primaryText, style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false)
                     }
                 }
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                 if (reverseButtonOrder) {
                     primaryButton()
                     secondaryButton?.invoke(this)

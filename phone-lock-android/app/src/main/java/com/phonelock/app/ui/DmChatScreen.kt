@@ -50,7 +50,8 @@ fun DmChatScreen(repository: PhoneLockRepository, chatId: String, peerUid: Strin
                     maxLines = 1
                 )
             },
-            navigationIcon = { IconButton(onClick = onBack) { Text("<") } }
+            navigationIcon = { com.phonelock.app.ui.components.LedgerBackButton(onBack) },
+            colors = com.phonelock.app.ui.components.ledgerTopBarColors()
         )
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {

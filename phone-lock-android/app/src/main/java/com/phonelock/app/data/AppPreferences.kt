@@ -354,9 +354,37 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("minimal_mode", false)
         set(value) = prefs.edit().putBoolean("minimal_mode", value).apply()
 
+    /** 성능 모드 추천(144차)을 "나중에"로 미룬 시각까지(ms) — 이 전에는 다시 묻지 않는다. */
+    var performanceSuggestSnoozedUntil: Long
+        get() = prefs.getLong("performance_suggest_snoozed_until", 0L)
+        set(value) = prefs.edit().putLong("performance_suggest_snoozed_until", value).apply()
+
+    /** 성능 모드 추천(144차)에서 "다시 묻지 않기"를 골랐는지. */
+    var performanceSuggestNever: Boolean
+        get() = prefs.getBoolean("performance_suggest_never", false)
+        set(value) = prefs.edit().putBoolean("performance_suggest_never", value).apply()
+
     /** 미니멀 모드를 반영한 실제 표시용 테마 — 화면/위젯/오버레이는 [themeMode] 대신 항상 이 값을 쓴다. */
     val effectiveThemeMode: String
         get() = if (minimalMode) com.phonelock.app.ui.theme.ThemeMode.MINIMAL else themeMode
+
+    /** 관리 > 타이머("이거까지만 할게요!", 142차)의 진행 중인 약속. 없으면 null. 143차부터 다른 기기와 동기화한다
+     *  ([com.phonelock.shared.lock.LockTimerSync] — 앱·사이트 목록은 기기마다 따로).
+     *  접근성 서비스가 2초마다 읽으므로 저장 형식은 파싱이 가벼운 문자열이다([com.phonelock.shared.lock.LockTimer.encode]). */
+    var lockTimer: com.phonelock.shared.lock.LockTimer?
+        get() = com.phonelock.shared.lock.LockTimer.decode(prefs.getString("lock_timer", null))
+        set(value) = prefs.edit().putString("lock_timer", value?.encode()).apply()
+
+    /** 타이머 화면에 마지막으로 넣었던 값(시간·범위·목록·난이도) — 다음에 열면 그대로 채워 준다. */
+    var lockTimerPreset: com.phonelock.shared.lock.LockTimerPreset
+        get() = com.phonelock.shared.lock.LockTimerPreset.decode(prefs.getString("lock_timer_preset", null))
+        set(value) = prefs.edit().putString("lock_timer_preset", value.encode()).apply()
+
+    /** 이 기기에서 해제 절차로 푼 마지막 타이머 약속의 시작 시각(143차) — 푼 사실을 아직 못 올렸을 때 원격에 남은
+     *  같은 약속을 다시 받아오지 않고 해제를 다시 올리기 위해 기억한다. */
+    var lockTimerClosedStartedAt: Long
+        get() = prefs.getLong("lock_timer_closed_started_at", 0L)
+        set(value) = prefs.edit().putLong("lock_timer_closed_started_at", value).apply()
 
     /** 그룹 자동 재활성화를 마지막으로 적용한 날짜(effectiveDate 기준) — 데스크탑판 lastGroupAutoResetDate와 동일 역할. */
     var lastGroupAutoResetDate: String?
@@ -368,6 +396,15 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean("routine_streak_notify_enabled", false)
         set(value) = prefs.edit().putBoolean("routine_streak_notify_enabled", value).apply()
 
+    /** 루틴 연속 기록 방지권(142차) — 일주일(월~일)에 이 일수만큼은 루틴을 100% 채우지 못해도 끊기지 않는다.
+     *  루틴별이 아니라 "하루" 단위이며, 기기 간 설정 동기화 대상이다(`PhoneLockRepository.Settings.kt`). */
+    var routineStreakFreezePerWeek: Int
+        get() = com.phonelock.shared.routine.RoutineStreak.clampFreeze(
+            prefs.getInt("routine_streak_freeze_per_week", com.phonelock.shared.routine.RoutineStreak.DEFAULT_FREEZE_DAYS_PER_WEEK)
+        )
+        set(value) = prefs.edit().putInt(
+            "routine_streak_freeze_per_week", com.phonelock.shared.routine.RoutineStreak.clampFreeze(value)
+        ).apply()
     // ---- 공부 알림(122차, 사용자 요청) ----
     // 캐린더/계산기/일정표 데이터를 보고 "필요할 때만" 보내는 알림의 사용자 설정.
     // 판정 규칙 자체는 [com.phonelock.shared.study.StudyAlertEngine], 실제 검사/발송은

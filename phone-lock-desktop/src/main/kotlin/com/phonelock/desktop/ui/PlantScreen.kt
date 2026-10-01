@@ -1,6 +1,7 @@
 package com.phonelock.desktop.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -93,7 +94,16 @@ import com.phonelock.desktop.data.activeGrowthBoost
 import com.phonelock.desktop.data.purchasePotion
 import com.phonelock.desktop.monitor.GrowthSoundPlayer
 import com.phonelock.desktop.routine.RoutineEngine
+import com.phonelock.desktop.ui.components.BigNumber
+import com.phonelock.desktop.ui.components.Hairline
+import com.phonelock.desktop.ui.components.LedgerSection
+import com.phonelock.desktop.ui.components.Overline
+import com.phonelock.desktop.ui.components.ProgressLine
+import com.phonelock.desktop.ui.components.StatRow
 import com.phonelock.desktop.ui.theme.Spacing
+import com.phonelock.desktop.ui.theme.pressScale
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Refresh
 import com.phonelock.shared.GrowthBoost
 import com.phonelock.shared.GrowthSystem
 import kotlinx.coroutines.Dispatchers
@@ -153,7 +163,7 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
         val completedByRoutine = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
         val scheduledToday = routines.filter { RoutineEngine.isScheduledOn(it, today) }
         val doneToday = scheduledToday.count { dateKey in (completedByRoutine[it.id] ?: emptySet()) }
-        val streak = RoutineEngine.currentStreak(routines, completedByRoutine, today)
+        val streak = RoutineEngine.currentStreak(routines, completedByRoutine, today, repository.routineStreakFreezePerWeek)
         Triple(streak, doneToday, scheduledToday.size)
     }
     // 118차: 최근 7일(오늘 포함) 일별 루틴 완료율 미니 그래프용 — -1은 그날 예정된 루틴이 없었다는 뜻(회색 표시).
@@ -281,10 +291,13 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
     //  - 중간 폭(600dp+): 씬 | HUD 위아래 2단 — 씬이 자기 영역 안에서 다시 중앙 정렬되므로 화분이
     //    HUD 위로 올라오고, 소품도 씬 영역 안에 전부 들어온다.
     //  - 좁은 창: 기존처럼 씬을 전면에 깔고 HUD를 아래쪽에 겹쳐 띄우되, 화분/소품은 HUD 위 영역에 그린다(contentBottomInset).
-    val growthPanel: @Composable (Modifier) -> Unit = { m ->
+    // 144차 리디자인(안드로이드판과 같은 언어): 레벨 숫자가 "주인공" — 넓은 창은 씬 | 오른쪽 패널(레벨 히어로 + 성장 + 오늘),
+    // 좁은 창은 하늘 위 왼쪽에 레벨 히어로(바탕색 스크림 위) + 아래 시트. 미니멀(성능) 모드는 씬 없이 글자로 된 홈.
+    val levelHero: @Composable (Modifier, androidx.compose.ui.text.TextStyle) -> Unit = { m, style ->
+        HomeLevelHero(level = displayedLevel, stage = stage, isMaxLevel = isMaxLevel, rebirthCount = rebirthCount, numberStyle = style, modifier = m)
+    }
+    val growthPanel: @Composable (Modifier, Boolean) -> Unit = { m, detailed ->
         HomeGrowthPanel(
-            displayedLevel = displayedLevel,
-            stage = stage,
             levelProgress = levelProgress,
             isMaxLevel = isMaxLevel,
             rebirthCount = rebirthCount,
@@ -300,6 +313,7 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
             onApplyExp = { applyPendingExp() },
             onRebirth = { showRebirthDialog = true },
             onOpenShop = { showShop = true },
+            detailed = detailed,
             modifier = m
         )
     }
@@ -311,7 +325,6 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
             weekCompletionRates = weekCompletionRates,
             nextCalendarEvent = nextCalendarEvent,
             studySecondsToday = studySecondsToday,
-            onOpenShop = { showShop = true },
             modifier = m
         )
     }
@@ -321,13 +334,31 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
             HomeSettingsButton(onOpenSettings)
         }
     }
+    val performance = com.phonelock.desktop.ui.theme.LocalPerformanceMode.current
+    val heroStyle = MaterialTheme.typography.displayLarge.copy(fontSize = 84.sp, lineHeight = 86.sp, letterSpacing = (-3).sp)
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Row/Column 스코프 안에서는 BoxWithConstraintsScope의 maxWidth가 가려지므로 여기서 받아둔다.
         val availableWidth = maxWidth
         val wideLayout = availableWidth >= 840.dp
-        val tabletLayout = availableWidth >= 600.dp
         when {
+            performance -> Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                Column(
+                    Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())
+                        .padding(horizontal = Spacing.xl, vertical = Spacing.lg)
+                ) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { controls() }
+                    levelHero(Modifier.fillMaxWidth(), heroStyle.copy(fontSize = 120.sp, lineHeight = 120.sp, letterSpacing = (-5).sp))
+                    Spacer(Modifier.height(Spacing.xl))
+                    growthPanel(Modifier.widthIn(max = 560.dp), true)
+                }
+                if (wideLayout) {
+                    androidx.compose.material3.VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Column(Modifier.width(360.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(Spacing.lg)) {
+                        todayCard(Modifier.fillMaxWidth())
+                    }
+                }
+            }
             wideLayout -> Row(Modifier.fillMaxSize()) {
                 HomeSceneArea(
                     stageIndex = stageIndex, stage = stage, rebirthCount = rebirthCount,
@@ -335,55 +366,41 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
                     todayCard = null, topEndControls = null,
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )
-                // 오른쪽 패널 — 성장 HUD 아래에 "오늘" 카드까지 모아서 씬에는 식물/꾸미기만 온전히 보이게 하고,
-                // 패널 세로 공간도 비지 않게 채운다. 배경은 씬과 구분되는 옅은 테마색 그라디언트.
+                androidx.compose.material3.VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Column(
-                    Modifier.width((availableWidth * 0.3f).coerceIn(320.dp, 420.dp)).fillMaxHeight()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f), MaterialTheme.colorScheme.background)
-                            )
-                        )
+                    Modifier.width((availableWidth * 0.32f).coerceIn(340.dp, 440.dp)).fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.background)
                         .verticalScroll(rememberScrollState())
-                        .padding(Spacing.md)
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.md)
                 ) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { controls() }
-                    Spacer(Modifier.height(Spacing.sm))
-                    HomeCard(Modifier.fillMaxWidth()) { growthPanel(Modifier.padding(Spacing.md)) }
-                    Spacer(Modifier.height(Spacing.md))
+                    levelHero(Modifier.fillMaxWidth(), heroStyle)
+                    Spacer(Modifier.height(Spacing.lg))
+                    growthPanel(Modifier.fillMaxWidth(), true)
+                    Spacer(Modifier.height(Spacing.xl))
                     todayCard(Modifier.fillMaxWidth())
                 }
             }
-            tabletLayout -> Column(Modifier.fillMaxSize()) {
-                HomeSceneArea(
-                    stageIndex = stageIndex, stage = stage, rebirthCount = rebirthCount,
-                    decorationIds = equippedDecorations, levelUpFlash = levelUpFlash,
-                    todayCard = { todayCard(Modifier) }, topEndControls = controls,
-                    modifier = Modifier.weight(1f).fillMaxWidth()
-                )
-                HomeCard(
-                    Modifier.fillMaxWidth().padding(horizontal = Spacing.lg).padding(bottom = Spacing.lg)
-                        .heightIn(max = 340.dp).verticalScroll(rememberScrollState())
-                ) { growthPanel(Modifier.padding(Spacing.md)) }
-            }
             else -> {
-                // 폰: HUD가 씬 아래쪽을 덮는 만큼(카드 높이 + 아래 여백) 씬에 알려줘서 화분/소품이 그 위에 그려지게
-                // 한다. 첫 측정 전엔 평소 HUD 높이 근사치를 써서 진입 직후 씬이 크게 튀지 않게 한다.
+                // 좁은 창: 씬을 전면에 깔고 아래쪽에 시트를 붙인다. 시트가 덮는 만큼 씬에 알려줘서 화분/소품이 그 위에 그려지게 한다.
                 var hudHeightPx by remember { mutableIntStateOf(0) }
-                val hudHeight = if (hudHeightPx > 0) with(LocalDensity.current) { hudHeightPx.toDp() } else 280.dp
+                val hudHeight = if (hudHeightPx > 0) with(LocalDensity.current) { hudHeightPx.toDp() } else 250.dp
                 HomeSceneArea(
                     stageIndex = stageIndex, stage = stage, rebirthCount = rebirthCount,
                     decorationIds = equippedDecorations, levelUpFlash = levelUpFlash,
-                    todayCard = { todayCard(Modifier) }, topEndControls = controls,
+                    todayCard = null, topEndControls = controls,
                     modifier = Modifier.fillMaxSize(),
-                    contentBottomInset = hudHeight + Spacing.lg + Spacing.sm
+                    contentBottomInset = hudHeight + Spacing.md
                 ) {
-                    HomeCard(
-                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(Spacing.lg)
-                            .heightIn(max = 360.dp)
+                    HomeSkyScrim(Modifier.align(Alignment.TopStart).fillMaxWidth().height(220.dp))
+                    levelHero(Modifier.align(Alignment.TopStart).padding(start = Spacing.lg, top = Spacing.md, end = 120.dp), heroStyle.copy(fontSize = 76.sp, lineHeight = 78.sp))
+                    HomeSheet(
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                            .heightIn(max = 340.dp)
                             .onSizeChanged { hudHeightPx = it.height }
-                            .verticalScroll(rememberScrollState())
-                    ) { growthPanel(Modifier.padding(Spacing.md)) }
+                    ) {
+                        growthPanel(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = Spacing.lg, vertical = Spacing.md), false)
+                    }
                 }
             }
         }
@@ -425,7 +442,7 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
                 val extending = activeBoost?.potionId == potion.id
                 if (repository.purchasePotion(potion.id)) {
                     toastMessage = if (extending) "${potion.emoji} ${potion.label} 효과 시간이 ${GrowthBoost.durationLabel(potion.durationMinutes)} 늘었어요"
-                    else "${potion.emoji} ${potion.label} 효과 시작 — 지금부터 공부 경험치 ${GrowthBoost.multiplierLabel(potion.multiplier)}"
+                    else "${potion.emoji} ${potion.label} 효과 시작 — 지금부터 집중 경험치 ${GrowthBoost.multiplierLabel(potion.multiplier)}"
                     refresh()
                 }
             },
@@ -500,22 +517,28 @@ private data class GrowthAnim(
 )
 
 /**
- * 홈 화면 카드 공통 외형(122차) — "오늘" 요약 카드와 성장 HUD가 같은 모서리 반경/배경 불투명도/테두리를
- * 쓰게 해서, 캔버스 위에 떠 있는 카드들이 제각각이 아니라 한 화면의 일부로 보이게 한다. 꾸미기 개편에서
- * 쓴 것과 같은 톤(은은한 테두리 + 거의 불투명한 표면)을 홈 전체로 확장한 것.
+ * 하늘 위 레벨 히어로를 읽히게 하는 스크림(144차) — 테마 바탕색이 위에서 아래로 옅어진다. 등급마다 하늘색이 달라도
+ * (낮 하늘·우주·불길) 글자 뒤가 항상 바탕색이라 대비가 일정하다. 성능 모드에선 씬 자체를 안 그리므로 쓰이지 않는다.
  */
 @Composable
-private fun HomeCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+private fun HomeSkyScrim(modifier: Modifier = Modifier) {
+    val bg = MaterialTheme.colorScheme.background
+    Box(modifier.background(Brush.verticalGradient(listOf(bg.copy(alpha = 0.92f), bg.copy(alpha = 0.55f), bg.copy(alpha = 0f)))))
+}
+
+/** 폰 홈 아래쪽 시트 — 떠 있는 둥근 카드 대신 화면 아래 가장자리에 붙은 판(위쪽 모서리만 둥글게). */
+@Composable
+private fun HomeSheet(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val performance = com.phonelock.desktop.ui.theme.LocalPerformanceMode.current
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.93f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = if (performance) 1f else 0.97f),
         content = content
     )
 }
 
-/** 홈 화면 상단에 떠 있는 원형 아이콘 버튼(설정/새로고침 공통 외형). */
+/** 홈 화면 상단에 떠 있는 원형 아이콘 버튼(설정 버튼 외형). */
 @Composable
 private fun HomeIconButton(
     onClick: () -> Unit,
@@ -523,11 +546,12 @@ private fun HomeIconButton(
     enabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Surface(
-        modifier = modifier.size(44.dp).clickable(enabled = enabled, onClick = onClick),
+        modifier = modifier.size(44.dp).pressScale(interaction)
+            .clickable(interaction, indication = androidx.compose.foundation.LocalIndication.current, enabled = enabled, onClick = onClick),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
     ) {
         Box(contentAlignment = Alignment.Center) { content() }
     }
@@ -536,177 +560,29 @@ private fun HomeIconButton(
 /** 홈 화면 설정 진입점 — 118차부터 설정은 탭이 아니라 이 버튼을 통해서만 들어간다. */
 @Composable
 private fun HomeSettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    HomeIconButton(onClick, modifier) { Text("⚙️", fontSize = 20.sp) }
+    HomeIconButton(onClick, modifier) {
+        androidx.compose.material3.Icon(
+            androidx.compose.material.icons.Icons.Outlined.Settings,
+            contentDescription = "설정",
+            tint = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.size(22.dp)
+        )
+    }
 }
 
-/** 홈 화면 새로고침 버튼(122차, 사용자 요청) — 진행 중에는 버튼 자리에 그대로 스피너를 띄워서
- *  "지금 다시 불러오는 중"이라는 게 화면 어디서든 보이게 한다. */
+/** 홈 화면 새로고침 버튼(122차, 사용자 요청) — 진행 중에는 버튼 자리에 스피너. 데스크탑은 당겨서 새로고침이 없어 버튼으로. */
 @Composable
 private fun HomeRefreshButton(refreshing: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     HomeIconButton(onClick, modifier, enabled = !refreshing) {
         if (refreshing) {
             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
         } else {
-            Text("🔄", fontSize = 18.sp)
-        }
-    }
-}
-
-/** 홈 카드 안에서 쓰는 작은 알약 버튼(꾸미기 진입) — Material 기본 Button보다 작고 카드 톤에 맞는다. */
-@Composable
-private fun HomePillButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-        )
-    }
-}
-
-/** "오늘" 카드의 보조 정보 한 줄(아이콘 + 한 줄 텍스트) — 아이콘 폭이 같아 줄끼리 세로로 가지런히 선다. */
-@Composable
-private fun HomeTodayLine(emoji: String, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(emoji, fontSize = 11.sp, modifier = Modifier.width(16.dp))
-        Text(
-            text,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-/**
- * 홈 좌상단 "오늘" 카드 — 116차(스트릭/오늘 루틴)·118차(다음 일정/주간 스파크라인)에 하나씩 덧붙던
- * 정보를 122차에 하나의 정보 계층으로 정리했다: 머리말("오늘" + 상점 진입) → 대표 수치(연속 기록) →
- * 보조 정보 줄 → 최근 7일 미니 그래프. 폭은 놓이는 자리(씬 위 오버레이/사이드 패널)에서 정한다.
- * 138차: 머리말 버튼을 "🎨 꾸미기"에서 "🛒 상점"으로 바꾸고, 보조 줄에 오늘 공부 시간을 더했다.
- */
-@Composable
-private fun HomeTodayCard(
-    routineStreak: Int,
-    routineDoneToday: Int,
-    routineScheduledToday: Int,
-    weekCompletionRates: List<Int>,
-    nextCalendarEvent: Pair<String, String>?,
-    studySecondsToday: Int,
-    onOpenShop: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    HomeCard(modifier) {
-        Column(Modifier.padding(Spacing.sm)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "오늘",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.weight(1f))
-                HomePillButton("🛒 상점", onOpenShop)
-            }
-            Spacer(Modifier.height(Spacing.xs))
-            Text(
-                if (routineStreak > 0) "🔥 ${routineStreak}일 연속" else "오늘부터 시작해봐요",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = if (routineStreak > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            androidx.compose.material3.Icon(
+                androidx.compose.material.icons.Icons.Outlined.Refresh,
+                contentDescription = "새로고침",
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(22.dp)
             )
-            if (routineScheduledToday > 0) {
-                Spacer(Modifier.height(3.dp))
-                HomeTodayLine("✅", "루틴 $routineDoneToday/$routineScheduledToday")
-            }
-            Spacer(Modifier.height(3.dp))
-            HomeTodayLine("⏱️", "공부 ${GrowthBoost.durationLabel(studySecondsToday / 60)}")
-            nextCalendarEvent?.let { (title, ddayLabel) ->
-                Spacer(Modifier.height(3.dp))
-                HomeTodayLine("📅", "$title ($ddayLabel)")
-            }
-            Spacer(Modifier.height(Spacing.sm))
-            Text(
-                "최근 7일",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(3.dp))
-            // 118차 미니 스파크라인 — 122차에 막대를 같은 높이의 트랙 위에 세워 기준선을 맞췄다(전엔
-            // 막대마다 전체 높이가 달라 바닥선이 흔들려 보였다). -1은 그날 예정된 루틴이 없었다는 뜻.
-            Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
-                weekCompletionRates.forEach { pct ->
-                    val barColor = when {
-                        pct < 0 -> MaterialTheme.colorScheme.outlineVariant
-                        pct == 100 -> Color(0xFF34D399)
-                        pct > 0 -> Color(0xFFFBBF24)
-                        else -> Color(0xFFF87171)
-                    }
-                    val heightFrac = if (pct < 0) 0.15f else (pct / 100f).coerceAtLeast(0.15f)
-                    Box(
-                        Modifier.width(8.dp).height(18.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), RoundedCornerShape(2.dp)),
-                        contentAlignment = Alignment.BottomCenter
-                    ) {
-                        Box(Modifier.fillMaxWidth().height((18 * heightFrac).dp).background(barColor, RoundedCornerShape(2.dp)))
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 성장 HUD의 수치 타일(포인트/대기 경험치/환생) — 셋이 같은 폭·같은 정렬이라 한눈에 비교된다. */
-@Composable
-private fun HomeStatTile(
-    emoji: String,
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    caption: String? = null,
-    highlight: Boolean = false
-) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        color = if (highlight) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-    ) {
-        Column(Modifier.padding(horizontal = Spacing.sm, vertical = 6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(emoji, fontSize = 10.sp)
-                Spacer(Modifier.width(3.dp))
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Text(
-                value,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = if (highlight) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            caption?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
         }
     }
 }
@@ -731,14 +607,56 @@ private fun tierLabel(tier: Int): String = when (tier) {
 }
 
 /**
- * 레벨/경험치/포인트 HUD 본문(108차부터의 내용·동작은 그대로, 122차에 정보 계층/여백/타이포만 정리).
- * 레벨 배지 → 칭호·등급 → 경험치바 → 수치 타일 3개 → 액션 버튼 순서이고, 폰에서는 화면 하단 카드,
- * 태블릿/넓은 화면에서는 아래쪽 또는 오른쪽 패널 안에 **같은 내용 그대로** 들어간다.
+ * 레벨 히어로(144차) — 작은 라벨 + 아주 큰 레벨 숫자 + 칭호 + 등급. 경험치를 적용해 레벨이 오르면 숫자가 아래에서
+ * 위로 넘어가듯 바뀐다(성능 모드에선 바로 바뀐다). 칭호가 길면 두 줄까지 감싼다(잘라 숨기지 않는다).
+ */
+@Composable
+private fun HomeLevelHero(
+    level: Int,
+    stage: GrowthSystem.Stage,
+    isMaxLevel: Boolean,
+    rebirthCount: Int,
+    numberStyle: androidx.compose.ui.text.TextStyle,
+    modifier: Modifier = Modifier
+) {
+    val motion = com.phonelock.desktop.ui.theme.LocalAppMotion.current
+    Column(modifier) {
+        Overline(if (rebirthCount > 0) "레벨 · 환생 ${rebirthCount}회" else "레벨")
+        androidx.compose.animation.AnimatedContent(
+            targetState = level,
+            transitionSpec = {
+                if (motion.reduced || targetState < initialState) {
+                    androidx.compose.animation.fadeIn(motion.quick()) togetherWith androidx.compose.animation.fadeOut(motion.quick())
+                } else {
+                    (androidx.compose.animation.slideInVertically(motion.standard()) { it / 2 } + androidx.compose.animation.fadeIn(motion.standard())) togetherWith
+                        (androidx.compose.animation.slideOutVertically(motion.exit()) { -it / 2 } + androidx.compose.animation.fadeOut(motion.exit()))
+                }
+            },
+            label = "levelNumber"
+        ) { lvl ->
+            Text("$lvl", style = numberStyle, color = MaterialTheme.colorScheme.onBackground, maxLines = 1, softWrap = false)
+        }
+        Text(
+            stage.title,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2
+        )
+        Text(
+            if (isMaxLevel) "${tierLabel(stage.tier)} · 이번 시즌 최고" else tierLabel(stage.tier),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+/**
+ * 성장 패널(108차부터의 값·동작은 그대로) — 144차: 진행 막대 하나 + 수치 세 칸(포인트·대기 경험치·환생) + 물약 줄 +
+ * 행동 버튼(경험치 적용 / 상점 / 환생). 레벨 숫자는 [HomeLevelHero]가 따로 크게 보여준다. [detailed](태블릿·미니멀)면
+ * 수치 칸에 설명 한 줄씩과 물약 안내를 더한다.
  */
 @Composable
 private fun HomeGrowthPanel(
-    displayedLevel: Int,
-    stage: GrowthSystem.Stage,
     levelProgress: Float,
     isMaxLevel: Boolean,
     rebirthCount: Int,
@@ -754,167 +672,216 @@ private fun HomeGrowthPanel(
     onApplyExp: () -> Unit,
     onRebirth: () -> Unit,
     onOpenShop: () -> Unit,
+    detailed: Boolean,
     modifier: Modifier = Modifier
 ) {
-    // 경험치 적용 애니메이션이 한 스텝씩 값을 밀어넣을 때 바가 계단처럼 튀지 않도록 살짝 따라가게 한다.
+    // 경험치 적용 애니메이션이 한 스텝씩 값을 밀어넣을 때 막대가 계단처럼 튀지 않도록 살짝 따라가게 한다.
     val animatedProgress by animateFloatAsState(targetValue = levelProgress, animationSpec = tween(180), label = "levelProgress")
     Column(modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primary) {
-                Column(
-                    Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        "Lv",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
-                    )
-                    Text(
-                        "$displayedLevel",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-            }
-            Spacer(Modifier.width(Spacing.sm))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    stage.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    if (isMaxLevel) "${tierLabel(stage.tier)} · 이번 시즌 최고" else tierLabel(stage.tier),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
-            }
-        }
-        Spacer(Modifier.height(Spacing.sm))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("경험치", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            Overline(if (isMaxLevel) "이번 시즌 최대 레벨" else "다음 레벨까지", Modifier.weight(1f))
             Text(
                 if (isMaxLevel) "MAX" else "${Math.round(animatedProgress * 100)}%",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                softWrap = false
             )
         }
-        Spacer(Modifier.height(3.dp))
-        LinearProgressIndicator(
-            progress = { animatedProgress },
-            modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
-            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-        )
-        if (!isMaxLevel) {
-            Spacer(Modifier.height(3.dp))
-            Text(
-                "다음 레벨까지 ${Math.round((1f - animatedProgress) * 100)}%",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Spacer(Modifier.height(6.dp))
+        ProgressLine(animatedProgress, thickness = 6.dp)
+        Spacer(Modifier.height(Spacing.md))
+        // 환생 칸은 "지금 무엇을 알려줘야 하는가"만 — 가능하면 그 사실, 아니면 다음 환생 레벨, 환생했다면 EXP 배율까지.
+        val rebirthValue = when {
+            canRebirth -> "가능"
+            isMaxLevel -> "${rebirthCount}회"
+            else -> "Lv.$nextRebirthLevel"
         }
-        Spacer(Modifier.height(Spacing.sm))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-            HomeStatTile("🪙", "포인트", "${balance}P", Modifier.weight(1f))
-            HomeStatTile(
-                "✨", "대기 경험치",
-                if (growthExpPending > 0.0) "+${GrowthSystem.formatExp(growthExpPending)}" else "없음",
+        StatRow {
+            HomeStat("포인트", "${balance}P", Modifier.weight(1f))
+            HomeStat(
+                "대기 경험치",
+                if (growthExpPending > 0.0) "+${GrowthSystem.formatExp(growthExpPending)}" else "0",
                 Modifier.weight(1f),
-                caption = if (rebirthCount > 0) "EXP ×${formatMultiplier(multiplier)}" else null,
-                highlight = growthExpPending > 0.0
+                highlight = growthExpPending > 0.0,
+                caption = if (detailed && rebirthCount > 0) "EXP ×${formatMultiplier(multiplier)}" else null
             )
-            HomeStatTile(
-                "🔁", "환생", "${rebirthCount}회",
+            HomeStat(
+                if (canRebirth) "환생" else "다음 환생",
+                rebirthValue,
                 Modifier.weight(1f),
-                caption = when {
-                    canRebirth -> "지금 가능!"
-                    isMaxLevel -> "시즌 완료"
-                    else -> "다음 Lv.$nextRebirthLevel"
-                },
-                highlight = canRebirth
+                highlight = canRebirth,
+                caption = if (detailed) (if (rebirthCount > 0) "${rebirthCount}회 · ×${formatMultiplier(multiplier)}" else "아직 안 함") else null
             )
         }
-        // 138차: 상점 물약 효과 칸 — 켜져 있으면 남은 시간, 아니면 상점 안내(누르면 상점).
-        Spacer(Modifier.height(Spacing.sm))
-        HomeBoostStatus(activeBoost, boostNowMillis, onOpenShop, Modifier.fillMaxWidth())
-        Spacer(Modifier.height(Spacing.sm))
+        // 138차: 폰 시트는 물약이 켜져 있을 때만 한 줄 덧붙인다(133차의 "덜어내기" 기준 유지), 자세한 패널은 늘 자리를 둔다.
+        if (activeBoost != null || detailed) {
+            Spacer(Modifier.height(Spacing.md))
+            HomeBoostStatus(activeBoost, boostNowMillis, onOpenShop, compact = !detailed, modifier = Modifier.fillMaxWidth())
+        }
+        Spacer(Modifier.height(Spacing.md))
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val applyInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             Button(
                 onClick = onApplyExp,
                 enabled = growthExpPending > 0.0 && !isApplying,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.weight(1f)
-            ) { Text(if (isApplying) "적용 중..." else "✨ 경험치 적용") }
+                interactionSource = applyInteraction,
+                modifier = Modifier.weight(1f).height(48.dp).pressScale(applyInteraction)
+            ) { Text(if (isApplying) "적용 중…" else "경험치 적용", maxLines = 1, softWrap = false) }
             if (canRebirth && !isApplying) {
                 Button(
                     onClick = onRebirth,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
-                ) { Text("🔁 환생") }
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                    modifier = Modifier.height(48.dp)
+                ) { Text("환생", maxLines = 1, softWrap = false) }
+            }
+            androidx.compose.material3.OutlinedButton(onClick = onOpenShop, modifier = Modifier.height(48.dp)) {
+                Text("상점", maxLines = 1, softWrap = false)
             }
         }
-        if (isMaxLevel) {
-            Spacer(Modifier.height(Spacing.xs))
-            Text(
-                "🎉 이번 시즌 최대 레벨을 달성했습니다",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
         toastMessage?.let {
-            Spacer(Modifier.height(Spacing.xs))
+            Spacer(Modifier.height(Spacing.sm))
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
 
+/** 성장 패널의 수치 한 칸 — 작은 라벨 + 굵은 값(+선택 설명). 값은 한 줄(넘치면 …), 강조 상태면 강조색. */
+@Composable
+private fun HomeStat(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    highlight: Boolean = false,
+    caption: String? = null
+) {
+    Column(modifier) {
+        Overline(label)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.titleLarge,
+            color = if (highlight) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        caption?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
 /**
- * 물약 효과 칸(138차, 안드로이드 태블릿 카드와 같은 모양) — 켜져 있으면 어떤 물약이 몇 배로 얼마나 남았는지,
- * 없으면 상점 안내로 자리를 지킨다. 누르면 상점이 열린다(연장하거나 다른 물약을 볼 때 바로 가게).
+ * 물약 효과 줄(138차) — 켜져 있으면 어떤 물약이 몇 배로 얼마나 남았는지. [compact](폰 시트)면 한 줄, 아니면 설명 한 줄을 더하고
+ * 효과가 없을 때도 상점 안내로 자리를 지킨다. 누르면 상점이 열린다. 144차: 이모지 대신 왼쪽 색 막대로 상태를 보인다.
  */
 @Composable
 private fun HomeBoostStatus(
     active: GrowthBoost.Window?,
     nowMillis: Long,
     onClick: () -> Unit,
+    compact: Boolean,
     modifier: Modifier = Modifier
 ) {
     val potion = active?.let { GrowthBoost.potionById(it.potionId) }
-    Surface(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        color = if (active != null) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f)
-        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    val title = if (active != null) "${potion?.label ?: "성장 물약"} ${GrowthBoost.multiplierLabel(active.multiplier)}" else "사용 중인 물약 없음"
+    val remaining = active?.let { "${GrowthBoost.remainingLabel(it.endMillis - nowMillis)} 남음" }
+    val accent = if (active != null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline
+    Row(
+        modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
+            .height(androidx.compose.foundation.layout.IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(Modifier.padding(horizontal = Spacing.sm, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(potion?.emoji ?: "🧪", fontSize = 16.sp)
-            Spacer(Modifier.width(Spacing.xs))
-            Column(Modifier.weight(1f)) {
+        Box(Modifier.width(4.dp).fillMaxHeight().background(accent))
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp, vertical = if (compact) 8.dp else 10.dp)) {
+            if (compact) {
+                // 남은 시간은 절대 잘리지 않게 따로 두고, 폭이 모자라면 물약 이름 쪽만 줄인다.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    remaining?.let { Text(" · $it", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary, maxLines = 1, softWrap = false) }
+                }
+            } else {
+                Text(title, style = MaterialTheme.typography.labelLarge, color = if (active != null) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    if (active != null) "${potion?.label ?: "성장 물약"} ${GrowthBoost.multiplierLabel(active.multiplier)}" else "사용 중인 물약 없음",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = if (active != null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    if (active != null) "${GrowthBoost.remainingLabel(active.endMillis - nowMillis)} 남음 · 공부 경험치에 적용 중"
-                    else "상점에서 물약을 사면 그동안 공부 경험치가 늘어나요",
-                    style = MaterialTheme.typography.labelSmall,
+                    if (remaining != null) "$remaining · 집중 경험치에 적용 중" else "상점에서 물약을 사면 그동안 집중 경험치가 늘어나요",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+/** "오늘" 묶음의 보조 정보 한 줄 — 왼쪽 고정폭 라벨 + 값(라벨 폭이 같아 줄끼리 세로로 가지런히 선다). */
+@Composable
+private fun HomeTodayLine(label: String, text: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(56.dp), maxLines = 1, softWrap = false)
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/**
+ * 홈 오른쪽 패널·미니멀 홈의 "오늘" 묶음(138차, 안드로이드 태블릿 홈과 같은 내용) — 144차: 카드 대신 편집형 섹션. 루틴 연속
+ * 기록을 큰 숫자로, 오늘 루틴/집중/다음 일정을 라벨-값 줄로, 최근 7일 루틴 완료율을 같은 높이 막대로. 막대 색은
+ * 완료(성공색)·일부(경고색)·0%(오류색)·예정 없음(가는 선 색) — 테마 팔레트에서 꺼낸다(고정색이면 라이트 테마에서 흐렸다).
+ */
+@Composable
+private fun HomeTodayCard(
+    routineStreak: Int,
+    routineDoneToday: Int,
+    routineScheduledToday: Int,
+    weekCompletionRates: List<Int>,
+    nextCalendarEvent: Pair<String, String>?,
+    studySecondsToday: Int,
+    modifier: Modifier = Modifier
+) {
+    val palette = com.phonelock.desktop.ui.theme.LocalPhoneLockPalette.current
+    LedgerSection("오늘", modifier = modifier) {
+        run {
+            if (routineStreak > 0) {
+                BigNumber("${routineStreak}", unit = "일 연속", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.primary)
+            } else {
+                Text("오늘부터 시작해봐요", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground)
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            if (routineScheduledToday > 0) HomeTodayLine("루틴", "${routineDoneToday}/${routineScheduledToday} 완료")
+            HomeTodayLine("집중", GrowthBoost.durationLabel(studySecondsToday / 60))
+            nextCalendarEvent?.let { (title, ddayLabel) -> HomeTodayLine(ddayLabel, title) }
+            Spacer(Modifier.height(Spacing.md))
+            Overline("최근 7일 루틴")
+            Spacer(Modifier.height(Spacing.sm))
+            // 막대는 같은 높이의 트랙 위에 세워 바닥선을 맞춘다(데스크탑 카드와 같은 규칙).
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
+                weekCompletionRates.forEach { pct ->
+                    val barColor = when {
+                        pct < 0 -> MaterialTheme.colorScheme.outlineVariant
+                        pct == 100 -> palette.success
+                        pct > 0 -> palette.warning
+                        else -> palette.error
+                    }
+                    val heightFrac = if (pct < 0) 0.15f else (pct / 100f).coerceAtLeast(0.15f)
+                    Box(
+                        Modifier.width(14.dp).height(32.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), RoundedCornerShape(3.dp)),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        Box(Modifier.fillMaxWidth().height((32 * heightFrac).dp).background(barColor, RoundedCornerShape(3.dp)))
+                    }
+                }
             }
         }
     }
@@ -967,7 +934,7 @@ private fun HomeShopDialog(
                         val activePotion = activeBoost?.let { GrowthBoost.potionById(it.potionId) }
                         Text(
                             if (activeBoost != null) "지금 ${activePotion?.label ?: "물약"} 효과 중 · ${GrowthBoost.remainingLabel(activeBoost.endMillis - nowMillis)} 남음\n같은 물약을 사면 시간이 늘어나요(최대 ${GrowthBoost.durationLabel(GrowthBoost.MAX_REMAINING_MINUTES)})."
-                            else "사면 바로 효과가 시작돼요(한 번에 하나).\n효과 시간 동안 공부로 얻는 경험치가 늘어나요.",
+                            else "사면 바로 효과가 시작돼요(한 번에 하나).\n효과 시간 동안 집중으로 얻는 경험치가 늘어나요.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1130,30 +1097,31 @@ private fun ShopTabChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** 레벨업 연출 — 화면 중앙에 짧게 튀어나왔다가 사라진다. */
+/**
+ * 레벨업 연출 — 144차: 화면 가운데 바탕색 판 위에 "레벨업" 라벨과 새 레벨 숫자를 아주 크게, 짧게 커졌다가 사라진다
+ * (판이 있어 어떤 하늘 위에서도 읽힌다). 성능 모드에선 크기 변화 없이 짧은 페이드만.
+ */
 @Composable
 private fun LevelUpFlash(level: Int?, modifier: Modifier = Modifier) {
+    val motion = com.phonelock.desktop.ui.theme.LocalAppMotion.current
     AnimatedVisibility(
         visible = level != null,
         modifier = modifier,
-        enter = scaleIn(initialScale = 0.6f, animationSpec = tween(220)) + fadeIn(tween(150)),
-        exit = scaleOut(targetScale = 1.15f, animationSpec = tween(300)) + fadeOut(tween(300))
+        enter = if (motion.reduced) fadeIn(motion.quick()) else scaleIn(initialScale = 0.7f, animationSpec = motion.standard()) + fadeIn(motion.quick()),
+        exit = if (motion.reduced) fadeOut(motion.quick()) else scaleOut(targetScale = 1.1f, animationSpec = tween(300)) + fadeOut(tween(300))
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                "레벨업!",
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-                fontSize = 44.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
-            level?.let { lvl ->
-                Text(
-                    "Lv.$lvl 달성",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+        Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
+            Column(Modifier.padding(horizontal = 36.dp, vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Overline("레벨업", color = MaterialTheme.colorScheme.primary)
+                level?.let { lvl ->
+                    Text(
+                        "$lvl",
+                        style = MaterialTheme.typography.displayLarge.copy(fontSize = 88.sp, lineHeight = 90.sp),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
             }
         }
     }

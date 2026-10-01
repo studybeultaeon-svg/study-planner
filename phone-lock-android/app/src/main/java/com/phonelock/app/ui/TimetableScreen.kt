@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import com.phonelock.app.data.CalcTask
 import com.phonelock.app.data.*
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.ui.theme.LocalPhoneLockPalette
 import com.phonelock.app.ui.theme.Spacing
 import java.time.LocalDate
 import java.util.Locale
@@ -149,24 +150,24 @@ private fun TimetableContent(
             weekAchievedMap = map
         }
 
-        Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-            Text("🗓️ 일정표", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-            Text("할당량 계산기 업무 입력 기준", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.fillMaxSize().padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
+            Text("계산기 업무의 요일별 목표량", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(Spacing.md))
 
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                OutlinedButton(onClick = { weekOffset-- }) {
-                    androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("이전주")
+                Column(Modifier.weight(1f)) {
+                    com.phonelock.app.ui.components.Overline(if (weekOffset == 0) "이번 주" else if (weekOffset < 0) "${-weekOffset}주 전" else "${weekOffset}주 뒤")
+                    Text(
+                        "${weekDates.first().monthValue}월 ${weekDates.first().dayOfMonth}일 – ${weekDates.last().monthValue}월 ${weekDates.last().dayOfMonth}일",
+                        style = MaterialTheme.typography.headlineSmall,
+                        maxLines = 1
+                    )
                 }
-                Text(
-                    "${weekDates.first().monthValue}/${weekDates.first().dayOfMonth} ~ ${weekDates.last().monthValue}/${weekDates.last().dayOfMonth}" +
-                        if (weekOffset == 0) " (이번 주)" else "",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                OutlinedButton(onClick = { weekOffset++ }) {
-                    Text("다음주")
-                    androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                androidx.compose.material3.IconButton(onClick = { weekOffset-- }) {
+                    androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전 주")
+                }
+                androidx.compose.material3.IconButton(onClick = { weekOffset++ }) {
+                    androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음 주")
                 }
             }
             Spacer(Modifier.height(Spacing.sm))
@@ -197,7 +198,7 @@ private fun TimetableContent(
                         TtCell("업무", nameColWidth, header = true)
                         weekDates.forEachIndexed { i, d ->
                             val isTodayCol = d == today
-                            val weekdayColor2 = when (i) { 0 -> Color(0xFFF87171); 6 -> Color(0xFF6B9FFF); else -> null }
+                            val weekdayColor2 = when (i) { 0 -> MaterialTheme.colorScheme.error; 6 -> com.phonelock.app.ui.components.saturdayInk(); else -> null }
                             TtCell("${WEEKDAYS_KO[i]}\n${d.monthValue}/${d.dayOfMonth}", dayColWidth, header = true, highlight = isTodayCol, textColor = weekdayColor2)
                         }
                         TtCell("합계", totalColWidth, header = true)
@@ -220,10 +221,7 @@ private fun TimetableContent(
                                         dayTotals[i] += v
                                         val achieved = weekAchievedMap["${d}|${row.task.name}"] == true
                                         val label = "${fmtDec(v)}${row.task.unit}" + if (achieved) " ✅" else ""
-                                        val cellColor = when {
-                                            achieved -> Color(0xFF34D399)
-                                            else -> null
-                                        }
+                                        val cellColor = if (achieved) LocalPhoneLockPalette.current.success else null
                                         TtCell(label, dayColWidth, highlight = isTodayCol, textColor = cellColor)
                                     } else {
                                         TtCell("—", dayColWidth, highlight = isTodayCol)
@@ -244,22 +242,20 @@ private fun TimetableContent(
         return
     }
 
-    Column(Modifier.fillMaxSize().padding(Spacing.md)) {
-        Text("🗓️ 일정표", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
-        Text("할당량 계산기 업무 입력 기준", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(Spacing.sm))
-
+    Column(Modifier.fillMaxSize().padding(horizontal = Spacing.gutter).padding(top = Spacing.md)) {
         val weekdayColor = when (jsDow) {
-            0 -> androidx.compose.ui.graphics.Color(0xFFF87171)
-            6 -> androidx.compose.ui.graphics.Color(0xFF6B9FFF)
-            else -> MaterialTheme.colorScheme.onSurface
+            0 -> MaterialTheme.colorScheme.error
+            6 -> com.phonelock.app.ui.components.saturdayInk()
+            else -> MaterialTheme.colorScheme.onBackground
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = { onCursorChange(cursor.minusDays(1)) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전") }
-            Spacer(Modifier.width(Spacing.sm))
-            Text(dateLabel, style = MaterialTheme.typography.titleMedium, color = weekdayColor)
-            Spacer(Modifier.width(Spacing.sm))
-            OutlinedButton(onClick = { onCursorChange(cursor.plusDays(1)) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음") }
+        // 144차: 날짜를 큰 제목으로, 이동은 오른쪽 화살표 두 개(외곽선 버튼 대신).
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                com.phonelock.app.ui.components.Overline("계산기 업무의 요일별 목표량")
+                Text(dateLabel, style = MaterialTheme.typography.headlineSmall, color = weekdayColor, maxLines = 1)
+            }
+            androidx.compose.material3.IconButton(onClick = { onCursorChange(cursor.minusDays(1)) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "이전 날") }
+            androidx.compose.material3.IconButton(onClick = { onCursorChange(cursor.plusDays(1)) }) { androidx.compose.material3.Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "다음 날") }
         }
         Spacer(Modifier.height(Spacing.md))
 
@@ -302,7 +298,7 @@ private fun TimetableContent(
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = if (v > 0) FontWeight.Bold else FontWeight.Normal,
                             color = if (v <= 0) MaterialTheme.colorScheme.onSurfaceVariant
-                                else if (achieved) Color(0xFF34D399)
+                                else if (achieved) LocalPhoneLockPalette.current.success
                                 else MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -313,7 +309,7 @@ private fun TimetableContent(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("합계", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(fmtDec(dayTotal), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    Text(fmtDec(dayTotal), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
@@ -401,3 +397,4 @@ private fun TtCell(text: String, width: androidx.compose.ui.unit.Dp, header: Boo
         )
     }
 }
+

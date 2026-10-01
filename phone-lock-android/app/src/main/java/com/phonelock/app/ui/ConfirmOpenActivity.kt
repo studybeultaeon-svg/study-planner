@@ -45,7 +45,7 @@ class ConfirmOpenActivity : ComponentActivity() {
 
         if (isSite) {
             setContent {
-                PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
+                PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale, performanceMode = prefs.minimalMode) {
                     val title = remember { quoteForTier(confirmQuoteTier(level)) }
                     // 82차(§11 "미래의 나에게") — 이 그룹에 예약 메시지가 있으면 문구와 함께 보여준다.
                     var selfMessage by remember { mutableStateOf("") }
@@ -83,7 +83,7 @@ class ConfirmOpenActivity : ComponentActivity() {
             // 96차 버그 수정: 이 경로(앱 실행 확인)만 themeMode만 넘기고 커스텀 배경/강조색·글자
             // 크기를 안 넘겨서, 커스텀 테마를 쓰는 사용자에게는 이 화면만 기본 프리셋 팔레트로
             // 보였다(사이트 확인 경로인 위쪽 45줄엔 이미 다 넘기고 있었음 — 그쪽과 대칭 맞춤).
-            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale) {
+            PhoneLockTheme(prefs.themeMode, prefs.customThemeBackground, prefs.customThemeAccent, prefs.fontScale, performanceMode = prefs.minimalMode) {
                 val title = remember { quoteForTier(confirmQuoteTier(level)) }
                 var selfMessage by remember { mutableStateOf("") }
                 LaunchedEffect(groupId) {

@@ -4,7 +4,8 @@ import com.phonelock.app.data.AppGroup
 import com.phonelock.app.data.PhoneLockRepository
 import java.time.LocalDateTime
 
-enum class LockReason { SCHEDULE, LIMIT, REELS, SHORTS, STUDY_LOCK }
+/** TIMER = 관리 > 타이머로 잠근 앱/사이트, FULL_LOCK = 전체 잠금 중 허용하지 않은 사이트(142차). */
+enum class LockReason { SCHEDULE, LIMIT, REELS, SHORTS, STUDY_LOCK, TIMER, FULL_LOCK }
 
 data class LockResult(val locked: Boolean, val reason: LockReason? = null)
 
@@ -99,7 +100,7 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
 
     /** 실행 확인 관리 종류가 켜져 있고, 오늘이 그 요일에 해당하는지. */
     fun isConfirmTypeActiveToday(group: AppGroup, now: LocalDateTime = LocalDateTime.now()): Boolean =
-        group.confirmEnabled && isTodayInMask(group.confirmDaysMask, now)
+        group.confirmEnabled && !group.allowlistMode && isTodayInMask(group.confirmDaysMask, now)
 
     /** UI 표기/그룹 전체 off-패널티 판정용: 스케줄/일일한도/실행확인 중 하나라도 오늘 적용되는 요일인지. */
     fun isAnyManagementActiveToday(group: AppGroup, now: LocalDateTime = LocalDateTime.now()): Boolean =
@@ -172,6 +173,8 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
     ): Boolean =
         (ignoreTemporaryUnlock || isForceEnabled(group, now) || !isSnoozed(group)) &&
             isGroupActive(group, now) &&
+            // 전체 잠금 방식 규칙(142차)엔 실행 전 대기를 쓰지 않는다 — 기기의 모든 앱에 확인창이 뜨게 된다.
+            !group.allowlistMode &&
             group.confirmEnabled &&
             isTodayInMask(group.confirmDaysMask, now) &&
             isWithinApplyWindow(group.confirmApplyStartMinute, group.confirmApplyEndMinute, now)
@@ -240,6 +243,12 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
         // 뿐이고 여기서 막는 건 *영구* 설정 약화라 성격이 다르므로 예외를 없앴다 — 아래 판정들은
         // ignoreTemporaryUnlock=true로 "임시 해제가 없었다면 지금 걸려있었을 상태"를 기준으로 본다.
 
+        // 0-3(142차). 지금 제한이 걸려 있는데 차단 방식(고른 것만 차단 <-> 전체 잠금)을 바꿈 — 목록의 뜻이
+        // 뒤집혀서, 방금까지 막히던 것이 한꺼번에 풀린다.
+        if (original.allowlistMode != updated.allowlistMode &&
+            isCurrentlyRestricting(original, now, ignoreTemporaryUnlock = true)
+        ) return true
+
         // 1. 확인마다 늘어나는 시간을 줄임
         if (updated.waitIncrementSeconds < original.waitIncrementSeconds) return true
 
@@ -255,6 +264,11 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
         // 1-4. 레벨 차감을 꺼져있다가 새로 켜거나, 차감 간격을 줄임(더 빨리 깎이게) — 둘 다 사실상 대기시간 완화
         if (!original.levelDecayEnabled && updated.levelDecayEnabled) return true
         if (original.levelDecayEnabled && updated.levelDecayIntervalSeconds < original.levelDecayIntervalSeconds) return true
+
+        // 1-6(143차, 데스크탑판과 번호를 맞춤). "사용 중 남은 시간" 오버레이를 끔 — 오버레이는 "지금 얼마나 오래 쓰고 있는지"를 계속 보여주는
+        // 압박 장치라, 거슬린다는 이유로 끄는 것도 실행 확인을 끄는 것과 같은 우회다. 지금 실행 확인이 꺼져 있어도
+        // (미리 꺼 두고 나중에 실행 확인을 켜면 오버레이 없이 시작된다) 켜져 있던 것을 끄는 순간 약화로 본다.
+        if (original.usageOverlayEnabled && !updated.usageOverlayEnabled) return true
 
         // 2. 일일 한도가 이미 다 찼는데 늘리거나 없앰
         val originalLimit = original.dailyLimitSeconds
@@ -304,9 +318,10 @@ class LockEvaluator(private val repository: PhoneLockRepository) {
 
         // 6. 지금 제한이 걸린 상태에서 포함된 앱/사이트를 뺌
         if (isCurrentlyRestricting(original, now, ignoreTemporaryUnlock = true)) {
-            val removedPackages = originalPackages - updatedPackages
-            val removedSites = originalSites - updatedSites
-            if (removedPackages.isNotEmpty() || removedSites.isNotEmpty()) return true
+            // 고른 것만 차단하는 규칙은 목록에서 "빼는" 것이, 전체 잠금 규칙은 허용 목록에 "더하는" 것이 약화다(142차).
+            val loosenedPackages = if (original.allowlistMode) updatedPackages - originalPackages else originalPackages - updatedPackages
+            val loosenedSites = if (original.allowlistMode) updatedSites - originalSites else originalSites - updatedSites
+            if (loosenedPackages.isNotEmpty() || loosenedSites.isNotEmpty()) return true
         }
 
         // 7. 오늘 요일 제한이 실제로 걸려있는 도중에 "스케줄" 관리 자체를 이 화면에서 바로 끔

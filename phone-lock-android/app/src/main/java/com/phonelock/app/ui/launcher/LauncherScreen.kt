@@ -1,5 +1,17 @@
 package com.phonelock.app.ui.launcher
 
+import com.phonelock.app.ui.components.ProgressLine
+import com.phonelock.app.ui.components.Overline
+import com.phonelock.app.ui.components.Hairline
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.outlined.Spa
+import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.Icons
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -50,12 +62,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phonelock.app.data.AppPreferences
 import com.phonelock.app.data.PhoneLockRepository
+import com.phonelock.app.data.enforcedLockTimer
 import com.phonelock.app.data.getAllCalendarTasksOnce
 import com.phonelock.app.data.getGrowthExpTotal
 import com.phonelock.app.data.getRoutineLogsForDate
 import com.phonelock.app.data.getRoutines
 import com.phonelock.app.routine.RoutineEngine
 import com.phonelock.app.service.AuthManager
+import com.phonelock.app.service.EssentialApps
 import com.phonelock.app.service.LockEvaluator
 import com.phonelock.app.service.LockReason
 import com.phonelock.app.ui.AppInfo
@@ -135,18 +149,18 @@ fun LauncherRoot(showDrawer: MutableState<Boolean>, refreshTick: Int) {
         )
     }
     // 차단 시간대는 화면을 켜둔 채로도 시작·종료되므로 주기적으로 다시 판정한다(화면에 머무는 동안만 도는 루프).
-    val lockedPackages by produceState(initialValue = emptySet<String>(), refreshTick) {
+    val launcherLock by produceState(initialValue = LauncherLock.NONE, refreshTick) {
         while (true) {
-            value = loadLockedPackages(context)
+            value = loadLauncherLock(context)
             delay(LOCK_REFRESH_INTERVAL_MS)
         }
     }
 
-    val visibleApps = remember(installed, hidden, renames, lockedPackages) {
-        visibleLauncherApps(installed, hidden, renames, lockedPackages)
+    val visibleApps = remember(installed, hidden, renames, launcherLock) {
+        visibleLauncherApps(installed, hidden, renames, launcherLock.locked, launcherLock.allowOnly)
     }
-    val lockedCount = remember(installed, hidden, lockedPackages) {
-        lockedAppCount(installed, hidden, lockedPackages)
+    val lockedCount = remember(installed, hidden, launcherLock) {
+        lockedAppCount(installed, hidden, launcherLock.locked, launcherLock.allowOnly)
     }
 
     // 홈에서 뒤로가기는 아무 일도 하지 않고(런처의 기본 동작), 앱 서랍에서는 홈으로 돌아간다.
@@ -231,46 +245,48 @@ private fun LauncherHome(
                 .padding(horizontal = LAUNCHER_EDGE)
         ) {
             Spacer(Modifier.height(Spacing.xl))
-            // 화면의 주인공은 여전히 시계지만, 굵기·자간은 앱 타이포(displayLarge)를 그대로 따른다.
+            // 144차: 화면의 주인공은 시계 — 아주 크게, 날짜·디데이는 알약 대신 그 아래 글자 두 줄.
             Text(
                 now.format(TIME_FORMAT),
                 style = MaterialTheme.typography.displayLarge,
-                fontSize = 60.sp,
-                lineHeight = 64.sp,
-                color = MaterialTheme.colorScheme.onBackground
+                fontSize = 96.sp,
+                lineHeight = 96.sp,
+                letterSpacing = (-4).sp,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                softWrap = false
             )
-            Spacer(Modifier.height(Spacing.sm))
-            LauncherPill(now.format(DATE_FORMAT))
-            // 디데이는 날짜 바로 아래에 같은 알약으로 붙여 "오늘이 언제인가" 한 덩어리로 읽히게 한다.
-            // 문구는 화면이 들고 있는 시계(now)로 계산해서 자정을 넘겨도 하루 밀리지 않는다.
+            Text(now.format(DATE_FORMAT), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 디데이는 날짜 바로 아래에 붙여 "오늘이 언제인가" 한 덩어리로 읽히게 한다. 문구는 화면이 들고 있는 시계(now)로
+            // 계산해서 자정을 넘겨도 하루 밀리지 않는다.
             pinnedDday?.let { dday ->
                 launcherDdayText(dday, now.toLocalDate())?.let { text ->
-                    Spacer(Modifier.height(Spacing.xs))
-                    LauncherPill(text, if (minimalMode) null else "🎯")
+                    Text(text, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                 }
             }
 
-            Spacer(Modifier.height(Spacing.lg))
+            Spacer(Modifier.height(Spacing.xl))
             GodsaengCard(status, minimalMode)
 
             if (shortcuts.isNotEmpty()) {
-                Spacer(Modifier.height(Spacing.sm))
-                // 앱 하단 탭과 같은 5칸 — 앱을 열었을 때 만나는 탭 바와 같은 순서·같은 이모지라 자리를 외울 수 있다.
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                Hairline()
+                // 앱 하단 탭과 같은 5칸·같은 아이콘 — 앱을 열었을 때 만나는 탭 바와 자리를 같이 외울 수 있다.
+                Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
                     shortcuts.forEach { shortcut ->
                         ShortcutTile(shortcut, minimalMode, Modifier.weight(1f)) { onOpenShortcut(shortcut) }
                     }
                 }
+                Hairline()
             }
 
-            Spacer(Modifier.height(Spacing.sm))
+            Spacer(Modifier.height(Spacing.lg))
             FavoritesCard(favorites, minimalMode, onLaunch)
             Spacer(Modifier.height(Spacing.md))
         }
 
         LauncherBottomBar(
             label = "모든 앱",
-            emoji = if (minimalMode) null else "📱",
+            emoji = null,
             lockedCount = lockedCount,
             onClick = onOpenDrawer
         )
@@ -278,121 +294,112 @@ private fun LauncherHome(
 }
 
 /**
- * 갓생 카드 — 앱 성장 HUD와 같은 정보 계층(머리말 알약 → 레벨·칭호 → 경험치바 → 이모지 한 줄 정보)으로
- * 맞춰, 런처 홈이 앱의 연장선처럼 보이게 한다.
+ * 갓생 묶음 — 144차: 카드 대신 편집형 묶음(작은 라벨 → 레벨·칭호 → 진행 막대 → 라벨-값 줄). 앱 홈의 레벨 히어로와
+ * 같은 정보 순서라 런처가 앱의 연장선처럼 읽힌다.
  *
- * **133차(사용자 요청): 카드를 눌러도 앱이 열리지 않는다** — 바로 아래 5탭 타일에 "홈"이 이미 있어서
- * 같은 화면에 앱 홈 진입점이 둘이었다. 대신 앱 홈 탭에서 뺀 오늘 현황(루틴/공부/일정)을 이 카드가
- * 넘겨받았다 — 홈 버튼을 누를 때마다 지나가는 화면이라 "지금 뭘 해야 하는지"는 여기 있는 게 맞다는 판단.
- *
- * 움직이는 식물 씬은 여전히 옮겨오지 않는다 — 홈 버튼을 누를 때마다 애니메이션이 도는 건 이 화면이
- * 없애려던 바로 그 자극이다(131차 판단 유지).
+ * **133차(사용자 요청): 눌러도 앱이 열리지 않는다** — 바로 아래 바로가기에 "홈"이 이미 있다. 앱 홈 탭에서 뺀 오늘
+ * 현황(루틴/집중/일정)을 이 묶음이 넘겨받았다(홈 버튼마다 지나가는 화면이라 "지금 뭘 해야 하는지"가 여기 있어야 한다).
+ * 움직이는 식물 씬은 여전히 옮겨오지 않는다 — 홈 버튼마다 애니메이션이 도는 건 이 화면이 없애려던 자극이다(131차).
  */
 @Composable
-private fun GodsaengCard(status: LauncherStatus, minimalMode: Boolean) {
-    LauncherCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(Spacing.md)) {
-            LauncherPill("갓생살기종합세트", if (minimalMode) null else "🌱")
-            Spacer(Modifier.height(Spacing.sm))
-            Row(verticalAlignment = Alignment.Bottom) {
+private fun GodsaengCard(status: LauncherStatus, @Suppress("UNUSED_PARAMETER") minimalMode: Boolean) {
+    Column(Modifier.fillMaxWidth().padding(bottom = Spacing.md)) {
+        Overline("갓생")
+        Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                status.level ?: "앱 열기",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            status.stageTitle?.let { title ->
+                Spacer(Modifier.width(Spacing.sm))
                 Text(
-                    status.level ?: "앱 열기",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                status.stageTitle?.let { title ->
-                    Spacer(Modifier.width(Spacing.xs))
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                }
-            }
-            if (status.level != null) {
-                Spacer(Modifier.height(Spacing.sm))
-                LinearProgressIndicator(
-                    progress = { status.progress },
-                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(50)),
-                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 3.dp)
                 )
             }
-            status.lines.forEach { line ->
-                Spacer(Modifier.height(Spacing.sm))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (!minimalMode) Text(line.emoji, fontSize = 12.sp, modifier = Modifier.width(20.dp))
-                    Text(
-                        line.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+        }
+        if (status.level != null) {
+            Spacer(Modifier.height(Spacing.sm))
+            ProgressLine(status.progress)
+        }
+        Spacer(Modifier.height(Spacing.xs))
+        status.lines.forEach { line ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                // 줄의 종류(루틴/집중/일정)는 이모지 대신 고정폭 라벨로 — 기기마다 이모지 기준선이 달라 줄이 흔들렸다.
+                Text(
+                    when (line.emoji) { "✅" -> "루틴"; "⏱️" -> "집중"; "📅" -> "일정"; else -> "" },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.width(44.dp)
+                )
+                Text(
+                    line.text,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
 }
 
-/** 탭 바로가기 한 칸 — 이모지 + 탭 이름. 다섯 칸이 같은 폭으로 나뉘어 앱 하단 탭과 같은 리듬을 만든다. */
+/** 바로가기 한 칸 — 앱 하단 탭과 같은 외곽선 아이콘 + 탭 이름. 다섯 칸이 같은 폭으로 나뉜다. */
 @Composable
 private fun ShortcutTile(
     shortcut: GodsaengShortcut,
-    minimalMode: Boolean,
+    @Suppress("UNUSED_PARAMETER") minimalMode: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    Surface(
-        modifier = modifier.clickable { onClick() },
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+    val icon = when (shortcut.route) {
+        MainActivity.ROUTE_ROUTINE -> Icons.Outlined.TaskAlt
+        MainActivity.ROUTE_STUDY -> Icons.Outlined.Timer
+        MainActivity.ROUTE_MANAGE -> Icons.Outlined.Shield
+        MainActivity.ROUTE_GROUP -> Icons.Outlined.Groups
+        else -> Icons.Outlined.Spa
+    }
+    Column(
+        modifier.clip(RoundedCornerShape(12.dp)).clickable { onClick() }.padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            Modifier.padding(vertical = if (minimalMode) 14.dp else Spacing.sm),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            if (!minimalMode) {
-                Text(shortcut.emoji, fontSize = 20.sp)
-                Spacer(Modifier.height(2.dp))
-            }
-            Text(
-                shortcut.label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1
-            )
-        }
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(shortcut.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onBackground, maxLines = 1, softWrap = false)
     }
 }
 
-/** 즐겨찾기 카드 — 아이콘은 여전히 안 그리지만, 이름만 나열하는 대신 두 칸 격자 타일로 세운다. */
+/** 즐겨찾기 — 아이콘은 여전히 안 그리고(자극 줄이기), 이름을 두 칸 격자로 크게. */
 @Composable
-private fun FavoritesCard(favorites: List<AppInfo>, minimalMode: Boolean, onLaunch: (String) -> Unit) {
-    LauncherCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(Spacing.md)) {
-            LauncherPill("즐겨찾기", if (minimalMode) null else "⭐")
-            Spacer(Modifier.height(Spacing.sm))
-            if (favorites.isEmpty()) {
-                Text(
-                    "아래 \"모든 앱\"에서 앱을 길게 눌러 추가하세요.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                // 상한이 6개라 최대 세 줄이고, 홀수로 끝나면 마지막 칸은 빈 자리로 남겨 폭을 맞춘다.
-                favorites.chunked(2).forEach { row ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(bottom = Spacing.xs),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
-                    ) {
-                        row.forEach { app ->
-                            FavoriteTile(app.label, Modifier.weight(1f)) { onLaunch(app.packageName) }
-                        }
-                        if (row.size == 1) Spacer(Modifier.weight(1f))
+private fun FavoritesCard(favorites: List<AppInfo>, @Suppress("UNUSED_PARAMETER") minimalMode: Boolean, onLaunch: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Overline("즐겨찾기")
+        Spacer(Modifier.height(Spacing.sm))
+        if (favorites.isEmpty()) {
+            Text(
+                "아래 \"모든 앱\"에서 앱을 길게 눌러 추가하세요.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            // 상한이 6개라 최대 세 줄이고, 홀수로 끝나면 마지막 칸은 빈 자리로 남겨 폭을 맞춘다.
+            favorites.chunked(2).forEach { row ->
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = Spacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+                ) {
+                    row.forEach { app ->
+                        FavoriteTile(app.label, Modifier.weight(1f)) { onLaunch(app.packageName) }
                     }
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -404,77 +411,44 @@ private fun FavoriteTile(label: String, modifier: Modifier = Modifier, onClick: 
     Surface(
         modifier = modifier.clickable { onClick() },
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        color = MaterialTheme.colorScheme.surface
     ) {
         Text(
             label,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = 14.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = 16.dp)
         )
     }
 }
 
 /**
- * 홈/앱 서랍 맨 아래에 고정되는 이동 버튼(홈에서는 "모든 앱", 서랍에서는 "갓생살기종합세트").
- * 두 화면이 같은 모양이라 어느 쪽에 있든 맨 아랫줄이 "반대쪽으로 가는 자리"로 읽힌다.
+ * 홈/앱 서랍 맨 아래에 고정되는 이동 줄(홈에서는 "모든 앱", 서랍에서는 "갓생살기종합세트").
+ * 두 화면이 같은 모양이라 어느 쪽에 있든 맨 아랫줄이 "반대쪽으로 가는 자리"로 읽힌다. 144차: 알약 → 가는 선 + 글자 + 화살표.
  */
 @Composable
-private fun LauncherBottomBar(label: String, emoji: String?, lockedCount: Int, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth()
-            .padding(horizontal = LAUNCHER_EDGE, vertical = Spacing.sm)
-            .clickable { onClick() },
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-    ) {
+private fun LauncherBottomBar(label: String, @Suppress("UNUSED_PARAMETER") emoji: String?, lockedCount: Int, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Hairline()
         Row(
-            Modifier.padding(horizontal = Spacing.md, vertical = 14.dp),
+            Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = LAUNCHER_EDGE, vertical = 18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (emoji != null) {
-                Text(emoji, fontSize = 14.sp)
-                Spacer(Modifier.width(Spacing.xs))
-            }
-            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+            Spacer(Modifier.width(6.dp))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
             Spacer(Modifier.weight(1f))
             if (lockedCount > 0) {
                 Text(
                     LOCKED_COUNT_LABEL.format(lockedCount),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
     }
-}
-
-/** 런처 카드 공통 외형 — 앱 홈의 `PlantScreen.HomeCard`와 같은 20dp 반경 + 포인트색 22% 테두리. */
-@Composable
-private fun LauncherCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
-        content = content
-    )
-}
-
-/** 카드 머리말/날짜 알약 — 앱 `SectionCard`의 "이모지 + 제목" 알약과 같은 모양(포인트색 12% 배경). */
-@Composable
-private fun LauncherPill(text: String, emoji: String? = null) {
-    val color = MaterialTheme.colorScheme.primary
-    Text(
-        if (emoji == null) text else "$emoji $text",
-        style = MaterialTheme.typography.labelLarge,
-        color = color,
-        modifier = Modifier
-            .background(color.copy(alpha = 0.12f), RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-    )
 }
 
 @Composable
@@ -499,14 +473,14 @@ private fun LauncherAppDrawer(
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.padding(horizontal = LAUNCHER_EDGE)) {
             Spacer(Modifier.height(Spacing.xl))
-            LauncherPill("모든 앱", if (minimalMode) null else "📱")
-            Spacer(Modifier.height(Spacing.sm))
+            Text("모든 앱", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onBackground)
+            Spacer(Modifier.height(Spacing.md))
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
                 placeholder = { Text("검색") },
                 singleLine = true,
-                shape = RoundedCornerShape(50),
+                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -520,10 +494,9 @@ private fun LauncherAppDrawer(
                 )
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
         LauncherBottomBar(
             label = "갓생살기종합세트",
-            emoji = if (minimalMode) null else "🌱",
+            emoji = null,
             lockedCount = lockedCount,
             onClick = onOpenMainApp
         )
@@ -629,20 +602,36 @@ private const val CALENDAR_DONE = "O"
  * 숨기는 대상은 사용자가 요청한 두 가지, **시간대 차단([LockReason.SCHEDULE])과 일일 사용한도
  * ([LockReason.LIMIT])**뿐이다. 실행 확인만 걸린 앱은 목록에 그대로 두고(누르면 기존 실행 확인
  * 절차가 돈다), 공부 잠금은 전용 전체화면([com.phonelock.app.ui.StudyLockActivity])이 따로 담당한다.
+ *
+ * **142차: 전체 잠금**(전체 잠금 방식 규칙 · 타이머의 전체 잠금)이 걸려 있으면 반대로 "허용한 앱만" 남긴다 —
+ * 홈 화면은 그대로지만 앱 목록에는 허용한 앱과 전화·시계 같은 필수 앱만 보인다.
  */
-private suspend fun loadLockedPackages(context: Context): Set<String> = withContext(Dispatchers.IO) {
+private suspend fun loadLauncherLock(context: Context): LauncherLock = withContext(Dispatchers.IO) {
     runCatching {
         val repository = PhoneLockRepository(context.applicationContext)
         val evaluator = LockEvaluator(repository)
         val locked = mutableSetOf<String>()
+        var allowOnly: Set<String>? = null
+        // 전체 잠금이 둘 이상 겹치면 모두가 허용한 앱만 남는다.
+        fun restrictTo(allowed: Set<String>) { allowOnly = allowOnly?.intersect(allowed) ?: allowed }
         for (group in repository.getAllGroupsOnce()) {
             val result = evaluator.evaluate(group)
             if (!result.locked) continue
             if (result.reason != LockReason.SCHEDULE && result.reason != LockReason.LIMIT) continue
-            locked += repository.getMembers(group.id).map { it.packageName }
+            val members = repository.getMembers(group.id).map { it.packageName }.toSet()
+            if (group.allowlistMode) restrictTo(members) else locked += members
         }
-        locked.toSet()
-    }.getOrDefault(emptySet())
+        // 관리 > 타이머(142차)가 잠금 단계면 같은 방식으로 반영한다.
+        // 143차: 뽀모도로 휴식 중엔 잠금이 풀린 약속이므로 목록에서도 감추지 않는다(enforcedLockTimer).
+        repository.enforcedLockTimer(AppPreferences(context.applicationContext).lockTimer)
+            ?.let { timer -> if (timer.wholeDevice) restrictTo(timer.apps) else locked += timer.apps }
+        LauncherLock(locked.toSet(), allowOnly?.plus(EssentialApps.packages(context.applicationContext)))
+    }.getOrDefault(LauncherLock.NONE)
+}
+
+/** 런처가 목록에서 감출 기준 — [locked]는 막힌 앱, [allowOnly]는 전체 잠금 중일 때만 있는 "이것만 보여라" 목록. */
+private data class LauncherLock(val locked: Set<String>, val allowOnly: Set<String>?) {
+    companion object { val NONE = LauncherLock(emptySet(), null) }
 }
 
 /**
@@ -699,7 +688,7 @@ private suspend fun loadGodsaengStatus(context: Context): LauncherStatus = withC
     runCatching {
         // 0분이어도 줄을 빼지 않는다 — 공부를 안 한 날 줄이 통째로 사라지면 카드 높이가 들쭉날쭉해진다.
         val seconds = repository.getTodayStudyLog().sumOf { it.seconds }
-        lines += LauncherStatusLine("⏱️", "오늘 공부 ${formatStudySeconds(seconds)}")
+        lines += LauncherStatusLine("⏱️", "오늘 집중 ${formatStudySeconds(seconds)}")
     }
     runCatching {
         // 141차: 일정의 "오늘"은 루틴(자정)과 달리 "하루 시작 기준" — 캘린더 화면과 같은 날을 보여준다.

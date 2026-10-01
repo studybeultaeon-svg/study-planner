@@ -320,7 +320,13 @@ private fun GateScaffold(title: String, content: @Composable androidx.compose.fo
                 .padding(Spacing.lg),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(title, style = MaterialTheme.typography.headlineSmall)
+            // 144차: 첫 화면은 브랜드부터(안드로이드판과 같음) — 큰 워드마크 + 작은 라벨, 그 아래 단계 제목(왼쪽 정렬 편집형 머리).
+            Column(Modifier.fillMaxWidth()) {
+                com.phonelock.desktop.ui.components.Overline("갓생살기종합세트")
+                Text("갓생", style = MaterialTheme.typography.displayMedium, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(Spacing.md))
+                Text(title, style = MaterialTheme.typography.headlineMedium)
+            }
             Spacer(Modifier.height(Spacing.md))
             content()
         }
@@ -422,7 +428,7 @@ private fun LoginStep(
         }.start()
     }
 
-    GateScaffold(if (mode == LoginMode.LOGIN) "갓생살기종합세트 로그인" else "회원가입") {
+    GateScaffold(if (mode == LoginMode.LOGIN) "로그인" else "회원가입") {
         Text(
             "이 앱은 가입 신청 후 관리자 승인이 필요합니다.",
             style = MaterialTheme.typography.bodyMedium,

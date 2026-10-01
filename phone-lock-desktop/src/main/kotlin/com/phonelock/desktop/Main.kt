@@ -44,6 +44,7 @@ import com.sun.jna.platform.win32.WinDef.HWND
 import com.sun.jna.platform.win32.WinReg
 import com.sun.jna.platform.win32.WinUser
 import com.phonelock.desktop.monitor.EnforcementService
+import com.phonelock.desktop.monitor.FullLockStatus
 import com.phonelock.desktop.monitor.LockReason
 import com.phonelock.desktop.monitor.StudyLockStatus
 import com.phonelock.desktop.monitor.UsageOverlayStatus
@@ -52,6 +53,7 @@ import com.phonelock.desktop.ui.AccountGate
 import com.phonelock.desktop.ui.BlockScreen
 import com.phonelock.desktop.ui.ConfirmScreen
 import com.phonelock.desktop.ui.ExitConfirmScreen
+import com.phonelock.desktop.ui.FullLockScreen
 import com.phonelock.desktop.ui.MainScreen
 import com.phonelock.desktop.ui.SunriseIcon
 import com.phonelock.desktop.ui.StudyLockScreen
@@ -167,6 +169,12 @@ private fun startApp() = application {
     var overlayStatus by remember { mutableStateOf<UsageOverlayStatus?>(null) }
     var studyLockStatus by remember { mutableStateOf<StudyLockStatus?>(null) }
     var studyLockToast by remember { mutableStateOf<String?>(null) }
+    // 전체 잠금 화면(142차) — 전체 잠금 방식 규칙과 타이머의 전체 잠금이 함께 쓴다. openManageSeq는 잠금 화면의
+    // "타이머 열기"/"차단 규칙 열기"가 메인 창을 관리 탭의 그 서브탭으로 보내는 신호다(같은 곳을 두 번 눌러도
+    // 다시 가도록 숫자를 올린다).
+    var fullLockStatus by remember { mutableStateOf<FullLockStatus?>(null) }
+    var openManageSeq by remember { mutableStateOf(0) }
+    var openManageSubTab by remember { mutableStateOf(0) }
     // 92차(사용자 요청): 39차에 타이머 탭 정지 버튼에만 붙였던 짧은 회고 입력이 잠금 화면(오버레이)의
     // "정지" 버튼에는 빠져있었다 — 두 경로 다 결국 같은 Repository.timerStop(note, tag)를 부르므로
     // 여기서도 같은 다이얼로그를 띄운 뒤 그 값을 넘긴다.
@@ -196,7 +204,8 @@ private fun startApp() = application {
                     deferred.await()
                 },
                 onOverlayUpdate = { status -> overlayStatus = status },
-                onStudyLockUpdate = { status -> studyLockStatus = status }
+                onStudyLockUpdate = { status -> studyLockStatus = status },
+                onFullLockUpdate = { status -> fullLockStatus = status }
             )
             service.run()
         }
@@ -250,12 +259,40 @@ private fun startApp() = application {
         }
     )
 
+    // 잠금 화면의 "허용된 프로그램" 버튼이 누른 프로그램을 실행한다 — 공부 잠금과 전체 잠금(142차)이 같이 쓴다.
+    fun launchAllowedApp(appName: String) {
+        val resolved = resolveAppPath(appName)
+        runCatching {
+            when {
+                // Desktop.open()은 .lnk를 열 때 JDK에서 "Unsupported URI content"로
+                // 실패한다(실기기 재현, 2026-08-07) — explorer.exe에 바로가기 경로를
+                // 넘기면 창 깜빡임 없이 탐색기가 대신 풀어서 실행해준다.
+                resolved != null && resolved.extension.equals("lnk", ignoreCase = true) ->
+                    ProcessBuilder("explorer.exe", resolved.absolutePath).start()
+                resolved != null -> ProcessBuilder(resolved.absolutePath).start()
+                else -> ProcessBuilder(appName).start()
+            }
+        }
+            .onSuccess { DebugLog.log("LaunchApp", "appName=$appName resolved=${resolved?.absolutePath} 실행 성공") }
+            .onFailure { e ->
+                DebugLog.log("LaunchApp", "appName=$appName resolved=${resolved?.absolutePath} 실행 실패: ${e.javaClass.simpleName}: ${e.message}")
+                studyLockToast = "\"$appName\" 실행 실패: 설치 경로를 찾지 못했습니다. 시작 메뉴에 표시되는 이름으로 다시 등록해보세요."
+            }
+    }
+
     if (mainWindowVisible) {
         Window(
             onCloseRequest = { mainWindowVisible = false },
             title = "갓생살기종합세트",
             icon = SunriseIcon
         ) {
+            // 전체 잠금 화면에서 이 창을 열었을 때 다른 창 뒤에 있으면 앞으로 가져온다.
+            LaunchedEffect(openManageSeq) {
+                if (openManageSeq > 0) {
+                    window.toFront()
+                    window.requestFocus()
+                }
+            }
             PhoneLockTheme(palette) {
                 // MaterialTheme은 색상 팔레트만 정의할 뿐 실제로 캔버스를 칠하진 않는다 — 이 Surface가
                 // 없으면 MainScreen이 덮지 않는 여백(패딩 등)이 Window 기본 배경(흰색)으로 비쳐 보인다.
@@ -265,7 +302,9 @@ private fun startApp() = application {
                     AccountGate(repository) {
                         MainScreen(
                             repository,
-                            onThemeChange = { themeMode = it; themeRefreshTick++ }
+                            onThemeChange = { themeMode = it; themeRefreshTick++ },
+                            openManageSeq = openManageSeq,
+                            openManageSubTab = openManageSubTab
                         )
                     }
                 }
@@ -290,7 +329,7 @@ private fun startApp() = application {
     if (studyLockStatus != null && blockRequest == null && confirmRequest == null && !exitConfirmVisible) {
         Window(
             onCloseRequest = {},
-            title = "공부 잠금",
+            title = "집중 잠금",
             undecorated = true,
             alwaysOnTop = true,
             state = rememberWindowState(placement = WindowPlacement.Maximized)
@@ -309,25 +348,7 @@ private fun startApp() = application {
                         status = status,
                         repository = repository,
                         toastMessage = studyLockToast,
-                        onLaunchApp = { appName ->
-                            val resolved = resolveAppPath(appName)
-                            runCatching {
-                                when {
-                                    // Desktop.open()은 .lnk를 열 때 JDK에서 "Unsupported URI content"로
-                                    // 실패한다(실기기 재현, 2026-08-07) — explorer.exe에 바로가기 경로를
-                                    // 넘기면 창 깜빡임 없이 탐색기가 대신 풀어서 실행해준다.
-                                    resolved != null && resolved.extension.equals("lnk", ignoreCase = true) ->
-                                        ProcessBuilder("explorer.exe", resolved.absolutePath).start()
-                                    resolved != null -> ProcessBuilder(resolved.absolutePath).start()
-                                    else -> ProcessBuilder(appName).start()
-                                }
-                            }
-                                .onSuccess { DebugLog.log("LaunchApp", "appName=$appName resolved=${resolved?.absolutePath} 실행 성공") }
-                                .onFailure { e ->
-                                    DebugLog.log("LaunchApp", "appName=$appName resolved=${resolved?.absolutePath} 실행 실패: ${e.javaClass.simpleName}: ${e.message}")
-                                    studyLockToast = "\"$appName\" 실행 실패: 설치 경로를 찾지 못했습니다. 시작 메뉴에 표시되는 이름으로 다시 등록해보세요."
-                                }
-                        },
+                        onLaunchApp = { appName -> launchAllowedApp(appName) },
                         onStopTimer = { showLockStopNoteDialog = true },
                         onSwitchToBreak = { repository.timerSwitchPhase() },
                         onToastShown = { studyLockToast = null }
@@ -337,7 +358,7 @@ private fun startApp() = application {
                     if (showLockStopNoteDialog) {
                         AlertDialog(
                             onDismissRequest = {},
-                            title = { Text("공부 종료") },
+                            title = { Text("집중 종료") },
                             text = {
                                 Column {
                                     Text(
@@ -349,15 +370,15 @@ private fun startApp() = application {
                                     OutlinedTextField(
                                         value = lockStopNoteText,
                                         onValueChange = { lockStopNoteText = it },
-                                        placeholder = { Text("예: 3장까지 풀었다, 집중이 잘 됐다") },
+                                        placeholder = { Text("예: 3장까지 읽었다, 집중이 잘 됐다") },
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                     Spacer(Modifier.height(8.dp))
                                     OutlinedTextField(
                                         value = lockStopTagText,
                                         onValueChange = { lockStopTagText = it },
-                                        label = { Text("태그(과목 등, 선택)") },
-                                        placeholder = { Text("예: 수학, 영어") },
+                                        label = { Text("태그(분야 등, 선택)") },
+                                        placeholder = { Text("예: 독서, 업무, 운동") },
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
@@ -379,6 +400,41 @@ private fun startApp() = application {
                             }
                         )
                     }
+                }
+            }
+        }
+    }
+
+    // 전체 잠금 화면(142차) — 공부 잠금이 같이 걸려 있으면 공부 잠금 화면이 우선한다.
+    if (fullLockStatus != null && studyLockStatus == null && blockRequest == null && confirmRequest == null && !exitConfirmVisible) {
+        Window(
+            onCloseRequest = {},
+            title = "전체 잠금",
+            undecorated = true,
+            alwaysOnTop = true,
+            state = rememberWindowState(placement = WindowPlacement.Maximized)
+        ) {
+            // 공부 잠금 창과 같은 이유 — 직전에 대상 창을 최소화한 직후라 포커스를 직접 가져와야 버튼이 눌린다.
+            LaunchedEffect(Unit) {
+                window.toFront()
+                window.requestFocus()
+            }
+            PhoneLockTheme(palette) {
+                fullLockStatus?.let { status ->
+                    FullLockScreen(
+                        status = status,
+                        toastMessage = studyLockToast,
+                        onLaunchApp = { appName -> launchAllowedApp(appName) },
+                        // 해제·끄기는 관리 탭에서만 한다 — 이 화면을 내리고 메인 창을 그 서브탭(타이머 또는 차단 규칙)으로
+                        // 보낸다. 잠금 자체는 그대로라, 허용 안 된 프로그램으로 돌아가면 감시 루프가 이 화면을 다시 띄운다.
+                        onOpenManage = {
+                            fullLockStatus = null
+                            mainWindowVisible = true
+                            openManageSubTab = if (status.fromTimer) com.phonelock.desktop.ui.MANAGE_SUB_TAB_TIMER else 0
+                            openManageSeq++
+                        },
+                        onToastShown = { studyLockToast = null }
+                    )
                 }
             }
         }

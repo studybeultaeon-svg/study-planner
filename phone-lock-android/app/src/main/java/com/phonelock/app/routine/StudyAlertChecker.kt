@@ -56,11 +56,11 @@ object StudyAlertChecker {
     suspend fun checkAndNotify(context: Context, force: Boolean = false): String {
         val appContext = context.applicationContext
         val prefs = AppPreferences(appContext)
-        if (!prefs.studyAlertEnabled) return "공부 알림이 꺼져 있습니다."
+        if (!prefs.studyAlertEnabled) return "집중 알림이 꺼져 있습니다."
 
         val repository = PhoneLockRepository(appContext)
         if (!force && com.phonelock.app.service.StudyNotificationGate.isStudying(repository)) {
-            return "공부 중이라 이번 검사는 건너뜁니다."
+            return "집중 중이라 이번 검사는 건너뜁니다."
         }
 
         val startHour = prefs.studyAlertStartHour
@@ -159,8 +159,8 @@ object StudyAlertChecker {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (manager.getNotificationChannel(CHANNEL_ID_VIBRATE) == null) {
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID_VIBRATE, "공부 알림", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "공부 일정·진행 상황이 계획보다 늦어질 때 알려줍니다."
+                NotificationChannel(CHANNEL_ID_VIBRATE, "집중 알림", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "일정·진행 상황이 계획보다 늦어질 때 알려줍니다."
                     enableVibration(true)
                     vibrationPattern = VIBRATE_PATTERN
                 }
@@ -168,7 +168,7 @@ object StudyAlertChecker {
         }
         if (manager.getNotificationChannel(CHANNEL_ID_SILENT) == null) {
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID_SILENT, "공부 알림(진동 없음)", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                NotificationChannel(CHANNEL_ID_SILENT, "집중 알림(진동 없음)", NotificationManager.IMPORTANCE_DEFAULT).apply {
                     description = "설정에서 진동을 끈 경우 이 채널로 알림이 옵니다."
                     enableVibration(false)
                 }

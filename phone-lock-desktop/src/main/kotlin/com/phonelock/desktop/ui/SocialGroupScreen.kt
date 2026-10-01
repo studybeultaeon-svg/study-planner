@@ -1,6 +1,10 @@
 ﻿package com.phonelock.desktop.ui
 
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.foundation.background
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.layout.Arrangement
@@ -55,16 +59,16 @@ import com.phonelock.desktop.ui.theme.Spacing
  *  쪽은 그대로 두고, 소셜 쪽만 위→아래로 옅어지는 리니어 그라디언트(메신저 앱 상단 배너 톤)로 교체해
  *  원형 "빛나는 점" 인상을 없앴다. */
 @Composable
-internal fun socialGradientBackground() = Brush.verticalGradient(
-    colors = listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.07f), MaterialTheme.colorScheme.background)
-)
+internal fun socialGradientBackground(): Brush =
+    // 144차 리디자인: 모임 화면도 앱 전체와 같은 단색 바탕(종이/먹)으로 — 정보는 여백·가는 선으로 나눈다.
+    androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.background)
 
 /** 섹션 제목/수치 옆에 붙는 작은 pill 라벨. */
 @Composable
 internal fun SectionPill(text: String, color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary) {
-    Surface(shape = RoundedCornerShape(50), color = color.copy(alpha = 0.12f)) {
-        Text(text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp))
-    }
+    // 144차: 알약 배지 → 작은 글자 라벨(굵게, 강조색). 앞의 이모지는 떼고 글자만(기기마다 이모지 기준선이 달라 줄이 흔들렸다).
+    val label = text.dropWhile { !it.isLetterOrDigit() && it != '(' }.ifBlank { text }
+    Text(label, style = MaterialTheme.typography.labelLarge, color = color, maxLines = 1, softWrap = false)
 }
 
 /** [MemberDisplayName] 배지 알약의 안쪽 여백 — 배지 자리를 InlineTextContent로 미리 잡아줘야 해서
@@ -331,94 +335,77 @@ fun SocialGroupScreen(
         )
     }
 
-    Column(Modifier.fillMaxSize().background(socialGradientBackground()).verticalScroll(rememberScrollState()).padding(Spacing.md)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                Text("👥 모임", style = MaterialTheme.typography.headlineMedium)
-                Text(
-                    "함께 갓생 사는 사람들과 서로 진행 상황을 확인해요",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+    // 144차 리디자인(안드로이드판과 같은 언어): 그라디언트 바탕·테두리 카드 대신 편집형 머리 + 가는 선 목록. 모임마다 오늘 루틴
+    // 평균을 오른쪽에 큰 숫자로 — "우리 모임이 오늘 얼마나 했나"가 목록에서 바로 읽힌다.
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        com.phonelock.desktop.ui.components.PageMasthead(title = "모임", overline = "함께 갓생") {
+            // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
+            androidx.compose.material3.IconButton(onClick = { refresh() }) {
+                androidx.compose.material3.Icon(
+                    Icons.Outlined.Refresh,
+                    contentDescription = "새로고침",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                // 98차(사용자 요청, 안드로이드판은 당겨서 새로고침) — 데스크탑은 스와이프 제스처가 없어 버튼으로.
-                androidx.compose.material3.IconButton(onClick = { refresh() }) { Text("🔄") }
-                OutlinedButton(onClick = { showJoinDialog = true }) { Text("참여하기") }
-                Button(onClick = { showCreateDialog = true }) { Text("+ 모임 만들기") }
-            }
+            TextButton(onClick = { showJoinDialog = true }) { Text("참여하기", maxLines = 1, softWrap = false) }
+            androidx.compose.material3.FilledTonalButton(onClick = { showCreateDialog = true }) { Text("모임 만들기", maxLines = 1, softWrap = false) }
         }
-        Spacer(Modifier.height(Spacing.lg))
-
-        val err = errorMsg
-        if (err != null) {
-            Text(err, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else if (loading) {
-            Text("불러오는 중...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else if (summaries.isEmpty()) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Column(
-                    Modifier.fillMaxWidth().padding(Spacing.xl),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("🌱", style = MaterialTheme.typography.headlineLarge)
-                    Spacer(Modifier.height(Spacing.sm))
-                    Text(
-                        "아직 속한 모임이 없습니다",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+        Spacer(Modifier.height(Spacing.sm))
+        com.phonelock.desktop.ui.components.Hairline()
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(
+            Modifier.widthIn(max = 880.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Spacing.gutter).padding(bottom = Spacing.xl)
+        ) {
+            Spacer(Modifier.height(Spacing.md))
+            Text(
+                "함께 갓생 사는 사람들과 서로 진행 상황을 확인해요",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(Spacing.sm))
+            val err = errorMsg
+            when {
+                err != null -> com.phonelock.desktop.ui.components.NoticeStrip(err)
+                loading -> Text("불러오는 중...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                summaries.isEmpty() -> Column(Modifier.fillMaxWidth().padding(vertical = Spacing.xl)) {
+                    Text("아직 속한 모임이 없습니다", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(Spacing.xs))
                     Text(
                         "새로 만들거나 초대 코드로 참여해보세요.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
-        } else {
-            summaries.forEach { g ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                    onClick = { onSelectGroup(g.id) }
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(Spacing.md),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        GroupAvatar(g.name)
-                        Spacer(Modifier.width(Spacing.md))
-                        Column(Modifier.weight(1f)) {
-                            Text(g.name, style = MaterialTheme.typography.titleMedium)
-                            Text("${g.memberCount}명", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.height(Spacing.xs))
-                            LinearProgressIndicator(
-                                progress = { g.avgTodayPercent / 100f },
-                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
-                            )
+                else -> Column {
+                    summaries.forEach { g ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onSelectGroup(g.id) }.padding(vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            GroupAvatar(g.name)
+                            Spacer(Modifier.width(Spacing.md))
+                            Column(Modifier.weight(1f)) {
+                                Text(g.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                Text("${g.memberCount}명", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(6.dp))
+                                com.phonelock.desktop.ui.components.ProgressLine(g.avgTodayPercent / 100f)
+                            }
+                            Spacer(Modifier.width(Spacing.lg))
+                            Column(horizontalAlignment = Alignment.End) {
+                                com.phonelock.desktop.ui.components.BigNumber(
+                                    "${g.avgTodayPercent}",
+                                    unit = "%",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text("오늘 루틴 평균", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                            }
                         }
-                        Spacer(Modifier.width(Spacing.md))
-                        // 92차 재디자인: 퍼센트를 알약 배지로(안드로이드판과 동일).
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            SectionPill("${g.avgTodayPercent}%")
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                "오늘 루틴 평균",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        com.phonelock.desktop.ui.components.Hairline()
                     }
                 }
             }
+        }
         }
     }
 }

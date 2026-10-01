@@ -87,7 +87,10 @@ class RoutineReminderReceiver : BroadcastReceiver() {
                     if (prefs.lastRoutineStreakNotifyDate != today) {
                         val routines = repository.getAllRoutines()
                         val completed = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
-                        val streak = RoutineEngine.currentStreak(routines, completed, LocalDate.now().minusDays(1))
+                        // 어제까지를 확정값으로 본다 — 어제를 못 채웠으면 방지권을 쓰거나(유지) 끊긴 것으로 센다.
+                        val streak = RoutineEngine.currentStreak(
+                            routines, completed, LocalDate.now().minusDays(1), prefs.routineStreakFreezePerWeek, todayPending = false
+                        )
                         val message: String
                         if (streak > 0) {
                             message = RoutineQuotes.forStreak(streak, broken = false)
@@ -169,7 +172,7 @@ class RoutineReminderReceiver : BroadcastReceiver() {
 
         val message = buildString {
             append("루틴 완료율 $routineRate%($doneCount/$scheduledCount)")
-            append(" · 공부 %.1f시간".format(studyHours))
+            append(" · 집중 %.1f시간".format(studyHours))
             if (avgCalcProgress != null) append(" · 계산기 평균 진척도 ${Math.round(avgCalcProgress)}%")
         }
         com.phonelock.app.service.StudyNotificationGate.showOrQueue(

@@ -44,7 +44,10 @@ object SocialGroupSyncClient {
     data class ScheduleStat(
         val dateKey: String, val name: String, val status: String?, val color: String,
         val linkedCalc: String? = null, val progressStep: String? = null,
-        val passIndex: Int = 0, val passTotal: Int = com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT
+        val passIndex: Int = 0, val passTotal: Int = com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT,
+        /** 143차: 그 날 이 일정(같은 이름)에 실제로 잰 집중 시간(초, 모든 기기 합산) — 상세 화면에서 완료 표시 옆에 시간을
+         *  보여준다. 집중 시간 공유(shareStudy)를 켠 사람만 싣고, 없으면(옛 버전·공유 끔) null. */
+        val studySeconds: Int? = null
     )
     /** 할당량 계산기 업무 하나 — 라이브 [com.phonelock.desktop.ui.TimetableScreen]과 같은 요일별 목표량 표를
      *  모임 멤버 상세에도 그대로 그리기 위해(78차) draft CalcTask에서 표시에 필요한 필드만 옮긴다. */
@@ -85,7 +88,17 @@ object SocialGroupSyncClient {
         val plantTitle: String = "",
         val plantTier: Int = 0,
         val plantProgress: Float = 0f,
-        val plantRebirthCount: Int = 0
+        val plantRebirthCount: Int = 0,
+        /** 143차: 이 사람의 "오늘" 날짜 키(하루 시작 기준 반영, 141차) — 캘린더·일정표의 오늘 표시를 이 사람 기준으로 맞춘다.
+         *  없으면(옛 버전) 보는 사람의 기준을 쓴다. */
+        val studyDayKey: String? = null,
+        /** 143차: 집중 통계(142차의 연속 기록·하루 평균)를 이 사람 기록으로 계산한 값 — 집중 시간 공유(shareStudy)를 켠
+         *  사람만 있다. 옛 버전은 null이라 상세 화면이 예전 근사치(캘린더 완료 기준)로 돌아간다. */
+        val studyStreak: Int? = null,
+        val studyBestStreak: Int? = null,
+        val studyAvgShortSeconds: Int? = null,
+        val studyAvgLongSeconds: Int? = null,
+        val studyActiveAvgSeconds: Int? = null
     )
     /** 닉네임 옆에 붙이는 레벨/칭호 배지(122차, 사용자 요청) — [findMemberPlantBadge] 참고. */
     data class PlantBadge(val level: Int, val title: String)
@@ -529,8 +542,11 @@ object SocialGroupSyncClient {
         runCatching {
             val (token, uid) = resolveIdentity(apiKey) ?: return@runCatching
             val base = databaseUrl.trimEnd('/')
+            // 루틴은 자정 기준(138차 결정)이라 달력 날짜를, 집중·캘린더 쪽은 "하루 시작 기준"의 오늘(141차)을 쓴다.
             val today = LocalDate.now()
             val todayKey = today.toString()
+            val studyDayKey = repository.todayCalendarDateKey()
+            val studyToday = LocalDate.parse(studyDayKey)
 
             val share = repository.groupShareSettings(groupId)
             val hiddenFromUids = repository.hiddenFromUidsFor(groupId)
@@ -543,6 +559,7 @@ object SocialGroupSyncClient {
                 put("displayName", myDisplayName(databaseUrl, apiKey))
                 if (myProfileImage.isNotBlank()) put("profileImage", myProfileImage)
                 put("updatedAt", System.currentTimeMillis())
+                put("studyDayKey", studyDayKey)
                 put("shareRoutines", share.shareRoutines)
                 put("shareStudy", share.shareStudy)
                 put("shareStreak", share.shareStreak)
@@ -576,33 +593,47 @@ object SocialGroupSyncClient {
                 }
                 stats.put("routines", routinesArr)
             }
-            val calendarTasks = repository.getCalendarTasks(todayKey)
+            val calendarTasks = repository.getCalendarTasks(studyDayKey)
             // 캘린더 미니 그리드가 이 달 전체를 그리고(오늘 하루치만 보여주던 76차 이전과 다름), 날짜 상세의
             // 총 공부시간도 같은 달 범위가 필요해서 firstOfMonth/lastOfMonth를 두 블록이 함께 쓴다
             // (달력 그리드가 앞뒤로 걸치는 주까지 포함해 ±7일 버퍼 — CalendarScreen.refresh()와 동일 범위).
-            val firstOfMonth = today.withDayOfMonth(1)
+            val firstOfMonth = studyToday.withDayOfMonth(1)
             val lastOfMonth = firstOfMonth.plusMonths(1).minusDays(1)
             val monthFromKey = firstOfMonth.minusDays(7).toString()
             val monthToKey = lastOfMonth.plusDays(7).toString()
+            // 143차: 같은 달 범위의 집중 기록(다른 기기 몫 포함) — 날짜별 합계와 일정별 시간을 여기서 함께 만든다.
+            // 집중 시간 공유를 끈 사람은 아예 받아오지도 않는다.
+            val studyEntries = if (share.shareStudy) repository.loadStudyLogEntriesInRange(monthFromKey, monthToKey) else emptyList()
+            val studySecondsByTask = studyEntries.groupBy { it.dateKey to it.taskName }
+                .mapValues { (_, entries) -> entries.sumOf { it.seconds } }
             if (share.shareStudy) {
-                val seconds = repository.getStudyLogForDate(todayKey).sumOf { it.seconds }
+                val seconds = repository.getStudyLogForDate(studyDayKey).sumOf { it.seconds }
                 val progress = if (calendarTasks.isNotEmpty()) {
                     Math.round(calendarTasks.count { it.status == "O" } * 100.0 / calendarTasks.size).toInt()
                 } else 0
                 stats.put("studyTodaySeconds", seconds)
                 stats.put("studyProgressPercent", progress)
-                val byDate = repository.getStudyLogInRange(monthFromKey, monthToKey)
+                val byDate = studyEntries
                     .groupBy { it.dateKey }
                     .mapValues { (_, entries) -> entries.sumOf { it.seconds } }
                 stats.put("studySecondsByDate", JSONObject().apply {
                     byDate.forEach { (dateKey, seconds2) -> put(dateKey, seconds2) }
                 })
+                // 143차: 집중 통계 탭(연속 기록·하루 평균, 142차)은 이 사람의 기록으로 계산해서 올린다 — 받는 쪽은 일정
+                // 범위뿐이라 직접 계산할 수 없다. 평균은 기록이 없으면 키 자체를 생략한다(받는 쪽이 "—"로 표시).
+                val summary = com.phonelock.shared.study.StudyStats.summarize(repository.loadStudyDayTotals(), studyToday)
+                stats.put("studyStreak", summary.currentStreak)
+                stats.put("studyBestStreak", summary.bestStreak)
+                summary.shortAverageSeconds?.let { stats.put("studyAvgShort", it.toInt()) }
+                summary.longAverageSeconds?.let { stats.put("studyAvgLong", it.toInt()) }
+                summary.activeDayAverageSeconds?.let { stats.put("studyActiveAvg", it.toInt()) }
             }
             if (share.shareStreak) {
                 val routines = repository.getAllRoutines()
                 val completed = routines.associate { it.id to repository.getRoutineCompletedDateKeys(it.id) }
-                stats.put("streak", RoutineEngine.currentStreak(routines, completed, today))
-                stats.put("routineBestStreak", RoutineEngine.bestStreak(routines, completed, today))
+                val freeze = repository.routineStreakFreezePerWeek
+                stats.put("streak", RoutineEngine.currentStreak(routines, completed, today, freeze))
+                stats.put("routineBestStreak", RoutineEngine.bestStreak(routines, completed, today, freeze))
             }
             if (share.shareSchedule) {
                 val monthTasks = repository.getCalendarTasksInRange(monthFromKey, monthToKey)
@@ -617,6 +648,7 @@ object SocialGroupSyncClient {
                             put("progressStep", t.progressStep ?: JSONObject.NULL)
                             put("passIndex", t.passIndex)
                             put("passTotal", t.passTotal)
+                            if (share.shareStudy) put("studySeconds", studySecondsByTask[t.dateKey to t.name] ?: 0)
                         })
                     }
                 })
@@ -682,7 +714,8 @@ object SocialGroupSyncClient {
                             if (sc.isNull("progressStep")) null else sc.optString("progressStep", null),
                             // passIndex/passTotal을 안 올리는 구버전 클라이언트의 데이터는 레거시 3단계 규칙으로 추론.
                             sc.optInt("passIndex", com.phonelock.shared.calc.PassSchedule.legacyPassIndex(scColor)),
-                            sc.optInt("passTotal", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT)
+                            sc.optInt("passTotal", com.phonelock.shared.calc.PassSchedule.DEFAULT_PASS_COUNT),
+                            if (s.optBoolean("shareStudy", false) && sc.has("studySeconds")) sc.optInt("studySeconds", 0) else null
                         )
                     }
                 } else emptyList()
@@ -730,7 +763,13 @@ object SocialGroupSyncClient {
                     plantTitle = if (sharePlant) s.optString("plantTitle", "") else "",
                     plantTier = if (sharePlant) s.optInt("plantTier", 0) else 0,
                     plantProgress = if (sharePlant) s.optDouble("plantProgress", 0.0).toFloat() else 0f,
-                    plantRebirthCount = if (sharePlant) s.optInt("plantRebirthCount", 0) else 0
+                    plantRebirthCount = if (sharePlant) s.optInt("plantRebirthCount", 0) else 0,
+                    studyDayKey = s.optString("studyDayKey", "").takeIf { it.isNotBlank() },
+                    studyStreak = if (s.optBoolean("shareStudy", false) && s.has("studyStreak")) s.optInt("studyStreak", 0) else null,
+                    studyBestStreak = if (s.optBoolean("shareStudy", false) && s.has("studyBestStreak")) s.optInt("studyBestStreak", 0) else null,
+                    studyAvgShortSeconds = if (s.optBoolean("shareStudy", false) && s.has("studyAvgShort")) s.optInt("studyAvgShort", 0) else null,
+                    studyAvgLongSeconds = if (s.optBoolean("shareStudy", false) && s.has("studyAvgLong")) s.optInt("studyAvgLong", 0) else null,
+                    studyActiveAvgSeconds = if (s.optBoolean("shareStudy", false) && s.has("studyActiveAvg")) s.optInt("studyActiveAvg", 0) else null
                 )
             }
         }.getOrDefault(emptyList())

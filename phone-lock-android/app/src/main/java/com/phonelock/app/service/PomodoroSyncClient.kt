@@ -418,6 +418,57 @@ object PomodoroSyncClient {
         }
     }
 
+    /**
+     * 공부 기록이 하나라도 있는 날짜 키 전체(모든 기기) — 통계 탭의 연속 기록용(142차). `shallow=true`라 기록
+     * 내용은 받지 않고 날짜 키만 온다(몇 년 치여도 작다). 설정 누락/오류 시 null.
+     */
+    suspend fun readStudyLogDateKeys(databaseUrl: String?, apiKey: String?): Set<String>? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
+                val base = databaseUrl.trimEnd('/')
+                val url = URL("$base/users/$user/studyLog.json?shallow=true&auth=$token")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = TIMEOUT_MS
+                    readTimeout = TIMEOUT_MS
+                }
+                if (conn.responseCode !in 200..299) { conn.disconnect(); return@runCatching null }
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                if (body.isBlank() || body == "null") return@runCatching emptySet<String>()
+                JSONObject(body).keys().asSequence().toSet()
+            }.getOrNull()
+        }
+    }
+
+    /**
+     * [fromDateKey](yyyy-MM-dd) 이후 날짜의 기기별 공부 기록(날짜 -> 기기 -> 배열) — 통계 탭의 평균 공부 시간용
+     * (142차). 날짜 키로 범위를 잘라 받으므로 하루씩 여러 번 읽지 않는다. 설정 누락/오류 시 null.
+     */
+    suspend fun readStudyLogSince(databaseUrl: String?, apiKey: String?, fromDateKey: String): JSONObject? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
+                val base = databaseUrl.trimEnd('/')
+                // orderBy="$key"&startAt="날짜" — 따옴표와 $는 URL에 그대로 넣을 수 없어 미리 인코딩한다.
+                val query = "orderBy=%22%24key%22&startAt=%22$fromDateKey%22"
+                val url = URL("$base/users/$user/studyLog.json?$query&auth=$token")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = TIMEOUT_MS
+                    readTimeout = TIMEOUT_MS
+                }
+                if (conn.responseCode !in 200..299) { conn.disconnect(); return@runCatching null }
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                if (body.isBlank() || body == "null") return@runCatching JSONObject()
+                JSONObject(body)
+            }.getOrNull()
+        }
+    }
     data class CalendarSyncResult(val tasksJson: JSONObject, val ts: Long)
 
     /**
@@ -756,6 +807,86 @@ object PomodoroSyncClient {
 
     /** [firebaseSafeKey]를 그룹 설정 동기화(PhoneLockRepository.GroupSync.kt)에서도 재사용하기 위한 공개 창구. */
     fun groupSettingsSafeKey(groupName: String): String = firebaseSafeKey(groupName)
+
+    /**
+     * [readLockTimerSignal]의 결과 — [signal]이 null이면 "원격에 약속이 없다"이고, 함수 자체가 null을 돌려주면
+     * "물어보지 못했다"(오프라인·로그인 안 됨·오류)이다. 둘을 구별해야 Wi-Fi가 끊긴 것만으로 약속이 풀리거나
+     * 다시 올라가는 일이 없다.
+     */
+    data class LockTimerRemote(val signal: com.phonelock.shared.lock.LockTimerSignal?)
+
+    /**
+     * 타이머 약속(143차) 문서 `users/{user}/lockTimerSync` — 사용자당 하나뿐인 약속을 기기 간에 맞춘다(규칙은
+     * [com.phonelock.shared.lock.LockTimerSync]). 앱·사이트 목록은 싣지 않는다(기기마다 다름).
+     */
+    suspend fun readLockTimerSignal(databaseUrl: String?, apiKey: String?): LockTimerRemote? {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, user) = resolveIdentity(apiKey) ?: return@runCatching null
+                val base = databaseUrl.trimEnd('/')
+                val conn = (URL("$base/users/$user/lockTimerSync.json?auth=$token").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = TIMEOUT_MS
+                    readTimeout = TIMEOUT_MS
+                }
+                if (conn.responseCode !in 200..299) { conn.disconnect(); return@runCatching null }
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                if (body.isBlank() || body == "null") return@runCatching LockTimerRemote(null)
+                val json = JSONObject(body)
+                val startedAt = json.optLong("startedAt", 0L)
+                val lockStart = json.optLong("lockStartAt", 0L)
+                val lockEnd = json.optLong("lockEndAt", 0L)
+                // 값이 깨진 문서는 "약속 없음"으로 본다(없는 것과 같게 다뤄 로컬 약속이 있으면 새로 덮어쓴다).
+                if (startedAt <= 0L || lockEnd <= lockStart) return@runCatching LockTimerRemote(null)
+                LockTimerRemote(
+                    com.phonelock.shared.lock.LockTimerSignal(
+                        startedAtMillis = startedAt,
+                        lockStartAtMillis = lockStart,
+                        lockEndAtMillis = lockEnd,
+                        wholeDevice = json.optBoolean("wholeDevice", true),
+                        level = json.optInt("level", com.phonelock.shared.lock.UnlockLevel.DEFAULT),
+                        pomodoroBreakUnlock = json.optBoolean("pomodoroBreakUnlock", false),
+                        cancelled = json.optBoolean("cancelled", false),
+                        updatedAtMillis = json.optLong("updatedAt", 0L)
+                    )
+                )
+            }.getOrNull()
+        }
+    }
+
+    /** 타이머 약속 문서를 덮어쓴다. 올렸으면 true. */
+    suspend fun writeLockTimerSignal(databaseUrl: String?, apiKey: String?, signal: com.phonelock.shared.lock.LockTimerSignal): Boolean {
+        if (databaseUrl.isNullOrBlank() || apiKey.isNullOrBlank()) return false
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val (token, user) = resolveIdentity(apiKey) ?: return@runCatching false
+                val base = databaseUrl.trimEnd('/')
+                val conn = (URL("$base/users/$user/lockTimerSync.json?auth=$token").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"
+                    connectTimeout = TIMEOUT_MS
+                    readTimeout = TIMEOUT_MS
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                }
+                val body = JSONObject().apply {
+                    put("startedAt", signal.startedAtMillis)
+                    put("lockStartAt", signal.lockStartAtMillis)
+                    put("lockEndAt", signal.lockEndAtMillis)
+                    put("wholeDevice", signal.wholeDevice)
+                    put("level", signal.level)
+                    put("pomodoroBreakUnlock", signal.pomodoroBreakUnlock)
+                    put("cancelled", signal.cancelled)
+                    put("updatedAt", signal.updatedAtMillis)
+                }
+                conn.outputStream.use { it.write(body.toString().toByteArray()) }
+                val ok = conn.responseCode in 200..299
+                conn.disconnect()
+                ok
+            }.getOrDefault(false)
+        }
+    }
 
     data class CalculatorSyncResult(
         val tasksJson: org.json.JSONArray, val tasksTs: Long,

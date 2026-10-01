@@ -22,6 +22,10 @@ interface AppGroupDao {
     @Query("SELECT * FROM app_group ORDER BY id")
     suspend fun getAllOnce(): List<AppGroup>
 
+    /** 전체 잠금 방식(허용 목록) 규칙만 — 목록에 "없는" 앱을 찾아야 해서 멤버 테이블로는 거꾸로 찾을 수 없다(142차). */
+    @Query("SELECT * FROM app_group WHERE allowlistMode = 1 ORDER BY id")
+    suspend fun getAllowlistGroups(): List<AppGroup>
+
     @Insert
     suspend fun insert(group: AppGroup): Long
 

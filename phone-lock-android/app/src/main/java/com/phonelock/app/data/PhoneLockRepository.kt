@@ -247,6 +247,8 @@ class PhoneLockRepository(context: Context) {
 
     /** 일일 사용 한도/요일 판정에 공통으로 쓰이는 "하루 시작 시각" (0~23시, 기본 자정). */
     val dailyResetHour: Int get() = preferences.dailyResetHour
+    /** 루틴 연속 기록 방지권(142차) — 주당 봐주는 일수. 화면/통계/모임 공유가 모두 이 값을 쓴다. */
+    val routineStreakFreezePerWeek: Int get() = preferences.routineStreakFreezePerWeek
 
     /** 차단 규칙 수정·삭제 방지(129차) — LockEvaluator.isWithinEditProtectionWindow가 읽는다. */
     val editProtectionEnabled: Boolean get() = preferences.editProtectionEnabled
@@ -484,7 +486,9 @@ class PhoneLockRepository(context: Context) {
                     forceEnabledFrom = row.stringOrNull("forceEnabledFrom"),
                     forceEnabledUntil = row.stringOrNull("forceEnabledUntil"),
                     blockAttemptDate = row.optString("blockAttemptDate", ""),
-                    blockAttemptCount = row.optInt("blockAttemptCount", 0)
+                    blockAttemptCount = row.optInt("blockAttemptCount", 0),
+                    // 142차: 빠뜨리면 전체 잠금 규칙이 "허용 목록만 막는 규칙"으로 뒤집혀 복구된다.
+                    allowlistMode = row.bool("allowlistMode", false)
                 )
             )
             restored++
@@ -639,16 +643,33 @@ class PhoneLockRepository(context: Context) {
      * 필요한 그룹이 있으면 각각 확인받아야 한다).
      */
     suspend fun findGroupsForPackage(packageName: String): List<AppGroup> {
-        val candidates = memberDao.findAllByPackage(packageName)
-        if (candidates.isEmpty()) return emptyList()
-        return candidates.mapNotNull { groupDao.getById(it.groupId) }.filter { evaluator.isGroupActive(it) }
+        val listed = memberDao.findAllByPackage(packageName).mapNotNull { groupDao.getById(it.groupId) }
+        // 전체 잠금 방식 규칙(142차)은 거꾸로다 — 목록(허용 앱)에 "없는" 앱이 그 규칙의 대상이다. 전화·키보드처럼
+        // 기기를 쓰는 데 꼭 필요한 앱([EssentialApps])은 어떤 전체 잠금 규칙에도 걸리지 않는다.
+        val allowedBy = listed.filter { it.allowlistMode }.map { it.id }.toSet()
+        val wholeDevice = if (packageName in com.phonelock.app.service.EssentialApps.packages(appContext)) {
+            emptyList()
+        } else {
+            groupDao.getAllowlistGroups().filter { it.id !in allowedBy }
+        }
+        return (listed.filter { !it.allowlistMode } + wholeDevice).filter { evaluator.isGroupActive(it) }
     }
 
     /** 사이트도 같은 이유로 여러 그룹에 겹쳐 등록됐을 수 있으므로, 매칭되는 도메인과 그 그룹을 모두 돌려준다. */
-    suspend fun findGroupSitesForAddress(addressText: String): List<Pair<GroupSite, AppGroup>> {
-        val candidates = groupSiteDao.getAllOnce().filter { addressText.contains(it.domain, ignoreCase = true) }
-        if (candidates.isEmpty()) return emptyList()
-        return candidates.mapNotNull { site -> groupDao.getById(site.groupId)?.let { site to it } }
+    suspend fun findGroupSitesForAddress(
+        addressText: String,
+        browserPackage: String? = null
+    ): List<Pair<GroupSite, AppGroup>> {
+        val matched = groupSiteDao.getAllOnce().filter { addressText.contains(it.domain, ignoreCase = true) }
+            .mapNotNull { site -> groupDao.getById(site.groupId)?.let { site to it } }
+        // 전체 잠금 방식 규칙(142차): 허용 사이트에 "없는" 주소가 대상이다. 브라우저 자체가 허용 앱이 아니면 앱
+        // 단위 잠금([findGroupsForPackage])이 이미 막으므로, 브라우저를 허용해 둔 규칙만 사이트 단위로 본다.
+        val allowedBy = matched.filter { (_, group) -> group.allowlistMode }.map { (_, group) -> group.id }.toSet()
+        val wholeDevice = groupDao.getAllowlistGroups()
+            .filter { it.id !in allowedBy }
+            .filter { group -> browserPackage != null && memberDao.getMembers(group.id).any { it.packageName == browserPackage } }
+            .map { group -> GroupSite(group.id, addressText.trim().take(80)) to group }
+        return (matched.filter { (_, group) -> !group.allowlistMode } + wholeDevice)
             .filter { (_, group) -> evaluator.isGroupActive(group) }
     }
 
@@ -952,7 +973,7 @@ class PhoneLockRepository(context: Context) {
         if (seconds <= 0) return
         val today = effectiveDate(preferences.dailyResetHour).toString()
         ioScope.launch {
-            studyLogEntryDao.insert(StudyLogEntry(dateKey = today, taskName = taskName.ifBlank { "이름 없는 공부" }, seconds = seconds, startedAt = startedAt, note = note, tag = tag))
+            studyLogEntryDao.insert(StudyLogEntry(dateKey = today, taskName = taskName.ifBlank { "이름 없는 집중" }, seconds = seconds, startedAt = startedAt, note = note, tag = tag))
             pushStudyLogToFirebase(today)
             awardStudyPoints(seconds, today, startedAt)
         }
@@ -984,6 +1005,61 @@ class PhoneLockRepository(context: Context) {
         withContext(Dispatchers.IO) { RemoteStudyLogCache.put(preferences, dateKey, others) }
     }
 
+    /**
+     * 통계 탭용(142차) — 날짜별 공부 시간(모든 기기 합산)과 "공부 기록이 있는 날" 집합.
+     *
+     * 이 기기 기록은 로컬 전체를 쓰고, 다른 기기 몫은 평균에 필요한 최근 30일만 범위로 한 번에 받아 합친다
+     * (하루씩 [syncStudyLogFromFirebase]를 부르지 않는다). 연속 기록은 날짜만 알면 되므로 날짜 키 목록을 따로
+     * 받는다. 오프라인이거나 받지 못하면 이 기기 기록만으로 계산한다.
+     */
+    suspend fun loadStudyDayTotals(): com.phonelock.shared.study.StudyStats.DayTotals {
+        val local = studyLogEntryDao.getAllOnce()
+        val secondsByDate = mutableMapOf<String, Long>()
+        local.forEach { secondsByDate[it.dateKey] = (secondsByDate[it.dateKey] ?: 0L) + it.seconds }
+        val studied = secondsByDate.filterValues { it > 0 }.keys.toMutableSet()
+        if (isEffectivelyOffline()) return com.phonelock.shared.study.StudyStats.DayTotals(secondsByDate, studied)
+
+        val since = LocalDate.parse(todayCalendarDateKey())
+            .minusDays((com.phonelock.shared.study.StudyStats.LONG_WINDOW_DAYS - 1).toLong()).toString()
+        com.phonelock.app.service.PomodoroSyncClient.readStudyLogSince(fbDatabaseUrl, fbApiKey, since)?.let { remote ->
+            val ownKey = deviceSlotKey()
+            remote.keys().forEach { dateKey ->
+                val day = remote.optJSONObject(dateKey) ?: return@forEach
+                val fingerprints = local.filter { it.dateKey == dateKey }
+                    .map { studyLogFingerprint(it.startedAt, it.seconds, it.taskName) }
+                    .toSet()
+                val others = mergeRemoteStudyLog(day, dateKey, ownKey, fingerprints).sumOf { it.seconds.toLong() }
+                if (others > 0) {
+                    secondsByDate[dateKey] = (secondsByDate[dateKey] ?: 0L) + others
+                    studied += dateKey
+                }
+            }
+        }
+        com.phonelock.app.service.PomodoroSyncClient.readStudyLogDateKeys(fbDatabaseUrl, fbApiKey)?.let { studied += it }
+        return com.phonelock.shared.study.StudyStats.DayTotals(secondsByDate, studied)
+    }
+
+    /**
+     * 모임 공유용(143차) — [fromKey, toKey] 범위의 집중 기록 전체(이 기기 + 다른 기기). 캘린더 날짜 상세의 "그 날 총
+     * 시간"과 일정별 시간이 다른 기기에서 한 몫까지 합산되도록 범위로 한 번에 받는다([loadStudyDayTotals]와 같은 방식).
+     * 오프라인이거나 받지 못하면 이 기기 기록만 돌려준다.
+     */
+    suspend fun loadStudyLogEntriesInRange(fromKey: String, toKey: String): List<StudyLogEntry> {
+        val local = studyLogEntryDao.getInRange(fromKey, toKey)
+        if (isEffectivelyOffline()) return local
+        val remote = com.phonelock.app.service.PomodoroSyncClient.readStudyLogSince(fbDatabaseUrl, fbApiKey, fromKey) ?: return local
+        val ownKey = deviceSlotKey()
+        val entries = local.toMutableList()
+        remote.keys().forEach { dateKey ->
+            if (dateKey > toKey) return@forEach
+            val day = remote.optJSONObject(dateKey) ?: return@forEach
+            val fingerprints = local.filter { it.dateKey == dateKey }
+                .map { studyLogFingerprint(it.startedAt, it.seconds, it.taskName) }
+                .toSet()
+            entries += mergeRemoteStudyLog(day, dateKey, ownKey, fingerprints)
+        }
+        return entries
+    }
     /** 스톱워치/뽀모도로를 새로 시작한다. 이미 실행 중이면 아무 일도 하지 않는다. */
     fun timerStart(taskName: String, pomodoro: Boolean) {
         if (getTimerRun() != null) return

@@ -89,7 +89,11 @@ data class Group(
     /** 이 차단 규칙을 크로스디바이스 설정 동기화에 참여시킬지(94차, 사용자 요청 — 자동 전체 동기화 폐지,
      *  안드로이드판과 대칭). 기본 꺼짐. 켜진 그룹만 원격에 올라가고("불러오기" 화면에서 다른 기기가 볼 수
      *  있음), 원격 최신값을 받아온다. 꺼진 그룹은 완전히 로컬 전용으로 남는다. */
-    val syncEnabled: Boolean = false
+    val syncEnabled: Boolean = false,
+    /** 전체 잠금 방식(142차, 사용자 요청, 안드로이드판과 대칭) — true면 [processNames]/[domains]가 "막을 대상"이
+     *  아니라 "허용할 대상"이 된다: 시간대·일일 한도에 걸린 동안 목록에 없는 프로그램/사이트가 전부 잠긴다.
+     *  목록과 짝을 이루는 값이라 목록처럼 기기마다 따로 두고 동기화하지 않는다. 실행 전 대기는 이 방식에 쓰지 않는다. */
+    val allowlistMode: Boolean = false
 )
 
 /** 회유 멘트 성공률 통계(82차, §9/§11, 안드로이드판과 대칭) — 판정 로직과 무관한 순수 로컬 기록. */
@@ -302,6 +306,9 @@ data class AppData(
     var blockShorts: Boolean = false,
     /** 스트릭 기반 응원/비판/조롱 알림(52차) 전체 on/off. */
     var routineStreakNotifyEnabled: Boolean = false,
+    /** 루틴 연속 기록 방지권(142차) — 일주일(월~일)에 이 일수만큼은 루틴을 100% 채우지 못해도 끊기지 않는다.
+     *  루틴별이 아니라 "하루" 단위이며, 기기 간 설정 동기화 대상이다([Repository.pushSettingsToFirebase]). */
+    var routineStreakFreezePerWeek: Int = com.phonelock.shared.routine.RoutineStreak.DEFAULT_FREEZE_DAYS_PER_WEEK,
     /** 공부 알림(122차, 안드로이드판 AppPreferences.studyAlert*와 대칭) — 캘린더/계산기/일정표를 보고
      *  계획보다 늦어질 때만 알린다. 전부 이 기기 로컬 값(data.json)이고 동기화 대상이 아니다. 진동은
      *  데스크탑에 해당 개념이 없어 안드로이드에만 있다. */
@@ -392,6 +399,17 @@ data class AppData(
     var customThemeAccent: String = "#8BC34A",
     /** 앱 완전 종료 시 회유 멘트 20개 확인 절차를 거칠지(79차) — 기본 꺼짐(사용자 요청). */
     var exitConfirmEnabled: Boolean = false,
+    /** 미니멀 모드 = 성능 모드(144차, 안드로이드 130차 미니멀 모드와 같은 뜻) — 흑백 팔레트 + 움직임·효과 최소화 +
+     *  홈의 움직이는 장면 대신 글자 홈. 기기마다 따로(동기화하지 않음). 고른 테마는 그대로 두고 표시만 덮는다. */
+    var minimalMode: Boolean = false,
+    /** 관리 > 타이머("이거까지만 할게요!", 142차)의 진행 중인 약속([com.phonelock.shared.lock.LockTimer.encode],
+     *  없으면 빈 문자열)과 타이머 화면에 마지막으로 넣었던 값. 143차부터 약속은 다른 기기와 동기화한다
+     *  ([com.phonelock.shared.lock.LockTimerSync]) — 앱·프로그램 목록은 기기마다 따로. */
+    var lockTimerEncoded: String = "",
+    var lockTimerPresetEncoded: String = "",
+    /** 이 기기에서 해제 절차로 푼 마지막 타이머 약속의 시작 시각(143차) — 푼 사실을 아직 못 올렸을 때 원격에 남은
+     *  같은 약속을 다시 받아오지 않고 해제를 다시 올리기 위해 기억한다. */
+    var lockTimerClosedStartedAt: Long = 0L,
     /** 캘린더 새 일정을 추가할 때 "다회독"(완료 시 다음 회독 자동 생성) 기본값 — 기본 꺼짐, 공부 설정에서 사용자가 변경. */
     var defaultMultiPassEnabled: Boolean = false,
     /** 계산기 연동이 아닌, 캘린더에서 직접 추가하는 일정의 기본 회독 수(3~8)·회독별 간격(83차, 다회독 상세화). */

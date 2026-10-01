@@ -17,6 +17,12 @@ object IntentExtras {
     const val EXTRA_STUDY_LOCK_STARTED_AT = "extra_study_lock_started_at"
     const val EXTRA_STUDY_LOCK_IS_POMODORO = "extra_study_lock_is_pomodoro"
     const val EXTRA_STUDY_LOCK_IS_REMOTE = "extra_study_lock_is_remote"
+    // 전체 잠금 화면(FullLockActivity, 142차) — 전체 잠금 방식 규칙과 타이머의 전체 잠금이 함께 쓴다.
+    const val EXTRA_FULL_LOCK_TITLE = "extra_full_lock_title"
+    const val EXTRA_FULL_LOCK_MESSAGE = "extra_full_lock_message"
+    const val EXTRA_FULL_LOCK_ALLOWED_PACKAGES = "extra_full_lock_allowed_packages"
+    /** 잠금이 끝나는 시각(epoch millis). 타이머만 알 수 있고, 규칙은 0(남은 시간 표시 없음). */
+    const val EXTRA_FULL_LOCK_ENDS_AT = "extra_full_lock_ends_at"
 
     /**
      * 차단/실행확인 화면(singleInstance)에 새 인텐트가 왔을 때 "같은 앱/사이트·같은 사유·같은 그룹"에 대한

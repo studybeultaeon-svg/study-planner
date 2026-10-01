@@ -42,8 +42,8 @@ object StudyAlertNotifier {
      *   항목 자체는 그대로 존중).
      */
     fun checkAndNotify(repository: Repository, force: Boolean): String {
-        if (!repository.studyAlertEnabled) return "공부 알림이 꺼져 있습니다."
-        if (!force && repository.isStudyLockActive()) return "공부 중이라 이번 검사는 건너뜁니다."
+        if (!repository.studyAlertEnabled) return "집중 알림이 꺼져 있습니다."
+        if (!force && repository.isStudyLockActive()) return "집중 중이라 이번 검사는 건너뜁니다."
 
         val startHour = repository.studyAlertStartHour
         val endHour = repository.studyAlertEndHour

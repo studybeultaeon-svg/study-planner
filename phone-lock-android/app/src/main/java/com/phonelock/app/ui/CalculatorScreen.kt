@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -115,14 +116,15 @@ fun CalculatorScreen(repository: PhoneLockRepository) {
         savedCount = repository.getCalcSaved().size
     }) {
     Column(Modifier.fillMaxSize()) {
-        Text("🧮 계산기", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(Spacing.md))
         if (com.phonelock.app.ui.components.isTabletWidth()) {
             // 83차: 태블릿은 데스크탑 CalculatorScreen.kt와 같은 좌(입력)/우(결과) 분할 — 입력/결과를
             // 탭으로 나누지 않고 동시에 보여준다. "저장됨"만 별도 탭으로 유지(데스크탑도 입력 옆 서브탭).
-            TabRow(selectedTabIndex = if (subTab == 2) 1 else 0) {
-                Tab(selected = subTab != 2, onClick = { subTab = 0 }, text = { Text("계산기") })
-                Tab(selected = subTab == 2, onClick = { subTab = 2; savedRefreshTick++ }, text = { Text("저장됨 ($savedCount)") })
-            }
+            com.phonelock.app.ui.components.SegmentedTabs(
+                listOf("계산기", "저장됨 $savedCount"),
+                if (subTab == 2) 1 else 0,
+                { i -> if (i == 1) { subTab = 2; savedRefreshTick++ } else subTab = 0 },
+                Modifier.padding(horizontal = Spacing.lg).padding(top = Spacing.md).widthIn(max = 420.dp)
+            )
             Spacer(Modifier.height(Spacing.sm))
             if (subTab == 2) {
                 CalcSavedTab(repository = repository, refreshTick = savedRefreshTick, onChanged = { savedRefreshTick++; onSaved(); onChanged() })
@@ -134,15 +136,12 @@ fun CalculatorScreen(repository: PhoneLockRepository) {
                 )
             }
         } else {
-            TabRow(selectedTabIndex = subTab) {
-                Tab(selected = subTab == 0, onClick = { subTab = 0 }, text = { Text("입력") })
-                Tab(selected = subTab == 1, onClick = { subTab = 1 }, text = { Text("결과") })
-                Tab(
-                    selected = subTab == 2,
-                    onClick = { subTab = 2; savedRefreshTick++ },
-                    text = { Text("저장됨 ($savedCount)") }
-                )
-            }
+            com.phonelock.app.ui.components.SegmentedTabs(
+                listOf("입력", "결과", "저장됨 $savedCount"),
+                subTab,
+                { i -> subTab = i; if (i == 2) savedRefreshTick++ },
+                Modifier.padding(horizontal = Spacing.gutter).padding(top = Spacing.md)
+            )
             Spacer(Modifier.height(Spacing.sm))
 
             when (subTab) {
@@ -209,7 +208,7 @@ private fun CalcInputTab(
                 OutlinedButton(onClick = { scope.launch { repository.resetCalcTasks(); onChanged() } }) { Text("입력 초기화") }
             }
             Spacer(Modifier.height(Spacing.sm))
-            Button(onClick = onCalculate, modifier = Modifier.fillMaxWidth()) { Text("📊 계산하기") }
+            Button(onClick = onCalculate, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("계산하기", style = MaterialTheme.typography.titleMedium) }
             Spacer(Modifier.height(Spacing.sm))
         }
     }
@@ -358,10 +357,10 @@ private fun CalcTaskCard(
             androidx.compose.material3.HorizontalDivider()
             Spacer(Modifier.height(Spacing.sm))
 
-            CalcFieldGroupHeader("🔁", "복습 설정")
+            CalcFieldGroupHeader("🔁", "반복 설정")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "복습 사용",
+                    "반복 사용",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 androidx.compose.material3.Switch(
@@ -372,7 +371,7 @@ private fun CalcTaskCard(
             if (multiPassUsageEnabled) {
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    "이 업무를 캘린더에 연동할 때 몇 번 복습할지",
+                    "이 업무를 캘린더에 연동할 때 몇 번 반복할지",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -386,13 +385,13 @@ private fun CalcTaskCard(
                         passIntervals = com.phonelock.shared.calc.PassSchedule.parsePassIntervals(passIntervals.joinToString(","), newCount)
                         persist()
                     },
-                    label = "복습 횟수",
+                    label = "반복 횟수",
                     min = com.phonelock.shared.calc.PassSchedule.MIN_PASS_COUNT,
                     max = com.phonelock.shared.calc.PassSchedule.MAX_PASS_COUNT,
                     modifier = Modifier.width(160.dp)
                 )
                 Spacer(Modifier.height(Spacing.xs))
-                Text("복습별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("회차별 간격(일)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(2.dp))
                 // 회독 수가 늘어나면(최대 8이면 간격칸 7개) 고정 Row는 화면 폭을 넘어가 찌부러진다(83차 발견) —
                 // FlowRow로 넘치면 자동 줄바꿈, 칸 자체 폭도 줄여서 한 줄에 더 많이 들어가게 함.
@@ -408,7 +407,7 @@ private fun CalcTaskCard(
                                 passIntervals = passIntervals.toMutableList().also { it[i] = newDays }
                                 persist()
                             },
-                            label = "${i + 1}→${i + 2}회 복습",
+                            label = "${i + 1}→${i + 2}회차",
                             min = 1, max = 90,
                             centerValue = true,
                             modifier = Modifier.width(100.dp)
@@ -418,7 +417,7 @@ private fun CalcTaskCard(
             } else {
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
-                    "캘린더에 연동하면 1회 복습(단일 복습)만 생성됩니다",
+                    "캘린더에 연동하면 1회차(한 번)만 생성됩니다",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -434,16 +433,9 @@ private fun CalcTaskCard(
  * 재사용해 새 시각 패턴을 늘리지 않았다.
  */
 @Composable
-private fun CalcFieldGroupHeader(emoji: String, title: String) {
-    Text(
-        "$emoji $title",
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-    )
-    Spacer(Modifier.height(Spacing.xs))
+private fun CalcFieldGroupHeader(@Suppress("UNUSED_PARAMETER") emoji: String, title: String) {
+    // 144차: 이모지 알약 대신 작은 라벨(Ledger Overline) — 입력 묶음의 머리는 조용하게, 입력칸이 주인공이 되게.
+    com.phonelock.app.ui.components.Overline(title, Modifier.padding(top = Spacing.xs, bottom = 6.dp))
 }
 
 @Composable
@@ -459,7 +451,7 @@ private fun CalcResultTab(repository: PhoneLockRepository, results: List<Pair<Ca
         }
         results.forEach { (_, outcome) ->
             if (outcome is CalcEngine.CalcOutcome.Error) {
-                Text("⚠️ ${outcome.message}", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = Spacing.xs))
+                Text(outcome.message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = Spacing.xs))
             }
         }
         val successes = results.mapNotNull { (task, outcome) -> if (outcome is CalcEngine.CalcOutcome.Success) task to outcome else null }
@@ -476,7 +468,7 @@ private fun CalcResultTab(repository: PhoneLockRepository, results: List<Pair<Ca
                         }
                     },
                     modifier = Modifier.weight(1f)
-                ) { Text("💾 전체 저장") }
+                ) { Text("전체 저장") }
             }
             savedAllCount?.let {
                 Text("${it}개 저장됨", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Spacing.xs))
@@ -698,7 +690,7 @@ private fun CalcResultCard(
                         colors = btnColors,
                         border = btnBorder,
                         modifier = Modifier.weight(1f)
-                    ) { Text("📋 결과 복사") }
+                    ) { Text("결과 복사") }
                 }
             }
         }
@@ -729,7 +721,7 @@ private fun PaceTable(result: CalcEngine.CalcResult) {
     }
     if (!result.enough) {
         Row(Modifier.fillMaxWidth().background(red.copy(alpha = 0.06f))) {
-            Text("필요⚠️", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, color = red, fontWeight = FontWeight.Bold)
+            Text("필요", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall, color = red, fontWeight = FontWeight.Bold)
             DAY_ORDER.forEach { d ->
                 val v = result.reqGoals[d] ?: 0.0
                 Text(
