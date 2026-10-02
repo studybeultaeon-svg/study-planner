@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "갓생키트 사이트 차단",
+  "name": "갓생살기종합세트 사이트 차단",
   "version": "1.0.0",
-  "description": "갓생키트 데스크탑 앱과 연동해서 차단 규칙에 등록한 사이트를 차단·확인합니다.",
+  "description": "갓생살기종합세트 데스크탑 앱과 연동해서 차단 규칙에 등록한 사이트를 차단·확인합니다.",
   "permissions": ["webNavigation", "alarms", "tabs", "storage"],
   "host_permissions": ["<all_urls>", "http://127.0.0.1/*"],
   "background": {

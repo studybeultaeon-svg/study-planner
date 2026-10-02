@@ -251,7 +251,7 @@ private fun startApp() = application {
     Tray(
         icon = SunriseIcon,
         state = trayState,
-        tooltip = "갓생키트",
+        tooltip = "갓생살기종합세트",
         onAction = { mainWindowVisible = true },
         menu = {
             Item("열기", onClick = { mainWindowVisible = true })
@@ -283,7 +283,7 @@ private fun startApp() = application {
     if (mainWindowVisible) {
         Window(
             onCloseRequest = { mainWindowVisible = false },
-            title = "갓생키트",
+            title = "갓생살기종합세트",
             icon = SunriseIcon
         ) {
             // 전체 잠금 화면에서 이 창을 열었을 때 다른 창 뒤에 있으면 앞으로 가져온다.

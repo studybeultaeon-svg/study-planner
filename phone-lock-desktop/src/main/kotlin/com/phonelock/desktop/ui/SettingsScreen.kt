@@ -407,7 +407,7 @@ fun SettingsScreen(
     // 144차 리디자인(안드로이드판과 같은 언어): 편집형 머리(큰 제목 + 닫기), 왼쪽 목차는 원 안의 아이콘 + 이름 + 한 줄 설명,
     // 오른쪽은 고른 분류의 큰 제목 + 세부 설정.
     Column(Modifier.fillMaxSize()) {
-        PageMasthead(title = "설정", overline = "갓생키트") {
+        PageMasthead(title = "설정", overline = "갓생살기종합세트") {
             IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "설정 닫기") }
         }
         Spacer(Modifier.height(Spacing.md))

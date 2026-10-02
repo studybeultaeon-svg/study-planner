@@ -770,7 +770,7 @@ fun SettingsScreen(
                         Spacer(Modifier.height(Spacing.sm))
                         Text(
                             "지금 기본 런처: " +
-                                if (isDefaultLauncher) "갓생키트"
+                                if (isDefaultLauncher) "갓생살기종합세트"
                                 else (com.phonelock.app.ui.launcher.currentLauncherLabel(context) ?: "선택 안 함"),
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -1752,7 +1752,7 @@ fun SettingsScreen(
     if (isTabletWidth()) {
         Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             Column(Modifier.width(280.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = Spacing.md)) {
-                com.phonelock.app.ui.components.PageMasthead(title = "설정", overline = "갓생키트")
+                com.phonelock.app.ui.components.PageMasthead(title = "설정", overline = "갓생살기종합세트")
                 Spacer(Modifier.height(Spacing.md))
                 visibleCategories.forEach { cat ->
                     SettingsCategoryRow(cat, selected = category == cat, compact = true) { category = cat }
@@ -1786,7 +1786,7 @@ fun SettingsScreen(
         ) { open ->
             if (!open) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = Spacing.xl)) {
-                    com.phonelock.app.ui.components.PageMasthead(title = "설정", overline = "갓생키트") {
+                    com.phonelock.app.ui.components.PageMasthead(title = "설정", overline = "갓생살기종합세트") {
                         IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "설정 닫기") }
                     }
                     Spacer(Modifier.height(Spacing.md))

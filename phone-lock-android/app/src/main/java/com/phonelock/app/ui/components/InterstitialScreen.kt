@@ -166,7 +166,7 @@ fun InterstitialScreen(
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = Spacing.lg).padding(top = Spacing.xl, bottom = Spacing.lg)
         ) {
-            Overline("갓생키트")
+            Overline("갓생살기종합세트")
             Spacer(Modifier.weight(1f))
             // 문구는 무작위라 길이가 들쭉날쭉하다 — 폰에선 한 줄에 안 들어가면(didOverflowWidth) 글자를 조금씩 줄여
             // 한 줄로 맞추고(애매한 지점에서 줄이 갈라지지 않게), 태블릿은 폭이 넉넉해 그대로 줄바꿈한다.

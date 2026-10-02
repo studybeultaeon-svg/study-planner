@@ -114,8 +114,8 @@ fun LedgerNavRail(
         ) {
             Spacer(Modifier.height(20.dp))
             Text(
-                "갓생키트", // 147차: 앱 이름 변경 — 레일 폭(88dp)에 맞춰 한 단계 작은 글자
-                style = MaterialTheme.typography.titleMedium,
+                "갓생",
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 softWrap = false
