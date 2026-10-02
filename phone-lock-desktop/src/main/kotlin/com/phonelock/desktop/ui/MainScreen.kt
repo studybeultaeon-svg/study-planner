@@ -18,12 +18,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Spa
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.outlined.Spa
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.MaterialTheme
@@ -160,7 +160,7 @@ fun MainScreen(
     val navItems = remember(visibleSections) {
         visibleSections.map { s ->
             when (s) {
-                TopSection.HOME -> LedgerNavItem(s.name, "홈", Icons.Outlined.Spa, Icons.Filled.Spa)
+                TopSection.HOME -> LedgerNavItem(s.name, "홈", Icons.Outlined.StarOutline, Icons.Filled.Star)
                 TopSection.ROUTINE -> LedgerNavItem(s.name, "루틴", Icons.Outlined.TaskAlt, Icons.Filled.TaskAlt)
                 TopSection.STUDY -> LedgerNavItem(s.name, "집중", Icons.Outlined.Timer, Icons.Filled.Timer)
                 TopSection.MANAGE -> LedgerNavItem(s.name, "관리", Icons.Outlined.Shield, Icons.Filled.Shield)

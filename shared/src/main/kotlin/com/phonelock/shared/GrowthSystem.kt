@@ -10,8 +10,8 @@ package com.phonelock.shared
  * - "칭호"(식물 이름)는 레벨마다 바뀌는 게 아니라 정해진 레벨 구간(STAGES)에 도달해야 바뀐다 —
  *   레벨 숫자는 자주, 칭호는 듬성듬성 오르게 해서 두 종류의 도파민을 분리했다.
  * - 칭호는 런타임에 랜덤 조합하지 않고 전부 미리 정해둔 고정 테이블(STAGES)이다 — 칭호마다 전용
- *   일러스트(`illustrationId`, PlantScreen.kt의 GroundScene이 분기해서 그림)가 1:1로 짝지어져 있어
- *   칭호와 그림이 항상 일치한다(불일치 불가능).
+ *   그림(`illustrationId`, 양 플랫폼 `CosmosScene.kt`의 천체 하나)이 1:1로 짝지어져 있어
+ *   칭호와 그림이 항상 일치한다(불일치 불가능). 149차에 식물 → 천체로 바뀌었다(아래 STAGES 참고).
  * - **레벨업 게임 루프(109차 재조정, 이어서 "500레벨+연간 시즌" 개편)**: "빠른 성장 → 성장 둔화 →
  *   정체(벽) → 환생 → 가속 → 다시 정체"가 반복되도록 설계됐다 — 자세한 시뮬레이션/근거는
  *   [[DECISIONS.md]] 109차 "레벨 성장 곡선과 환생 게임 루프 재설계"/"500레벨 및 연간 성장 시스템" 참고.
@@ -30,10 +30,8 @@ package com.phonelock.shared
  *   (`Repository.checkAndResetGrowthSeasonIfNeeded`/`PhoneLockRepository` 동일 함수 참고).
  * - EXP 획득 시 레벨에 즉시 반영되지 않는다(108차) — 획득분은 별도 "대기 EXP"에 먼저 쌓이고, 사용자가
  *   식물 탭에서 "적용" 버튼을 눌러야 그 순간 누적 EXP에 실제로 더해진다([ApplyResult] 참고).
- * - **칭호/등급 체계(109차 후속, 500레벨 상한에 맞춰 전면 재설계)**: 이전(105차) 1150레벨까지의 브레인롯
- *   테이블은 폐기하고, 500레벨을 5개 등급(정상/이상함/초월급/종말급/최강자급)으로 나눈 23단계 고정
- *   테이블로 교체했다 — 사용자와 여러 차례 논의를 거쳐 톤/등급 경계/칭호 문구를 확정([[DECISIONS.md]]
- *   참고). `Stage.tier`가 GroundScene의 배경·나무 형태(등급별로 완전히 다른 실루엣)를 직접 분기한다.
+ * - **칭호/등급 체계**: 500레벨을 5개 등급으로 나눈 23단계 고정 테이블(109차에 경계 확정). 149차에 칭호·등급 이름만
+ *   천체 규모 사다리(행성/항성/별의 최후/은하/우주)로 바꿨다 — 경계 레벨은 그대로([[DECISIONS.md]] 145·149차).
  */
 object GrowthSystem {
 
@@ -164,46 +162,51 @@ object GrowthSystem {
 
     // ---- 성장 단계(칭호+일러스트+등급, 전부 미리 정해둔 고정 테이블) ----
 
-    /** tier: 0=정상, 1=이상함, 2=초월급, 3=종말급, 4=최강자급 — PlantScreen.kt의 GroundScene이 이 값으로
-     *  하늘/땅 배경과 나무 형태(어린 식물/평범한 나무/신성한 나무/재앙의 나무/세계수) 자체를 분기한다. */
+    /** tier: 0=행성, 1=항성, 2=별의 최후, 3=은하, 4=우주([TIER_NAMES]). 그림은 [illustrationId]가 고른다
+     *  (양 플랫폼 `CosmosScene.kt`의 천체 하나와 1:1). */
     data class Stage(val levelThreshold: Int, val title: String, val illustrationId: String, val tier: Int)
 
+    /** 등급 이름(149차) — 칭호는 23단계라 자주 바뀌지만 등급은 5개뿐이라 "지금 어느 규모에 있는가"를 한 줄로 준다. */
+    val TIER_NAMES: List<String> = listOf("행성", "항성", "별의 최후", "은하", "우주")
+
+    fun tierName(tier: Int): String = TIER_NAMES[tier.coerceIn(0, TIER_NAMES.lastIndex)]
+
     /**
-     * 칭호 고정 테이블 — 런타임에 랜덤 생성하지 않는다(109차 후속, 500레벨 상한 도입에 맞춰 전면 재설계 —
-     * 이전 1150레벨까지의 "이탈리안 브레인롯/파워스케일링 밈" 톤은 폐기됨, [[DECISIONS.md]] 참고).
-     * 5단계 등급: 정상(1~150, 평범한 식물 성장) → 이상함(150~250, 위화감이 스며듦) → 초월급(250~350,
-     * 격조 있는 한자어로 초월적 존재감) → 종말급(350~450, 재앙급 스케일) → 최강자급(450~500, 절대적
-     * 존재). 칭호와 일러스트(illustrationId, GroundScene의 when 분기)가 항상 1:1로 짝지어져 있어
-     * 불일치가 날 수 없다. */
+     * 칭호 고정 테이블 — 런타임에 랜덤 생성하지 않는다. 149차(145차 계획 B)에 식물 컨셉을 폐기하고 **천체 규모 사다리**로
+     * 바꿨다: 먼지가 뭉쳐 행성이 되고(행성) → 스스로 빛나고(항성) → 생을 마치고(별의 최후) → 별들이 모이고(은하) →
+     * 우주 자체가 되어 마지막엔 한 점으로 수렴한다(오메가 포인트). 레벨 구간·단계 수(10/4/3/3/3)는 109차 표 그대로,
+     * 칭호와 그림만 바꿨다 — 칭호는 모두 두 단어 이내(모임 목록 폭). [[DECISIONS.md]] 145·149차.
+     * 화면 문구에서 환생은 "빅뱅"이다(500 오메가 포인트 → 다시 우주 먼지). 식별자 `rebirth*`·저장 키는 그대로 둔다.
+     */
     val STAGES: List<Stage> = listOf(
-        // 정상(tier 0) — 평범한 식물 성장
-        Stage(1, "씨앗", "seed", 0),
-        Stage(4, "발아", "sprout", 0),
-        Stage(8, "새싹", "sapling", 0),
-        Stage(14, "어린잎", "young_leaf", 0),
-        Stage(22, "무럭무럭", "growing", 0),
-        Stage(33, "꽃봉오리", "bud", 0),
-        Stage(48, "첫 개화", "first_bloom", 0),
-        Stage(68, "풍성한 화분", "lush_pot", 0),
-        Stage(95, "든든한 나무", "sturdy_tree", 0),
-        Stage(125, "거목", "giant_tree", 0),
-        // 이상함(tier 1) — 뭔가 이상해지기 시작
-        Stage(150, "무언가 눈을 뜬 화분", "eye_pot", 1),
-        Stage(175, "닿을 수 없는 말을 읊조리는 고목", "murmur_tree", 1),
-        Stage(200, "빛조차 삼켜버린 잎", "shadow_leaf", 1),
-        Stage(225, "경계가 허물어지는 개화", "warped_bloom", 1),
-        // 초월급(tier 2) — 인간의 영역을 벗어남
-        Stage(250, "태고의 겁외에서 눈뜬 근원의 뿌리", "glowing_roots", 2),
-        Stage(280, "존재 자체가 이치가 되어버린 나무", "geometric_halo", 2),
-        Stage(310, "불가해의 경지에 오른 화신목", "afterimage", 2),
-        // 종말급(tier 3) — 재앙급 스케일
-        Stage(350, "종말조차 외경하는 태고의 존재", "cracked_start", 3),
-        Stage(380, "불멸을 초월한 재앙의 근원", "floating_debris", 3),
-        Stage(410, "멸망마저 좌정시키는 정원사", "crown_shockwave", 3),
-        // 최강자급(tier 4) — 절대적 존재
-        Stage(450, "범접(犯接)조차 불허하는 그림자", "giant_shadow", 4),
-        Stage(475, "만유(萬有)의 근원이자 정점", "full_aura", 4),
-        Stage(500, "형언불가(形言不可)한 절대의 존재", "ultimate", 4)
+        // 행성(tier 0)
+        Stage(1, "우주 먼지", "cosmic_dust", 0),
+        Stage(4, "미행성", "planetesimal", 0),
+        Stage(8, "원시 행성", "protoplanet", 0),
+        Stage(14, "암석 행성", "rocky_planet", 0),
+        Stage(22, "대기 행성", "atmosphere_planet", 0),
+        Stage(33, "해양 행성", "ocean_planet", 0),
+        Stage(48, "위성계 행성", "moon_system", 0),
+        Stage(68, "고리 행성", "ringed_planet", 0),
+        Stage(95, "가스 거인", "gas_giant", 0),
+        Stage(125, "행성계", "planetary_system", 0),
+        // 항성(tier 1)
+        Stage(150, "갈색 왜성", "brown_dwarf", 1),
+        Stage(175, "원시성", "protostar", 1),
+        Stage(200, "주계열성", "main_sequence", 1),
+        Stage(225, "쌍성계", "binary_star", 1),
+        // 별의 최후(tier 2)
+        Stage(250, "적색 거성", "red_giant", 2),
+        Stage(280, "초신성", "supernova", 2),
+        Stage(310, "블랙홀", "black_hole", 2),
+        // 은하(tier 3)
+        Stage(350, "은하", "galaxy", 3),
+        Stage(380, "은하단", "galaxy_cluster", 3),
+        Stage(410, "초은하단", "supercluster", 3),
+        // 우주(tier 4)
+        Stage(450, "관측 가능한 우주", "observable_universe", 4),
+        Stage(475, "다중우주", "multiverse", 4),
+        Stage(500, "오메가 포인트", "omega_point", 4)
     )
 
     /** 레벨 기준 현재 단계(칭호+일러스트+등급). 마지막 단계를 넘는 레벨은 마지막 단계를 그대로 유지. */

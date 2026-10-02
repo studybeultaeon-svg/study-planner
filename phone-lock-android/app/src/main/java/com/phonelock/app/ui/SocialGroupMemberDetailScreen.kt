@@ -395,9 +395,9 @@ private fun MemberHeader(displayName: String, updatedAt: Long, profileImage: Str
 
 /**
  * "홈" 탭(119차 신설, 120차 개편) — 처음엔 레벨/칭호/등급 카드 요약만 보여줬지만(사용자 피드백: 축약하지
- * 말고 실제 홈 화면을 그대로 보여달라) 라이브 [PlantScreen]과 같은 [GroundScene] 렌더러를 그대로 재사용해
- * 배경/나무 애니메이션까지 동일하게 그린다. 다만 이 값들은 [SocialGroupSyncClient.MemberStats] 스냅샷(공유
- * 시점 값)이라 실시간이 아니고, 설정/경험치 적용/환생 같은 조작 버튼은 내 계정 전용이라 여기선 뺐다(읽기전용).
+ * 말고 실제 홈 화면을 그대로 보여달라) 라이브 [PlantScreen]과 같은 [CosmosScene]으로 상대의 천체를 그린다(149차,
+ * 식물 장면 대신). 다만 이 값들은 [SocialGroupSyncClient.MemberStats] 스냅샷(공유
+ * 시점 값)이라 실시간이 아니고, 설정/경험치 적용/빅뱅 같은 조작 버튼은 내 계정 전용이라 여기선 뺐다(읽기전용).
  */
 @Composable
 private fun MemberHomeTab(s: SocialGroupSyncClient.MemberStats) {
@@ -405,10 +405,9 @@ private fun MemberHomeTab(s: SocialGroupSyncClient.MemberStats) {
     val progress = s.plantProgress ?: 0f
     val rebirthCount = s.plantRebirthCount ?: 0
     val stage = GrowthSystem.stageForLevel(level)
-    val stageIndex = GrowthSystem.STAGES.indexOf(stage)
 
     Box(Modifier.fillMaxWidth().height(420.dp).clip(RoundedCornerShape(20.dp))) {
-        GroundScene(stageIndex = stageIndex, stage = stage, rebirthCount = rebirthCount, modifier = Modifier.fillMaxSize())
+        CosmosScene(stage.illustrationId, Modifier.fillMaxSize(), contentBottomInset = 132.dp)
         Surface(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(Spacing.md),
             shape = RoundedCornerShape(16.dp),
@@ -418,15 +417,16 @@ private fun MemberHomeTab(s: SocialGroupSyncClient.MemberStats) {
             Column(Modifier.fillMaxWidth().padding(Spacing.md)) {
                 Text("Lv.$level", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 Text(stage.title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    GrowthSystem.tierName(stage.tier) + if (rebirthCount > 0) " · 빅뱅 ${rebirthCount}회" else "",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(Modifier.height(Spacing.xs))
                 LinearProgressIndicator(
                     progress = { progress },
                     modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
                 )
-                if (rebirthCount > 0) {
-                    Spacer(Modifier.height(Spacing.xs))
-                    Text("🔁 환생 ${rebirthCount}회", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
             }
         }
     }

@@ -25,13 +25,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Spa
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.outlined.Spa
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.MaterialTheme
@@ -87,7 +87,7 @@ private sealed class Tab(
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
     val selectedIcon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
-    object Home : Tab(MainActivity.ROUTE_HOME, "홈", Icons.Outlined.Spa, Icons.Filled.Spa)
+    object Home : Tab(MainActivity.ROUTE_HOME, "홈", Icons.Outlined.StarOutline, Icons.Filled.Star)
     object Routine : Tab(MainActivity.ROUTE_ROUTINE, "루틴", Icons.Outlined.TaskAlt, Icons.Filled.TaskAlt)
     object Study : Tab(MainActivity.ROUTE_STUDY, "집중", Icons.Outlined.Timer, Icons.Filled.Timer)
     object Manage : Tab(MainActivity.ROUTE_MANAGE, "관리", Icons.Outlined.Shield, Icons.Filled.Shield)

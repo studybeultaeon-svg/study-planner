@@ -56,7 +56,7 @@ fun GroupShareSettingsDialog(
                 ShareToggleRow("연속 기록", null, shareStreak) { shareStreak = it }
                 ShareToggleRow("오늘 일정", "오늘 캘린더 일정 목록과 완료 여부", shareSchedule) { shareSchedule = it }
                 ShareToggleRow("집중 중 여부", "지금 집중(뽀모도로 포함) 중인지와 업무 이름", shareStudyingNow) { shareStudyingNow = it }
-                ShareToggleRow("홈", "식물 성장 레벨·칭호·등급", sharePlant) { sharePlant = it }
+                ShareToggleRow("홈", "레벨·칭호·등급", sharePlant) { sharePlant = it }
             }
         },
         confirmButton = {

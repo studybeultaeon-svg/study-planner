@@ -9,7 +9,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.TaskAlt
-import androidx.compose.material.icons.outlined.Spa
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.Icons
@@ -365,7 +365,7 @@ private fun ShortcutTile(
         MainActivity.ROUTE_STUDY -> Icons.Outlined.Timer
         MainActivity.ROUTE_MANAGE -> Icons.Outlined.Shield
         MainActivity.ROUTE_GROUP -> Icons.Outlined.Groups
-        else -> Icons.Outlined.Spa
+        else -> Icons.Outlined.StarOutline
     }
     Column(
         modifier.clip(RoundedCornerShape(12.dp)).clickable { onClick() }.padding(vertical = 12.dp),
