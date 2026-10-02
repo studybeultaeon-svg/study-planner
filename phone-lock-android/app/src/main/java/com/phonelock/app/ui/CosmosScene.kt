@@ -1,7 +1,9 @@
 package com.phonelock.app.ui
 
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.phonelock.app.ui.theme.DarkBluePalette
 import com.phonelock.app.ui.theme.LocalAppMotion
 import com.phonelock.app.ui.theme.LocalPhoneLockPalette
+import com.phonelock.app.ui.theme.colorSchemeFor
 import kotlinx.coroutines.delay
 import kotlin.math.PI
 import kotlin.math.abs
@@ -79,6 +82,24 @@ private fun brightenForSpace(c: Color): Color {
         else -> 60f * ((c.red - c.green) / d + 4f)
     }
     return Color.hsl((h + 360f) % 360f, s.coerceIn(0f, 1f), 0.64f)
+}
+
+/**
+ * 장면 위에 얹는 글자·버튼의 테마(150차, 사용자 요청 "라이트 테마여도 홈 위쪽을 다크처럼 검정 + 흰 글자로") — 다크 테마는 그대로,
+ * 라이트 테마는 [cosmosColors]와 같은 기준(다크 · 블루 바탕·글자 + 강조색만 밝힘)의 팔레트로 색 역할을 통째로 바꾼다. 레벨 숫자 뒤
+ * 스크림도 이 바탕색을 쓰므로 종이 → 검정 띠가 없어진다. 장면 밖(아래 시트·옆 패널)에는 쓰지 않는다.
+ */
+@Composable
+fun CosmosOverlayTheme(content: @Composable () -> Unit) {
+    val palette = LocalPhoneLockPalette.current
+    if (palette.isDark) {
+        content()
+    } else {
+        val space = remember(palette) { DarkBluePalette.copy(primary = brightenForSpace(palette.primary)) }
+        MaterialTheme(colorScheme = remember(space) { colorSchemeFor(space) }) {
+            CompositionLocalProvider(LocalPhoneLockPalette provides space, content = content)
+        }
+    }
 }
 
 /** 움직임을 다시 그리는 간격 — 움직임이 느려 초당 30장이면 충분하고, 화면 주사율만큼 그리는 것보다 배터리를 덜 쓴다. */

@@ -4,7 +4,6 @@ import android.util.Base64
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,13 +30,12 @@ import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,10 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import com.phonelock.app.data.PhoneLockRepository
 import com.phonelock.app.data.*
@@ -398,6 +398,8 @@ private fun MemberHeader(displayName: String, updatedAt: Long, profileImage: Str
  * 말고 실제 홈 화면을 그대로 보여달라) 라이브 [PlantScreen]과 같은 [CosmosScene]으로 상대의 천체를 그린다(149차,
  * 식물 장면 대신). 다만 이 값들은 [SocialGroupSyncClient.MemberStats] 스냅샷(공유
  * 시점 값)이라 실시간이 아니고, 설정/경험치 적용/빅뱅 같은 조작 버튼은 내 계정 전용이라 여기선 뺐다(읽기전용).
+ * 150차(사용자 지적 "구식 UI"): 떠 있는 테두리 카드 대신 라이브 홈과 같은 문법 — 장면 위 왼쪽에 큰 레벨 숫자([HomeLevelHero]),
+ * 아래에 "다음 레벨까지" 진행 선. 글자는 테마와 상관없이 장면 색([CosmosOverlayTheme]).
  */
 @Composable
 private fun MemberHomeTab(s: SocialGroupSyncClient.MemberStats) {
@@ -405,28 +407,35 @@ private fun MemberHomeTab(s: SocialGroupSyncClient.MemberStats) {
     val progress = s.plantProgress ?: 0f
     val rebirthCount = s.plantRebirthCount ?: 0
     val stage = GrowthSystem.stageForLevel(level)
+    val isMaxLevel = GrowthSystem.isMaxLevel(level)
+    // 천체가 레벨 숫자와 진행 선 사이 가운데에 그려지도록 숫자 묶음의 높이를 잰다(라이브 홈과 같은 방식).
+    var heroHeightPx by remember { mutableIntStateOf(0) }
+    val heroHeight = if (heroHeightPx > 0) with(LocalDensity.current) { heroHeightPx.toDp() } else 170.dp
 
-    Box(Modifier.fillMaxWidth().height(420.dp).clip(RoundedCornerShape(20.dp))) {
-        CosmosScene(stage.illustrationId, Modifier.fillMaxSize(), contentBottomInset = 132.dp)
-        Surface(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(Spacing.md),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
-        ) {
-            Column(Modifier.fillMaxWidth().padding(Spacing.md)) {
-                Text("Lv.$level", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Text(stage.title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                Text(
-                    GrowthSystem.tierName(stage.tier) + if (rebirthCount > 0) " · 빅뱅 ${rebirthCount}회" else "",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(Spacing.xs))
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
-                )
+    Box(Modifier.fillMaxWidth().height(520.dp).clip(RoundedCornerShape(20.dp))) {
+        CosmosScene(stage.illustrationId, Modifier.fillMaxSize(), contentTopInset = heroHeight, contentBottomInset = 72.dp)
+        CosmosOverlayTheme {
+            HomeLevelHero(
+                level = level,
+                stage = stage,
+                isMaxLevel = isMaxLevel,
+                rebirthCount = rebirthCount,
+                numberStyle = MaterialTheme.typography.displayLarge.copy(fontSize = 56.sp, lineHeight = 58.sp, letterSpacing = (-2).sp),
+                modifier = Modifier.align(Alignment.TopStart).onSizeChanged { heroHeightPx = it.height }.padding(Spacing.lg)
+            )
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(Spacing.lg)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                    Overline(if (isMaxLevel) "이번 시즌 최대 레벨" else "다음 레벨까지", Modifier.weight(1f))
+                    Text(
+                        if (isMaxLevel) "MAX" else "${Math.round(progress * 100)}%",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                ProgressLine(progress, thickness = 6.dp)
             }
         }
     }

@@ -28,7 +28,7 @@ private fun mix(a: Color, b: Color, t: Float): Color = lerp(a, b, t)
  * - outline(입력칸·외곽선 버튼 테두리)은 보이는 굵기로, outlineVariant(구분선)는 팔레트의 가는 선(hairline)으로 나눈다.
  * - surfaceTint를 표면색과 같게 둬서 높이(elevation)에 따라 표면이 강조색으로 물들지 않게 한다(평평한 바탕 유지).
  */
-private fun colorSchemeFor(palette: PhoneLockPalette): ColorScheme {
+internal fun colorSchemeFor(palette: PhoneLockPalette): ColorScheme {
     val strongOutline = mix(palette.muted, palette.background, 0.42f)
     val containerHigh = if (palette.isDark) palette.surfaceAlt else palette.surface
     val containerHighest = if (palette.isDark) mix(palette.surfaceAlt, palette.onBackground, 0.06f) else palette.surfaceAlt

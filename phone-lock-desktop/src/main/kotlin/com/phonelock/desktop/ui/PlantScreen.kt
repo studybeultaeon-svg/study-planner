@@ -363,12 +363,14 @@ fun PlantScreen(repository: Repository, permPlant: Boolean = true, onOpenSetting
                     contentTopInset = heroHeight,
                     contentBottomInset = hudHeight + Spacing.md
                 ) {
-                    HomeSkyScrim(Modifier.align(Alignment.TopStart).fillMaxWidth().height(heroHeight + 72.dp))
-                    levelHero(
-                        Modifier.align(Alignment.TopStart).onSizeChanged { heroHeightPx = it.height }
-                            .padding(start = Spacing.lg, top = Spacing.md, end = 120.dp),
-                        heroStyle.copy(fontSize = 76.sp, lineHeight = 78.sp)
-                    )
+                    CosmosOverlayTheme {
+                        HomeSkyScrim(Modifier.align(Alignment.TopStart).fillMaxWidth().height(heroHeight + 72.dp))
+                        levelHero(
+                            Modifier.align(Alignment.TopStart).onSizeChanged { heroHeightPx = it.height }
+                                .padding(start = Spacing.lg, top = Spacing.md, end = 120.dp),
+                            heroStyle.copy(fontSize = 76.sp, lineHeight = 78.sp)
+                        )
+                    }
                     HomeSheet(
                         Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                             .heightIn(max = 340.dp)
@@ -471,9 +473,9 @@ private suspend fun animateExpSegment(from: Double, to: Double, stepDelayMs: Lon
 
 
 /**
- * 장면 위 레벨 히어로를 읽히게 하는 스크림(144차) — 테마 바탕색이 위에서 아래로 옅어진다. 149차: 우주 장면은 테마와 상관없이
- * 검정이라, 라이트 테마에선 이 스크림이 종이 바탕(레벨 숫자·칭호·등급까지)에서 검은 우주로 넘어가는 띠가 된다 — 글자가 끝나는
- * 자리까지는 거의 불투명하게 두고 그 아래에서 옅어진다. 다크 테마는 바탕이 곧 우주라 보이지 않는다. 성능 모드에선 씬 자체를 안 그린다.
+ * 장면 위 레벨 히어로를 읽히게 하는 스크림(144차) — 바탕색이 위에서 아래로 옅어지며 글자 뒤의 점별을 가린다. 글자가 끝나는 자리까지는
+ * 거의 불투명하게 두고 그 아래에서 옅어진다. 150차: [CosmosOverlayTheme] 안에서 그려 라이트 테마에서도 우주와 같은 검정이다(149차엔
+ * 종이 → 검정 띠였다 — 사용자 요청으로 없앰). 성능 모드에선 씬 자체를 안 그린다.
  */
 @Composable
 private fun HomeSkyScrim(modifier: Modifier = Modifier) {
@@ -493,7 +495,7 @@ private fun HomeSheet(modifier: Modifier = Modifier, content: @Composable () -> 
     )
 }
 
-/** 홈 화면 상단에 떠 있는 원형 아이콘 버튼(설정 버튼 외형). */
+/** 홈 화면 상단에 떠 있는 원형 아이콘 버튼(설정 버튼 외형). 150차: 바탕과 표면색이 가까워도 원이 보이게 가는 테두리를 둔다. */
 @Composable
 private fun HomeIconButton(
     onClick: () -> Unit,
@@ -506,7 +508,8 @@ private fun HomeIconButton(
         modifier = modifier.size(44.dp).pressScale(interaction)
             .clickable(interaction, indication = androidx.compose.foundation.LocalIndication.current, enabled = enabled, onClick = onClick),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
         Box(contentAlignment = Alignment.Center) { content() }
     }
@@ -553,10 +556,10 @@ private fun formatMultiplier(value: Double): String = when {
 
 /**
  * 레벨 히어로(144차) — 작은 라벨 + 아주 큰 레벨 숫자 + 칭호 + 등급. 경험치를 적용해 레벨이 오르면 숫자가 아래에서
- * 위로 넘어가듯 바뀐다(성능 모드에선 바로 바뀐다). 칭호가 길면 두 줄까지 감싼다(잘라 숨기지 않는다).
+ * 위로 넘어가듯 바뀐다(성능 모드에선 바로 바뀐다). 칭호가 길면 두 줄까지 감싼다(잘라 숨기지 않는다). 모임원 상세 홈 탭도 이걸 쓴다(150차).
  */
 @Composable
-private fun HomeLevelHero(
+internal fun HomeLevelHero(
     level: Int,
     stage: GrowthSystem.Stage,
     isMaxLevel: Boolean,
@@ -1026,23 +1029,26 @@ private fun HomeSceneArea(
             contentTopInset = contentTopInset,
             contentBottomInset = contentBottomInset
         )
+        overlay()
         // 오늘 카드와 상단 버튼을 한 줄(Row)에 둔다 — 각각 따로 모서리 정렬하면 좁은 폰에서 카드가
         // 버튼 밑으로 파고들어 겹친다. 카드는 남는 폭 안에서만(최대 260dp) 늘어난다.
-        Row(
-            Modifier.fillMaxWidth().padding(Spacing.lg),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
-        ) {
-            if (todayCard != null) {
-                Box(Modifier.weight(1f, fill = false).widthIn(max = 260.dp)) { todayCard() }
-            } else {
-                Spacer(Modifier)
-            }
-            if (topEndControls != null) {
-                Box(Modifier.padding(start = Spacing.sm)) { topEndControls() }
+        // 150차: overlay(레벨 숫자 뒤 스크림) 위에 그린다 — 예전엔 스크림 밑에 깔려 버튼이 흐리게 보였다. 장면 위라 장면 색으로.
+        CosmosOverlayTheme {
+            Row(
+                Modifier.fillMaxWidth().padding(Spacing.lg),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                if (todayCard != null) {
+                    Box(Modifier.weight(1f, fill = false).widthIn(max = 260.dp)) { todayCard() }
+                } else {
+                    Spacer(Modifier)
+                }
+                if (topEndControls != null) {
+                    Box(Modifier.padding(start = Spacing.sm)) { topEndControls() }
+                }
             }
         }
-        overlay()
         LevelUpFlash(levelUpFlash, Modifier.align(Alignment.Center))
     }
 }
