@@ -2,26 +2,24 @@ package com.phonelock.app.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.SolidColor
 
 /**
  * 숫자 입력칸 + 오른쪽 위/아래 화살표 버튼(83차, 사용자 요청 — "숫자 입력 칸은 오른쪽에 위아래 화살표를
@@ -53,66 +51,40 @@ fun NumberStepperField(
     centerValue: Boolean = false,
     stepperSize: androidx.compose.ui.unit.Dp = 20.dp,
     stepperIconSize: androidx.compose.ui.unit.Dp = 14.dp,
-    overlayStepper: Boolean = false
+    @Suppress("UNUSED_PARAMETER") overlayStepper: Boolean = false
 ) {
     fun bump(delta: Int) {
         val current = value.toDoubleOrNull()?.toInt() ?: 0
         onValueChange((current + delta).coerceIn(min, max).toString())
     }
-
-    if (overlayStepper) {
-        Box(modifier) {
-            OutlinedTextField(
+    // 147차: OutlinedTextField(테두리 상자 + 따로 예약되는 trailingIcon 폭) → [LedgerInputFrame](라벨 + 값 + 아래 가는 선).
+    // 화살표는 판 없는 아이콘을 값 오른쪽에 위/아래로 쌓는다 — 상자가 없어 85차의 "좁은 칸에서 숫자가 가려짐"
+    // 문제(overlayStepper로 피하던 것)가 생기지 않으므로 overlayStepper는 받기만 하고 쓰지 않는다.
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    LedgerInputFrame(modifier, label = label, focused = focused, centerLabel = centerValue) {
+        Box(Modifier.weight(1f)) {
+            BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
-                label = label?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-                modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 textStyle = calcFieldTextStyle().copy(
+                    color = MaterialTheme.colorScheme.onSurface,
                     textAlign = if (centerValue) TextAlign.Center else TextAlign.Start
-                )
+                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                interactionSource = interaction,
+                modifier = Modifier.fillMaxWidth()
             )
-            if (showStepper) {
-                // 85차 3차(사용자 지적): 가장자리에 너무 딱 붙었었다 — end padding을 살짝 늘려 여유를
-                // 두고, label이 위쪽 공간을 차지해 값 입력 줄의 실제 세로 중심이 Box 전체 높이의
-                // 기하학적 중심보다 아래에 있어 화살표 위/아래 여백이 짝짝이로 보였던 것도 아래로
-                // 살짝 밀어(offset) 값 줄과 눈높이를 맞췄다.
-                Column(
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 5.dp).offset(y = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    IconChip(Icons.Filled.KeyboardArrowUp, size = stepperSize, iconSize = stepperIconSize, onClick = { bump(step) })
-                    Spacer(Modifier.size(2.dp))
-                    IconChip(Icons.Filled.KeyboardArrowDown, size = stepperSize, iconSize = stepperIconSize, onClick = { bump(-step) })
-                }
+        }
+        if (showStepper) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                LedgerInputGlyph(Icons.Filled.KeyboardArrowUp, contentDescription = "늘리기", size = stepperSize, iconSize = stepperIconSize) { bump(step) }
+                LedgerInputGlyph(Icons.Filled.KeyboardArrowDown, contentDescription = "줄이기", size = stepperSize, iconSize = stepperIconSize) { bump(-step) }
             }
         }
-        return
     }
-
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = label?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-        modifier = modifier,
-        singleLine = true,
-        shape = RoundedCornerShape(12.dp),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        textStyle = calcFieldTextStyle().copy(
-            textAlign = if (centerValue) TextAlign.Center else TextAlign.Start
-        ),
-        trailingIcon = if (!showStepper) null else {
-            {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    IconChip(Icons.Filled.KeyboardArrowUp, size = stepperSize, iconSize = stepperIconSize, onClick = { bump(step) })
-                    Spacer(Modifier.size(3.dp))
-                    IconChip(Icons.Filled.KeyboardArrowDown, size = stepperSize, iconSize = stepperIconSize, onClick = { bump(-step) })
-                }
-            }
-        }
-    )
 }
 
 /** 계산기 업무 카드 안 모든 입력칸(숫자/이름/단위/휴일/날짜)이 공유하는 폰트 스타일(83차) — bodyLarge를

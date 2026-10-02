@@ -33,6 +33,14 @@ const level = parseInt(params.get("level") || "0", 10);
 const returnUrl = params.get("returnUrl") || "https://www.google.com";
 
 document.getElementById("title").textContent = quoteForTier(confirmQuoteTier(level));
+// 147차: Ledger 포스터 — 작은 라벨에 어느 사이트인지, 한 줄 안내, 대기 중엔 남은 초를 크게 + 진행 선(ledger.css).
+document.getElementById("kicker").textContent = domain ? `실행 확인 · ${domain}` : "실행 확인";
+document.getElementById("message").textContent = waitSeconds > 0
+  ? `"진행"을 누르면 ${waitSeconds}초 뒤에 열립니다.`
+  : `"진행"을 누르면 바로 열립니다.`;
+const countdownEl = document.getElementById("countdown");
+const countEl = document.getElementById("count");
+const barEl = document.getElementById("bar");
 
 const yesButton = document.getElementById("yes");
 const noButton = document.getElementById("no");
@@ -73,7 +81,16 @@ function isTabActive() {
   return document.visibilityState === "visible" && document.hasFocus();
 }
 
+function renderCountdown() {
+  if (!countdownEl) return;
+  countdownEl.style.display = started && waitSeconds > 0 ? "block" : "none";
+  countdownEl.classList.toggle("paused", paused);
+  countEl.textContent = String(Math.max(remaining, 0));
+  barEl.style.width = waitSeconds > 0 ? `${Math.round((1 - remaining / waitSeconds) * 100)}%` : "100%";
+}
+
 function renderYesLabel() {
+  renderCountdown();
   if (started && !paused) {
     yesButton.textContent = remaining > 0 ? `진행 (${remaining}초)` : "진행";
     yesButton.disabled = true;
@@ -86,7 +103,11 @@ function renderYesLabel() {
 function renderHint() {
   if (!hint) return;
   if (started && paused) {
+    // 체크포인트에서 숫자가 조용히 멈추기만 하면 왜 안 줄어드는지 알 수 없다 — 다시 눌러야 이어진다고 쓴다(데스크탑과 같다).
     hint.textContent = "이게 의무입니까?";
+    const small = document.createElement("small");
+    small.textContent = "아래 \"진행\"을 다시 눌러야 이어집니다.";
+    hint.appendChild(small);
     hint.style.display = "block";
   } else if (started && !isTabActive()) {
     hint.textContent = "이 탭을 벗어나서 다시 눌러야 합니다.";

@@ -23,7 +23,7 @@ import kotlinx.coroutines.delay
  */
 @Composable
 fun ExitConfirmScreen(
-    title: String = "정말 갓생살기종합세트를 종료하시겠습니까?",
+    title: String = "정말 갓생키트를 종료하시겠습니까?",
     finalLabel: String = "종료",
     onConfirmExit: () -> Unit,
     onCancel: () -> Unit
@@ -58,7 +58,8 @@ fun ExitConfirmScreen(
 
     WatchAndWaitScreen(
         title = title,
-        message = "확인 질문 (%d/%d)".format(messageIndex + 1, PERSUASION_MESSAGES.size),
+        step = messageIndex + 1,
+        stepTotal = PERSUASION_MESSAGES.size,
         quote = PERSUASION_MESSAGES[messageIndex],
         countdownSeconds = null,
         primaryEnabled = !stepStarted,

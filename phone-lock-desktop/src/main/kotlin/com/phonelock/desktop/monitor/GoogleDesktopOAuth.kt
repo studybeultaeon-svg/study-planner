@@ -155,7 +155,7 @@ object GoogleDesktopOAuth {
             URLDecoder.decode(it.substringBefore('='), "UTF-8") to URLDecoder.decode(it.substringAfter('='), "UTF-8")
         }
 
-    private const val CALLBACK_PAGE = """<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>갓생살기종합세트</title>
+    private const val CALLBACK_PAGE = """<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>갓생키트</title>
 <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:90vh;color:#333}</style></head>
 <body><p>구글 확인이 끝났습니다. 이 창을 닫고 앱으로 돌아가세요.</p></body></html>"""
 }

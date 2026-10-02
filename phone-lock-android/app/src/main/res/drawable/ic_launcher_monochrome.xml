@@ -3,18 +3,11 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 146차: 안드로이드 13+ 테마 아이콘용 한 색 레이어 — 앱 아이콘과 같은 별·궤도 고리를 모양만으로. -->
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2.4"
-        android:strokeLineCap="round"
-        android:pathData="M24.77,67.02 A32,10.5 -24 0,1 83.23,40.98" />
+    <!-- 147차: 안드로이드 13+ 테마 아이콘용 한 색 레이어 — 앱 아이콘과 같은 다섯 갈래 별을 모양만으로. -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M54,29 Q58,50 79,54 Q58,58 54,79 Q50,58 29,54 Q50,50 54,29 Z" />
-    <path
         android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2.4"
-        android:strokeLineCap="round"
-        android:pathData="M83.23,40.98 A32,10.5 -24 0,1 24.77,67.02" />
+        android:strokeWidth="3.5"
+        android:strokeLineJoin="round"
+        android:pathData="M54,32 L60.17,47.51 L76.83,48.58 L63.99,59.24 L68.11,75.42 L54,66.5 L39.89,75.42 L44.01,59.24 L31.17,48.58 L47.83,47.51 Z" />
 </vector>

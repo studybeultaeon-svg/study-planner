@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.components.PersuasionStepper
 import com.phonelock.desktop.ui.components.LedgerAlertDialog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -45,7 +46,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import com.phonelock.shared.PERSUASION_MESSAGES
-import com.phonelock.shared.randomPersuasionStepDelaysMs
 import com.phonelock.desktop.data.Group
 import com.phonelock.desktop.data.Repository
 import com.phonelock.desktop.data.applyGroupSettingsJson
@@ -562,6 +562,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                     value = forceEnabledFromText,
                     onValueChange = { forceEnabledFromText = it },
                     placeholder = "시작일",
+                    clearable = true, // 147차: 기간을 지우거나 줄이는 것은 이제 약화 판정(확인 질문 20개)을 거친다.
                     modifier = Modifier.weight(1f)
                 )
                 Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
@@ -569,6 +570,7 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
                     value = forceEnabledUntilText,
                     onValueChange = { forceEnabledUntilText = it },
                     placeholder = "종료일(포함)",
+                    clearable = true, // 147차: 기간을 지우거나 줄이는 것은 이제 약화 판정(확인 질문 20개)을 거친다.
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -667,102 +669,54 @@ fun GroupEditScreen(repository: Repository, groupId: Long?, onDone: () -> Unit) 
         val staged = pendingGroup
         if (staged != null) {
             val isLast = pendingMessageIndex == PERSUASION_MESSAGES.lastIndex
-            val stepDelaysMs = remember(staged) { randomPersuasionStepDelaysMs() }
-            var stepStarted by remember(pendingMessageIndex) { mutableStateOf(false) }
-            var stepRemainingSeconds by remember(pendingMessageIndex) { mutableIntStateOf(0) }
-            LaunchedEffect(pendingMessageIndex, stepStarted) {
-                if (!stepStarted) return@LaunchedEffect
-                stepRemainingSeconds = ((stepDelaysMs[pendingMessageIndex] + 999) / 1000).toInt()
-                while (stepRemainingSeconds > 0) {
-                    delay(1000)
-                    stepRemainingSeconds -= 1
-                }
-                if (isLast) {
-                    if (groupId == null) repository.createGroup(staged) else repository.updateGroup(staged)
-                    pendingGroup = null
-                    pendingMessageIndex = 0
-                    pendingMessage = null
-                    onDone()
-                } else {
-                    pendingMessageIndex++
-                }
-            }
-            Text(
-                "제한을 약화시키는 변경입니다 (%d/%d)".format(pendingMessageIndex + 1, PERSUASION_MESSAGES.size),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(Spacing.xs))
-            Text(PERSUASION_MESSAGES[pendingMessageIndex], style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(Spacing.sm))
-            Button(
-                onClick = { stepStarted = true },
-                enabled = !stepStarted,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                val label = if (isLast) "적용" else "예"
-                Text(if (stepStarted && stepRemainingSeconds > 0) "$label (${stepRemainingSeconds}초)" else label)
-            }
-            Spacer(Modifier.height(Spacing.sm))
-            OutlinedButton(
-                onClick = {
+            PersuasionStepper(
+                stepKey = staged,
+                messageIndex = pendingMessageIndex,
+                headerText = "제한을 약하게 바꾸는 변경",
+                message = PERSUASION_MESSAGES[pendingMessageIndex],
+                confirmLabel = if (isLast) "적용" else "예",
+                onCancel = {
                     pendingGroup = null
                     pendingMessageIndex = 0
                     pendingMessage = "변경을 취소했습니다."
                 },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("취소")
-            }
+                onConfirmStep = {
+                    if (isLast) {
+                        if (groupId == null) repository.createGroup(staged) else repository.updateGroup(staged)
+                        pendingGroup = null
+                        pendingMessageIndex = 0
+                        pendingMessage = null
+                        onDone()
+                    } else {
+                        pendingMessageIndex++
+                    }
+                }
+            )
         } else if (pendingDelete) {
             val isLast = pendingDeleteMessageIndex == PERSUASION_MESSAGES.lastIndex
-            val stepDelaysMs = remember(pendingDelete) { randomPersuasionStepDelaysMs() }
-            var stepStarted by remember(pendingDeleteMessageIndex) { mutableStateOf(false) }
-            var stepRemainingSeconds by remember(pendingDeleteMessageIndex) { mutableIntStateOf(0) }
-            LaunchedEffect(pendingDeleteMessageIndex, stepStarted) {
-                if (!stepStarted) return@LaunchedEffect
-                stepRemainingSeconds = ((stepDelaysMs[pendingDeleteMessageIndex] + 999) / 1000).toInt()
-                while (stepRemainingSeconds > 0) {
-                    delay(1000)
-                    stepRemainingSeconds -= 1
-                }
-                if (isLast) {
-                    if (groupId != null) repository.deleteGroup(groupId)
-                    pendingDelete = false
-                    pendingDeleteMessageIndex = 0
-                    pendingMessage = null
-                    onDone()
-                } else {
-                    pendingDeleteMessageIndex++
-                }
-            }
-            Text(
-                "지금 차단 중인 차단 규칙의 삭제입니다 (%d/%d)".format(pendingDeleteMessageIndex + 1, PERSUASION_MESSAGES.size),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(Spacing.xs))
-            Text(PERSUASION_MESSAGES[pendingDeleteMessageIndex], style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(Spacing.sm))
-            Button(
-                onClick = { stepStarted = true },
-                enabled = !stepStarted,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                val label = if (isLast) "삭제" else "예"
-                Text(if (stepStarted && stepRemainingSeconds > 0) "$label (${stepRemainingSeconds}초)" else label)
-            }
-            Spacer(Modifier.height(Spacing.sm))
-            OutlinedButton(
-                onClick = {
+            PersuasionStepper(
+                stepKey = pendingDelete,
+                messageIndex = pendingDeleteMessageIndex,
+                headerText = "걸려 있는 차단 규칙 삭제",
+                message = PERSUASION_MESSAGES[pendingDeleteMessageIndex],
+                confirmLabel = if (isLast) "삭제" else "예",
+                onCancel = {
                     pendingDelete = false
                     pendingDeleteMessageIndex = 0
                     pendingMessage = "삭제를 취소했습니다."
                 },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("취소")
-            }
+                onConfirmStep = {
+                    if (isLast) {
+                        if (groupId != null) repository.deleteGroup(groupId)
+                        pendingDelete = false
+                        pendingDeleteMessageIndex = 0
+                        pendingMessage = null
+                        onDone()
+                    } else {
+                        pendingDeleteMessageIndex++
+                    }
+                }
+            )
         } else {
             pendingMessage?.let {
                 Text(it)

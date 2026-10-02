@@ -33,10 +33,12 @@ object GrowthBoost {
      * 그걸 전부 물약에 써도 공부 경험치가 하루 약 +41(약 +2할) 늘어나는 정도다 — 이 "물약까지 성실히 쓰는 경로"가
      * 약 9개월에 500레벨이 되도록 환생 배율([GrowthSystem.expMultiplier])을 함께 맞췄다([[DECISIONS.md]] 138차).
      */
+    // 147차(사용자 요청 "성장 촉진제 명칭·컨셉 변경, 수소 투하 같은 느낌"): 홈이 식물에서 우주로 바뀌면서 물약 →
+    // 별을 키우는 "연료". 효과·가격·id(저장·동기화 키)는 그대로라 이미 산 효과도 이어진다 — 이름·설명·그림만 바꿨다.
     val POTIONS: List<Potion> = listOf(
-        Potion("boost_small", "🧪", "성장 촉진제", "집중 한 세션 시작 전에 가볍게", 40, 1.5, 60),
-        Potion("boost_strong", "⚗️", "폭풍 성장 물약", "한 시간 바짝 몰아칠 때", 80, 2.0, 60),
-        Potion("boost_long", "⏳", "지속형 촉진제", "3시간 넘게 집중하는 날 가장 이득", 100, 1.5, 180)
+        Potion("boost_small", "☄️", "수소 투하", "집중 한 세션 시작 전에 가볍게", 40, 1.5, 60),
+        Potion("boost_strong", "🔥", "핵융합 점화", "한 시간 바짝 몰아칠 때", 80, 2.0, 60),
+        Potion("boost_long", "🌌", "성운 흡수", "3시간 넘게 집중하는 날 가장 이득", 100, 1.5, 180)
     )
 
     fun potionById(id: String): Potion? = POTIONS.find { it.id == id }

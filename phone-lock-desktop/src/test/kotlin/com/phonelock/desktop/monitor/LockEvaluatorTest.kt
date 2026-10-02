@@ -333,4 +333,61 @@ class LockEvaluatorTest {
         assertTrue(DesktopEssentials.isBrowser("Chrome.exe"))
         assertFalse(DesktopEssentials.isBrowser("notepad.exe"))
     }
+
+    @Test
+    fun `detectWeakeningEdit is true when shortening the end of an active force-enabled period`() {
+        // 147차: 오늘은 여전히 기간 안이라 146차까지의 9번 규칙은 통과시켰다.
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val original = baseGroup().copy(forceEnabledFrom = "2026-01-01", forceEnabledUntil = "2026-01-31")
+
+        assertTrue(
+            evaluator.detectWeakeningEdit(original, original.copy(forceEnabledUntil = "2026-01-10"), emptySet(), emptySet(), emptySet(), emptySet(), now)
+        )
+        // 늘리는 쪽은 강화.
+        assertFalse(
+            evaluator.detectWeakeningEdit(original, original.copy(forceEnabledUntil = "2026-02-10"), emptySet(), emptySet(), emptySet(), emptySet(), now)
+        )
+        // 이미 지난 날짜(시작일)를 당겨도 남은 기간은 그대로다.
+        assertFalse(
+            evaluator.detectWeakeningEdit(original, original.copy(forceEnabledFrom = "2026-01-07"), emptySet(), emptySet(), emptySet(), emptySet(), now)
+        )
+    }
+
+    @Test
+    fun `detectWeakeningEdit is true when clearing a future force-enabled period even if the group is off`() {
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val original = baseGroup().copy(groupEnabled = false, forceEnabledFrom = "2026-02-01", forceEnabledUntil = "2026-02-14")
+
+        assertTrue(
+            evaluator.detectWeakeningEdit(original, original.copy(forceEnabledFrom = null, forceEnabledUntil = null), emptySet(), emptySet(), emptySet(), emptySet(), now)
+        )
+        assertTrue(
+            evaluator.detectWeakeningEdit(original, original.copy(forceEnabledFrom = "2026-02-05"), emptySet(), emptySet(), emptySet(), emptySet(), now)
+        )
+        // 방지 시간대 밖이면 다른 약화와 같이 자유롭다.
+        assertFalse(
+            evaluator.detectWeakeningEdit(original, original.copy(forceEnabledFrom = null, forceEnabledUntil = null), emptySet(), emptySet(), emptySet(), emptySet(),
+                LocalDateTime.of(2026, 1, 7, 23, 30))
+        )
+    }
+
+    @Test
+    fun `clearing an expired force-enabled period is not weakening`() {
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val original = baseGroup().copy(groupEnabled = false, forceEnabledFrom = "2025-12-01", forceEnabledUntil = "2025-12-20")
+
+        assertFalse(
+            evaluator.detectWeakeningEdit(original, original.copy(forceEnabledFrom = null, forceEnabledUntil = null), emptySet(), emptySet(), emptySet(), emptySet(), now)
+        )
+    }
+
+    @Test
+    fun `requiresDeleteGate is true while a force-enabled period remains`() {
+        val now = LocalDateTime.of(2026, 1, 7, 14, 0)
+        val group = baseGroup().copy(groupEnabled = false, forceEnabledFrom = "2026-02-01", forceEnabledUntil = "2026-02-14")
+
+        assertTrue(evaluator.requiresDeleteGate(group, now))
+        assertFalse(evaluator.requiresDeleteGate(group.copy(forceEnabledFrom = "2025-12-01", forceEnabledUntil = "2025-12-20"), now))
+        assertFalse(evaluator.requiresDeleteGate(group, LocalDateTime.of(2026, 1, 7, 23, 30)))
+    }
 }

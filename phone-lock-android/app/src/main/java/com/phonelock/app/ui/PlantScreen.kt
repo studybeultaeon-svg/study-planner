@@ -428,8 +428,8 @@ fun PlantScreen(
                 val extending = activeBoost?.potionId == potion.id
                 scope.launch {
                     if (repository.purchasePotion(potion.id)) {
-                        toastMessage = if (extending) "${potion.emoji} ${potion.label} 효과 시간이 ${GrowthBoost.durationLabel(potion.durationMinutes)} 늘었어요"
-                        else "${potion.emoji} ${potion.label} 효과 시작 — 지금부터 집중 경험치 ${GrowthBoost.multiplierLabel(potion.multiplier)}"
+                        toastMessage = if (extending) "${potion.label} 시간이 ${GrowthBoost.durationLabel(potion.durationMinutes)} 늘었어요"
+                        else "${potion.label} 시작 — 지금부터 집중 경험치 ${GrowthBoost.multiplierLabel(potion.multiplier)}"
                         refresh()
                     }
                 }
@@ -757,7 +757,7 @@ private fun HomeBoostStatus(
     modifier: Modifier = Modifier
 ) {
     val potion = active?.let { GrowthBoost.potionById(it.potionId) }
-    val title = if (active != null) "${potion?.label ?: "성장 물약"} ${GrowthBoost.multiplierLabel(active.multiplier)}" else "사용 중인 물약 없음"
+    val title = if (active != null) "${potion?.label ?: "연료"} ${GrowthBoost.multiplierLabel(active.multiplier)}" else "타는 연료 없음"
     val remaining = active?.let { "${GrowthBoost.remainingLabel(it.endMillis - nowMillis)} 남음" }
     val accent = if (active != null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline
     Row(
@@ -779,7 +779,7 @@ private fun HomeBoostStatus(
             } else {
                 Text(title, style = MaterialTheme.typography.labelLarge, color = if (active != null) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    if (remaining != null) "$remaining · 집중 경험치에 적용 중" else "상점에서 물약을 사면 그동안 집중 경험치가 늘어나요",
+                    if (remaining != null) "$remaining · 집중 경험치에 적용 중" else "상점에서 연료를 넣으면 그동안 집중 경험치가 늘어나요",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -926,7 +926,7 @@ private fun HomeShopDialog(
     var tab by remember { mutableIntStateOf(0) }
     LedgerAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("🛒 상점") },
+        title = { Text("상점") },
         text = {
             Column {
                 Row(
@@ -934,11 +934,11 @@ private fun HomeShopDialog(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ShopTabChip("🧪 물약", tab == 0) { tab = 0 }
-                    ShopTabChip("🎨 꾸미기", tab == 1) { tab = 1 }
+                    ShopTabChip("연료", tab == 0) { tab = 0 }
+                    ShopTabChip("꾸미기", tab == 1) { tab = 1 }
                     Spacer(Modifier.weight(1f))
                     Text(
-                        "🪙 ${balance}P",
+                        "${balance}P",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -950,8 +950,8 @@ private fun HomeShopDialog(
                     if (tab == 0) {
                         val activePotion = activeBoost?.let { GrowthBoost.potionById(it.potionId) }
                         Text(
-                            if (activeBoost != null) "지금 ${activePotion?.label ?: "물약"} 효과 중 · ${GrowthBoost.remainingLabel(activeBoost.endMillis - nowMillis)} 남음\n같은 물약을 사면 시간이 늘어나요(최대 ${GrowthBoost.durationLabel(GrowthBoost.MAX_REMAINING_MINUTES)})."
-                            else "사면 바로 효과가 시작돼요(한 번에 하나).\n효과 시간 동안 집중으로 얻는 경험치가 늘어나요.",
+                            if (activeBoost != null) "지금 ${activePotion?.label ?: "연료"} 타는 중 · ${GrowthBoost.remainingLabel(activeBoost.endMillis - nowMillis)} 남음\n같은 연료를 또 넣으면 시간이 늘어나요(최대 ${GrowthBoost.durationLabel(GrowthBoost.MAX_REMAINING_MINUTES)})."
+                            else "넣으면 바로 타기 시작해요(한 번에 하나).\n타는 동안 집중으로 얻는 경험치가 늘어나요.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -971,7 +971,7 @@ private fun HomeShopDialog(
                                 description = potion.description,
                                 // 살 수 없는 이유는 버튼에 긴 글자로 넣지 않고 버튼 옆 짧은 안내로 — 좁은 폰에서 버튼 글자가 깨졌다.
                                 note = when {
-                                    check == GrowthBoost.PurchaseCheck.OTHER_ACTIVE -> "다른 물약 효과 중"
+                                    check == GrowthBoost.PurchaseCheck.OTHER_ACTIVE -> "다른 연료가 타는 중"
                                     check == GrowthBoost.PurchaseCheck.TOO_LONG -> "이미 최대 ${GrowthBoost.durationLabel(GrowthBoost.MAX_REMAINING_MINUTES)}"
                                     balance < potion.cost -> "${potion.cost - balance}P 부족"
                                     else -> null

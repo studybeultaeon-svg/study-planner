@@ -1,7 +1,6 @@
 package com.phonelock.desktop.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -27,9 +25,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -45,10 +43,10 @@ private val MINI_CAL_MONTHS_KO = arrayOf("1월", "2월", "3월", "4월", "5월",
 private val MINI_CAL_WEEKDAYS_KO = arrayOf("일", "월", "화", "수", "목", "금", "토")
 
 /**
- * 96차, 사용자 요청(안드로이드판과 대칭): 공부앱 캘린더 탭(CalendarScreen.kt의 CalendarMonthGrid)과
- * 같은 시각 언어를 쓰는 가벼운 "날짜 하나 고르기" 전용 미니 캘린더 — 일정/회독 점 표시 없이 순수
- * 월 이동 + 날짜 선택만 한다. 그룹 편집 화면의 "이 기간엔 끄기 금지" 날짜 범위 등에서 [CompactDateField]와
- * 함께 쓴다.
+ * 96차, 사용자 요청: 공부앱 캘린더 탭(CalendarScreen.kt의 CalendarMonthGrid)과 같은 시각 언어를 쓰는
+ * 가벼운 "날짜 하나 고르기" 전용 미니 캘린더 — 일정/회독 점 표시 없이 순수 월 이동 + 날짜 선택만 한다.
+ * 그룹 편집 화면의 "이 기간엔 끄기 금지" 날짜 범위처럼, 기본 Material DatePicker 대신 앱 자체 캘린더
+ * 느낌을 쓰고 싶은 곳에서 [CompactDateField]와 함께 쓴다.
  */
 @Composable
 fun MiniCalendarDialog(
@@ -147,8 +145,8 @@ fun MiniCalendarDialog(
     }
 }
 
-/** [CompactField]와 같은 테두리 박스 모양이지만 탭하면 키보드 대신 [MiniCalendarDialog]가 뜬다
- *  (96차, 안드로이드판과 대칭 — 사용자 요청으로 공부앱 캘린더 탭의 미니 캘린더를 재사용). */
+/** [CompactField]와 같은 입력 칸 모양이지만 탭하면 키보드 대신 [MiniCalendarDialog]가 뜬다
+ *  (96차, "이 기간엔 끄기 금지" 날짜 필드 — 사용자 요청으로 공부앱 캘린더 탭의 미니 캘린더를 재사용). */
 @Composable
 fun CompactDateField(
     value: String,
@@ -158,33 +156,20 @@ fun CompactDateField(
     clearable: Boolean = false
 ) {
     var showDialog by remember { mutableStateOf(false) }
-    Box(
-        modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
-            .clickable { showDialog = true }
-            .padding(horizontal = 12.dp, vertical = 12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // 146차: 📅 이모지 대신 벡터 아이콘. [clearable]이면 값이 있을 때 오른쪽 ×로 비울 수 있다(비운 날짜 = 제한 없음).
-            Icon(Icons.Outlined.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(
-                value.ifBlank { placeholder },
-                style = calcFieldTextStyle(),
-                color = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                modifier = Modifier.weight(1f)
-            )
-            if (clearable && value.isNotBlank()) {
-                Icon(
-                    Icons.Outlined.Close,
-                    contentDescription = "날짜 지우기",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp).clickable { onValueChange("") }
-                )
-            }
+    // 147차: 테두리 상자 → [LedgerInputFrame](값 + 아래 가는 선). 누르면 키보드 대신 달력 창.
+    LedgerInputFrame(modifier.clickable { showDialog = true }) {
+        // 146차: 📅 이모지 대신 벡터 아이콘. [clearable]이면 값이 있을 때 오른쪽 ×로 비울 수 있다(비운 날짜 = 제한 없음).
+        Icon(Icons.Outlined.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            value.ifBlank { placeholder },
+            style = calcFieldTextStyle(),
+            color = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            modifier = Modifier.weight(1f)
+        )
+        if (clearable && value.isNotBlank()) {
+            LedgerInputGlyph(Icons.Outlined.Close, contentDescription = "날짜 지우기", iconSize = 16.dp) { onValueChange("") }
         }
     }
     if (showDialog) {

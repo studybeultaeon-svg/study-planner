@@ -1,0 +1,116 @@
+/* 147차: 확장 페이지(실행 확인 · 잠김 · 설치 완료)를 앱의 "Ledger" 디자인과 같은 문법으로 — 사용자 지적
+   "웹 확장에는 디자인 개혁이 반영 안 됐다". 데스크탑 WatchAndWaitScreen(포스터)과 같은 구성:
+   위 작은 브랜드 줄, 가운데 왼쪽 정렬 큰 제목과 강조 막대 인용문, 대기 중엔 남은 초를 아주 크게 + 진행 선,
+   버튼은 아래 알약 두 개. 글꼴은 앱과 같은 에이투지체(fonts/, 상업 이용 허용 OTF).
+   색은 theme.js가 데스크탑 /theme 응답으로 CSS 변수에 채운다. :root 기본값은 앱 기본 테마(다크 · 블루). */
+
+@font-face { font-family: "A2z"; src: url("fonts/A2zRegular.otf") format("opentype"); font-weight: 400; }
+@font-face { font-family: "A2z"; src: url("fonts/A2zBold.otf") format("opentype"); font-weight: 700; }
+@font-face { font-family: "A2z"; src: url("fonts/A2zExtraBold.otf") format("opentype"); font-weight: 800; }
+
+:root {
+  --bg: #0B0E14; --panel: #141922; --text: #EEF1F6; --muted: #98A2B3;
+  --border: #252C38; --accent: #6AA4FF; --on-accent: #07101F;
+  --warn-bg: #3A2F14; --warn-text: #F5B83D;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "A2z", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  font-weight: 400;
+  word-break: keep-all;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 넓은 창에서도 글줄이 너무 길어지지 않게 가운데 720px 기둥 안에 포스터를 세운다. */
+.poster {
+  max-width: 720px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 40px 32px;
+  display: flex;
+  flex-direction: column;
+}
+.poster .grow { flex: 1; }
+
+.overline {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin: 0;
+}
+
+h1 {
+  font-size: 34px;
+  line-height: 1.25;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 12px 0 0;
+}
+
+.message {
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 12px 0 0;
+}
+
+/* 이 앱의 목소리 — 강조 막대가 붙은 인용문. */
+.quote {
+  margin: 28px 0 0;
+  padding-left: 16px;
+  border-left: 4px solid var(--accent);
+  font-size: 22px;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+/* 대기 중: 남은 초를 아주 크게 + 지나간 만큼 선. */
+.countdown { margin-top: 36px; display: none; }
+.countdown .big {
+  font-size: 88px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.countdown .big .unit { font-size: 24px; font-weight: 700; letter-spacing: 0; color: var(--muted); margin-left: 6px; }
+.countdown.paused .big { color: var(--muted); }
+.progress { height: 4px; border-radius: 2px; background: var(--border); margin-top: 12px; overflow: hidden; }
+.progress > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 2px; transition: width 0.4s ease; }
+.countdown.paused .progress > i { background: var(--muted); }
+
+.hint { font-size: 18px; font-weight: 700; margin: 20px 0 0; display: none; }
+.hint small { display: block; font-size: 15px; font-weight: 400; color: var(--muted); margin-top: 4px; }
+
+/* 버튼은 엄지(손)가 닿는 아래쪽, 같은 폭 알약 두 개. 채운 쪽이 안전한 선택(중단). */
+.buttons { display: flex; gap: 12px; }
+button {
+  flex: 1;
+  height: 52px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+button.outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+button.outline:disabled { color: var(--muted); cursor: not-allowed; }
+button.filled { background: var(--accent); border: none; color: var(--on-accent); }
+
+/* 안내 페이지(설치 완료)용 — 가는 선으로 묶음을 나눈다. */
+.section { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 24px; }
+.section p, .section li { font-size: 15px; line-height: 1.6; color: var(--muted); }
+.section ol { padding-left: 20px; margin: 8px 0 0; }
+.notice { border-left: 3px solid var(--warn-text); padding: 4px 0 4px 14px; margin-top: 12px; }
+.notice strong { color: var(--warn-text); font-weight: 700; }
+.notice p { margin: 6px 0 0; }

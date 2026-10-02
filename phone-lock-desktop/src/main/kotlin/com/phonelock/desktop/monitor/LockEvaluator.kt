@@ -224,12 +224,18 @@ class LockEvaluator(private val repository: Repository) {
         updatedDomains: Set<String>,
         now: LocalDateTime = LocalDateTime.now()
     ): Boolean {
+        // 0-1. "차단 규칙 수정·삭제 방지" 시간대 밖이면 회유 절차 없이 자유롭게 수정할 수 있다.
+        if (isWithinEditExemptionWindow(now)) return false
+
+        // 0-1-1(147차). 기간 지정 자동 강화(시험기간 등)를 좁히거나 지움 — 오늘부터 남은 강제 기간 중 하루라도 빠지면 약화.
+        // 아직 시작 전인 기간은 그룹을 꺼 둬도 그날이 오면 켜지므로 아래 0번(그룹이 꺼져 있으면 통과)보다 먼저 본다.
+        // 146차까지는 9번("지금 걸려 있는데 오늘이 빠짐")만 있어서 끝 날짜를 앞당기거나 시작 전 기간을 지우는 건 통과했다.
+        // 이 기능은 "나중에 후회할 즉흥적 판단을 미리 막아두는" 안전장치라(39차 DECISIONS) 걷어내는 쪽은 전부 막는다.
+        if (forcePeriodShrinks(original, updated, now)) return true
+
         // 0. 그룹 전체가 꺼져있으면(패널티 대기 중도 아니면) 아무 관리도 적용되고 있지 않으므로
         // 무엇을 바꾸든 약화가 아니다.
         if (!isGroupActive(original)) return false
-
-        // 0-1. "차단 규칙 수정·삭제 방지" 시간대 밖이면 회유 절차 없이 자유롭게 수정할 수 있다.
-        if (isWithinEditExemptionWindow(now)) return false
 
         // 0-2(129차에 삭제된 예외): 55차엔 "스누즈 중이면 이미 자기 승인으로 해제한 상태"라는 이유로
         // 스누즈 중 모든 약화 수정을 통과시켰다. 이게 "잠깐 풀기 → 그 사이에 잠깐 풀기 시간/횟수를
@@ -336,10 +342,7 @@ class LockEvaluator(private val repository: Repository) {
         if (original.snoozeEnabled && updated.snoozeMinutes > original.snoozeMinutes) return true
         if (original.snoozeEnabled && updated.snoozeDailyLimit > original.snoozeDailyLimit) return true
 
-        // 9. 기간 지정 자동 강화(시험기간 등)가 지금 걸려있는데 그 기간을 지우거나 오늘이 빠지게 좁힘.
-        // 이 기능은 "나중에 후회할 즉흥적 판단을 미리 막아두는" 안전장치라(39차 DECISIONS), 그 즉흥적
-        // 판단으로 안전장치 자체를 걷어낼 수 있으면 존재 의미가 없다.
-        if (isForceEnabled(original, now) && !isForceEnabled(updated, now)) return true
+        // 9. 기간 지정 자동 강화를 좁히거나 지우는 것은 맨 앞 0-1-1에서 본다(147차, 지금 걸려 있지 않은 기간까지 포함).
 
         // 10. 뽀모도로 휴식 임시 해제를 새로 켬 — 공부앱에서 휴식 버튼만 누르면 이 규칙이 통째로
         // 풀리는 탈출구가 새로 생기는 것이므로 8번(스누즈 새로 켜기)과 같은 취급.
@@ -359,6 +362,28 @@ class LockEvaluator(private val repository: Repository) {
     fun requiresDeleteGate(group: Group, now: LocalDateTime = LocalDateTime.now()): Boolean {
         if (isWithinEditExemptionWindow(now)) return false
         return isCurrentlyRestricting(group, now, ignoreTemporaryUnlock = true) ||
-            isConfirmActiveNow(group, now, ignoreTemporaryUnlock = true)
+            isConfirmActiveNow(group, now, ignoreTemporaryUnlock = true) ||
+            // 147차: 아직 남은 강제 기간이 있는 규칙을 지우면 그 기간이 통째로 사라진다(편집으로 지우는 것과 같은 우회).
+            remainingForcePeriod(group, now) != null
+    }
+
+    /**
+     * 기간 지정 자동 강화를 좁히거나 지우는지(147차) — 오늘을 포함해 앞으로 남은 강제 기간 중 하루라도 빠지면 true.
+     * 넓히거나 새로 만드는 것, 이미 끝난 기간을 지우는 것은 약화가 아니다. 날짜는 "yyyy-MM-dd" 문자열이라
+     * 사전순 비교가 곧 날짜 비교다([isForceEnabled]와 같은 방식).
+     */
+    private fun forcePeriodShrinks(original: Group, updated: Group, now: LocalDateTime): Boolean {
+        val (remainingFrom, remainingUntil) = remainingForcePeriod(original, now) ?: return false
+        val from = updated.forceEnabledFrom ?: return true
+        val until = updated.forceEnabledUntil ?: return true
+        return from > remainingFrom || until < remainingUntil
+    }
+
+    /** 오늘부터 남은 강제 기간(시작, 끝) — 기간이 없거나 이미 끝났으면 null. */
+    private fun remainingForcePeriod(group: Group, now: LocalDateTime): Pair<String, String>? {
+        val from = group.forceEnabledFrom ?: return null
+        val until = group.forceEnabledUntil ?: return null
+        val start = maxOf(from, now.toLocalDate().toString())
+        return if (start > until) null else start to until
     }
 }

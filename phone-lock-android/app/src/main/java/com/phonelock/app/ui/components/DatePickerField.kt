@@ -1,25 +1,18 @@
 package com.phonelock.app.ui.components
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.outlined.CalendarToday
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DatePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
@@ -40,32 +33,25 @@ fun DatePickerField(
     label: String? = null
 ) {
     var showDialog by remember { mutableStateOf(false) }
-    Column(modifier) {
-        if (label != null) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(2.dp))
-        }
-        OutlinedButton(
-            onClick = { showDialog = true },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(12.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-        ) {
-            // 146차: 📅 이모지 대신 벡터 아이콘(Ledger 규칙 — 버튼에 이모지 금지).
-            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.CalendarToday, contentDescription = null, modifier = Modifier.padding(end = 6.dp).size(18.dp))
-            // 85차(사용자 지적): 스마트폰에서 "시작"/"마감"을 좌우로 나란히 두면 폭이 좁아 계산기
-            // 필드와 같은 bodyLarge로는 "YYYY-MM-DD" 10글자가 다 안 보이고 말줄임됐다 — 이 버튼만
-            // bodyMedium으로 줄여 날짜 전체가 항상 다 보이게 했다.
-            Text(
-                value.ifBlank { "날짜 선택" },
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
-                textAlign = TextAlign.Start,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-            )
-        }
+    // 147차: 라벨 + 테두리 버튼 상자 → [LedgerInputFrame](라벨 + 값 + 아래 가는 선), 누르면 달력 창.
+    LedgerInputFrame(modifier.clickable { showDialog = true }, label = label) {
+        // 146차: 📅 이모지 대신 벡터 아이콘(Ledger 규칙 — 버튼에 이모지 금지).
+        androidx.compose.material3.Icon(
+            androidx.compose.material.icons.Icons.Outlined.CalendarToday,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(end = 6.dp).size(18.dp)
+        )
+        // 85차(사용자 지적): 폰에서 "시작"/"마감"을 좌우로 나란히 두면 폭이 좁아 bodyLarge로는 "YYYY-MM-DD" 10글자가
+        // 다 안 보이고 말줄임됐다 — 날짜 글자만 bodyMedium으로 줄여 항상 다 보이게 한다.
+        Text(
+            value.ifBlank { "날짜 선택" },
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+        )
     }
     if (showDialog) {
         // 146차: Material 날짜 창(톤 입힌 판·큰 머리) → 앱 자체 달력 창(떠 있는 창 공용 판, 주말색 팔레트).

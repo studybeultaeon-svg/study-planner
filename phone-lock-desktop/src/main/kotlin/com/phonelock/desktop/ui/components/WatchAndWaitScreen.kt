@@ -68,7 +68,10 @@ fun WatchAndWaitScreen(
     primaryFilled: Boolean = true,
     primaryOutlineColor: Color? = null,
     secondaryFilled: Boolean = false,
-    secondaryContainerColor: Color? = null
+    secondaryContainerColor: Color? = null,
+    /** 147차: 확인 질문 단계(1부터) — 주면 제목 위에 "확인 질문 n / 전체" 큰 숫자와 진행 선을 그린다. */
+    step: Int? = null,
+    stepTotal: Int? = null
 ) {
     // "잠겨있다가 풀리면 누르는" 방식이 아니라 "누르면 그때부터 대기시간이 시작되고, 다 지나면
     // 자동으로 진행되는" 방식이다. 버튼은 처음부터 눌러야 시작되고, 누른 뒤에는 다시 잠긴다.
@@ -149,11 +152,20 @@ fun WatchAndWaitScreen(
         Column(
             modifier = Modifier.widthIn(max = 720.dp).fillMaxSize().padding(horizontal = Spacing.xl).padding(top = Spacing.xl, bottom = Spacing.xl)
         ) {
-            Overline("갓생살기종합세트")
+            Overline("갓생키트")
             Spacer(Modifier.weight(1f))
             // 문구는 무작위라 길이가 들쭉날쭉하다 — 폰에선 한 줄에 안 들어가면(didOverflowWidth) 글자를 조금씩 줄여
             // 한 줄로 맞추고(애매한 지점에서 줄이 갈라지지 않게), 태블릿은 폭이 넉넉해 그대로 줄바꿈한다.
             // 데스크탑은 창 폭이 넉넉해 폰처럼 한 줄로 줄여 넣지 않고 자연스럽게 줄바꿈한다(안드로이드 태블릿 분기와 같다).
+            if (step != null && stepTotal != null) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                    Overline("확인 질문", Modifier.weight(1f))
+                    BigNumber("$step", unit = "/ $stepTotal", style = MaterialTheme.typography.displaySmall, unitStyle = MaterialTheme.typography.titleMedium)
+                }
+                Spacer(Modifier.height(Spacing.xs))
+                ProgressLine(step / stepTotal.toFloat(), thickness = 3.dp)
+                Spacer(Modifier.height(Spacing.lg))
+            }
             Text(title, style = titleStyle ?: MaterialTheme.typography.headlineMedium, modifier = Modifier.fillMaxWidth())
             if (message != null) {
                 Spacer(Modifier.height(Spacing.sm))

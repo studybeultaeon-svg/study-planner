@@ -284,8 +284,8 @@ private fun HelpSectionView(section: HelpContent.Section) {
                     }
                 }
                 is HelpContent.Block.Table -> HelpTable(block.rows)
-                is HelpContent.Block.Tip -> Callout(block.text, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primaryContainer)
-                is HelpContent.Block.Warn -> Callout(block.text, LocalPhoneLockPalette.current.warning, LocalPhoneLockPalette.current.warningContainer)
+                is HelpContent.Block.Tip -> Callout("알아 두기", block.text, MaterialTheme.colorScheme.primary)
+                is HelpContent.Block.Warn -> Callout("주의", block.text, LocalPhoneLockPalette.current.warning)
             }
         }
     }
@@ -328,21 +328,24 @@ private fun HelpTable(rows: List<Pair<String, String>>) {
     }
 }
 
-/** 팁·주의 한 칸 — 왼쪽 색 막대 + 옅은 바탕([com.phonelock.app.ui.components.NoticeStrip]과 같은 모양, 줄 수 제한 없음). */
+/**
+ * 팁·주의 한 칸 — 147차: 옅은 색 바탕 상자 → 왼쪽 색 막대 + 작은 라벨 + 글(바탕 없음, Ledger의 가는 선 문법).
+ * 색은 라벨과 막대에만 써서 본문 글은 다른 글과 같은 먹색으로 읽힌다.
+ */
 @Composable
-private fun Callout(text: String, bar: Color, background: Color) {
-    Row(
-        Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(background, RoundedCornerShape(10.dp)),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(Modifier.width(4.dp).fillMaxHeight().background(bar, RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp)))
-        Text(
-            text,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onBackground,
-            lineHeight = 19.sp,
-            modifier = Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 10.dp)
-        )
+private fun Callout(label: String, text: String, accent: Color) {
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        Box(Modifier.width(3.dp).fillMaxHeight().background(accent, RoundedCornerShape(2.dp)))
+        Column(Modifier.weight(1f).padding(start = 12.dp, top = 2.dp, bottom = 2.dp)) {
+            Overline(label, color = accent)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                lineHeight = 19.sp
+            )
+        }
     }
 }
 

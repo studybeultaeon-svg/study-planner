@@ -340,16 +340,13 @@ private fun CalcTaskCard(
         }
         if (!collapsed) {
             Spacer(Modifier.height(Spacing.xs))
-            OutlinedTextField(
-                value = name, onValueChange = { name = it; persist() },
-                label = { Text("업무 이름") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-                shape = RoundedCornerShape(12.dp), textStyle = com.phonelock.desktop.ui.components.calcFieldTextStyle()
-            )
+            // 147차: 테두리 상자 입력칸 → 장부식 입력칸(라벨 + 값 + 아래 가는 선, 사용자 지적 "상자가 과하다").
+            com.phonelock.desktop.ui.components.CompactField(value = name, onValueChange = { name = it; persist() }, label = "업무 이름", placeholder = "새 업무")
 
             CalcFieldGroupHeader("기본 정보")
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                 com.phonelock.desktop.ui.components.NumberStepperField(value = qty, onValueChange = { qty = it; persist() }, label = "전체 분량", modifier = Modifier.weight(1f))
-                OutlinedTextField(value = unit, onValueChange = { unit = it; persist() }, label = { Text("단위") }, modifier = Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(12.dp), textStyle = com.phonelock.desktop.ui.components.calcFieldTextStyle())
+                com.phonelock.desktop.ui.components.CompactField(value = unit, onValueChange = { unit = it; persist() }, label = "단위", modifier = Modifier.weight(1f))
             }
             Spacer(Modifier.height(Spacing.xs))
             com.phonelock.desktop.ui.components.NumberStepperField(value = progress, onValueChange = { progress = it; persist() }, label = "지금까지 한 양", modifier = Modifier.fillMaxWidth())
@@ -378,12 +375,10 @@ private fun CalcTaskCard(
                 }
             }
             Spacer(Modifier.height(Spacing.xs))
-            OutlinedTextField(
+            com.phonelock.desktop.ui.components.CompactField(
                 value = holidaysText, onValueChange = { holidaysText = it; persist() },
-                label = { Text("휴일 제외 날짜 (쉼표로 구분)") },
-                placeholder = { Text("2026-01-01,2026-01-05") },
-                modifier = Modifier.fillMaxWidth(), singleLine = true,
-                shape = RoundedCornerShape(12.dp), textStyle = com.phonelock.desktop.ui.components.calcFieldTextStyle()
+                label = "쉬는 날 (쉼표로 구분)",
+                placeholder = "2026-01-01, 2026-01-05"
             )
 
             CalcFieldGroupHeader("반복")

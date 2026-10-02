@@ -1,5 +1,6 @@
 package com.phonelock.desktop.ui
 
+import com.phonelock.desktop.ui.components.PersuasionStepView
 import com.phonelock.desktop.ui.components.LedgerAlertDialog
 import com.phonelock.desktop.ui.theme.LocalPhoneLockPalette
 import com.phonelock.desktop.ui.components.Overline
@@ -439,23 +440,18 @@ private fun GroupRow(
                 onConfirmMessage()
             }
             Spacer(Modifier.height(Spacing.sm))
-            Column(
-                Modifier.fillMaxWidth().padding(start = 50.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-                    .padding(Spacing.md)
-            ) {
-                Overline("끄기 확인 ${messageIndex + 1}/${PERSUASION_MESSAGES.size}")
-                Spacer(Modifier.height(4.dp))
-                Text(PERSUASION_MESSAGES[messageIndex], style = MaterialTheme.typography.bodyMedium, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(Spacing.sm))
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    OutlinedButton(onClick = onCancelPending) { Text("취소", maxLines = 1, softWrap = false) }
-                    Button(onClick = { stepStarted = true }, enabled = !stepStarted) {
-                        val label = if (isLast) "끄기" else "예"
-                        Text(if (stepStarted && stepRemainingSeconds > 0) "$label (${stepRemainingSeconds}초)" else label, maxLines = 1, softWrap = false)
-                    }
-                }
-            }
+            // 147차: 회색 판 → 확인 질문 공용 모양(라벨 + "n / 20" + 진행 선 + 강조 막대 질문 + 버튼 줄).
+            PersuasionStepView(
+                context = "\"${group.name}\" 규칙 끄기",
+                step = messageIndex + 1,
+                total = PERSUASION_MESSAGES.size,
+                message = PERSUASION_MESSAGES[messageIndex],
+                confirmLabel = (if (isLast) "끄기" else "예").let { if (stepStarted && stepRemainingSeconds > 0) "$it (${stepRemainingSeconds}초)" else it },
+                confirmEnabled = !stepStarted,
+                onConfirm = { stepStarted = true },
+                onCancel = onCancelPending,
+                modifier = Modifier.padding(start = 50.dp)
+            )
         }
     }
 }

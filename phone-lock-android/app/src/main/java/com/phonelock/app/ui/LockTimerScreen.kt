@@ -548,7 +548,7 @@ private fun LockTimerUnlockGate(timer: LockTimer, locked: Boolean, onUnlocked: (
                 PersuasionStepper(
                     stepKey = timer.startedAtMillis,
                     messageIndex = messageIndex,
-                    headerText = "스스로 한 약속을 깨려는 중입니다 (%d/%d)".format(messageIndex + 1, PERSUASION_MESSAGES.size),
+                    headerText = "스스로 한 약속을 깨려는 중",
                     message = PERSUASION_MESSAGES[messageIndex],
                     confirmLabel = "예",
                     onCancel = {

@@ -198,7 +198,8 @@ class LocalApiServer(private val repository: Repository) {
     private fun handleTheme(exchange: HttpExchange) {
         respondJson(
             exchange,
-            "{\"themeMode\":\"${repository.themeMode}\"," +
+            // 147차: 미니멀(성능) 모드면 확장도 흑백 팔레트(theme.js MINIMAL)를 쓰게 실제 보이는 테마를 돌려준다.
+            "{\"themeMode\":\"${if (repository.minimalMode) "MINIMAL" else repository.themeMode}\"," +
                 "\"customThemeBackground\":\"${repository.customThemeBackground}\"," +
                 "\"customThemeAccent\":\"${repository.customThemeAccent}\"}",
             openCors = true

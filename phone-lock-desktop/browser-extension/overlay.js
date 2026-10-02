@@ -14,7 +14,7 @@ let overlayEl = null;
 let overlayTimerEl = null;
 let overlayRemainingSeconds = 0;
 let overlayCountdownInterval = null;
-let currentPalette = THEME_PALETTES.LIGHT_GREEN;
+let currentPalette = THEME_PALETTES.DARK_BLUE;
 let pollTickCount = 0;
 
 function hexToRgb(hex) {
@@ -49,11 +49,11 @@ function ensureOverlay() {
     "align-items:center",
     "justify-content:center",
     `background:rgba(${hexToRgb(currentPalette.background)},${OVERLAY_BASE_OPACITY})`,
-    "font-family:sans-serif",
+    "font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif",
   ].join(";");
 
   const timer = document.createElement("div");
-  timer.style.cssText = `color:rgba(${hexToRgb(currentPalette.accent)},${OVERLAY_BASE_OPACITY});font-size:96px;font-weight:bold;`;
+  timer.style.cssText = `color:rgba(${hexToRgb(currentPalette.accent)},${OVERLAY_BASE_OPACITY});font-size:96px;font-weight:800;letter-spacing:-0.04em;font-variant-numeric:tabular-nums;`;
 
   container.appendChild(timer);
   document.documentElement.appendChild(container);

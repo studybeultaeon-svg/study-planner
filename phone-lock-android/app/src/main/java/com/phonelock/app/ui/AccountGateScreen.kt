@@ -579,8 +579,8 @@ private fun LoginScreen(
         ) {
             // 144차: 첫 화면은 브랜드부터 — 큰 워드마크 + 작은 라벨, 그 아래 로그인/회원가입 제목(왼쪽 정렬 편집형 머리).
             Column(Modifier.fillMaxWidth().padding(bottom = Spacing.sm)) {
-                com.phonelock.app.ui.components.Overline("갓생살기종합세트")
-                Text("갓생", style = MaterialTheme.typography.displayMedium, color = MaterialTheme.colorScheme.primary)
+                // 147차: 앱 이름이 "갓생키트"가 되면서 워드마크 하나로(작은 라벨에 같은 이름을 두 번 쓰지 않는다).
+                Text("갓생키트", style = MaterialTheme.typography.displayMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false)
                 Spacer(Modifier.height(Spacing.md))
                 Text(if (mode == LoginMode.LOGIN) "로그인" else "회원가입", style = MaterialTheme.typography.headlineMedium)
                 Text(

@@ -4,7 +4,7 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 146차: 우주 컨셉 — 기본 테마(다크 · 블루) 바탕색으로 내려앉는 남색 그라데이션. 런처 마스킹으로 가장자리가
+    <!-- 146차(147차 별 교체 후에도 그대로): 우주 컨셉 — 기본 테마(다크 · 블루) 바탕색으로 내려앉는 남색 그라데이션. 런처 마스킹으로 가장자리가
          잘려도 괜찮은 단순 색면이라 안전영역 제약이 없다. -->
     <path android:pathData="M0,0 L108,0 L108,108 L0,108 Z">
         <aapt:attr name="android:fillColor">

@@ -423,13 +423,13 @@ fun SettingsScreen(
         LedgerAlertDialog(
             // 밖을 눌러 닫으면 절차를 건너뛰고 창만 사라지는 셈이라 취소 버튼으로만 빠져나가게 한다.
             onDismissRequest = {},
-            title = { Text("수정·삭제 방지를 약하게 만드는 변경입니다") },
+            // 147차: 창 제목 대신 확인 질문 머리(무엇을 하려는지 + 몇 번째인지)가 맨 위.
             text = {
                 Column {
                     PersuasionStepper(
                         stepKey = staged,
                         messageIndex = pendingProtectionMessageIndex,
-                        headerText = "(%d/%d)".format(pendingProtectionMessageIndex + 1, PERSUASION_MESSAGES.size),
+                        headerText = "수정·삭제 방지를 약하게 만드는 변경",
                         message = PERSUASION_MESSAGES[pendingProtectionMessageIndex],
                         confirmLabel = if (isLast) "적용" else "예",
                         onCancel = {
@@ -456,13 +456,12 @@ fun SettingsScreen(
         val isLast = pendingMinimalMessageIndex == PERSUASION_MESSAGES.lastIndex
         LedgerAlertDialog(
             onDismissRequest = {},
-            title = { Text("기본 런처를 다시 고르려 합니다") },
             text = {
                 Column {
                     PersuasionStepper(
                         stepKey = "launcher_change",
                         messageIndex = pendingMinimalMessageIndex,
-                        headerText = "(%d/%d)".format(pendingMinimalMessageIndex + 1, PERSUASION_MESSAGES.size),
+                        headerText = "기본 런처를 다시 고르기",
                         message = PERSUASION_MESSAGES[pendingMinimalMessageIndex],
                         confirmLabel = if (isLast) "진행" else "예",
                         onCancel = {
@@ -771,7 +770,7 @@ fun SettingsScreen(
                         Spacer(Modifier.height(Spacing.sm))
                         Text(
                             "지금 기본 런처: " +
-                                if (isDefaultLauncher) "갓생살기종합세트"
+                                if (isDefaultLauncher) "갓생키트"
                                 else (com.phonelock.app.ui.launcher.currentLauncherLabel(context) ?: "선택 안 함"),
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -1753,7 +1752,7 @@ fun SettingsScreen(
     if (isTabletWidth()) {
         Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             Column(Modifier.width(280.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = Spacing.md)) {
-                com.phonelock.app.ui.components.PageMasthead(title = "설정", overline = "갓생살기종합세트")
+                com.phonelock.app.ui.components.PageMasthead(title = "설정", overline = "갓생키트")
                 Spacer(Modifier.height(Spacing.md))
                 visibleCategories.forEach { cat ->
                     SettingsCategoryRow(cat, selected = category == cat, compact = true) { category = cat }
@@ -1787,7 +1786,7 @@ fun SettingsScreen(
         ) { open ->
             if (!open) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = Spacing.xl)) {
-                    com.phonelock.app.ui.components.PageMasthead(title = "설정", overline = "갓생살기종합세트") {
+                    com.phonelock.app.ui.components.PageMasthead(title = "설정", overline = "갓생키트") {
                         IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "설정 닫기") }
                     }
                     Spacer(Modifier.height(Spacing.md))

@@ -7,21 +7,30 @@
 // blend 알고리즘으로 새로 추가.
 const THEME_FETCH_TIMEOUT_MS = 1500;
 
+// 147차: 144차 리디자인(Ledger)에서 앱 팔레트가 바뀌었는데 확장은 옛 값 그대로였다 — 데스크탑 ui/theme/Color.kt의
+// LightGreen/DarkBlue/LightOrange/Mono 팔레트와 같은 값으로 맞췄다(panel=surface, text=onBackground, border=outline,
+// accent=primary, onAccent=onPrimary, warnBg=warningContainer, warnText=warning). MINIMAL은 데스크탑이 미니멀(성능)
+// 모드일 때 /theme가 돌려주는 값이다.
 const THEME_PALETTES = {
   LIGHT_GREEN: {
-    background: "#FAFBF6", panel: "#FFFFFF", text: "#20261A", muted: "#6B7566",
-    border: "#D9E2CB", accent: "#8BC34A", onAccent: "#20261A",
-    warnBg: "#FEF3C7", warnText: "#F59E0B"
+    background: "#F4F5EF", panel: "#FFFFFF", text: "#141A10", muted: "#5C6656",
+    border: "#DCE0D4", accent: "#36701A", onAccent: "#FFFFFF",
+    warnBg: "#FDF0D2", warnText: "#B45309"
   },
   DARK_BLUE: {
-    background: "#0F1117", panel: "#1E2333", text: "#E5E7EB", muted: "#9CA3AF",
-    border: "#2A3142", accent: "#4F8EF7", onAccent: "#0F1117",
-    warnBg: "#3A331A", warnText: "#FBBF24"
+    background: "#0B0E14", panel: "#141922", text: "#EEF1F6", muted: "#98A2B3",
+    border: "#252C38", accent: "#6AA4FF", onAccent: "#07101F",
+    warnBg: "#3A2F14", warnText: "#F5B83D"
   },
   LIGHT_ORANGE: {
-    background: "#FFF8F0", panel: "#FFFFFF", text: "#2E2114", muted: "#8A7360",
-    border: "#E8D5BE", accent: "#FF9800", onAccent: "#2E1E00",
-    warnBg: "#FFE0B2", warnText: "#E65100"
+    background: "#FAF6F0", panel: "#FFFFFF", text: "#1F160C", muted: "#6E5E4E",
+    border: "#E6DCCD", accent: "#A84F00", onAccent: "#FFFFFF",
+    warnBg: "#FDF0D2", warnText: "#B45309"
+  },
+  MINIMAL: {
+    background: "#F5F5F5", panel: "#FFFFFF", text: "#111111", muted: "#666666",
+    border: "#E2E2E2", accent: "#111111", onAccent: "#FFFFFF",
+    warnBg: "#EDEDED", warnText: "#555555"
   }
 };
 
@@ -77,7 +86,7 @@ function buildCustomPalette(backgroundHex, accentHex) {
 function applyTheme(themeMode, customBackgroundHex, customAccentHex) {
   const palette = themeMode === "CUSTOM"
     ? buildCustomPalette(customBackgroundHex, customAccentHex)
-    : (THEME_PALETTES[themeMode] || THEME_PALETTES.LIGHT_GREEN);
+    : (THEME_PALETTES[themeMode] || THEME_PALETTES.DARK_BLUE);
   const root = document.documentElement.style;
   root.setProperty("--bg", palette.background);
   root.setProperty("--panel", palette.panel);
@@ -90,19 +99,19 @@ function applyTheme(themeMode, customBackgroundHex, customAccentHex) {
   root.setProperty("--warn-text", palette.warnText);
 }
 
-/** 데스크탑 앱과 통신이 안 되면(꺼져있음 등) 기본값(라이트+그린, 앱 기본 테마와 동일) 유지. */
+/** 데스크탑 앱과 통신이 안 되면(꺼져있음 등) 앱 기본 테마(147차부터 다크 · 블루)로 둔다. */
 async function fetchAndApplyTheme() {
   try {
     const res = await fetchWithTimeout(`${API_BASE}/theme`, {}, THEME_FETCH_TIMEOUT_MS);
     const data = await res.json();
-    applyTheme(data.themeMode || "LIGHT_GREEN", data.customThemeBackground, data.customThemeAccent);
+    applyTheme(data.themeMode || "DARK_BLUE", data.customThemeBackground, data.customThemeAccent);
   } catch (e) {
-    applyTheme("LIGHT_GREEN");
+    applyTheme("DARK_BLUE");
   }
 }
 
 /** overlay.js처럼 CSS 변수가 아니라 색상 값 자체가 필요한 곳(캔버스 없는 inline style 오버레이)이 쓴다. */
 function getThemePalette(themeMode, customBackgroundHex, customAccentHex) {
   if (themeMode === "CUSTOM") return buildCustomPalette(customBackgroundHex, customAccentHex);
-  return THEME_PALETTES[themeMode] || THEME_PALETTES.LIGHT_GREEN;
+  return THEME_PALETTES[themeMode] || THEME_PALETTES.DARK_BLUE;
 }

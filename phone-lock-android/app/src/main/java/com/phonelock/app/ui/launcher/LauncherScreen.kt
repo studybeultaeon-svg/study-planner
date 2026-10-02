@@ -495,7 +495,7 @@ private fun LauncherAppDrawer(
             }
         }
         LauncherBottomBar(
-            label = "갓생살기종합세트",
+            label = "갓생키트",
             emoji = null,
             lockedCount = lockedCount,
             onClick = onOpenMainApp

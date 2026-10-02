@@ -3,8 +3,11 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- 146차: 알림 작은 아이콘 — 앱 아이콘의 네 갈래 별 실루엣(상태 표시줄은 모양만 쓴다). -->
+    <!-- 147차: 알림 작은 아이콘 — 앱 아이콘의 다섯 갈래 별 실루엣(상태 표시줄은 모양만 쓴다). -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M12,2 Q13.2,10.8 22,12 Q13.2,13.2 12,22 Q10.8,13.2 2,12 Q10.8,10.8 12,2 Z" />
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineJoin="round"
+        android:pathData="M12,3.1 L14.47,9.3 L21.13,9.73 L15.99,14 L17.64,20.47 L12,16.9 L6.36,20.47 L8.01,14 L2.87,9.73 L9.53,9.3 Z" />
 </vector>

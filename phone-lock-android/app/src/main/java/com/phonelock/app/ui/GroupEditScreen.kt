@@ -390,7 +390,7 @@ fun GroupEditScreen(
                         PersuasionStepper(
                             stepKey = staged,
                             messageIndex = pendingMessageIndex,
-                            headerText = "제한을 약화시키는 변경입니다 (%d/%d)".format(pendingMessageIndex + 1, PERSUASION_MESSAGES.size),
+                            headerText = "제한을 약하게 바꾸는 변경",
                             message = PERSUASION_MESSAGES[pendingMessageIndex],
                             confirmLabel = if (isLast) "적용" else "예",
                             onCancel = {
@@ -420,7 +420,7 @@ fun GroupEditScreen(
                         PersuasionStepper(
                             stepKey = pendingDelete,
                             messageIndex = pendingDeleteMessageIndex,
-                            headerText = "지금 차단 중인 차단 규칙의 삭제입니다 (%d/%d)".format(pendingDeleteMessageIndex + 1, PERSUASION_MESSAGES.size),
+                            headerText = "걸려 있는 차단 규칙 삭제",
                             message = PERSUASION_MESSAGES[pendingDeleteMessageIndex],
                             confirmLabel = if (isLast) "삭제" else "예",
                             onCancel = {
@@ -806,6 +806,7 @@ fun GroupEditScreen(
                             value = forceEnabledFromText,
                             onValueChange = { forceEnabledFromText = it },
                             placeholder = "시작일",
+                            clearable = true, // 147차: 기간을 지우거나 줄이는 것은 이제 약화 판정(확인 질문 20개)을 거친다.
                             modifier = Modifier.weight(1f)
                         )
                         Text("~", modifier = Modifier.padding(horizontal = Spacing.sm))
@@ -813,6 +814,7 @@ fun GroupEditScreen(
                             value = forceEnabledUntilText,
                             onValueChange = { forceEnabledUntilText = it },
                             placeholder = "종료일(포함)",
+                            clearable = true, // 147차: 기간을 지우거나 줄이는 것은 이제 약화 판정(확인 질문 20개)을 거친다.
                             modifier = Modifier.weight(1f)
                         )
                     }

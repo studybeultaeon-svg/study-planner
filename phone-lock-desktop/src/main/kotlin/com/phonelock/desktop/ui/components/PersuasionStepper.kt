@@ -1,4 +1,4 @@
-package com.phonelock.app.ui.components
+package com.phonelock.desktop.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -28,12 +28,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.phonelock.shared.PERSUASION_MESSAGES
 import com.phonelock.shared.randomPersuasionStepDelaysMs
-import com.phonelock.app.ui.theme.Spacing
+import com.phonelock.desktop.ui.theme.Spacing
 import kotlinx.coroutines.delay
 
 /**
  * 회유 절차(persuasion stepper)의 "메시지 하나 보여주기 + 타이머 + 버튼" 부분을 공통화한 컴포저블.
- * 규칙 편집(저장·삭제)·타이머 해제·설정(수정·삭제 방지 약화, 미니멀 끄기)이 쓴다.
+ * 데스크탑은 규칙 편집(저장·삭제)이 쓴다(전체화면 확인은 [com.phonelock.desktop.ui.ExitConfirmScreen]).
  *
  * [stepKey]가 바뀌면 이번 회유 절차에서 쓸 무작위 딜레이들을 새로 뽑는다. [messageIndex]가 바뀔
  * 때마다 "시작 전" 상태로 리셋된다. 버튼을 누르면([onConfirmStep] 트리거) 그 단계에 배정된 시간만큼
@@ -77,7 +77,7 @@ fun PersuasionStepper(
 }
 
 /**
- * 확인 질문 한 단계의 모양(147차 — 사용자 지적 "확인 질문에 디자인이 안 들어갔다", 데스크탑 같은 파일과 같은 구성).
+ * 확인 질문 한 단계의 모양(147차 — 사용자 지적 "확인 질문에 디자인이 안 들어갔다", 안드로이드 같은 파일과 같은 구성).
  * 작은 라벨(무엇을 하려는지) + 오른쪽 "3 / 20" 큰 숫자, 그 아래 진행 선, 강조 막대가 붙은 질문(이 앱의 목소리),
  * 버튼 줄(취소 / 예). 타이머·단계 상태는 호출하는 쪽이 갖는다.
  */
