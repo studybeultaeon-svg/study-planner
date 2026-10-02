@@ -4,32 +4,37 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 147차: "우주 속의 별"을 다섯 갈래 금빛 별로(146차의 네 갈래 별 + 푸른 빛은 Gemini 로고와 닮았다는 사용자 지적).
-         모서리는 같은 색 둥근 이음 선으로 부드럽게, 뒤에 은은한 금빛, 둘레에 작은 점별 — 모두 안전영역(지름 66) 안.
-         데스크탑 ui/SunriseIcon.kt와 packaging/app-icon.ico가 같은 좌표·같은 색을 그린다. -->
+    <!-- 148차(사용자 선택 — 147차 후보 1): "하나의 별이 자라고, 그 별들이 모여 별자리가 된다". 가운데 가장 밝은 별(은은한 푸른 빛) +
+         별 넷을 잇는 W자 별자리 + 작은 점별 — 모두 안전영역(지름 66) 안. 데스크탑 ui/SunriseIcon.kt와
+         packaging/app-icon.ico가 같은 좌표·같은 색을 그린다. 바탕은 ic_launcher_background.xml(남색 그라데이션). -->
 
-    <!-- 별 뒤의 은은한 빛 -->
-    <path android:pathData="M28,55 a26,26 0 1,0 52,0 a26,26 0 1,0 -52,0 Z">
+    <!-- 가운데 별 뒤의 은은한 빛 -->
+    <path android:pathData="M37,49 a17,17 0 1,0 34,0 a17,17 0 1,0 -34,0 Z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="radial"
-                android:centerX="54" android:centerY="55"
-                android:gradientRadius="26"
-                android:startColor="#4DFFD97A"
-                android:endColor="#00FFD97A" />
+                android:centerX="54" android:centerY="49"
+                android:gradientRadius="17"
+                android:startColor="#996AA4FF"
+                android:endColor="#006AA4FF" />
         </aapt:attr>
     </path>
 
     <!-- 작은 점별 -->
     <path
         android:fillColor="#C9D6F2"
-        android:pathData="M29.6,34 a1.4,1.4 0 1,0 2.8,0 a1.4,1.4 0 1,0 -2.8,0 Z M76,30 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0 Z M72.5,79 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0 Z M29,75 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0 Z M83.2,62 a0.8,0.8 0 1,0 1.6,0 a0.8,0.8 0 1,0 -1.6,0 Z M45.2,85 a0.8,0.8 0 1,0 1.6,0 a0.8,0.8 0 1,0 -1.6,0 Z" />
+        android:pathData="M31.8,30 a1.2,1.2 0 1,0 2.4,0 a1.2,1.2 0 1,0 -2.4,0 Z M75,28 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0 Z M70.6,80 a1.4,1.4 0 1,0 2.8,0 a1.4,1.4 0 1,0 -2.8,0 Z M33,78 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0 Z M53.1,82 a0.9,0.9 0 1,0 1.8,0 a0.9,0.9 0 1,0 -1.8,0 Z" />
 
-    <!-- 다섯 갈래 별(채움 + 같은 색 둥근 이음 선 = 둥근 모서리) -->
+    <!-- 별자리 선 -->
     <path
-        android:fillColor="#FFE39A"
-        android:strokeColor="#FFE39A"
-        android:strokeWidth="3.5"
+        android:strokeColor="#5B7FC4"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M54,32 L60.17,47.51 L76.83,48.58 L63.99,59.24 L68.11,75.42 L54,66.5 L39.89,75.42 L44.01,59.24 L31.17,48.58 L47.83,47.51 Z" />
+        android:pathData="M27,44 L40,62 L54,49 L68,64 L81,42" />
+
+    <!-- 별 다섯(가운데가 가장 큰 별) -->
+    <path
+        android:fillColor="#F4F7FF"
+        android:pathData="M22.8,44 a4.2,4.2 0 1,0 8.4,0 a4.2,4.2 0 1,0 -8.4,0 Z M35.8,62 a4.2,4.2 0 1,0 8.4,0 a4.2,4.2 0 1,0 -8.4,0 Z M46.8,49 a7.2,7.2 0 1,0 14.4,0 a7.2,7.2 0 1,0 -14.4,0 Z M63.8,64 a4.2,4.2 0 1,0 8.4,0 a4.2,4.2 0 1,0 -8.4,0 Z M76.8,42 a4.2,4.2 0 1,0 8.4,0 a4.2,4.2 0 1,0 -8.4,0 Z" />
 </vector>
